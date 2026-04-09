@@ -1,0 +1,25 @@
+{
+  "name": "claude-sessions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-only, open-source dashboard for Claude Code sessions. Reads ~/.claude/projects/*.jsonl and visualizes agent activity.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "clean": "turbo clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "prettier": "^3.2.5",
+    "turbo": "^2.1.0",
+    "typescript": "^5.5.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20"
+  }
+}

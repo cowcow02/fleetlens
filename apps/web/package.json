@@ -1,0 +1,38 @@
+{
+  "name": "@claude-sessions/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-only dashboard for Claude Code sessions. Reads ~/.claude/projects/*.jsonl and visualizes agent activity.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev -p 3321",
+    "build": "next build",
+    "start": "next start -p 3321",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf .next .turbo dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@claude-sessions/parser": "workspace:*",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.468.0",
+    "next": "16.2.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-markdown": "^10.1.0",
+    "recharts": "^2.15.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/node": "^20.11.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "16.2.2",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
