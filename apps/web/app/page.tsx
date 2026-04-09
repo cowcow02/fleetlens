@@ -72,8 +72,8 @@ export default async function DashboardHome() {
           icon={<ListTree size={13} />}
         />
         <MetricCard
-          label="Air-time"
-          value={formatDuration(metrics.totalAirTimeMs)}
+          label="Total time"
+          value={formatDuration(metrics.totalDurationMs)}
           sub={`avg ${formatDuration(metrics.avgDurationMs)} / session`}
           icon={<Clock size={13} />}
         />
