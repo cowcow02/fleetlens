@@ -288,10 +288,11 @@ const BLANK_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 type SubagentMeta = { agentType?: string; description?: string };
 
 /**
- * Quick-pass parser for a subagent JSONL — we don't run the full
- * parseTranscript on it because the UI only needs aggregate timing +
- * usage for the timeline. The detail view would lazily load the full
- * transcript on click.
+ * Quick-pass parser for a subagent JSONL. Extracts everything the UI
+ * needs to render a rich detail drawer — timing, deduped usage, tool
+ * call counts, assistant message count, final text — without running
+ * the full presentation layer (which is expensive for large transcripts
+ * and isn't needed here: we only show aggregate stats + final result).
  */
 function summarizeSubagentLines(lines: unknown[]): {
   startMs?: number;
@@ -299,13 +300,22 @@ function summarizeSubagentLines(lines: unknown[]): {
   totalUsage: Usage;
   eventCount: number;
   finalPreview?: string;
+  finalText?: string;
+  model?: string;
+  toolCalls: { name: string; count: number }[];
+  toolCallCount: number;
+  assistantMessageCount: number;
 } {
   let startMs: number | undefined;
   let endMs: number | undefined;
   const totalUsage: Usage = { ...BLANK_USAGE };
   const seenMessageIds = new Set<string>();
-  let finalPreview: string | undefined;
+  let finalText: string | undefined;
+  let model: string | undefined;
   let eventCount = 0;
+  let assistantMessageCount = 0;
+  let toolCallCount = 0;
+  const toolCounts = new Map<string, number>();
 
   for (const raw of lines) {
     if (!raw || typeof raw !== "object") continue;
@@ -322,10 +332,16 @@ function summarizeSubagentLines(lines: unknown[]): {
       const m = r.message as Record<string, unknown> | undefined;
       if (!m) continue;
 
+      // First seen model wins.
+      if (!model && typeof m.model === "string") model = m.model;
+
       // Token dedup by message.id (same fix as the main parser).
       const mid = typeof m.id === "string" ? m.id : undefined;
-      if (mid && !seenMessageIds.has(mid)) {
-        seenMessageIds.add(mid);
+      const fresh = mid ? !seenMessageIds.has(mid) : true;
+      if (mid && fresh) seenMessageIds.add(mid);
+
+      if (fresh) {
+        assistantMessageCount++;
         const u = m.usage as Record<string, unknown> | undefined;
         if (u) {
           const toNum = (v: unknown) => (typeof v === "number" ? v : 0);
@@ -336,19 +352,43 @@ function summarizeSubagentLines(lines: unknown[]): {
         }
       }
 
-      // Track the most recent assistant text block as the "final preview".
+      // Walk content blocks to capture final text + tool calls.
       const content = m.content as Array<Record<string, unknown>> | undefined;
       if (Array.isArray(content)) {
         for (const block of content) {
-          if (block?.type === "text" && typeof block.text === "string") {
-            finalPreview = String(block.text).slice(0, 240);
+          if (!block || typeof block !== "object") continue;
+          if (block.type === "text" && typeof block.text === "string") {
+            finalText = block.text;
+          } else if (block.type === "tool_use" && typeof block.name === "string") {
+            toolCallCount++;
+            toolCounts.set(block.name, (toolCounts.get(block.name) ?? 0) + 1);
           }
         }
       }
     }
   }
 
-  return { startMs, endMs, totalUsage, eventCount, finalPreview };
+  const toolCalls = Array.from(toolCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const finalPreview =
+    finalText !== undefined
+      ? finalText.replace(/\s+/g, " ").trim().slice(0, 240)
+      : undefined;
+
+  return {
+    startMs,
+    endMs,
+    totalUsage,
+    eventCount,
+    finalPreview,
+    finalText,
+    model,
+    toolCalls,
+    toolCallCount,
+    assistantMessageCount,
+  };
 }
 
 /**
@@ -373,7 +413,12 @@ async function loadSubagents(
   // Build a description → parent Agent tool_use lookup from the parent's
   // events. We scan the raw blocks (since `raw` may have been stripped at
   // the page boundary, we use the structured `blocks` field instead).
-  type ParentRef = { toolUseId: string; parentUuid: string; runInBackground: boolean };
+  type ParentRef = {
+    toolUseId: string;
+    parentUuid: string;
+    runInBackground: boolean;
+    prompt?: string;
+  };
   const byDesc = new Map<string, ParentRef>();
   for (const e of parentEvents) {
     if (e.role !== "tool-call" || e.toolName !== "Agent") continue;
@@ -386,6 +431,7 @@ async function loadSubagents(
         toolUseId: b.id,
         parentUuid: e.uuid ?? "",
         runInBackground: input.run_in_background === true,
+        prompt: typeof input.prompt === "string" ? input.prompt : undefined,
       });
     }
   }
@@ -444,7 +490,13 @@ async function loadSubagents(
         parentUuid: parentRef?.parentUuid,
         parentToolUseId: parentRef?.toolUseId,
         runInBackground: parentRef?.runInBackground,
+        prompt: parentRef?.prompt,
         finalPreview: summary.finalPreview,
+        finalText: summary.finalText,
+        model: summary.model,
+        toolCalls: summary.toolCalls,
+        toolCallCount: summary.toolCallCount,
+        assistantMessageCount: summary.assistantMessageCount,
       };
     }),
   );

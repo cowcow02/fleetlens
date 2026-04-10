@@ -127,6 +127,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
   const [tab, setTab] = useState<"transcript" | "debug">("transcript");
   const [filter, setFilter] = useState<FilterMode>("turns");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set());
   /** When a timeline click sets the index we also want to scroll. Track that
    *  intent separately so selection via row-click doesn't auto-scroll. */
@@ -506,6 +507,13 @@ export function SessionView({ session }: { session: SessionDetail }) {
           onSelect={scrollToIndex}
           headerOffset={headerH}
           subagents={session.subagents}
+          selectedSubagentId={selectedSubagentId}
+          onSelectSubagent={(id) => {
+            setSelectedSubagentId(id);
+            // Close the event drawer so we don't have two drawers fighting
+            // for the same right-side real estate.
+            if (id) setSelectedIndex(null);
+          }}
         />
         </div>
       </div>
@@ -557,6 +565,56 @@ export function SessionView({ session }: { session: SessionDetail }) {
           <Drawer event={selectedEvent} row={selectedRow} onClose={() => setSelectedIndex(null)} />
         </aside>
       )}
+
+      {/* Sub-agent detail drawer — opens when the user clicks a lane
+          bar on the mini-map. Shows the full prompt the parent sent,
+          timing + token breakdown, tool call counts, and the final
+          agent text. Clicking "Jump to parent" scrolls the transcript
+          to the Agent tool_use row that dispatched this subagent. */}
+      {(() => {
+        const sub = selectedSubagentId
+          ? session.subagents?.find((s) => s.agentId === selectedSubagentId)
+          : undefined;
+        if (!sub) return null;
+        return (
+          <aside
+            style={{
+              position: "fixed",
+              top: headerH,
+              right: 0,
+              bottom: 0,
+              width: DRAWER_WIDTH,
+              borderLeft: "1px solid var(--af-border-subtle)",
+              background: "var(--af-surface)",
+              overflowY: "auto",
+              zIndex: 26,
+              boxShadow: "-8px 0 24px rgba(15, 23, 42, 0.08)",
+            }}
+          >
+            <SubagentDrawer
+              subagent={sub}
+              onClose={() => setSelectedSubagentId(null)}
+              onJumpToParent={() => {
+                // Find the parent Agent tool-call row by its toolUseId and
+                // scroll the transcript to it.
+                if (!sub.parentToolUseId) return;
+                const parentEvent = events.find((e) =>
+                  e.blocks.some(
+                    (b) =>
+                      b?.type === "tool_use" &&
+                      b.name === "Agent" &&
+                      b.id === sub.parentToolUseId,
+                  ),
+                );
+                if (parentEvent) {
+                  setSelectedSubagentId(null);
+                  scrollToIndex(parentEvent.index);
+                }
+              }}
+            />
+          </aside>
+        );
+      })()}
     </div>
   );
 }
@@ -953,6 +1011,8 @@ function Minimap({
   onSelect,
   headerOffset,
   subagents,
+  selectedSubagentId,
+  onSelectSubagent,
 }: {
   displayRows: DisplayRow[];
   durationMs: number;
@@ -960,6 +1020,8 @@ function Minimap({
   onSelect: (i: number) => void;
   headerOffset: number;
   subagents?: SubagentRun[];
+  selectedSubagentId?: string | null;
+  onSelectSubagent?: (id: string | null) => void;
 }) {
   const WIDTH = 1400;
   /** Main timeline height. Sub-agent lanes stack below this. */
@@ -1442,6 +1504,7 @@ function Minimap({
               const y = SUB_BLOCK_TOP + lane * SUB_LANE_H;
               const h = SUB_LANE_H - 2;
               const fill = subagentColor(s.agentType, s.runInBackground);
+              const isSelected = selectedSubagentId === s.agentId;
               return (
                 <g key={s.agentId}>
                   <rect
@@ -1456,7 +1519,21 @@ function Minimap({
                     rx="2"
                     style={{ cursor: "pointer" }}
                     onMouseEnter={(e) => setHover({ clientX: e.clientX, subagent: s })}
+                    onClick={() => onSelectSubagent?.(isSelected ? null : s.agentId)}
                   />
+                  {isSelected && (
+                    <rect
+                      x={startX - 2}
+                      y={y - 2}
+                      width={w + 4}
+                      height={h + 4}
+                      fill="none"
+                      stroke="var(--af-accent)"
+                      strokeWidth="1.5"
+                      rx="4"
+                      pointerEvents="none"
+                    />
+                  )}
                 </g>
               );
             })}
@@ -2977,6 +3054,385 @@ function DebugList({ events }: { events: SessionEvent[] }) {
           </pre>
         </details>
       ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  SubagentDrawer                                                    */
+/*                                                                     */
+/*  Opened when the user clicks a sub-agent lane bar on the mini-map. */
+/*  Renders everything we know about the run — type pill, background  */
+/*  badge, timing range, duration, stats, the full prompt the parent  */
+/*  dispatched, the final agent text, and a "Jump to parent" action   */
+/*  that scrolls the transcript to the Agent tool_use row that kicked */
+/*  this subagent off.                                                */
+/* ------------------------------------------------------------------ */
+
+function SubagentDrawer({
+  subagent,
+  onClose,
+  onJumpToParent,
+}: {
+  subagent: SubagentRun;
+  onClose: () => void;
+  onJumpToParent: () => void;
+}) {
+  const s = subagent;
+  const fill = subagentColor(s.agentType, s.runInBackground);
+  const startOff = formatOffset(s.startTOffsetMs);
+  const endOff = formatOffset(s.endTOffsetMs);
+  const dur = s.durationMs !== undefined ? formatGap(s.durationMs) : "—";
+  const totalIn = s.totalUsage.input + s.totalUsage.cacheRead + s.totalUsage.cacheWrite;
+  const pctRead = totalIn > 0 ? Math.round((s.totalUsage.cacheRead / totalIn) * 100) : 0;
+
+  return (
+    <div>
+      {/* Sticky title bar */}
+      <div
+        style={{
+          padding: "14px 20px",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          background: "var(--af-surface)",
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            padding: "3px 10px",
+            borderRadius: 4,
+            background: fill,
+            color: "#fff",
+          }}
+        >
+          {s.agentType}
+        </span>
+        {s.runInBackground && (
+          <span
+            style={{
+              fontSize: 9,
+              fontWeight: 600,
+              padding: "2px 8px",
+              borderRadius: 4,
+              background: "var(--af-warning-subtle)",
+              color: "var(--af-warning)",
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+            }}
+          >
+            background
+          </span>
+        )}
+        <span
+          style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: "var(--af-text)",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={s.description}
+        >
+          {s.description}
+        </span>
+        <button
+          onClick={onClose}
+          style={{
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            color: "var(--af-text-tertiary)",
+            padding: 4,
+            borderRadius: 4,
+          }}
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Meta strip */}
+      <div
+        style={{
+          padding: "10px 20px",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          display: "grid",
+          gridTemplateColumns: "auto 1fr",
+          columnGap: 10,
+          rowGap: 3,
+        }}
+      >
+        <span style={{ opacity: 0.7 }}>range</span>
+        <span style={{ color: "var(--af-text-secondary)" }}>
+          {startOff} → {endOff}
+        </span>
+        <span style={{ opacity: 0.7 }}>duration</span>
+        <span style={{ color: "var(--af-text-secondary)" }}>{dur}</span>
+        {s.model && (
+          <>
+            <span style={{ opacity: 0.7 }}>model</span>
+            <span style={{ color: "var(--af-text-secondary)" }}>{s.model}</span>
+          </>
+        )}
+        {s.parentToolUseId && (
+          <>
+            <span style={{ opacity: 0.7 }}>parent</span>
+            <span style={{ color: "var(--af-text-secondary)" }}>
+              {s.parentToolUseId.slice(0, 24)}…
+            </span>
+          </>
+        )}
+      </div>
+
+      {/* Activity stats */}
+      <div
+        style={{
+          padding: "14px 20px",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 10,
+        }}
+      >
+        <StatCell label="Events" value={String(s.eventCount)} />
+        <StatCell label="Messages" value={String(s.assistantMessageCount ?? 0)} />
+        <StatCell label="Tool calls" value={String(s.toolCallCount ?? 0)} />
+      </div>
+
+      {/* Token breakdown */}
+      <div
+        style={{
+          padding: "12px 20px",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          fontSize: 11,
+          fontFamily: "var(--font-mono)",
+          color: "var(--af-text-secondary)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 3,
+        }}
+      >
+        <TokenLine label="Input (fresh)" value={s.totalUsage.input} />
+        <TokenLine label="Output" value={s.totalUsage.output} />
+        <TokenLine
+          label="Cache read"
+          value={s.totalUsage.cacheRead}
+          suffix={` (${pctRead}%)`}
+        />
+        <TokenLine label="Cache write" value={s.totalUsage.cacheWrite} />
+      </div>
+
+      {/* Tool breakdown */}
+      {s.toolCalls && s.toolCalls.length > 0 && (
+        <div
+          style={{
+            padding: "14px 20px",
+            borderBottom: "1px solid var(--af-border-subtle)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              color: "var(--af-text-tertiary)",
+              marginBottom: 8,
+            }}
+          >
+            Tools used
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {s.toolCalls.map((t) => (
+              <span
+                key={t.name}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: 11,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  background: "var(--af-border-subtle)",
+                  color: "var(--af-text)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                <b style={{ fontWeight: 600 }}>{shortenToolName(t.name)}</b>
+                <span style={{ color: "var(--af-text-tertiary)" }}>×{t.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Parent prompt (what the parent asked the subagent to do) */}
+      {s.prompt && (
+        <div
+          style={{
+            padding: "14px 20px",
+            borderBottom: "1px solid var(--af-border-subtle)",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 8,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+                color: "var(--af-text-tertiary)",
+              }}
+            >
+              Prompt
+            </div>
+            {s.parentToolUseId && (
+              <button
+                type="button"
+                onClick={onJumpToParent}
+                style={{
+                  fontSize: 10,
+                  color: "var(--af-accent)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                Jump to parent →
+              </button>
+            )}
+          </div>
+          <div className="sl-prose" style={{ fontSize: 12.5 }}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a: (props) => (
+                  <a
+                    {...props}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: "var(--af-accent)",
+                      textDecoration: "underline",
+                    }}
+                  />
+                ),
+              }}
+            >
+              {s.prompt}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
+
+      {/* Final text */}
+      {s.finalText && (
+        <div style={{ padding: "14px 20px" }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+              color: "var(--af-text-tertiary)",
+              marginBottom: 8,
+            }}
+          >
+            Final result
+          </div>
+          <div className="sl-prose" style={{ fontSize: 13 }}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a: (props) => (
+                  <a
+                    {...props}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      color: "var(--af-accent)",
+                      textDecoration: "underline",
+                    }}
+                  />
+                ),
+              }}
+            >
+              {s.finalText}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 9,
+          color: "var(--af-text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          fontWeight: 600,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 18,
+          fontWeight: 700,
+          fontFamily: "var(--font-mono)",
+          color: "var(--af-text)",
+          marginTop: 2,
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function TokenLine({
+  label,
+  value,
+  suffix,
+}: {
+  label: string;
+  value: number;
+  suffix?: string;
+}) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <span style={{ opacity: 0.7 }}>{label}</span>
+      <span>
+        {value.toLocaleString()}
+        {suffix && <span style={{ opacity: 0.65 }}>{suffix}</span>}
+      </span>
     </div>
   );
 }
