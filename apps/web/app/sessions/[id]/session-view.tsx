@@ -35,6 +35,7 @@ import {
 } from "@claude-sessions/parser";
 import { formatGap, formatOffset, formatRelative, formatTokens, shortId } from "@/lib/format";
 import { LiveBadge } from "@/components/live-badge";
+import { AskClaudeButton, AskClaudeDrawer } from "@/components/ask-claude";
 
 /* ------------------------------------------------------------------ */
 /*  Constants + theming                                               */
@@ -129,6 +130,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
   const [filter, setFilter] = useState<FilterMode>("turns");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
+  const [askClaudeOpen, setAskClaudeOpen] = useState(false);
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set());
   /** When a timeline click sets the index we also want to scroll. Track that
    *  intent separately so selection via row-click doesn't auto-scroll. */
@@ -491,6 +493,13 @@ export function SessionView({ session }: { session: SessionDetail }) {
           >
             <Copy size={12} /> Copy all
           </button>
+          <AskClaudeButton
+            onClick={() => {
+              setAskClaudeOpen((p) => !p);
+              setSelectedIndex(null);
+              setSelectedSubagentId(null);
+            }}
+          />
         </div>
         </div>{/* /collapsible top block */}
 
@@ -621,6 +630,30 @@ export function SessionView({ session }: { session: SessionDetail }) {
           </aside>
         );
       })()}
+
+      {/* Ask Claude drawer */}
+      {askClaudeOpen && (
+        <aside
+          style={{
+            position: "fixed",
+            top: headerH,
+            right: 0,
+            bottom: 0,
+            width: DRAWER_WIDTH,
+            borderLeft: "1px solid var(--af-border-subtle)",
+            background: "var(--af-surface)",
+            zIndex: 27,
+            boxShadow: "-8px 0 24px rgba(15, 23, 42, 0.08)",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <AskClaudeDrawer
+            sessionId={session.id}
+            onClose={() => setAskClaudeOpen(false)}
+          />
+        </aside>
+      )}
     </div>
   );
 }
