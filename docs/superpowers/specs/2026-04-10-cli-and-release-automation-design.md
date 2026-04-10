@@ -18,7 +18,7 @@ This design also establishes the foundation for future team features: a local da
 | Stats output | ccusage-style daily token table + live TUI mode | Matches existing ecosystem expectations. Parser already has all required data. |
 | Auto-update strategy | Check + auto-apply on every `claude-lens start` | Always on latest. Graceful fallback if network/update fails. |
 | Release trigger | Git tag (`v*`) pushed to master | Standard open-source pattern. Works with `npm version` command. Agent-driven, no human trigger needed. |
-| Version sync | All packages share one version, synced by preversion script | Single version number across CLI, parser, and web app. |
+| Version sync | All packages share one version, synced by `version` lifecycle hook | Single version number across CLI, parser, and web app. |
 
 ## 1. Package Structure
 
@@ -67,7 +67,7 @@ Add `output: 'standalone'` to `apps/web/next.config.ts`. At build time (CI), Nex
 
 ```
 claude-lens (npm package)
-  dist/                   # Compiled CLI code
+  dist/                   # CLI code bundled with esbuild (includes @claude-lens/parser)
   app/                    # Next.js standalone output
     server.js             # Entry point
     node_modules/         # Only what the server needs
@@ -77,6 +77,10 @@ claude-lens (npm package)
   package.json
 ```
 
+### Parser Bundling
+
+The CLI uses `@claude-lens/parser` for the `stats` command. Since the parser is a workspace dependency (`workspace:*`) and is NOT published to npm separately, it must be bundled into the CLI at build time. The CLI build step uses **esbuild** to bundle `src/` and all workspace dependencies into a single `dist/index.js` file. This means the published package has zero runtime npm dependencies — everything is self-contained in `dist/`.
+
 ### Server Management
 
 - `claude-lens start` spawns `node app/server.js` as a detached child process, writes PID to `~/.claude-lens/pid`
@@ -84,6 +88,11 @@ claude-lens (npm package)
 - `claude-lens stop` reads PID, sends SIGTERM, waits for graceful shutdown, removes PID file
 - Stale PID files (process dead) are cleaned up automatically
 - Port defaults to 3321, configurable via `--port` flag or `CLAUDE_LENS_PORT` env var
+- If the port is in use by a non-claude-lens process, fail with a clear error: "Port 3321 is in use. Use --port to specify a different port." No auto-incrementing — explicit is better.
+
+### Session Data Directory
+
+The standalone server needs access to `~/.claude/projects/`. The CLI sets `CLAUDE_LENS_DATA_DIR` env var when spawning the server process (defaults to `~/.claude/projects/`). The web app reads this env var to locate session data. This ensures the app works correctly regardless of where the npm global package is installed.
 
 ### Startup Flow (`claude-lens start`)
 
@@ -126,7 +135,7 @@ claude-lens start
 
 ### Re-exec Detail
 
-After `npm install -g claude-lens@latest` replaces the binary, the CLI uses `process.execPath` with the same args to restart itself with the new code, ensuring the new version's startup logic runs.
+After `npm install -g claude-lens@latest` replaces the binary, the CLI re-execs using `process.argv[0]` (the node binary) and `process.argv[1]` (the resolved path to the claude-lens script) with the original args. This ensures the new version's startup logic runs. Do NOT use `process.execPath` alone — that's just the node binary without the script path.
 
 No background polling for now. Update check only on `claude-lens start` and `claude-lens update`. The future daemon can take over periodic checks.
 
@@ -168,7 +177,9 @@ Auto-refreshing terminal UI (every 2s), raw ANSI codes with `process.stdout.writ
 
 ### Cost Estimation
 
-A pricing table mapping model IDs to per-token costs (input, output, cache read, cache write). Hardcoded current Anthropic pricing, updated with each release. Same approach as ccusage with LiteLLM pricing.
+A pricing table in `packages/cli/src/pricing.ts` — a TypeScript constant mapping model ID prefixes (e.g., `claude-opus-4`, `claude-sonnet-4`) to per-token costs for input, output, cache read, and cache write. Hardcoded current Anthropic pricing, updated with each release.
+
+When an unrecognized model ID is encountered, the cost column shows `—` (not $0, not an error). The total row footnotes which models had unknown pricing.
 
 ### Data Source
 
@@ -195,9 +206,10 @@ Tag-driven. Pushing a `v*` tag triggers the GitHub Action.
 #   - pnpm install --frozen-lockfile
 #   - pnpm build (parser + web)
 #   - Copy Next.js standalone output into packages/cli/app/
-#   - Copy .next/static into packages/cli/app/.next/static
-#   - Build CLI (tsc)
-#   - Run tests + typecheck
+#   - Copy .next/static into packages/cli/app/.next/static (standalone omits this)
+#   - Copy public/ into packages/cli/app/public/ (standalone omits this too)
+#   - Build CLI with esbuild — bundles src/ + @claude-lens/parser into dist/
+#   - Run pnpm test (vitest) + pnpm verify (typecheck + smoke)
 
 # Job 2: publish (needs: build)
 #   - npm publish packages/cli/ (with NPM_TOKEN secret)
@@ -209,11 +221,15 @@ Tag-driven. Pushing a `v*` tag triggers the GitHub Action.
 
 ### Version Sync
 
-A root-level `scripts/version-sync.mjs` hooks into npm's `version` lifecycle via `preversion` script. When `npm version minor` runs at the root:
+A root-level `scripts/version-sync.mjs` hooks into npm's `version` lifecycle via the **`version`** script (not `preversion`). The `version` hook fires AFTER npm updates the root `package.json` but BEFORE the commit, so the script can read the new version and propagate it.
 
-1. npm bumps root `package.json`
-2. `preversion` script syncs the version to `packages/cli/package.json`, `packages/parser/package.json`, and `apps/web/package.json`
-3. npm creates the commit and tag
+When `npm version minor` runs **at the monorepo root** (never inside `packages/cli/`):
+
+1. npm bumps root `package.json` version field
+2. `version` script reads the new version from root `package.json`, writes it to `packages/cli/package.json`, `packages/parser/package.json`, and `apps/web/package.json`, then `git add`s the changed files
+3. npm creates the commit and tag (including the sub-package changes)
+
+The root `package.json` is the source of truth for versioning, even though it is private and never published. The published package is `packages/cli/`.
 
 ### Developer Workflow
 
@@ -250,7 +266,7 @@ An agent should trigger a release when:
 ### Agent Release Commands
 
 ```bash
-pnpm verify                      # tests + typecheck pass
+pnpm test && pnpm verify         # vitest + typecheck + smoke pass
 npm version patch|minor          # bumps all packages, commits, tags
 git push --follow-tags           # triggers CI -> npm publish -> GitHub Release
 ```
@@ -267,7 +283,7 @@ The `CLAUDE.md` file at repo root will include:
 - **Package roles:** CLI (npm-distributed entry point), parser (JSONL parsing + analytics), web (Next.js dashboard)
 - **Version sync:** All packages share one version; use `npm version` at root, never edit package.json versions manually
 - **Release process:** The criteria and commands described in section 6
-- **Testing:** `pnpm verify` runs typecheck + smoke tests; parser has vitest unit tests
+- **Testing:** CI runs `pnpm test` (vitest) AND `pnpm verify` (typecheck + smoke). Agents should run `pnpm test && pnpm verify` before releasing.
 - **Port:** Default 3321
 
 ## Future Extensibility
