@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Sidebar } from "@/components/sidebar";
-import { ThemeScript } from "@/components/theme-toggle";
+import { ThemeScript } from "@/components/theme-script";
 import { LiveRefresher } from "@/components/live-refresher";
 import { listProjects, walkJsonlFiles } from "@claude-lens/parser/fs";
 import "./globals.css";
