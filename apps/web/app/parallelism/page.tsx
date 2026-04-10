@@ -1,5 +1,5 @@
 /**
- * Parallelism Gantt chart — visualize how sessions overlap per day.
+ * Timeline Gantt chart — visualize how sessions overlap per day.
  *
  * Shows one row per session, with colored segments for active periods
  * and gaps for idle time. Time axis is 24 hours. Date picker to
@@ -9,14 +9,14 @@
 import { listSessions, getSession } from "@/lib/data";
 import { buildGanttDay, type GanttDay } from "@claude-lens/parser";
 import { GanttChart } from "./gantt-chart";
-import { parseRange, cutoffMs } from "@/lib/date-range";
+import { DateNav } from "./date-nav";
 import { toLocalDay } from "@claude-lens/parser";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
-export default async function ParallelismPage({
+export default async function TimelinePage({
   searchParams,
 }: {
   searchParams: Promise<{ date?: string; range?: string }>;
@@ -98,67 +98,20 @@ export default async function ParallelismPage({
       >
         <div>
           <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>
-            Parallelism
+            Timeline
           </h1>
           <p style={{ fontSize: 13, color: "var(--af-text-secondary)", marginTop: 4 }}>
             Active agent sessions on{" "}
             <strong>{date}</strong>
             {" · "}
             {gantt.sessions.length} session{gantt.sessions.length === 1 ? "" : "s"}
-            {gantt.peakActiveParallelism > 1 && (
-              <> · peak <strong>{gantt.peakActiveParallelism}×</strong> concurrent</>
+            {gantt.peakActiveTimeline > 1 && (
+              <> · peak <strong>{gantt.peakActiveTimeline}×</strong> concurrent</>
             )}
           </p>
         </div>
 
-        {/* Date navigation */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {prevDay ? (
-            <Link
-              href={`/parallelism?date=${prevDay}`}
-              style={{
-                padding: "6px 12px",
-                border: "1px solid var(--af-border-subtle)",
-                borderRadius: 6,
-                fontSize: 12,
-                color: "var(--af-text-secondary)",
-              }}
-            >
-              ← {prevDay}
-            </Link>
-          ) : (
-            <span />
-          )}
-          <Link
-            href={`/parallelism?date=${today}`}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid var(--af-border-subtle)",
-              borderRadius: 6,
-              fontSize: 12,
-              color: date === today ? "var(--af-accent)" : "var(--af-text-secondary)",
-              background: date === today ? "var(--af-accent-subtle)" : "transparent",
-            }}
-          >
-            Today
-          </Link>
-          {nextDay ? (
-            <Link
-              href={`/parallelism?date=${nextDay}`}
-              style={{
-                padding: "6px 12px",
-                border: "1px solid var(--af-border-subtle)",
-                borderRadius: 6,
-                fontSize: 12,
-                color: "var(--af-text-secondary)",
-              }}
-            >
-              {nextDay} →
-            </Link>
-          ) : (
-            <span />
-          )}
-        </div>
+        <DateNav date={date} today={today} prevDay={prevDay} nextDay={nextDay} />
       </header>
 
       {gantt.sessions.length === 0 ? (

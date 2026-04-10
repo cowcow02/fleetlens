@@ -152,7 +152,7 @@ export function Sidebar({
           active={pathname === "/parallelism"}
           icon={<GitBranch size={15} />}
         >
-          Parallelism
+          Timeline
         </NavLink>
       </nav>
 

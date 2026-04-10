@@ -165,35 +165,39 @@ export function SessionView({ session }: { session: SessionDetail }) {
     if (!el) return;
     const main = el.closest("main") as HTMLElement | null;
     if (!main) return;
+    // Track scroll direction to avoid jitter. Collapse only when
+    // scrolling DOWN past a threshold; expand only at scrollTop===0.
+    // This eliminates the loop where collapse changes height → scroll
+    // changes → triggers expand → height changes → etc.
+    let lastY = main.scrollTop;
+    let locked = false; // debounce lock after a toggle
     let raf = 0;
     const update = () => {
       raf = 0;
+      if (locked) return;
       const y = main.scrollTop;
+      const dir = y - lastY; // positive = scrolling down
+      lastY = y;
       setCollapsed((prev) => {
-        // Only collapse when scrolling well past the header content,
-        // only expand when at the very top. When toggling, compensate
-        // main.scrollTop by the header height delta so the content
-        // doesn't jump and trigger the opposite threshold.
-        const next = prev ? y > 30 : y > 120;
-        if (next !== prev && el) {
-          // Measure before and schedule a post-render compensation.
-          const hBefore = el.offsetHeight;
-          requestAnimationFrame(() => {
-            const hAfter = el.offsetHeight;
-            const delta = hBefore - hAfter;
-            if (Math.abs(delta) > 10) {
-              main.scrollTop = Math.max(0, main.scrollTop + delta);
-            }
-          });
+        // Expand: only when user scrolled all the way to the top.
+        if (prev && y <= 0) {
+          locked = true;
+          setTimeout(() => { locked = false; }, 300);
+          return false;
         }
-        return next;
+        // Collapse: only when scrolling DOWN past threshold.
+        if (!prev && dir > 0 && y > 150) {
+          locked = true;
+          setTimeout(() => { locked = false; }, 300);
+          return true;
+        }
+        return prev;
       });
     };
     const onScroll = () => {
       if (raf) return;
       raf = requestAnimationFrame(update);
     };
-    update();
     main.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       main.removeEventListener("scroll", onScroll);
