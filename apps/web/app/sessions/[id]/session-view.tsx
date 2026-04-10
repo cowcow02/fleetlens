@@ -34,6 +34,7 @@ import {
   type TurnSummary,
 } from "@claude-sessions/parser";
 import { formatGap, formatOffset, formatRelative, formatTokens, shortId } from "@/lib/format";
+import { LiveBadge } from "@/components/live-badge";
 
 /* ------------------------------------------------------------------ */
 /*  Constants + theming                                               */
@@ -353,6 +354,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
           >
             sesn_{session.id.replace(/-/g, "").slice(0, 22)}
           </h1>
+          <LiveBadge mtimeIso={session.lastTimestamp} size="md" />
           <span
             style={{
               fontSize: 10.5,

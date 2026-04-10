@@ -17,6 +17,7 @@ import { ActivityChart } from "@/components/activity-chart";
 import { MetricCard } from "@/components/metric-card";
 import { ParallelRunsStrip } from "@/components/parallel-runs-strip";
 import { DateRangeFilter } from "@/components/date-range-filter";
+import { LiveBadge } from "@/components/live-badge";
 import { cutoffMs, parseRange } from "@/lib/date-range";
 import { listSessions } from "@/lib/data";
 import { formatDuration, formatTokens, formatRelative, prettyProjectName } from "@/lib/format";
@@ -336,16 +337,30 @@ export default async function DashboardHome({
                   alignItems: "center",
                 }}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                       color: "var(--af-text)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
                     }}
                   >
-                    {s.firstUserPreview || <em style={{ color: "var(--af-text-tertiary)" }}>(no user message)</em>}
+                    <LiveBadge mtimeIso={s.lastTimestamp} />
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {s.firstUserPreview || (
+                        <em style={{ color: "var(--af-text-tertiary)" }}>(no user message)</em>
+                      )}
+                    </span>
                   </div>
                   <div
                     style={{

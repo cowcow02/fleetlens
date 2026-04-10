@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeScript } from "@/components/theme-toggle";
+import { LiveRefresher } from "@/components/live-refresher";
 import { listProjects, walkJsonlFiles } from "@claude-sessions/parser/fs";
 import "./globals.css";
 
@@ -24,6 +25,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* next/script with beforeInteractive — injects synchronously
             before hydration so there's no flash of the wrong theme. */}
         <ThemeScript />
+        {/* Single shared EventSource for the whole app. Triggers a
+            debounced router.refresh() on any session file change. */}
+        <LiveRefresher />
         <div
           style={{
             display: "flex",

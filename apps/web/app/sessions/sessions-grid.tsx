@@ -11,6 +11,7 @@ import {
   shortId,
 } from "@/lib/format";
 import { Search, Wrench, MessagesSquare, Clock } from "lucide-react";
+import { LiveBadge } from "@/components/live-badge";
 
 export function SessionsGrid({ sessions }: { sessions: SessionMeta[] }) {
   const [query, setQuery] = useState("");
@@ -169,10 +170,23 @@ function SessionCard({ session: s }: { session: SessionMeta }) {
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            minWidth: 0,
           }}
           title={s.projectName}
         >
-          {prettyProjectName(s.projectName)}
+          <LiveBadge mtimeIso={s.lastTimestamp} />
+          <span
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {prettyProjectName(s.projectName)}
+          </span>
         </div>
         <div
           style={{

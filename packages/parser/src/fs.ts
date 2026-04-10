@@ -96,6 +96,18 @@ export function clearCaches(): void {
   fileListCache = null;
 }
 
+/**
+ * Drop the cached meta + detail entries for one specific file path,
+ * and also invalidate the short-lived file-list cache so the next
+ * list walk re-stats the directory. Called from the live-update SSE
+ * watcher when a file changes or appears.
+ */
+export function invalidateFile(fullPath: string): void {
+  metaCache.delete(fullPath);
+  detailCache.delete(fullPath);
+  fileListCache = null;
+}
+
 /* ================================================================= */
 /*  File walking                                                     */
 /* ================================================================= */
