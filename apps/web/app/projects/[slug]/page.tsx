@@ -18,7 +18,7 @@ import {
   formatRelative,
   prettyProjectName,
   shortId,
-  estimateCost,
+  estimateCostMulti,
   formatCost,
 } from "@/lib/format";
 import { ArrowLeft, Clock, ListTree, Zap, DollarSign, GitPullRequest } from "lucide-react";
@@ -131,10 +131,10 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
         />
         <MetricCard
           label="Est. cost"
-          value={formatCost(estimateCost(metrics.totalTokens))}
+          value={formatCost(estimateCostMulti(projectSessions))}
           sub={`${formatTokens(totalTokens)} in · ${formatTokens(metrics.totalTokens.output)} out`}
           icon={<DollarSign size={13} />}
-          tooltip={`Estimated spend using Claude Opus pricing.\nInput: ${formatTokens(metrics.totalTokens.input)} ($${((metrics.totalTokens.input / 1e6) * 15).toFixed(2)})\nOutput: ${formatTokens(metrics.totalTokens.output)} ($${((metrics.totalTokens.output / 1e6) * 75).toFixed(2)})\nCache read: ${formatTokens(metrics.totalTokens.cacheRead)} ($${((metrics.totalTokens.cacheRead / 1e6) * 1.5).toFixed(2)})\nCache write: ${formatTokens(metrics.totalTokens.cacheWrite)} ($${((metrics.totalTokens.cacheWrite / 1e6) * 18.75).toFixed(2)})`}
+          tooltip={`Estimated API spend based on each session's primary model.\nUpper bound — mixed-model sessions are priced at the primary model's rate.\nInput: ${formatTokens(metrics.totalTokens.input)}\nOutput: ${formatTokens(metrics.totalTokens.output)}\nCache read: ${formatTokens(metrics.totalTokens.cacheRead)}\nCache write: ${formatTokens(metrics.totalTokens.cacheWrite)}`}
         />
         <MetricCard
           label="PRs shipped"

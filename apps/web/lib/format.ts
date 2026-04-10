@@ -60,23 +60,46 @@ export function formatDuration(ms?: number): string {
   return mm ? `${h}h ${mm}m` : `${h}h`;
 }
 
+/** Per-MTok pricing by model family (API pricing, not Max plan). */
+const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
+  haiku:  { input: 0.80, output: 4,  cacheRead: 0.08, cacheWrite: 1 },
+  sonnet: { input: 3,    output: 15, cacheRead: 0.30, cacheWrite: 3.75 },
+  opus:   { input: 15,   output: 75, cacheRead: 1.50, cacheWrite: 18.75 },
+};
+
+function modelRate(model?: string) {
+  if (!model) return MODEL_PRICING.sonnet; // conservative default
+  const m = model.toLowerCase();
+  if (m.includes("haiku")) return MODEL_PRICING.haiku;
+  if (m.includes("sonnet")) return MODEL_PRICING.sonnet;
+  return MODEL_PRICING.opus;
+}
+
 /**
- * Estimate USD cost from token usage.
- * Uses Claude Opus pricing (per million tokens):
- *   Input: $15, Output: $75, Cache read: $1.50, Cache write: $18.75
+ * Estimate USD cost from token usage using per-model pricing.
  */
-export function estimateCost(usage: {
-  input: number;
-  output: number;
-  cacheRead: number;
-  cacheWrite: number;
-}): number {
+export function estimateCost(
+  usage: { input: number; output: number; cacheRead: number; cacheWrite: number },
+  model?: string,
+): number {
+  const r = modelRate(model);
   return (
-    (usage.input / 1_000_000) * 15 +
-    (usage.output / 1_000_000) * 75 +
-    (usage.cacheRead / 1_000_000) * 1.5 +
-    (usage.cacheWrite / 1_000_000) * 18.75
+    (usage.input / 1_000_000) * r.input +
+    (usage.output / 1_000_000) * r.output +
+    (usage.cacheRead / 1_000_000) * r.cacheRead +
+    (usage.cacheWrite / 1_000_000) * r.cacheWrite
   );
+}
+
+/**
+ * Estimate cost across multiple sessions, using each session's model for pricing.
+ * Note: sessions may contain mixed-model traffic (e.g. Opus main + Haiku tools),
+ * but we only have the primary model per session, so this is an upper-bound estimate.
+ */
+export function estimateCostMulti(
+  sessions: Array<{ totalUsage: { input: number; output: number; cacheRead: number; cacheWrite: number }; model?: string }>,
+): number {
+  return sessions.reduce((sum, s) => sum + estimateCost(s.totalUsage, s.model), 0);
 }
 
 export function formatCost(usd: number): string {
