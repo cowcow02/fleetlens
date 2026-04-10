@@ -1,5 +1,5 @@
 {
-  "name": "claude-lens",
+  "name": "claude-lens-workspace",
   "version": "0.1.0",
   "private": true,
   "description": "Claude Lens — local-only dashboard for Claude Code sessions. Heatmaps, timelines, parallel agent detection, PR metrics, and Ask Claude analysis.",
@@ -10,6 +10,7 @@
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
     "test": "turbo test",
+    "version": "node scripts/version-sync.mjs && git add packages/*/package.json apps/*/package.json",
     "smoke": "node scripts/smoke.mjs",
     "verify": "pnpm typecheck && pnpm smoke",
     "clean": "turbo clean && rm -rf node_modules"
