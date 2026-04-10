@@ -924,7 +924,7 @@ function InlineTokenStat({ usage }: { usage: SessionEvent["usage"] }) {
       {hover && (
         <Tooltip
           style={{
-            top: "calc(100% + 6px)",
+            bottom: "calc(100% + 6px)",
             left: 0,
             minWidth: 240,
           }}
