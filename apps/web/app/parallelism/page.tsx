@@ -105,8 +105,8 @@ export default async function TimelinePage({
             <strong>{date}</strong>
             {" · "}
             {gantt.sessions.length} session{gantt.sessions.length === 1 ? "" : "s"}
-            {gantt.peakActiveTimeline > 1 && (
-              <> · peak <strong>{gantt.peakActiveTimeline}×</strong> concurrent</>
+            {gantt.peakActiveParallelism > 1 && (
+              <> · peak <strong>{gantt.peakActiveParallelism}×</strong> concurrent</>
             )}
           </p>
         </div>

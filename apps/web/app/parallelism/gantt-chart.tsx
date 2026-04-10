@@ -52,6 +52,24 @@ export function GanttChart({ gantt }: { gantt: GanttDay }) {
     y: number;
   } | null>(null);
 
+  // Build project legend: unique projects, each with their color.
+  const projectLegend = useMemo(() => {
+    const seen = new Map<string, { name: string; color: string; count: number }>();
+    for (const s of gantt.sessions) {
+      const existing = seen.get(s.projectDir);
+      if (existing) {
+        existing.count++;
+      } else {
+        seen.set(s.projectDir, {
+          name: prettyProjectName(s.projectName),
+          color: projectColor(s.projectDir),
+          count: 1,
+        });
+      }
+    }
+    return Array.from(seen.values()).sort((a, b) => b.count - a.count);
+  }, [gantt.sessions]);
+
   // Auto-zoom: compute the visible time range from actual segment bounds
   // instead of always showing midnight-to-midnight.
   const { rangeStartMs, rangeEndMs, hourMarks } = useMemo(() => {
@@ -114,6 +132,73 @@ export function GanttChart({ gantt }: { gantt: GanttDay }) {
       className="af-panel"
       style={{ overflow: "auto", position: "relative" }}
     >
+      {/* Legend */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          padding: "10px 16px",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          fontSize: 11,
+          color: "var(--af-text-secondary)",
+          flexWrap: "wrap",
+        }}
+      >
+        {projectLegend.map((p) => {
+          // Shorten long paths: keep last 2 segments max.
+          const parts = p.name.split("/").filter(Boolean);
+          const short =
+            parts.length > 2
+              ? "…/" + parts.slice(-2).join("/")
+              : p.name;
+          return (
+            <span
+              key={p.name}
+              style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
+              title={p.name}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 2,
+                  background: p.color,
+                  flexShrink: 0,
+                }}
+              />
+              <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {short}
+              </span>
+              <span style={{ color: "var(--af-text-tertiary)", fontSize: 10 }}>
+                ({p.count})
+              </span>
+            </span>
+          );
+        })}
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            marginLeft: 8,
+            color: "var(--af-text-tertiary)",
+          }}
+        >
+          <span
+            style={{
+              width: 16,
+              height: 8,
+              borderRadius: 2,
+              background:
+                "repeating-linear-gradient(45deg, var(--af-surface-hover), var(--af-surface-hover) 2px, var(--af-border-subtle) 2px, var(--af-border-subtle) 4px)",
+              flexShrink: 0,
+            }}
+          />
+          idle
+        </span>
+      </div>
+
       <div style={{ minWidth: totalWidth }}>
         <svg
           width={totalWidth}
