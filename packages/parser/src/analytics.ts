@@ -43,6 +43,9 @@ export type DailyBucket = {
   tokens: Usage;
   /** Summed session duration across the day, in ms */
   durationMs: number;
+  /** Summed active (air-time) across the day, in ms. Derived from
+   *  SessionMeta.airTimeMs which filters gaps over the idle threshold. */
+  airTimeMs: number;
   /** Max concurrent sessions observed at any instant that day */
   peakParallelism: number;
 };
@@ -55,6 +58,7 @@ function makeDay(date: string): DailyBucket {
     turns: 0,
     tokens: { ...BLANK_USAGE },
     durationMs: 0,
+    airTimeMs: 0,
     peakParallelism: 0,
   };
 }
@@ -99,6 +103,7 @@ export function dailyActivity(sessions: SessionMeta[]): DailyBucket[] {
     bucket.tokens.cacheRead += s.totalUsage.cacheRead;
     bucket.tokens.cacheWrite += s.totalUsage.cacheWrite;
     bucket.durationMs += s.durationMs ?? 0;
+    bucket.airTimeMs += s.airTimeMs ?? 0;
     byDay.set(day, bucket);
   }
 
@@ -309,9 +314,11 @@ export function highLevelMetrics(sessions: SessionMeta[]): HighLevelMetrics {
   };
   for (const s of sessions) {
     totals.totalDurationMs += s.durationMs ?? 0;
-    // Approximation: totalAirTime can't be computed from meta alone; caller
-    // should pass detail-derived sessions if they want accurate air-time.
-    totals.totalAirTimeMs += s.durationMs ?? 0;
+    // airTimeMs is now computed by parseTranscript using a 3-minute
+    // idle threshold, so it correctly excludes lid-closed gaps and
+    // other long away periods. Falls back to wall-clock duration on
+    // old cached metas that predate the airTimeMs field.
+    totals.totalAirTimeMs += s.airTimeMs ?? s.durationMs ?? 0;
     totals.totalTokens.input += s.totalUsage.input;
     totals.totalTokens.output += s.totalUsage.output;
     totals.totalTokens.cacheRead += s.totalUsage.cacheRead;

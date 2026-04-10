@@ -92,6 +92,11 @@ export type SessionMeta = {
   toolCallCount?: number;
   /** derived: number of user↔agent turns (user inputs count) */
   turnCount?: number;
+  /** derived: sum of event-to-event gaps under the idle threshold
+   *  (default 3 minutes) — a close approximation of "how long was
+   *  the agent actively working" without counting user-away time,
+   *  lid-closed time, or other long idle gaps. */
+  airTimeMs?: number;
 };
 
 /**

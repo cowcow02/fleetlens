@@ -3,16 +3,41 @@
 import { useState, useMemo } from "react";
 import type { DailyBucket } from "@claude-sessions/parser";
 
-type Metric = "sessions" | "toolCalls" | "turns" | "input" | "output" | "cacheRead";
+function formatMs(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m < 60) return rem ? `${m}m ${rem}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return mm ? `${h}h ${mm}m` : `${h}h`;
+}
+
+type Metric =
+  | "airTime"
+  | "sessions"
+  | "toolCalls"
+  | "turns"
+  | "input"
+  | "output"
+  | "cacheRead";
 
 const METRIC_CONFIG: Record<
   Metric,
-  { label: string; pluck: (b: DailyBucket) => number; color: string }
+  { label: string; pluck: (b: DailyBucket) => number; color: string; unit?: "ms" }
 > = {
+  airTime: {
+    label: "Active time",
+    pluck: (b) => b.airTimeMs,
+    color: "rgba(45, 212, 191, 0.85)",
+    unit: "ms",
+  },
   sessions: {
     label: "Sessions",
     pluck: (b) => b.sessions,
-    color: "rgba(45, 212, 191, 0.85)",
+    color: "rgba(94, 234, 212, 0.85)",
   },
   toolCalls: {
     label: "Tool calls",
@@ -137,7 +162,8 @@ export function ActivityChart({
               fontFamily: "var(--font-mono)",
             }}
           >
-            {hover.bucket.date} · {hover.value.toLocaleString()}
+            {hover.bucket.date} ·{" "}
+            {config.unit === "ms" ? formatMs(hover.value) : hover.value.toLocaleString()}
           </div>
         )}
       </div>

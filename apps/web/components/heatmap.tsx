@@ -221,6 +221,7 @@ function makeEmpty(date: string): DailyBucket {
     sessions: 0,
     toolCalls: 0,
     turns: 0,
+    airTimeMs: 0,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     durationMs: 0,
     peakParallelism: 0,

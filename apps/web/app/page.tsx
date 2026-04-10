@@ -129,9 +129,16 @@ export default async function DashboardHome({
           icon={<ListTree size={13} />}
         />
         <MetricCard
-          label="Total time"
-          value={formatDuration(metrics.totalDurationMs)}
-          sub={`avg ${formatDuration(metrics.avgDurationMs)} / session`}
+          label="Active time"
+          value={formatDuration(metrics.totalAirTimeMs)}
+          sub={
+            buckets.filter((b) => b.airTimeMs > 0).length > 0
+              ? `avg ${formatDuration(
+                  metrics.totalAirTimeMs /
+                    Math.max(1, buckets.filter((b) => b.airTimeMs > 0).length),
+                )} / active day`
+              : "no activity"
+          }
           icon={<Clock size={13} />}
         />
         <MetricCard

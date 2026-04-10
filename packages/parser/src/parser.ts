@@ -229,6 +229,17 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
     chrono[i]!.e.gapMs = Math.max(0, chrono[i]!.ms - chrono[i - 1]!.ms);
   }
 
+  // Air-time: sum of gaps under the idle threshold. This approximates
+  // how long the agent was actively working (filters out the user
+  // stepping away, lid closed overnight, etc.). Same 3-minute
+  // threshold as sessionAirTimeMs() in analytics.ts.
+  const IDLE_THRESHOLD_MS = 3 * 60 * 1000;
+  let airTimeMs = 0;
+  for (let i = 1; i < chrono.length; i++) {
+    const g = chrono[i]!.e.gapMs ?? 0;
+    if (g > 0 && g <= IDLE_THRESHOLD_MS) airTimeMs += g;
+  }
+
   // Aggregate usage + derive session-level metadata.
   // Usage dedup: Claude Code splits one API response into multiple JSONL
   // lines, each carrying the same `usage`. Sum only once per message.id.
@@ -312,6 +323,7 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       lastAgentPreview,
       toolCallCount,
       turnCount,
+      airTimeMs,
     },
   };
 }

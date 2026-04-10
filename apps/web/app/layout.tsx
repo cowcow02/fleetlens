@@ -24,12 +24,24 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* next/script with beforeInteractive — injects synchronously
             before hydration so there's no flash of the wrong theme. */}
         <ThemeScript />
-        <div style={{ display: "flex", minHeight: "100vh" }}>
+        <div
+          style={{
+            display: "flex",
+            height: "100vh",
+            // `height: 100vh` + `overflow: auto` on <main> below makes
+            // <main> the actual scroll container. If we used min-height
+            // instead, main would expand to fit content and the window
+            // would scroll — which breaks `position: sticky` inside
+            // main because the sticky element's containing block would
+            // be the whole document, not the viewport.
+          }}
+        >
           <Sidebar projects={projects} totalSessions={totalSessions} />
           <main
             style={{
               flex: 1,
               minWidth: 0,
+              minHeight: 0,
               padding: 0,
               overflow: "auto",
               // Let the page decide its own padding so pages with a

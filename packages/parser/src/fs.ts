@@ -290,9 +290,10 @@ type SubagentMeta = { agentType?: string; description?: string };
 /**
  * Quick-pass parser for a subagent JSONL. Extracts everything the UI
  * needs to render a rich detail drawer — timing, deduped usage, tool
- * call counts, assistant message count, final text — without running
- * the full presentation layer (which is expensive for large transcripts
- * and isn't needed here: we only show aggregate stats + final result).
+ * call counts, assistant message count, final text, and the initial
+ * prompt — without running the full presentation layer (which is
+ * expensive for large transcripts and isn't needed here: we only show
+ * aggregate stats + final result).
  */
 function summarizeSubagentLines(lines: unknown[]): {
   startMs?: number;
@@ -305,6 +306,10 @@ function summarizeSubagentLines(lines: unknown[]): {
   toolCalls: { name: string; count: number }[];
   toolCallCount: number;
   assistantMessageCount: number;
+  /** Initial prompt extracted from the first user line (parentUuid=null).
+   *  Used as a fallback when the meta.json sidecar has no description
+   *  and we can't match to a parent Agent tool_use. */
+  initialPrompt?: string;
 } {
   let startMs: number | undefined;
   let endMs: number | undefined;
@@ -316,6 +321,7 @@ function summarizeSubagentLines(lines: unknown[]): {
   let assistantMessageCount = 0;
   let toolCallCount = 0;
   const toolCounts = new Map<string, number>();
+  let initialPrompt: string | undefined;
 
   for (const raw of lines) {
     if (!raw || typeof raw !== "object") continue;
@@ -326,6 +332,24 @@ function summarizeSubagentLines(lines: unknown[]): {
     if (!Number.isNaN(ts)) {
       if (startMs === undefined || ts < startMs) startMs = ts;
       if (endMs === undefined || ts > endMs) endMs = ts;
+    }
+
+    // First user line with parentUuid=null holds the dispatched prompt.
+    if (
+      initialPrompt === undefined &&
+      r.type === "user" &&
+      (r.parentUuid === null || r.parentUuid === undefined)
+    ) {
+      const msg = r.message as Record<string, unknown> | undefined;
+      const content = msg?.content;
+      if (typeof content === "string") {
+        initialPrompt = content;
+      } else if (Array.isArray(content)) {
+        const txt = content.find(
+          (b) => b && typeof b === "object" && (b as { type?: string }).type === "text",
+        ) as { text?: string } | undefined;
+        if (txt?.text) initialPrompt = txt.text;
+      }
     }
 
     if (r.type === "assistant") {
@@ -388,6 +412,7 @@ function summarizeSubagentLines(lines: unknown[]): {
     toolCalls,
     toolCallCount,
     assistantMessageCount,
+    initialPrompt,
   };
 }
 
@@ -411,29 +436,59 @@ async function loadSubagents(
   }
 
   // Build a description → parent Agent tool_use lookup from the parent's
-  // events. We scan the raw blocks (since `raw` may have been stripped at
-  // the page boundary, we use the structured `blocks` field instead).
+  // events. Claude Code copies the dispatched prompt's `description`
+  // into both meta.json and the parent tool_use, so exact match is
+  // the most reliable linkage signal when both sides have it.
   type ParentRef = {
     toolUseId: string;
     parentUuid: string;
     runInBackground: boolean;
     prompt?: string;
+    tsMs?: number;
   };
   const byDesc = new Map<string, ParentRef>();
+  // Time-ordered list of every Agent dispatch, for fallback matching
+  // when the subagent's meta.json is missing / has no description
+  // (older Claude Code versions wrote empty meta sidecars).
+  const dispatchesByTs: ParentRef[] = [];
   for (const e of parentEvents) {
     if (e.role !== "tool-call" || e.toolName !== "Agent") continue;
     for (const b of e.blocks) {
       if (b?.type !== "tool_use" || b.name !== "Agent") continue;
       const input = (b.input as Record<string, unknown>) ?? {};
       const desc = typeof input.description === "string" ? input.description : undefined;
-      if (!desc) continue;
-      byDesc.set(desc, {
+      const tsMs = e.timestamp ? Date.parse(e.timestamp) : undefined;
+      const ref: ParentRef = {
         toolUseId: b.id,
         parentUuid: e.uuid ?? "",
         runInBackground: input.run_in_background === true,
         prompt: typeof input.prompt === "string" ? input.prompt : undefined,
-      });
+        tsMs,
+      };
+      if (desc) byDesc.set(desc, ref);
+      if (tsMs !== undefined) dispatchesByTs.push(ref);
     }
+  }
+  dispatchesByTs.sort((a, b) => (a.tsMs ?? 0) - (b.tsMs ?? 0));
+
+  /** Find the most recent parent dispatch at or before a given start
+   *  time, within a ±2s tolerance. Used when description-based
+   *  matching fails (empty meta). Returns undefined if no candidate
+   *  is within the window. */
+  function matchByTime(startMs: number | undefined): ParentRef | undefined {
+    if (startMs === undefined) return undefined;
+    const TOLERANCE_MS = 2_000;
+    let best: ParentRef | undefined;
+    let bestDelta = Infinity;
+    for (const ref of dispatchesByTs) {
+      if (ref.tsMs === undefined) continue;
+      const delta = Math.abs(startMs - ref.tsMs);
+      if (delta < bestDelta && delta <= TOLERANCE_MS) {
+        best = ref;
+        bestDelta = delta;
+      }
+    }
+    return best;
   }
 
   const jsonlFiles = entries.filter((f) => f.startsWith("agent-") && f.endsWith(".jsonl"));
@@ -460,8 +515,34 @@ async function loadSubagents(
       }
 
       const summary = summarizeSubagentLines(lines);
-      const description = meta.description ?? "(no description)";
-      const parentRef = byDesc.get(description);
+
+      // Parent matching has three fallbacks, in order:
+      //   1. Exact description match (meta.json ↔ parent tool_use.input.description)
+      //   2. Timestamp-based match (±2s of parent dispatch ts)
+      //   3. No match — just use whatever meta / initial prompt we have
+      const metaDesc = meta.description && meta.description.trim().length > 0
+        ? meta.description
+        : undefined;
+      const parentRef = metaDesc
+        ? byDesc.get(metaDesc)
+        : matchByTime(summary.startMs);
+
+      // Prefer meta.description → else the parent tool_use description
+      // (we don't have direct access, but the matched parent's prompt
+      // often starts with a recognizable header) → else the first line
+      // of the initial prompt truncated → fall back to "(no description)".
+      const description =
+        metaDesc ??
+        (summary.initialPrompt
+          ? summary.initialPrompt
+              .replace(/\s+/g, " ")
+              .trim()
+              .slice(0, 80)
+          : "(no description)");
+
+      // Prompt: prefer the parent tool_use's input.prompt (most
+      // accurate), else the subagent's own first user line.
+      const prompt = parentRef?.prompt ?? summary.initialPrompt;
 
       const startTOffsetMs =
         sessionStartMs !== undefined && summary.startMs !== undefined
@@ -490,7 +571,7 @@ async function loadSubagents(
         parentUuid: parentRef?.parentUuid,
         parentToolUseId: parentRef?.toolUseId,
         runInBackground: parentRef?.runInBackground,
-        prompt: parentRef?.prompt,
+        prompt,
         finalPreview: summary.finalPreview,
         finalText: summary.finalText,
         model: summary.model,
