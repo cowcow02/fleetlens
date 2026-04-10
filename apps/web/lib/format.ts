@@ -65,9 +65,13 @@ export function projectSlug(projectDir: string): string {
   return projectDir;
 }
 
+/**
+ * Show just the last 2 path segments: "kipwise/agentic-knowledge-system".
+ * Cleaner than the full path for dashboard display. Full path is still
+ * available via title/tooltip on hover.
+ */
 export function prettyProjectName(projectName: string): string {
-  // Trim leading /Users/$HOME for brevity
-  const m = projectName.match(/^\/Users\/[^/]+\/(.+)$/);
-  if (m) return m[1]!;
-  return projectName;
+  const parts = projectName.split("/").filter(Boolean);
+  if (parts.length <= 2) return parts.join("/");
+  return parts.slice(-2).join("/");
 }

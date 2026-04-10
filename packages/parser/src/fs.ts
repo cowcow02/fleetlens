@@ -195,12 +195,14 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
   try {
     const rawLines = await readJsonlFile(f.fullPath);
     const { meta } = parseTranscript(rawLines);
+    // Use the real cwd from the JSONL when available — the decoded
+    // dir name is lossy (dashes in folder names become slashes).
     const full: SessionMeta = {
       ...meta,
       id: sessionIdFromFileName(f.fileName),
       filePath: f.fullPath,
       projectDir: f.projectDir,
-      projectName: decodeProjectName(f.projectDir),
+      projectName: meta.cwd ?? decodeProjectName(f.projectDir),
     };
     metaCache.set(f.fullPath, { meta: full, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
     return full;
@@ -223,7 +225,7 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
       id: sessionIdFromFileName(f.fileName),
       filePath: f.fullPath,
       projectDir: f.projectDir,
-      projectName: decodeProjectName(f.projectDir),
+      projectName: meta.cwd ?? decodeProjectName(f.projectDir),
       events,
     };
     detailCache.set(f.fullPath, { detail, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
@@ -627,10 +629,22 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
     if (f.mtimeMs > cur.lastActiveMs) cur.lastActiveMs = f.mtimeMs;
     byProject.set(f.projectDir, cur);
   }
+  // Try to resolve the real cwd from the meta cache — any cached
+  // session in this projectDir will have the correct cwd from the
+  // JSONL. This avoids the lossy dash-to-slash decode.
+  const cwdForProject = (dir: string): string | undefined => {
+    for (const [path, entry] of metaCache.entries()) {
+      if (entry.meta.projectDir === dir && entry.meta.cwd) {
+        return entry.meta.cwd;
+      }
+    }
+    return undefined;
+  };
+
   return Array.from(byProject.entries())
     .map(([projectDir, { count, lastActiveMs }]) => ({
       projectDir,
-      projectName: decodeProjectName(projectDir),
+      projectName: cwdForProject(projectDir) ?? decodeProjectName(projectDir),
       sessionCount: count,
       lastActiveMs,
     }))
