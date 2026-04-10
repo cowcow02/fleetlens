@@ -5,8 +5,13 @@
   --font-mono: "SF Mono", "Fira Code", "JetBrains Mono", "Cascadia Code", monospace;
 }
 
-/* Dark-only palette — warm-neutral surfaces with teal accent. */
-:root {
+/* ================================================================= */
+/*  Themes — dark is default, light activates via [data-theme="light"] */
+/* ================================================================= */
+
+/* Dark (default) — warm-neutral surfaces with teal accent. */
+:root,
+[data-theme="dark"] {
   --background: #1a1a1f;
   --foreground: #e8e8f0;
 
@@ -29,6 +34,47 @@
   --af-text: #e8e8f0;
   --af-text-secondary: #9090a0;
   --af-text-tertiary: #707078;
+
+  /* Heatmap cell tones for both modes (see components/heatmap.tsx) */
+  --af-heatmap-0: #2f2f38;
+  --af-heatmap-1: rgba(45, 212, 191, 0.18);
+  --af-heatmap-2: rgba(45, 212, 191, 0.35);
+  --af-heatmap-3: rgba(45, 212, 191, 0.6);
+  --af-heatmap-4: rgba(45, 212, 191, 0.9);
+}
+
+/* Light — warm cream background, muted ink foreground. Matches the
+ * agentfleet prototype palette so users can switch based on ambient
+ * light without losing visual identity. */
+[data-theme="light"] {
+  --background: #fdfbf9;
+  --foreground: #1a1a1a;
+
+  --af-accent: #14b8a6;
+  --af-accent-hover: #0d9488;
+  --af-accent-subtle: rgba(20, 184, 166, 0.12);
+  --af-success: #059669;
+  --af-success-subtle: rgba(5, 150, 105, 0.12);
+  --af-warning: #d97706;
+  --af-warning-subtle: rgba(217, 119, 6, 0.12);
+  --af-danger: #c53030;
+  --af-danger-subtle: rgba(197, 48, 48, 0.12);
+  --af-info: #8168e0;
+  --af-info-subtle: rgba(129, 104, 224, 0.12);
+
+  --af-surface: #f5f1ec;
+  --af-surface-hover: #ede8e0;
+  --af-surface-elevated: #e8e2da;
+  --af-border-subtle: #e8e2da;
+  --af-text: #1a1a1a;
+  --af-text-secondary: #5a544e;
+  --af-text-tertiary: #8a8580;
+
+  --af-heatmap-0: #ede8e0;
+  --af-heatmap-1: rgba(20, 184, 166, 0.22);
+  --af-heatmap-2: rgba(20, 184, 166, 0.4);
+  --af-heatmap-3: rgba(20, 184, 166, 0.65);
+  --af-heatmap-4: rgba(20, 184, 166, 0.95);
 }
 
 html,

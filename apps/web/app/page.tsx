@@ -10,11 +10,13 @@ import {
   detectParallelRuns,
   groupByProject,
   highLevelMetrics,
+  type SessionMeta,
 } from "@claude-sessions/parser";
 import { Heatmap } from "@/components/heatmap";
 import { ActivityChart } from "@/components/activity-chart";
 import { MetricCard } from "@/components/metric-card";
 import { ParallelRunsStrip } from "@/components/parallel-runs-strip";
+import { DateRangeFilter, cutoffMs, parseRange } from "@/components/date-range-filter";
 import { listSessions } from "@/lib/data";
 import { formatDuration, formatTokens, formatRelative, prettyProjectName } from "@/lib/format";
 import { ListTree, Activity, Clock, Zap } from "lucide-react";
@@ -22,12 +24,46 @@ import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardHome() {
-  const sessions = await listSessions();
+function filterByRange<T extends SessionMeta>(sessions: T[], cutoff: number | undefined): T[] {
+  if (cutoff === undefined) return sessions;
+  return sessions.filter((s) => {
+    if (!s.firstTimestamp) return false;
+    const ms = Date.parse(s.firstTimestamp);
+    return !Number.isNaN(ms) && ms >= cutoff;
+  });
+}
+
+export default async function DashboardHome({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>;
+}) {
+  const { range: rangeParam } = await searchParams;
+  const range = parseRange(rangeParam);
+  const cutoff = cutoffMs(range);
+
+  const allSessions = await listSessions();
+  const sessions = filterByRange(allSessions, cutoff);
+
   const metrics = highLevelMetrics(sessions);
   const buckets = dailyActivity(sessions);
   const parallelRuns = detectParallelRuns(sessions, 2);
-  const projects = groupByProject(sessions).slice(0, 8);
+  // Top projects: session count desc with token count as tiebreaker.
+  const projects = groupByProject(sessions)
+    .sort((a, b) => {
+      const byCount = b.metrics.sessionCount - a.metrics.sessionCount;
+      if (byCount !== 0) return byCount;
+      const aTokens =
+        a.metrics.totalTokens.input +
+        a.metrics.totalTokens.output +
+        a.metrics.totalTokens.cacheRead;
+      const bTokens =
+        b.metrics.totalTokens.input +
+        b.metrics.totalTokens.output +
+        b.metrics.totalTokens.cacheRead;
+      return bTokens - aTokens;
+    })
+    .slice(0, 8);
 
   const totalInput =
     metrics.totalTokens.input + metrics.totalTokens.cacheRead + metrics.totalTokens.cacheWrite;
@@ -35,26 +71,46 @@ export default async function DashboardHome() {
   const recentSessions = sessions.slice(0, 6);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 28, maxWidth: 1280 }}>
-      <header>
-        <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>
-          Overview
-        </h1>
-        <p style={{ fontSize: 13, color: "var(--af-text-secondary)", marginTop: 4 }}>
-          Everything happening across your Claude Code projects, read from{" "}
-          <code
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              background: "var(--af-border-subtle)",
-              padding: "1px 6px",
-              borderRadius: 4,
-            }}
-          >
-            ~/.claude/projects
-          </code>
-          .
-        </p>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 28,
+        maxWidth: 1280,
+        padding: "32px 40px",
+      }}
+    >
+      <header
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 18,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>
+            Overview
+          </h1>
+          <p style={{ fontSize: 13, color: "var(--af-text-secondary)", marginTop: 4 }}>
+            {sessions.length} of {allSessions.length} session
+            {allSessions.length === 1 ? "" : "s"}, read from{" "}
+            <code
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                background: "var(--af-border-subtle)",
+                padding: "1px 6px",
+                borderRadius: 4,
+              }}
+            >
+              ~/.claude/projects
+            </code>
+            .
+          </p>
+        </div>
+        <DateRangeFilter current={range} />
       </header>
 
       {/* Metric cards */}
@@ -157,7 +213,13 @@ export default async function DashboardHome() {
         <div className="af-panel">
           <div className="af-panel-header">
             <span>Top projects</span>
-            <Link href="/projects" style={{ fontSize: 11, color: "var(--af-accent)" }}>
+            <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
+              by session count
+            </span>
+            <Link
+              href="/projects"
+              style={{ fontSize: 11, color: "var(--af-accent)", marginLeft: "auto" }}
+            >
               View all →
             </Link>
           </div>
@@ -165,52 +227,76 @@ export default async function DashboardHome() {
             {projects.length === 0 ? (
               <div className="af-empty">No projects yet.</div>
             ) : (
-              projects.map((p) => (
-                <Link
-                  key={p.projectDir}
-                  href={`/projects/${encodeURIComponent(p.projectDir)}`}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr auto auto",
-                    gap: 14,
-                    padding: "10px 18px",
-                    fontSize: 12,
-                    borderBottom: "1px solid var(--af-border-subtle)",
-                    alignItems: "center",
-                  }}
-                >
-                  <div
+              projects.map((p) => {
+                const tokens =
+                  p.metrics.totalTokens.input +
+                  p.metrics.totalTokens.output +
+                  p.metrics.totalTokens.cacheRead +
+                  p.metrics.totalTokens.cacheWrite;
+                return (
+                  <Link
+                    key={p.projectDir}
+                    href={`/projects/${encodeURIComponent(p.projectDir)}`}
                     style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      color: "var(--af-text)",
-                    }}
-                    title={p.projectName}
-                  >
-                    {prettyProjectName(p.projectName)}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "var(--af-text-tertiary)",
-                      fontFamily: "var(--font-mono)",
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto auto auto",
+                      gap: 14,
+                      padding: "10px 18px",
+                      fontSize: 12,
+                      borderBottom: "1px solid var(--af-border-subtle)",
+                      alignItems: "center",
                     }}
                   >
-                    {p.sessions.length} sessions
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: "var(--af-text-tertiary)",
-                      minWidth: 56,
-                      textAlign: "right",
-                    }}
-                  >
-                    {p.lastActiveMs ? formatRelative(new Date(p.lastActiveMs).toISOString()) : "—"}
-                  </div>
-                </Link>
-              ))
+                    <div
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        color: "var(--af-text)",
+                      }}
+                      title={p.projectName}
+                    >
+                      {prettyProjectName(p.projectName)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--af-text-tertiary)",
+                        fontFamily: "var(--font-mono)",
+                        minWidth: 64,
+                        textAlign: "right",
+                      }}
+                    >
+                      {p.sessions.length} sess
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--af-text-tertiary)",
+                        fontFamily: "var(--font-mono)",
+                        minWidth: 52,
+                        textAlign: "right",
+                      }}
+                      title={`${tokens.toLocaleString()} tokens`}
+                    >
+                      {formatTokens(tokens)}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--af-text-tertiary)",
+                        minWidth: 56,
+                        textAlign: "right",
+                      }}
+                      suppressHydrationWarning
+                    >
+                      {p.lastActiveMs
+                        ? formatRelative(new Date(p.lastActiveMs).toISOString())
+                        : "—"}
+                    </div>
+                  </Link>
+                );
+              })
             )}
           </div>
         </div>

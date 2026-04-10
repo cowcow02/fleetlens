@@ -57,7 +57,15 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
     metrics.totalTokens.cacheWrite;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 28, maxWidth: 1280 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 28,
+        maxWidth: 1280,
+        padding: "32px 40px",
+      }}
+    >
       {/* Breadcrumb */}
       <div style={{ fontSize: 12, color: "var(--af-text-tertiary)" }}>
         <Link

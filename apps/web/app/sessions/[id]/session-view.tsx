@@ -153,29 +153,17 @@ export function SessionView({ session }: { session: SessionDetail }) {
   // Run after every render that changed scrollIntent — the DOM is now
   // guaranteed up-to-date (including any drawer grid reflow).
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      (window as unknown as { __slDiag: unknown }).__slDiag = {
-        scrollIntent,
-        selectedIndex,
-        refKeys: Object.keys(rowRefs.current).length,
-        elExists: selectedIndex !== null && !!rowRefs.current[selectedIndex],
-      };
-    }
     if (selectedIndex === null) return;
     const el = rowRefs.current[selectedIndex];
     if (!el) return;
-    const main = el.closest("main") as HTMLElement | null;
-    const elRect = el.getBoundingClientRect();
-    const mainRect = main?.getBoundingClientRect();
-    const elCenterInMain = mainRect && main ? elRect.top - mainRect.top + main.scrollTop : 0;
-    const target = main ? elCenterInMain - (main.clientHeight + headerH) / 2 : 0;
-    if (!main) return;
-    // Direct instant scroll — smooth scrollTo and rAF tweens both no-op
-    // on this element for reasons I can't reproduce in isolation. Good
-    // enough for the lab: jump the transcript to the target row.
-    main.scrollTop = Math.max(0, target);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scrollIntent]);
+
+    // scrollIntoView correctly handles content-visibility: auto on the
+    // target's ancestors/siblings (it forces layout-measure of the row,
+    // unlike manual offsetTop math which reads the stale placeholder
+    // size of unvisited rows). Use "start" + a scroll-margin-top in CSS
+    // to land the row just below the sticky header.
+    el.scrollIntoView({ block: "start", behavior: "auto" });
+  }, [scrollIntent, selectedIndex]);
 
   const { events, durationMs, totalUsage, model, eventCount, projectName } = session;
 
@@ -260,13 +248,13 @@ export function SessionView({ session }: { session: SessionDetail }) {
   const totalInput = totalUsage.input + totalUsage.cacheRead + totalUsage.cacheWrite;
 
   return (
-    <div style={{ margin: "-32px -40px", padding: 0 }}>
+    <div style={{ padding: 0 }}>
       {/* ============================ STICKY HEADER ============================ */}
       <div
         ref={headerRef}
         style={{
           position: "sticky",
-          top: -32,
+          top: 0,
           zIndex: 30,
           background: "var(--background)",
           borderBottom: "1px solid var(--af-border-subtle)",
@@ -2085,11 +2073,6 @@ function CollapsedTurnRow({
         borderBottom: "1px solid var(--af-border-subtle)",
         transition: "background 0.08s",
         scrollMarginTop: stickyOffset,
-        // Browser-level culling. Collapsed turns are tall (first msg +
-        // steps + conclusion + bottom bar), so reserve more height than
-        // a plain transcript row.
-        contentVisibility: "auto",
-        containIntrinsicSize: "auto 320px",
       }}
     >
       {/* Col 1 — Chevron (grid column 1). Aligns with the 20px empty
@@ -2645,12 +2628,6 @@ function TranscriptRow({
             : "transparent",
         transition: "background 0.08s",
         scrollMarginTop: stickyOffset,
-        // Browser-level row culling: skip paint/layout for off-screen
-        // rows. The browser only does the full render work when the row
-        // enters the viewport. `contain-intrinsic-size` tells it how much
-        // height to reserve so the scroll bar is accurate before render.
-        contentVisibility: "auto",
-        containIntrinsicSize: "auto 48px",
       }}
       onMouseEnter={(e) => {
         if (!selected) e.currentTarget.style.background = "var(--af-surface-hover)";
@@ -2916,8 +2893,6 @@ function DebugList({ events }: { events: SessionEvent[] }) {
           style={{
             borderBottom: "1px solid var(--af-border-subtle)",
             padding: "8px 12px",
-            contentVisibility: "auto",
-            containIntrinsicSize: "auto 40px",
           }}
         >
           <summary

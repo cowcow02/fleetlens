@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Sidebar } from "@/components/sidebar";
+import { ThemeScript } from "@/components/theme-toggle";
 import { listProjects, walkJsonlFiles } from "@claude-sessions/parser/fs";
 import "./globals.css";
 
@@ -18,7 +19,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const totalSessions = allFiles.length;
 
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Runs before React hydrates so there's no FOUC on page load. */}
+        <ThemeScript />
+      </head>
       <body>
         <div style={{ display: "flex", minHeight: "100vh" }}>
           <Sidebar projects={projects} totalSessions={totalSessions} />
@@ -26,8 +31,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             style={{
               flex: 1,
               minWidth: 0,
-              padding: "32px 40px",
+              padding: 0,
               overflow: "auto",
+              // Let the page decide its own padding so pages with a
+              // sticky header (session detail) can own `top: 0` without
+              // the fragile negative-margin trick.
             }}
           >
             {children}

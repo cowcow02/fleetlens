@@ -107,7 +107,6 @@ export function Heatmap({
                   height={cellSize}
                   rx={2.5}
                   ry={2.5}
-                  fill={fill}
                   stroke={val > 0 ? "rgba(255,255,255,0.04)" : "transparent"}
                   onMouseEnter={(e) => {
                     const rect = (e.currentTarget as SVGRectElement).getBoundingClientRect();
@@ -118,7 +117,12 @@ export function Heatmap({
                     });
                   }}
                   onMouseLeave={() => setHover(null)}
-                  style={{ cursor: val > 0 ? "pointer" : "default" }}
+                  // Use `style.fill` not the `fill` attribute — React does
+                  // not expand CSS custom properties (var(--…)) inside the
+                  // SVG presentation attribute, but it does resolve them in
+                  // inline styles. So all dots render as the placeholder /
+                  // first resolved var if we set `fill={...}` directly.
+                  style={{ cursor: val > 0 ? "pointer" : "default", fill }}
                 />
               );
             }),
@@ -146,7 +150,7 @@ export function Heatmap({
               width: 11,
               height: 11,
               borderRadius: 2.5,
-              background: colorForValue(frac * max, max),
+              background: colorForValue(Math.max(1, frac * max), max),
               display: "inline-block",
             }}
           />
@@ -187,7 +191,7 @@ export function Heatmap({
 }
 
 function colorForValue(val: number, max: number): string {
-  if (val <= 0 || max <= 0) return "var(--af-border-subtle)";
+  if (val <= 0 || max <= 0) return "var(--af-heatmap-0)";
   const frac = Math.min(1, val / max);
   // Clamp to 5 discrete buckets for a GitHub feel
   let bucket = 0;
@@ -195,15 +199,8 @@ function colorForValue(val: number, max: number): string {
   else if (frac > 0.5) bucket = 3;
   else if (frac > 0.25) bucket = 2;
   else if (frac > 0) bucket = 1;
-
-  const colors = [
-    "var(--af-border-subtle)",
-    "rgba(45, 212, 191, 0.18)",
-    "rgba(45, 212, 191, 0.35)",
-    "rgba(45, 212, 191, 0.6)",
-    "rgba(45, 212, 191, 0.9)",
-  ];
-  return colors[bucket]!;
+  // CSS vars so the cells adapt to light/dark mode automatically.
+  return `var(--af-heatmap-${bucket})`;
 }
 
 function parseDay(s: string): Date {

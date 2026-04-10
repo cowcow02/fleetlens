@@ -13,6 +13,7 @@ import {
   Activity,
 } from "lucide-react";
 import { formatRelative, prettyProjectName } from "@/lib/format";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export type ProjectRef = {
   projectDir: string;
@@ -195,13 +196,19 @@ export function Sidebar({
 
       <div
         style={{
-          padding: "10px 20px",
+          padding: "10px 16px 10px 20px",
           fontSize: 10,
           color: "var(--af-text-tertiary)",
           borderTop: "1px solid var(--af-border-subtle)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
         }}
       >
-        {totalSessions} sessions · {projects.length} projects
+        <span style={{ flex: 1, minWidth: 0 }}>
+          {totalSessions} sessions · {projects.length} projects
+        </span>
+        <ThemeToggle />
       </div>
     </aside>
   );
