@@ -334,6 +334,144 @@ export function highLevelMetrics(sessions: SessionMeta[]): HighLevelMetrics {
 }
 
 /* ================================================================= */
+/*  Active segments — for Gantt chart visualization                  */
+/* ================================================================= */
+
+export type ActiveSegment = {
+  startMs: number;
+  endMs: number;
+};
+
+/**
+ * Compute contiguous "active" segments for a session from its events.
+ * An active segment is a run of events where no gap exceeds the idle
+ * threshold (default 3 min). Long gaps split the session into multiple
+ * segments — so a 4-hour session with a 2-hour lunch break becomes
+ * two short segments.
+ */
+export function computeActiveSegments(
+  events: { timestamp?: string }[],
+  idleThresholdMs = 3 * 60 * 1000,
+): ActiveSegment[] {
+  const timed = events
+    .filter((e) => e.timestamp)
+    .map((e) => Date.parse(e.timestamp!))
+    .filter((ms) => !Number.isNaN(ms))
+    .sort((a, b) => a - b);
+
+  if (timed.length === 0) return [];
+
+  const segments: ActiveSegment[] = [];
+  let segStart = timed[0]!;
+  let segEnd = timed[0]!;
+
+  for (let i = 1; i < timed.length; i++) {
+    const t = timed[i]!;
+    if (t - segEnd > idleThresholdMs) {
+      segments.push({ startMs: segStart, endMs: segEnd });
+      segStart = t;
+    }
+    segEnd = t;
+  }
+  segments.push({ startMs: segStart, endMs: segEnd });
+  return segments;
+}
+
+export type GanttSession = {
+  id: string;
+  projectName: string;
+  projectDir: string;
+  firstUserPreview?: string;
+  model?: string;
+  segments: ActiveSegment[];
+  startMs: number;
+  endMs: number;
+  activeMs: number;
+  totalUsage: Usage;
+};
+
+export type GanttDay = {
+  date: string;
+  sessions: GanttSession[];
+  dayStartMs: number;
+  dayEndMs: number;
+  peakActiveParallelism: number;
+};
+
+/**
+ * Build Gantt data for a specific day. Only sessions with at least one
+ * active segment overlapping the target day are included.
+ */
+export function buildGanttDay(
+  sessions: {
+    id: string;
+    projectName: string;
+    projectDir: string;
+    firstUserPreview?: string;
+    model?: string;
+    events: { timestamp?: string }[];
+    totalUsage: Usage;
+  }[],
+  date: string,
+): GanttDay {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const dayStartMs = new Date(y, m - 1, d).getTime();
+  const dayEndMs = new Date(y, m - 1, d + 1).getTime();
+
+  const ganttSessions: GanttSession[] = [];
+
+  for (const s of sessions) {
+    const allSegments = computeActiveSegments(s.events);
+    const daySegments = allSegments
+      .filter((seg) => seg.endMs > dayStartMs && seg.startMs < dayEndMs)
+      .map((seg) => ({
+        startMs: Math.max(seg.startMs, dayStartMs),
+        endMs: Math.min(seg.endMs, dayEndMs),
+      }));
+
+    if (daySegments.length === 0) continue;
+
+    const startMs = Math.min(...daySegments.map((seg) => seg.startMs));
+    const endMs = Math.max(...daySegments.map((seg) => seg.endMs));
+    const activeMs = daySegments.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
+
+    ganttSessions.push({
+      id: s.id,
+      projectName: s.projectName,
+      projectDir: s.projectDir,
+      firstUserPreview: s.firstUserPreview,
+      model: s.model,
+      segments: daySegments,
+      startMs,
+      endMs,
+      activeMs,
+      totalUsage: s.totalUsage,
+    });
+  }
+
+  ganttSessions.sort((a, b) => a.startMs - b.startMs);
+
+  // Peak active parallelism: sweep-line over segment boundaries
+  type Evt = { ms: number; delta: number };
+  const evts: Evt[] = [];
+  for (const s of ganttSessions) {
+    for (const seg of s.segments) {
+      evts.push({ ms: seg.startMs, delta: +1 });
+      evts.push({ ms: seg.endMs, delta: -1 });
+    }
+  }
+  evts.sort((a, b) => a.ms - b.ms || b.delta - a.delta);
+  let active = 0;
+  let peak = 0;
+  for (const e of evts) {
+    active += e.delta;
+    if (active > peak) peak = active;
+  }
+
+  return { date, sessions: ganttSessions, dayStartMs, dayEndMs, peakActiveParallelism: peak };
+}
+
+/* ================================================================= */
 /*  Project rollups                                                  */
 /* ================================================================= */
 

@@ -169,8 +169,25 @@ export function SessionView({ session }: { session: SessionDetail }) {
     const update = () => {
       raf = 0;
       const y = main.scrollTop;
-      // Expand hysteresis: collapse at >80, expand when back under 30.
-      setCollapsed((prev) => (prev ? y > 30 : y > 80));
+      setCollapsed((prev) => {
+        // Only collapse when scrolling well past the header content,
+        // only expand when at the very top. When toggling, compensate
+        // main.scrollTop by the header height delta so the content
+        // doesn't jump and trigger the opposite threshold.
+        const next = prev ? y > 30 : y > 120;
+        if (next !== prev && el) {
+          // Measure before and schedule a post-render compensation.
+          const hBefore = el.offsetHeight;
+          requestAnimationFrame(() => {
+            const hAfter = el.offsetHeight;
+            const delta = hBefore - hAfter;
+            if (Math.abs(delta) > 10) {
+              main.scrollTop = Math.max(0, main.scrollTop + delta);
+            }
+          });
+        }
+        return next;
+      });
     };
     const onScroll = () => {
       if (raf) return;
@@ -507,6 +524,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
           onSelect={scrollToIndex}
           headerOffset={headerH}
           subagents={session.subagents}
+          collapsed={collapsed}
           selectedSubagentId={selectedSubagentId}
           onSelectSubagent={(id) => {
             setSelectedSubagentId(id);
@@ -1035,6 +1053,7 @@ function Minimap({
   onSelect,
   headerOffset,
   subagents,
+  collapsed,
   selectedSubagentId,
   onSelectSubagent,
 }: {
@@ -1044,6 +1063,7 @@ function Minimap({
   onSelect: (i: number) => void;
   headerOffset: number;
   subagents?: SubagentRun[];
+  collapsed?: boolean;
   selectedSubagentId?: string | null;
   onSelectSubagent?: (id: string | null) => void;
 }) {
@@ -1590,6 +1610,7 @@ function Minimap({
           turn={hover.turn}
           idleMs={hover.idleMs}
           subagent={hover.subagent}
+          openDown={collapsed}
         />
       )}
 
@@ -1676,6 +1697,7 @@ function MinimapHoverCard({
   turn,
   idleMs,
   subagent,
+  openDown,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   clientX: number;
@@ -1683,10 +1705,16 @@ function MinimapHoverCard({
   turn?: TurnMegaRow;
   idleMs?: number;
   subagent?: SubagentRun;
+  /** When true, open below the mini-map (collapsed header mode). */
+  openDown?: boolean;
 }) {
   const rect = containerRef.current?.getBoundingClientRect();
   const localX = rect ? clientX - rect.left : 0;
   const left = Math.min(Math.max(localX - 140, 8), (rect?.width ?? 1400) - 300);
+  // Position: normally above (translateY -100%), but below when collapsed.
+  const posStyle = openDown
+    ? { top: "calc(100% + 8px)", left }
+    : { top: -12, left, transform: "translateY(-100%)" };
 
   if (subagent) {
     const startOff = formatOffset(subagent.startTOffsetMs);
@@ -1698,9 +1726,7 @@ function MinimapHoverCard({
       <div
         style={{
           position: "absolute",
-          top: -12,
-          left,
-          transform: "translateY(-100%)",
+          ...posStyle,
           zIndex: 100,
           background: "#0F172A",
           color: "#F1F5F9",
@@ -1802,9 +1828,7 @@ function MinimapHoverCard({
       <div
         style={{
           position: "absolute",
-          top: -12,
-          left,
-          transform: "translateY(-100%)",
+          ...posStyle,
           zIndex: 100,
           background: "#0F172A",
           color: "#F1F5F9",
@@ -1844,9 +1868,7 @@ function MinimapHoverCard({
       <div
         style={{
           position: "absolute",
-          top: -12,
-          left,
-          transform: "translateY(-100%)",
+          ...posStyle,
           zIndex: 100,
           background: "#0F172A",
           color: "#F1F5F9",
