@@ -30,8 +30,10 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Build parser + web
+      - name: Build parser + web (standalone)
         run: pnpm build
+        env:
+          NEXT_OUTPUT: standalone
 
       - name: Prepare CLI package
         run: node scripts/prepare-cli.mjs
