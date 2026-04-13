@@ -1,6 +1,6 @@
 {
   "name": "@claude-lens/web",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Local-only dashboard for Claude Code sessions. Reads ~/.claude/projects/*.jsonl and visualizes agent activity.",
   "license": "MIT",
