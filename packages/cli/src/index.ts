@@ -15,6 +15,11 @@ async function main() {
       await stop();
       break;
     }
+    case "open": {
+      const { open } = await import("./commands/open.js");
+      await open(args.slice(1));
+      break;
+    }
     case "update": {
       const { update } = await import("./commands/update.js");
       await update();
@@ -48,6 +53,7 @@ async function main() {
 Commands:
   start [--port N]                  Start the dashboard server
   stop                              Stop the dashboard server
+  open [page]                       Open dashboard in browser (e.g. 'open usage')
   update                            Update to the latest version
   stats [--live] [-s D] [--days N]  Show token usage statistics
   usage [--save]                    Show Claude Code plan utilization (5h/7d)
