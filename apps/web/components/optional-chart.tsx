@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { usePersistentBoolean } from "@/lib/use-persistent-boolean";
 
 /**
  * Collapsible wrapper for advanced charts that most users don't care about.
- * Preference persists in localStorage so it stays open/closed across navigations.
+ * Preference persists in localStorage (via usePersistentBoolean) and stays
+ * in sync with any other component reading the same key.
  */
 export function OptionalChart({
   storageKey,
@@ -16,36 +18,13 @@ export function OptionalChart({
   label: string;
   children: ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem(storageKey);
-      if (stored === "1") setExpanded(true);
-    } catch {
-      // localStorage might be blocked — fall through to default
-    }
-    setHydrated(true);
-  }, [storageKey]);
-
-  const toggle = () => {
-    setExpanded((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem(storageKey, next ? "1" : "0");
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  };
+  const [expanded, setExpanded, hydrated] = usePersistentBoolean(storageKey, false);
 
   return (
     <div>
       <button
         type="button"
-        onClick={toggle}
+        onClick={() => setExpanded(!expanded)}
         style={{
           display: "inline-flex",
           alignItems: "center",

@@ -1,13 +1,22 @@
+"use client";
+
 import Link from "next/link";
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
+import { usePersistentBoolean } from "@/lib/use-persistent-boolean";
 
 /**
  * Compact current-usage widget for the sidebar. Always visible on every page.
  * Shows the latest snapshot's 5h and 7d utilization with thin progress bars.
+ * The Sonnet row mirrors the same show/hide preference as the main page's
+ * OptionalChart — toggled via the `cclens:usage:show-sonnet` key.
  *
  * For full history and leadership metrics, click through to /usage.
  */
 export function UsageSidebar({ snapshot }: { snapshot: UsageSnapshot | null }) {
+  const [showSonnet, , sonnetHydrated] = usePersistentBoolean(
+    "cclens:usage:show-sonnet",
+    false,
+  );
   if (!snapshot) {
     return (
       <div
@@ -32,8 +41,12 @@ export function UsageSidebar({ snapshot }: { snapshot: UsageSnapshot | null }) {
   const rows: { label: string; window: UsageWindow | null }[] = [
     { label: "5h", window: snapshot.five_hour },
     { label: "7d", window: snapshot.seven_day },
-    { label: "Sonnet 7d", window: snapshot.seven_day_sonnet },
   ];
+  // Only include Sonnet after hydration to avoid a layout flash where
+  // the SSR pass renders it, then the client removes it on hydrate.
+  if (sonnetHydrated && showSonnet) {
+    rows.push({ label: "Sonnet 7d", window: snapshot.seven_day_sonnet });
+  }
 
   return (
     <Link
