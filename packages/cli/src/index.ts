@@ -15,6 +15,11 @@ async function main() {
       await stop();
       break;
     }
+    case "status": {
+      const { status } = await import("./commands/status.js");
+      await status();
+      break;
+    }
     case "web": {
       const { web } = await import("./commands/web.js");
       await web(args.slice(1));
@@ -50,14 +55,21 @@ async function main() {
     case "-h":
       console.log(`Usage: fleetlens <command>
 
-Commands:
-  start [--port N] [--no-open]      Start the dashboard server
-  stop                              Stop the dashboard server
-  web [page] [--no-open]            Open dashboard in browser (e.g. 'web usage')
+Common:
+  start [--port N] [--no-open]      Start dashboard + usage daemon
+  stop                              Stop dashboard + usage daemon
+  status                            Show server + daemon + latest snapshot
   update                            Update to the latest version
-  stats [--live] [-s D] [--days N]  Show token usage statistics
-  usage [--save]                    Show Claude Code plan utilization (5h/7d)
-  daemon <start|stop|status|logs>   Background poller for usage metrics
+
+Terminal:
+  stats [--live] [-s D] [--days N]  Daily token usage table
+  usage [--save]                    Plan utilization (5h/7d) in one shot
+
+Advanced:
+  web [page] [--no-open]            Open dashboard in browser without auto-starting daemon
+  start --no-daemon                 Start only the web server (no daemon)
+  daemon <start|stop|status|logs>   Manage the usage daemon by itself
+
   version                           Print version`);
       break;
     default:

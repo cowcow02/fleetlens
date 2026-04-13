@@ -126,9 +126,11 @@ export function Sidebar({
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em" }}>
-              fleetlens
+              Fleetlens
             </div>
-            <div style={{ fontSize: 11, color: "var(--af-text-tertiary)" }}>local dashboard</div>
+            <div style={{ fontSize: 11, color: "var(--af-text-tertiary)" }}>
+              Claude Code fleet analytics
+            </div>
           </div>
         </div>
       </div>
