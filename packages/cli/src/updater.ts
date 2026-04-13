@@ -50,7 +50,7 @@ function runNpmInstall(): boolean {
 function reExec(): never {
   const result = spawnSync(process.argv[0], process.argv.slice(1), {
     stdio: "inherit",
-    env: { ...process.env, __CCLENS_UPDATED: "1" },
+    env: { ...process.env, __FLEETLENS_UPDATED: "1" },
   });
   process.exit(result.status ?? 0);
 }
@@ -68,11 +68,16 @@ function isDevMode(): boolean {
 
 /**
  * Check for updates and auto-apply if a newer version exists.
- * Called at the start of `cclens start`.
+ * Called at the start of `fleetlens start`.
  */
 export async function checkForUpdate(): Promise<void> {
   if (isDevMode()) return; // skip in local dev
-  if (process.env.__CCLENS_UPDATED === "1") return; // prevent re-exec loop
+  // Legacy __CCLENS_UPDATED kept for backward compat with older installs
+  // that re-exec after self-update.
+  if (
+    process.env.__FLEETLENS_UPDATED === "1" ||
+    process.env.__CCLENS_UPDATED === "1"
+  ) return;
 
   const latest = await fetchLatestVersion();
   if (latest === null) return; // offline or error
@@ -80,13 +85,17 @@ export async function checkForUpdate(): Promise<void> {
   const current = CLI_VERSION;
   if (!shouldUpdate(current, latest)) return;
 
-  console.log(`Updating cclens ${current} → ${latest}...`);
+  console.log(`Updating ${PACKAGE_NAME} ${current} → ${latest}...`);
   const ok = runNpmInstall();
   if (ok) {
     console.log("Updated successfully. Restarting...");
     reExec();
   } else {
-    console.warn("Update failed. Starting with current version.");
+    console.warn(
+      `Update failed. Starting with current version.\n` +
+        `  → Try manually: npm install -g ${PACKAGE_NAME}@latest\n` +
+        `  → Or with sudo if your global npm prefix needs it.`,
+    );
   }
 }
 
@@ -103,7 +112,7 @@ export async function forceUpdate(): Promise<void> {
   }
 
   if (shouldUpdate(current, latest)) {
-    console.log(`Updating cclens ${current} → ${latest}...`);
+    console.log(`Updating ${PACKAGE_NAME} ${current} → ${latest}...`);
   } else {
     console.log(`Already on latest (${current}). Reinstalling...`);
   }
