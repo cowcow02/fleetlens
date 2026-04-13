@@ -59,44 +59,30 @@ export default function UsagePage() {
         <EmptyState />
       ) : (
         <>
-          {/* 7-day window — primary leadership metric */}
-          <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <SectionLabel>7-day cycle — the real license signal</SectionLabel>
+          <UsageChart
+            snapshots={snapshots}
+            seriesKey="seven_day"
+            title="7 day window"
+            windowMs={7 * DAY}
+            colorVar="var(--af-accent)"
+          />
+          <UsageChart
+            snapshots={snapshots}
+            seriesKey="five_hour"
+            title="5 hour window"
+            windowMs={5 * HOUR}
+            colorVar="var(--af-success)"
+          />
+          <OptionalChart storageKey="cclens:usage:show-sonnet" label="Sonnet 7-day window">
             <UsageChart
               snapshots={snapshots}
-              seriesKey="seven_day"
-              title="7 day window (all models)"
+              seriesKey="seven_day_sonnet"
+              title="7 day window (Sonnet)"
               windowMs={7 * DAY}
-              colorVar="var(--af-accent)"
+              colorVar="var(--af-warning)"
             />
-          </section>
-
-          {/* 5h burst control — collapsible, tactical */}
-          <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <SectionLabel>5-hour burst control</SectionLabel>
-            <UsageChart
-              snapshots={snapshots}
-              seriesKey="five_hour"
-              title="5 hour window"
-              windowMs={5 * HOUR}
-              colorVar="var(--af-success)"
-            />
-          </section>
-
-          {/* Sonnet — rarely useful, hidden by default */}
-          <section style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <OptionalChart storageKey="cclens:usage:show-sonnet" label="Sonnet 7-day window">
-              <UsageChart
-                snapshots={snapshots}
-                seriesKey="seven_day_sonnet"
-                title="7 day window (Sonnet)"
-                windowMs={7 * DAY}
-                colorVar="var(--af-warning)"
-              />
-            </OptionalChart>
-          </section>
-
-          <section
+          </OptionalChart>
+          <div
             style={{
               fontSize: 11,
               color: "var(--af-text-tertiary)",
@@ -106,26 +92,9 @@ export default function UsagePage() {
           >
             Last daemon poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
-          </section>
+          </div>
         </>
       )}
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontSize: 10,
-        fontWeight: 600,
-        color: "var(--af-text-tertiary)",
-        textTransform: "uppercase",
-        letterSpacing: "0.06em",
-        marginBottom: 2,
-      }}
-    >
-      {children}
     </div>
   );
 }
