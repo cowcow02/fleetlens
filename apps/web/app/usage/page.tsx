@@ -1,13 +1,15 @@
 /**
- * Claude Code usage page — 5h/7d utilization gauges + per-window burndown charts.
+ * Claude Code usage page — historical utilization analytics.
  *
- * Reads from ~/.cclens/usage.jsonl (written by the cclens daemon).
- * No API endpoint — direct file read on the server.
+ * Current utilization lives in the sidebar (always visible). This page
+ * is dedicated to historical views, trend analysis, and leadership
+ * reporting metrics derived from the daemon's snapshot log.
+ *
+ * Reads from ~/.cclens/usage.jsonl — no API endpoint needed.
  */
 
 import { Activity } from "lucide-react";
 import { readUsageSnapshots, latestUsageSnapshot } from "@/lib/usage-data";
-import { UsageGauges } from "@/components/usage-gauges";
 import { UsageChart } from "@/components/usage-chart";
 import { OptionalChart } from "@/components/optional-chart";
 
@@ -26,7 +28,7 @@ export default function UsagePage() {
         display: "flex",
         flexDirection: "column",
         gap: 28,
-        maxWidth: 1280,
+        maxWidth: 1400,
         padding: "32px 40px",
       }}
     >
@@ -44,7 +46,7 @@ export default function UsagePage() {
           }}
         >
           <Activity size={22} />
-          Claude Code Usage
+          Usage history
         </h1>
         <p
           style={{
@@ -54,7 +56,7 @@ export default function UsagePage() {
             maxWidth: 720,
           }}
         >
-          Plan utilization over rolling 5-hour and 7-day windows. Same numbers Claude Code&apos;s{" "}
+          Historical plan utilization derived from the{" "}
           <code
             style={{
               background: "var(--af-surface)",
@@ -64,9 +66,9 @@ export default function UsagePage() {
               fontSize: 11,
             }}
           >
-            /usage
+            cclens
           </code>{" "}
-          slash command shows.
+          daemon&apos;s snapshot log. Current utilization is always visible in the sidebar.
         </p>
       </header>
 
@@ -74,36 +76,33 @@ export default function UsagePage() {
         <EmptyState />
       ) : (
         <>
-          <section>
-            <SectionLabel>Current</SectionLabel>
-            <UsageGauges snapshot={latest} />
+          {/* 7-day window — primary leadership metric */}
+          <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <SectionLabel>7-day cycle — the real license signal</SectionLabel>
+            <UsageChart
+              snapshots={snapshots}
+              seriesKey="seven_day"
+              title="7 day window (all models)"
+              windowMs={7 * DAY}
+              colorVar="var(--af-accent)"
+            />
           </section>
 
-          <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <SectionLabel>History</SectionLabel>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 16,
-              }}
-            >
-              <UsageChart
-                snapshots={snapshots}
-                seriesKey="five_hour"
-                title="5 hour window"
-                windowMs={5 * HOUR}
-                colorVar="var(--af-success)"
-              />
-              <UsageChart
-                snapshots={snapshots}
-                seriesKey="seven_day"
-                title="7 day window (all)"
-                windowMs={7 * DAY}
-                colorVar="var(--af-accent)"
-              />
-            </div>
-            <OptionalChart storageKey="cclens:usage:show-sonnet" label="Sonnet window">
+          {/* 5h burst control — collapsible, tactical */}
+          <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <SectionLabel>5-hour burst control</SectionLabel>
+            <UsageChart
+              snapshots={snapshots}
+              seriesKey="five_hour"
+              title="5 hour window"
+              windowMs={5 * HOUR}
+              colorVar="var(--af-success)"
+            />
+          </section>
+
+          {/* Sonnet — rarely useful, hidden by default */}
+          <section style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <OptionalChart storageKey="cclens:usage:show-sonnet" label="Sonnet 7-day window">
               <UsageChart
                 snapshots={snapshots}
                 seriesKey="seven_day_sonnet"
@@ -120,8 +119,10 @@ export default function UsagePage() {
               color: "var(--af-text-tertiary)",
               fontFamily: "var(--font-mono)",
             }}
+            suppressHydrationWarning
           >
-            Last updated: {new Date(latest.captured_at).toLocaleString()}
+            Last daemon poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
+            {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
           </section>
         </>
       )}
@@ -138,7 +139,6 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
         color: "var(--af-text-tertiary)",
         textTransform: "uppercase",
         letterSpacing: "0.06em",
-        marginBottom: 12,
       }}
     >
       {children}

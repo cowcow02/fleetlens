@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { formatRelative, prettyProjectName } from "@/lib/format";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { UsageSidebar } from "@/components/usage-sidebar";
+import type { UsageSnapshot } from "@/lib/usage-data";
 
 export type ProjectRef = {
   projectDir: string;
@@ -49,9 +51,11 @@ function savePins(pins: Set<string>) {
 export function Sidebar({
   projects,
   totalSessions,
+  currentUsage,
 }: {
   projects: ProjectRef[];
   totalSessions: number;
+  currentUsage: UsageSnapshot | null;
 }) {
   const pathname = usePathname();
   const [pins, setPins] = useState<Set<string>>(new Set());
@@ -209,6 +213,8 @@ export function Sidebar({
           onTogglePin={togglePin}
         />
       </div>
+
+      <UsageSidebar snapshot={currentUsage} />
 
       <div
         style={{

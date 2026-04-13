@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { Sidebar } from "@/components/sidebar";
 import { LiveRefresher } from "@/components/live-refresher";
 import { listProjects, walkJsonlFiles } from "@claude-lens/parser/fs";
+import { latestUsageSnapshot } from "@/lib/usage-data";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,6 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [projects, allFiles] = await Promise.all([listProjects(), walkJsonlFiles()]);
   const totalSessions = allFiles.length;
+  const currentUsage = latestUsageSnapshot();
 
   // Read the theme cookie set by the client-side ThemeToggle.
   // After the first visit the cookie is always present, so the server
@@ -34,7 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             height: "100vh",
           }}
         >
-          <Sidebar projects={projects} totalSessions={totalSessions} />
+          <Sidebar projects={projects} totalSessions={totalSessions} currentUsage={currentUsage} />
           <main
             style={{
               flex: 1,
