@@ -152,7 +152,9 @@ function reportInstallOutcome(expectedLatest: string): void {
     console.warn(
       `    • reinstall in the correct Node env: 'npm install -g ${PACKAGE_NAME}@latest'`,
     );
-  } else {
+  } else if (verify.installedVersion !== CLI_VERSION) {
+    // Only print the "next invocation" hint when a real upgrade landed
+    // — reinstalling the same version is a no-op to the user.
     console.log(
       `  → This process is still running ${CLI_VERSION}. Next invocation will use ${verify.installedVersion}.`,
     );

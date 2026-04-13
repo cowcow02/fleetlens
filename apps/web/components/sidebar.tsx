@@ -54,10 +54,12 @@ export function Sidebar({
   projects,
   totalSessions,
   currentUsage,
+  version,
 }: {
   projects: ProjectRef[];
   totalSessions: number;
   currentUsage: UsageSnapshot | null;
+  version: string;
 }) {
   const pathname = usePathname();
   const [pins, setPins] = useState<Set<string>>(new Set());
@@ -124,9 +126,30 @@ export function Sidebar({
           >
             <Activity size={16} strokeWidth={2.25} />
           </div>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em" }}>
-              Fleetlens
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 6,
+              }}
+            >
+              <span
+                style={{ fontSize: 14, fontWeight: 700, letterSpacing: "-0.01em" }}
+              >
+                Fleetlens
+              </span>
+              <span
+                style={{
+                  fontSize: 10,
+                  color: "var(--af-text-tertiary)",
+                  fontFamily: "var(--font-mono)",
+                  fontWeight: 500,
+                }}
+                title={`fleetlens ${version}`}
+              >
+                v{version}
+              </span>
             </div>
             <div style={{ fontSize: 11, color: "var(--af-text-tertiary)" }}>
               Claude Code fleet analytics

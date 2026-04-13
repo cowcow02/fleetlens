@@ -5,6 +5,7 @@ import { LiveRefresher } from "@/components/live-refresher";
 import { LiveSessionsWidget, type LiveSessionPick } from "@/components/live-sessions-widget";
 import { listProjects, listSessions, walkJsonlFiles } from "@claude-lens/parser/fs";
 import { latestUsageSnapshot } from "@/lib/usage-data";
+import pkg from "../package.json" with { type: "json" };
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -55,7 +56,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             height: "100vh",
           }}
         >
-          <Sidebar projects={projects} totalSessions={totalSessions} currentUsage={currentUsage} />
+          <Sidebar
+            projects={projects}
+            totalSessions={totalSessions}
+            currentUsage={currentUsage}
+            version={pkg.version}
+          />
           <main
             style={{
               flex: 1,
