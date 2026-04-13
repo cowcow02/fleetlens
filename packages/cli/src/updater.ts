@@ -1,4 +1,6 @@
 import { execSync, spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 declare const CLI_VERSION: string;
 
@@ -46,9 +48,126 @@ function runNpmInstall(): boolean {
   }
 }
 
-/** Re-exec the CLI with the same arguments (after update). */
+/**
+ * After running npm install -g, ask npm where its global prefix is and
+ * read the installed package.json to confirm what actually landed on
+ * disk. Then compare with the currently-running binary path so we can
+ * warn about the classic multi-node-install PATH mismatch.
+ */
+type InstallVerification =
+  | { ok: true; installedVersion: string; installedPath: string }
+  | { ok: false; reason: string };
+
+function verifyInstalledVersion(): InstallVerification {
+  try {
+    const globalRoot = execSync("npm root -g", {
+      encoding: "utf8",
+      timeout: 5_000,
+    }).trim();
+    const pkgPath = join(globalRoot, PACKAGE_NAME, "package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+      version?: string;
+    };
+    if (!pkg.version) {
+      return { ok: false, reason: `no version field in ${pkgPath}` };
+    }
+    return {
+      ok: true,
+      installedVersion: pkg.version,
+      installedPath: join(globalRoot, PACKAGE_NAME),
+    };
+  } catch (err) {
+    return { ok: false, reason: (err as Error).message };
+  }
+}
+
+/** Find which `fleetlens` binary PATH currently resolves to, or null. */
+function currentBinaryPath(): string | null {
+  try {
+    const cmd = process.platform === "win32" ? "where" : "command -v";
+    return execSync(`${cmd} ${PACKAGE_NAME}`, {
+      encoding: "utf8",
+      timeout: 3_000,
+    }).trim().split("\n")[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Print a post-install report explaining what was installed where and
+ * whether the user's shell is likely to pick up the new version. This
+ * turns the confusing "Updated to X.Y.Z but --version still says old"
+ * situation into an explicit, actionable message.
+ */
+function reportInstallOutcome(expectedLatest: string): void {
+  const verify = verifyInstalledVersion();
+  if (!verify.ok) {
+    console.log(
+      `\nnpm install succeeded, but I couldn't verify the installed version`,
+    );
+    console.log(`  (${verify.reason})`);
+    console.log(
+      `  → Run 'fleetlens --version' in a new shell to confirm.`,
+    );
+    return;
+  }
+
+  console.log(
+    `\nInstalled: ${PACKAGE_NAME}@${verify.installedVersion}  at ${verify.installedPath}`,
+  );
+
+  if (verify.installedVersion !== expectedLatest) {
+    console.warn(
+      `  ⚠  Expected ${expectedLatest} but got ${verify.installedVersion} — npm may have cached an older tarball.`,
+    );
+  }
+
+  // Compare with the currently-running process's path so we can warn
+  // about the "multiple node installs, wrong PATH" trap.
+  const runningPath = process.argv[1] ?? "";
+  const pathResolved = currentBinaryPath();
+
+  if (pathResolved && !pathResolved.startsWith(verify.installedPath)) {
+    console.warn(
+      `\n⚠  Your shell resolves '${PACKAGE_NAME}' to a DIFFERENT location:`,
+    );
+    console.warn(`    PATH target:   ${pathResolved}`);
+    console.warn(`    Just installed: ${verify.installedPath}`);
+    console.warn(
+      `  This usually means you have multiple Node installs (nvm, homebrew,`,
+    );
+    console.warn(`  system). Start a new shell from the matching Node env, or:`);
+    console.warn(`    • run 'hash -r' (zsh/bash) to clear the command cache`);
+    console.warn(`    • check 'which -a ${PACKAGE_NAME}' to see all copies`);
+    console.warn(
+      `    • reinstall in the correct Node env: 'npm install -g ${PACKAGE_NAME}@latest'`,
+    );
+  } else {
+    console.log(
+      `  → This process is still running ${CLI_VERSION}. Next invocation will use ${verify.installedVersion}.`,
+    );
+  }
+  // Silence unused-var warning for runningPath — kept for future use.
+  void runningPath;
+}
+
+/**
+ * Re-exec the CLI with the same arguments (after update). Prefers the
+ * freshly-installed binary at `<npm root -g>/<pkg>/dist/index.js` if we
+ * can find it — this bypasses PATH/shell-hash issues and guarantees the
+ * next run really is the new version, even when the user has multiple
+ * Node installs.
+ */
 function reExec(): never {
-  const result = spawnSync(process.argv[0], process.argv.slice(1), {
+  const verify = verifyInstalledVersion();
+  // Default: re-run whatever this process was launched as.
+  let script = process.argv[1] ?? "";
+  if (verify.ok) {
+    const candidate = join(verify.installedPath, "dist", "index.js");
+    if (existsSync(candidate)) script = candidate;
+  }
+  const result = spawnSync(process.argv[0], [script, ...process.argv.slice(2)], {
     stdio: "inherit",
     env: { ...process.env, __FLEETLENS_UPDATED: "1" },
   });
@@ -88,7 +207,8 @@ export async function checkForUpdate(): Promise<void> {
   console.log(`Updating ${PACKAGE_NAME} ${current} → ${latest}...`);
   const ok = runNpmInstall();
   if (ok) {
-    console.log("Updated successfully. Restarting...");
+    reportInstallOutcome(latest);
+    console.log("\nRestarting with the new version...");
     reExec();
   } else {
     console.warn(
@@ -120,9 +240,11 @@ export async function forceUpdate(): Promise<void> {
   // Always attempt install (useful if installation is corrupted)
   const ok = runNpmInstall();
   if (ok) {
-    console.log(shouldUpdate(current, latest) ? `Updated to ${latest}.` : "Reinstall complete.");
+    reportInstallOutcome(latest);
   } else {
     console.error("Update failed.");
+    console.error(`  → Try manually: npm install -g ${PACKAGE_NAME}@latest`);
+    console.error(`  → Or with sudo if your global npm prefix needs it.`);
     process.exit(1);
   }
 }
