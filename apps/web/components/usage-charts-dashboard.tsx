@@ -225,6 +225,7 @@ function ExpandedModal({
               seriesKey={config.key}
               startMs={resolved.startMs}
               endMs={resolved.endMs}
+              windowMs={config.windowMs}
               colorVar={config.colorVar}
             />
           )}

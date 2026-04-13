@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-export type RangePreset = "current" | "7d" | "30d" | "90d" | "custom";
+export type RangePreset = "current" | "24h" | "7d" | "30d" | "90d" | "custom";
 
 export type DateRange = {
   preset: RangePreset;
@@ -12,10 +12,12 @@ export type DateRange = {
   endMs?: number;
 };
 
-const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 
 const PRESETS: { key: RangePreset; label: string }[] = [
   { key: "current", label: "Current cycle" },
+  { key: "24h", label: "24H" },
   { key: "7d", label: "7D" },
   { key: "30d", label: "30D" },
   { key: "90d", label: "90D" },
@@ -27,6 +29,8 @@ export function resolveRange(range: DateRange): { startMs?: number; endMs?: numb
   switch (range.preset) {
     case "current":
       return {};
+    case "24h":
+      return { startMs: now - 24 * HOUR, endMs: now };
     case "7d":
       return { startMs: now - 7 * DAY, endMs: now };
     case "30d":
@@ -46,30 +50,36 @@ export function DateRangePicker({
   onChange: (next: DateRange) => void;
 }) {
   const [customStart, setCustomStart] = useState<string>(() =>
-    value.startMs ? toDateInputValue(value.startMs) : toDateInputValue(Date.now() - 7 * DAY),
+    toDatetimeLocal(value.startMs ?? Date.now() - 7 * DAY),
   );
   const [customEnd, setCustomEnd] = useState<string>(() =>
-    value.endMs ? toDateInputValue(value.endMs) : toDateInputValue(Date.now()),
+    toDatetimeLocal(value.endMs ?? Date.now()),
   );
+
+  // Auto-apply when the user changes custom datetime inputs.
+  useEffect(() => {
+    if (value.preset !== "custom") return;
+    const startMs = fromDatetimeLocal(customStart);
+    const endMs = fromDatetimeLocal(customEnd);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs)) return;
+    if (startMs >= endMs) return;
+    // Only fire if something actually changed.
+    if (startMs !== value.startMs || endMs !== value.endMs) {
+      onChange({ preset: "custom", startMs, endMs });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customStart, customEnd, value.preset]);
 
   const selectPreset = (preset: RangePreset) => {
     if (preset === "custom") {
       onChange({
         preset,
-        startMs: fromDateInputValue(customStart),
-        endMs: fromDateInputValue(customEnd),
+        startMs: fromDatetimeLocal(customStart),
+        endMs: fromDatetimeLocal(customEnd),
       });
     } else {
       onChange({ preset });
     }
-  };
-
-  const applyCustom = () => {
-    onChange({
-      preset: "custom",
-      startMs: fromDateInputValue(customStart),
-      endMs: fromDateInputValue(customEnd),
-    });
   };
 
   return (
@@ -116,41 +126,25 @@ export function DateRangePicker({
       {value.preset === "custom" && (
         <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
           <input
-            type="date"
+            type="datetime-local"
             value={customStart}
             onChange={(e) => setCustomStart(e.target.value)}
-            style={datePickerStyle}
+            style={datetimeInputStyle}
           />
           <span style={{ fontSize: 11, color: "var(--af-text-tertiary)" }}>→</span>
           <input
-            type="date"
+            type="datetime-local"
             value={customEnd}
             onChange={(e) => setCustomEnd(e.target.value)}
-            style={datePickerStyle}
+            style={datetimeInputStyle}
           />
-          <button
-            type="button"
-            onClick={applyCustom}
-            style={{
-              padding: "5px 12px",
-              fontSize: 11,
-              fontWeight: 500,
-              background: "var(--af-accent-subtle)",
-              color: "var(--af-accent)",
-              border: "1px solid var(--af-accent-subtle)",
-              borderRadius: 5,
-              cursor: "pointer",
-            }}
-          >
-            Apply
-          </button>
         </div>
       )}
     </div>
   );
 }
 
-const datePickerStyle: React.CSSProperties = {
+const datetimeInputStyle: React.CSSProperties = {
   padding: "5px 8px",
   fontSize: 11,
   background: "var(--background)",
@@ -160,15 +154,18 @@ const datePickerStyle: React.CSSProperties = {
   fontFamily: "var(--font-mono)",
 };
 
-function toDateInputValue(ms: number): string {
+/** Format a ms timestamp as YYYY-MM-DDTHH:MM for <input type="datetime-local">. */
+function toDatetimeLocal(ms: number): string {
   const d = new Date(ms);
   const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${mo}-${da}T${h}:${mi}`;
 }
 
-function fromDateInputValue(value: string): number {
-  const [y, m, d] = value.split("-").map(Number) as [number, number, number];
-  return new Date(y, m - 1, d).getTime();
+function fromDatetimeLocal(value: string): number {
+  const d = new Date(value);
+  return d.getTime();
 }
