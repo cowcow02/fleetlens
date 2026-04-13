@@ -1,6 +1,6 @@
 import { execSync, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 declare const CLI_VERSION: string;
 
@@ -123,14 +123,23 @@ function reportInstallOutcome(expectedLatest: string): void {
     );
   }
 
-  // Compare with the currently-running process's path so we can warn
-  // about the "multiple node installs, wrong PATH" trap.
-  const runningPath = process.argv[1] ?? "";
+  // Compare with the currently-running process's PATH resolution so we
+  // can warn about the "multiple node installs, wrong PATH" trap.
+  //
+  // The tricky bit: `which fleetlens` returns the bin SYMLINK path
+  // (e.g. `<prefix>/bin/fleetlens`), while `npm root -g` returns the
+  // package dir (`<prefix>/lib/node_modules/fleetlens`). Those are
+  // siblings, not parent/child — a naive `startsWith` check yields a
+  // false positive on every normal install. We have to follow the
+  // symlink (realpath) and see if it lands inside the package dir.
   const pathResolved = currentBinaryPath();
+  const sameInstall = pathResolved
+    ? resolvesIntoPackage(pathResolved, verify.installedPath)
+    : true; // no 'which' result → don't warn, we can't compare
 
-  if (pathResolved && !pathResolved.startsWith(verify.installedPath)) {
+  if (!sameInstall && pathResolved) {
     console.warn(
-      `\n⚠  Your shell resolves '${PACKAGE_NAME}' to a DIFFERENT location:`,
+      `\n⚠  Your shell resolves '${PACKAGE_NAME}' to a DIFFERENT install:`,
     );
     console.warn(`    PATH target:   ${pathResolved}`);
     console.warn(`    Just installed: ${verify.installedPath}`);
@@ -148,8 +157,29 @@ function reportInstallOutcome(expectedLatest: string): void {
       `  → This process is still running ${CLI_VERSION}. Next invocation will use ${verify.installedVersion}.`,
     );
   }
-  // Silence unused-var warning for runningPath — kept for future use.
-  void runningPath;
+}
+
+/**
+ * Return true if `binPath` (typically `<prefix>/bin/<pkg>`, a symlink)
+ * ultimately resolves into `packagePath` (the npm package dir). Handles
+ * the normal layout where bin is a symlink into the package, and the
+ * less common Windows shim layout where it isn't.
+ */
+function resolvesIntoPackage(binPath: string, packagePath: string): boolean {
+  // Follow symlinks — on Unix, the bin entry is symlinked to a file
+  // INSIDE packagePath.
+  try {
+    const real = realpathSync(binPath);
+    if (real.startsWith(packagePath)) return true;
+  } catch {
+    // realpath failed — fall through to prefix comparison
+  }
+  // Fallback: compare the npm prefix inferred from each path.
+  //   <prefix>/bin/<pkg>                    → prefix = dirname × 2
+  //   <prefix>/lib/node_modules/<pkg>       → prefix = dirname × 3
+  const binPrefix = dirname(dirname(binPath));
+  const installPrefix = dirname(dirname(dirname(packagePath)));
+  return binPrefix === installPrefix;
 }
 
 /**
