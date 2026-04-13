@@ -13,7 +13,7 @@
  */
 
 import { setTimeout as sleep } from "node:timers/promises";
-import { readdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -94,12 +94,42 @@ async function pickFirstSessionId() {
   return null;
 }
 
-async function pickFirstProjectDir() {
+/**
+ * Project URL slugs are now canonical cwd paths (worktrees rolled up to
+ * their parent repo), not raw filesystem dirs. To build a valid URL we
+ * need to read a session file and pull its real cwd out of the JSONL.
+ */
+function canonicalProjectName(cwd) {
+  const wtIdx = cwd.lastIndexOf("/.worktrees/");
+  return wtIdx >= 0 ? cwd.slice(0, wtIdx) : cwd;
+}
+
+async function pickFirstProjectCanonicalPath() {
   try {
     const root = join(homedir(), ".claude", "projects");
     const projects = await readdir(root, { withFileTypes: true });
     for (const p of projects) {
-      if (p.isDirectory()) return p.name;
+      if (!p.isDirectory()) continue;
+      try {
+        const files = await readdir(join(root, p.name));
+        const jsonl = files.find((f) => f.endsWith(".jsonl"));
+        if (!jsonl) continue;
+        // Read the first non-empty line to extract cwd from the JSONL.
+        const raw = await readFile(join(root, p.name, jsonl), "utf8");
+        for (const line of raw.split("\n")) {
+          if (!line.trim()) continue;
+          try {
+            const obj = JSON.parse(line);
+            if (typeof obj?.cwd === "string") {
+              return canonicalProjectName(obj.cwd);
+            }
+          } catch {
+            // skip malformed line
+          }
+        }
+      } catch {
+        // skip
+      }
     }
   } catch {
     // none
@@ -119,7 +149,7 @@ async function main() {
 
   const [sessionId, projectDir] = await Promise.all([
     pickFirstSessionId(),
-    pickFirstProjectDir(),
+    pickFirstProjectCanonicalPath(),
   ]);
 
   const results = [];

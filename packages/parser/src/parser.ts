@@ -224,6 +224,10 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
     r === "tool-call" ||
     r === "tool-result";
 
+  // Conversational chrono — used to annotate `gapMs` on events (consumed
+  // by the session-view UI to render "Session idle" dividers between
+  // user messages). This keeps the historical behavior of gapMs being
+  // a "gap between user-visible turns" number.
   const chrono = events
     .filter((e) => e.timestamp && isConversational(e.role))
     .map((e) => ({ e, ms: Date.parse(e.timestamp!) }))
@@ -234,15 +238,41 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
     chrono[i]!.e.gapMs = Math.max(0, chrono[i]!.ms - chrono[i - 1]!.ms);
   }
 
-  // Air-time: sum of gaps under the idle threshold. This approximates
-  // how long the agent was actively working (filters out the user
-  // stepping away, lid closed overnight, etc.). Same 3-minute
-  // threshold as sessionAirTimeMs() in analytics.ts.
+  // Air-time + active segments: walk ALL timestamped events, not just
+  // conversational ones. Non-conversational events (summary, sidechain,
+  // system, etc.) still represent "agent activity touching the JSONL
+  // file" and should count toward active time. Filtering them out caused
+  // airTimeMs to undercount dramatically for sessions with lots of
+  // auto-compact summaries or sidechain agents — a session where the
+  // Gantt showed 2h of active segments could report just 2m of airtime.
+  //
+  // This matches `computeActiveSegments()` in analytics.ts so that all
+  // "active time" numbers across the app (dashboard metric, per-session
+  // mini-stat, Gantt row label, calendar picker) agree.
   const IDLE_THRESHOLD_MS = 3 * 60 * 1000;
+  const allChrono = events
+    .filter((e) => e.timestamp)
+    .map((e) => Date.parse(e.timestamp!))
+    .filter((ms) => !Number.isNaN(ms))
+    .sort((a, b) => a - b);
+
+  const activeSegments: { startMs: number; endMs: number }[] = [];
   let airTimeMs = 0;
-  for (let i = 1; i < chrono.length; i++) {
-    const g = chrono[i]!.e.gapMs ?? 0;
-    if (g > 0 && g <= IDLE_THRESHOLD_MS) airTimeMs += g;
+  if (allChrono.length > 0) {
+    let segStart = allChrono[0]!;
+    let segEnd = allChrono[0]!;
+    for (let i = 1; i < allChrono.length; i++) {
+      const t = allChrono[i]!;
+      const gap = t - segEnd;
+      if (gap > IDLE_THRESHOLD_MS) {
+        activeSegments.push({ startMs: segStart, endMs: segEnd });
+        segStart = t;
+      } else if (gap > 0) {
+        airTimeMs += gap;
+      }
+      segEnd = t;
+    }
+    activeSegments.push({ startMs: segStart, endMs: segEnd });
   }
 
   // Aggregate usage + derive session-level metadata.
@@ -258,6 +288,7 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
   let turnCount = 0;
   let firstUserPreview: string | undefined;
   let lastAgentPreview: string | undefined;
+  let lastUserPreview: string | undefined;
   let linesAdded = 0;
   let linesRemoved = 0;
   const filesEdited = new Set<string>();
@@ -287,25 +318,25 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
         }
       }
     }
-    if (e.role === "user" && !firstUserPreview) {
-      // Skip slash command, skill injection, task notification prefixes
-      const txt = e.preview;
-      if (
-        !txt.startsWith("<command-name>") &&
-        !txt.startsWith("Base directory for this skill:") &&
-        !txt.startsWith("<task-notification>")
-      ) {
-        firstUserPreview = txt;
-      }
-    }
     if (e.role === "user") {
-      const txt = e.preview;
-      if (
-        !txt.startsWith("<command-name>") &&
-        !txt.startsWith("Base directory for this skill:") &&
-        !txt.startsWith("<task-notification>")
-      ) {
+      // Detect hidden system messages from the RAW content (before XML
+      // tags got stripped by cleanText). `e.preview` is already cleaned,
+      // so a startsWith("<command-name>") check on it never matches.
+      const rawMsg = (e.raw as { message?: { content?: unknown } } | undefined)
+        ?.message;
+      const rawContent =
+        typeof rawMsg?.content === "string" ? rawMsg.content : "";
+      const isHidden =
+        rawContent.startsWith("<command-name>") ||
+        rawContent.startsWith("Base directory for this skill:") ||
+        rawContent.startsWith("<task-notification>");
+      if (!isHidden) {
+        if (!firstUserPreview) firstUserPreview = e.preview;
         turnCount++;
+        // Track the most recent "real" user message so the live widget
+        // can surface "what am I working on RIGHT NOW" instead of the
+        // first thing asked in a long-running session.
+        lastUserPreview = e.preview;
       }
     }
     if (e.role === "agent") {
@@ -323,10 +354,14 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       const m = o.message as Record<string, unknown> | undefined;
       if (m) {
         if (typeof m.model === "string" && !model) model = m.model;
-        // Dedup by message.id + requestId (matches ccusage).
+        // Dedup by message.id (primary) + optional requestId. Claude Code
+        // splits one API response across multiple JSONL lines, each
+        // carrying the same `usage` block, so summing per line would
+        // double-count tokens. message.id is the stable identifier;
+        // requestId is extra disambiguation when present.
         const mid = typeof m.id === "string" ? m.id : undefined;
         const rid = typeof o.requestId === "string" ? o.requestId : undefined;
-        const dedupKey = mid != null && rid != null ? `${mid}:${rid}` : undefined;
+        const dedupKey = mid != null ? `${mid}:${rid ?? ""}` : undefined;
         if (dedupKey && seenMessageIds.has(dedupKey)) continue;
         if (dedupKey) seenMessageIds.add(dedupKey);
         const u = extractUsage(m.usage);
@@ -354,10 +389,12 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       totalUsage,
       status: "idle",
       firstUserPreview,
+      lastUserPreview,
       lastAgentPreview,
       toolCallCount,
       turnCount,
       airTimeMs,
+      activeSegments,
       linesAdded,
       linesRemoved,
       filesEdited: filesEdited.size,

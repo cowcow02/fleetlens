@@ -257,7 +257,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
                   fontFamily: "var(--font-mono)",
                   textAlign: "right",
                 }}
-                title="Active time (filters out idle gaps)"
+                title="Agent time (filters out idle gaps)"
               >
                 {formatDuration(s.airTimeMs ?? s.durationMs)}
               </div>

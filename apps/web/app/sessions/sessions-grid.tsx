@@ -217,7 +217,7 @@ const sessionTableColumns: Column<SessionMeta>[] = [
   },
   {
     key: "airtime",
-    header: "Active time",
+    header: "Agent time",
     sortValue: (s) => s.airTimeMs ?? s.durationMs ?? 0,
     align: "right",
     render: (s) => (

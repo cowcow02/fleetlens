@@ -26,6 +26,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseTranscript } from "./parser.js";
+import { canonicalProjectName, worktreeName } from "./analytics.js";
 import type { SessionDetail, SessionEvent, SessionMeta, SubagentRun, Usage } from "./types.js";
 
 export const DEFAULT_ROOT = path.join(os.homedir(), ".claude", "projects");
@@ -691,34 +692,41 @@ async function loadSubagents(
 /* ================================================================= */
 
 export type ProjectRefLite = {
+  /** Stable project identifier — the canonical cwd path. Call sites
+   *  should URL-encode it for use in href slugs. */
   projectDir: string;
+  /** Canonical cwd path (worktrees rolled up to parent). */
   projectName: string;
   sessionCount: number;
   /** ms timestamp of the most recently-modified JSONL in this project */
   lastActiveMs: number;
+  /** Number of distinct `.worktrees/<name>` subdirs rolled up here. */
+  worktreeCount: number;
 };
 
 /**
- * Return one entry per project directory with a session count and a
- * "last active" mtime. Uses only fs.stat — no JSONL parsing at all, so it
- * runs in <100ms even on a cold cache with hundreds of sessions. Use this
- * for the sidebar / navigation; use `listSessions` when you actually need
- * session content (tokens, previews, etc.).
+ * Return one entry per canonical project with a session count and a
+ * "last active" mtime. Worktrees (`cwd/.worktrees/<name>`) are aggregated
+ * under their parent repo — running agents in five worktrees of the same
+ * repo surfaces as one project with `worktreeCount: 5`, not five projects.
+ *
+ * Uses only fs.stat — no JSONL parsing at all — so it runs in <100ms even
+ * on a cold cache with hundreds of sessions.
  */
 export async function listProjects(root: string = DEFAULT_ROOT): Promise<ProjectRefLite[]> {
   const files = await walkJsonlFiles(root);
-  const byProject = new Map<string, { count: number; lastActiveMs: number }>();
+  const byRawDir = new Map<string, { count: number; lastActiveMs: number }>();
   for (const f of files) {
-    const cur = byProject.get(f.projectDir) ?? { count: 0, lastActiveMs: 0 };
+    const cur = byRawDir.get(f.projectDir) ?? { count: 0, lastActiveMs: 0 };
     cur.count++;
     if (f.mtimeMs > cur.lastActiveMs) cur.lastActiveMs = f.mtimeMs;
-    byProject.set(f.projectDir, cur);
+    byRawDir.set(f.projectDir, cur);
   }
-  // Try to resolve the real cwd from the meta cache — any cached
-  // session in this projectDir will have the correct cwd from the
-  // JSONL. This avoids the lossy dash-to-slash decode.
+  // Resolve the real cwd from the meta cache — any cached session in this
+  // projectDir will have the correct cwd from the JSONL. Avoids the lossy
+  // dash-to-slash decode.
   const cwdForProject = (dir: string): string | undefined => {
-    for (const [path, entry] of metaCache.entries()) {
+    for (const [, entry] of metaCache.entries()) {
       if (entry.meta.projectDir === dir && entry.meta.cwd) {
         return entry.meta.cwd;
       }
@@ -726,12 +734,40 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
     return undefined;
   };
 
-  return Array.from(byProject.entries())
-    .map(([projectDir, { count, lastActiveMs }]) => ({
-      projectDir,
-      projectName: cwdForProject(projectDir) ?? decodeProjectName(projectDir),
-      sessionCount: count,
-      lastActiveMs,
+  // Group raw dirs by their canonical project (parent repo).
+  type Agg = {
+    canonicalName: string;
+    count: number;
+    lastActiveMs: number;
+    worktreeBranches: Set<string>;
+  };
+  const canonicalMap = new Map<string, Agg>();
+  for (const [rawDir, { count, lastActiveMs }] of byRawDir) {
+    const cwdOrDecoded = cwdForProject(rawDir) ?? decodeProjectName(rawDir);
+    const canonical = canonicalProjectName(cwdOrDecoded);
+    const wt = worktreeName(cwdOrDecoded);
+
+    const agg =
+      canonicalMap.get(canonical) ??
+      ({
+        canonicalName: canonical,
+        count: 0,
+        lastActiveMs: 0,
+        worktreeBranches: new Set<string>(),
+      } satisfies Agg);
+    agg.count += count;
+    if (lastActiveMs > agg.lastActiveMs) agg.lastActiveMs = lastActiveMs;
+    if (wt) agg.worktreeBranches.add(wt);
+    canonicalMap.set(canonical, agg);
+  }
+
+  return Array.from(canonicalMap.values())
+    .map((a) => ({
+      projectDir: a.canonicalName,
+      projectName: a.canonicalName,
+      sessionCount: a.count,
+      lastActiveMs: a.lastActiveMs,
+      worktreeCount: a.worktreeBranches.size,
     }))
     .sort((a, b) => b.lastActiveMs - a.lastActiveMs);
 }

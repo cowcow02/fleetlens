@@ -33,6 +33,7 @@ function fmtTime(ms: number): string {
 type ResolvedSession = {
   id: string;
   projectName: string;
+  segments: { startMs: number; endMs: number }[];
   startMs: number;
   endMs: number;
   preview?: string;
@@ -61,9 +62,6 @@ function MiniGantt({
   return (
     <svg width={width} height={svgHeight} style={{ display: "block" }}>
       {sessions.map((s, i) => {
-        const x1 = Math.max(0, msToX(s.startMs));
-        const x2 = Math.min(width, msToX(s.endMs));
-        const w = Math.max(x2 - x1, 3);
         const y = i * (ROW_H + ROW_GAP);
         const color = pickColor(s.projectName);
         return (
@@ -78,15 +76,23 @@ function MiniGantt({
               opacity={0.25}
               rx={3}
             />
-            {/* Session bar */}
-            <rect
-              x={x1}
-              y={y + BAR_INSET}
-              width={w}
-              height={ROW_H - BAR_INSET * 2}
-              fill={color}
-              rx={2}
-            />
+            {/* Active segments within the run window */}
+            {s.segments.map((seg, si) => {
+              const x1 = Math.max(0, msToX(seg.startMs));
+              const x2 = Math.min(width, msToX(seg.endMs));
+              const w = Math.max(x2 - x1, 2);
+              return (
+                <rect
+                  key={si}
+                  x={x1}
+                  y={y + BAR_INSET}
+                  width={w}
+                  height={ROW_H - BAR_INSET * 2}
+                  fill={color}
+                  rx={2}
+                />
+              );
+            })}
           </g>
         );
       })}
@@ -123,16 +129,47 @@ export function ParallelRunsStrip({
       {recent.map((run, i) => {
         const dur = run.endMs - run.startMs;
 
-        // Resolve session details for the mini Gantt
+        // Resolve session details for the mini Gantt. Use the session's
+        // active segments (idle gaps removed) clipped to a window around
+        // the run itself so long-idle sessions don't stretch the bars.
+        const WINDOW_PAD = 30 * 60 * 1000; // 30-min pad each side
+        const winStart = run.startMs - WINDOW_PAD;
+        const winEnd = run.endMs + WINDOW_PAD;
+
         const resolved: ResolvedSession[] = [];
         for (const sid of run.sessions) {
           const meta = sessionMap.get(sid);
-          if (!meta || !meta.firstTimestamp || !meta.lastTimestamp) continue;
+          if (!meta) continue;
+
+          // Prefer real active segments; fall back to first/last if missing.
+          const rawSegs =
+            meta.activeSegments && meta.activeSegments.length > 0
+              ? meta.activeSegments
+              : meta.firstTimestamp && meta.lastTimestamp
+                ? [
+                    {
+                      startMs: Date.parse(meta.firstTimestamp),
+                      endMs: Date.parse(meta.lastTimestamp),
+                    },
+                  ]
+                : [];
+
+          // Clip to window, drop segments that fall outside entirely.
+          const clipped = rawSegs
+            .map((seg) => ({
+              startMs: Math.max(seg.startMs, winStart),
+              endMs: Math.min(seg.endMs, winEnd),
+            }))
+            .filter((seg) => seg.endMs > seg.startMs);
+
+          if (clipped.length === 0) continue;
+
           resolved.push({
             id: meta.id,
             projectName: meta.projectName,
-            startMs: Date.parse(meta.firstTimestamp),
-            endMs: Date.parse(meta.lastTimestamp),
+            segments: clipped,
+            startMs: clipped[0]!.startMs,
+            endMs: clipped[clipped.length - 1]!.endMs,
             preview: meta.firstUserPreview,
           });
         }
@@ -140,9 +177,15 @@ export function ParallelRunsStrip({
 
         if (resolved.length === 0) return null;
 
-        // Compute range for the mini Gantt from actual session bounds
-        const ganttStart = Math.min(...resolved.map((s) => s.startMs));
-        const ganttEnd = Math.max(...resolved.map((s) => s.endMs));
+        // Compute range for the mini Gantt from clipped segment bounds.
+        let ganttStart = Infinity;
+        let ganttEnd = -Infinity;
+        for (const s of resolved) {
+          for (const seg of s.segments) {
+            if (seg.startMs < ganttStart) ganttStart = seg.startMs;
+            if (seg.endMs > ganttEnd) ganttEnd = seg.endMs;
+          }
+        }
 
         return (
           <div

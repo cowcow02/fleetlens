@@ -24,6 +24,8 @@ export type ProjectRef = {
   projectName: string;
   sessionCount: number;
   lastActiveMs?: number;
+  /** Number of `.worktrees/<name>` subdirs rolled up into this project. */
+  worktreeCount?: number;
 };
 
 const PINS_KEY = "claude-lens:pinned-projects:v1";
@@ -171,8 +173,10 @@ export function Sidebar({
       {/* Projects search + list */}
       <div
         style={{
-          padding: "10px 14px 8px",
+          margin: "0 14px",
+          padding: "8px 0",
           borderTop: "1px solid var(--af-border-subtle)",
+          borderBottom: "1px solid var(--af-border-subtle)",
           display: "flex",
           alignItems: "center",
           gap: 6,
@@ -338,10 +342,41 @@ function ProjectSection({
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 5,
                 }}
-                title={p.projectName}
+                title={
+                  (p.worktreeCount ?? 0) > 0
+                    ? `${p.projectName} — ${p.worktreeCount} worktree${p.worktreeCount === 1 ? "" : "s"}`
+                    : p.projectName
+                }
               >
-                {pretty}
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    minWidth: 0,
+                  }}
+                >
+                  {pretty}
+                </span>
+                {(p.worktreeCount ?? 0) > 0 && (
+                  <span
+                    style={{
+                      fontSize: 9,
+                      fontWeight: 600,
+                      padding: "1px 5px",
+                      borderRadius: 100,
+                      background: "rgba(167, 139, 250, 0.15)",
+                      color: "rgba(167, 139, 250, 1)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    +{p.worktreeCount} wt
+                  </span>
+                )}
               </Link>
               <span
                 style={{

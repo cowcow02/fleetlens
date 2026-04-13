@@ -29,7 +29,7 @@ const METRIC_CONFIG: Record<
   { label: string; pluck: (b: DailyBucket) => number; color: string; unit?: "ms" }
 > = {
   airTime: {
-    label: "Active time",
+    label: "Agent time",
     pluck: (b) => b.airTimeMs,
     color: "rgba(45, 212, 191, 0.85)",
     unit: "ms",

@@ -73,7 +73,7 @@ export function DashboardView({
           tooltip="Total Claude Code sessions (one JSONL file = one session). A 'turn' is one user message that starts an agent response cycle."
         />
         <MetricCard
-          label="Active time"
+          label="Agent time"
           value={formatDuration(activeTimeMs)}
           sub={
             activeDayCount > 0 ? (
@@ -86,7 +86,7 @@ export function DashboardView({
             )
           }
           icon={<Clock size={13} />}
-          tooltip="Sum of time the agent was actively working across all sessions. Gaps longer than 3 minutes (user away, laptop lid closed) are excluded. This is NOT wall-clock duration. Per-day average is across days with any activity."
+          tooltip="Sum of time the Claude agent was actively working across all sessions. Gaps longer than 3 minutes (user away, laptop lid closed) are excluded. This is NOT wall-clock duration. Per-day average is across days with any agent activity."
         />
         <MetricCard
           label="Tool calls"

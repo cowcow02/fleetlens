@@ -4,10 +4,28 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import Link from "next/link";
 
-type DayInfo = {
+export type DayInfo = {
   date: string;
   sessions: number;
+  /** Total airtime across sessions that started this day. */
+  airTimeMs: number;
+  /** Total parallel burst time on this day. */
+  parallelMs: number;
+  /** Number of bursts on this day. */
+  burstCount: number;
+  /** Peak concurrency on this day (max across all its bursts). */
+  peakConcurrency: number;
 };
+
+/** Compact duration like "45m", "2h", "3h 20m". Used in tight cells. */
+function fmtShortDur(ms: number): string {
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  const totalMin = Math.round(ms / 60_000);
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
 
 /**
  * Custom date picker for the Timeline page. Shows a mini calendar
@@ -39,11 +57,15 @@ export function DateNav({
 
   const [viewY, setViewY] = useState(selY);
   const [viewM, setViewM] = useState(selM);
+  // Hover state for the custom per-cell tooltip — stores the day key
+  // and the (x,y) position of the hovered button relative to the popover.
+  const [hoverDay, setHoverDay] = useState<string | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
-  // Build a lookup: date → sessions count.
+  // Build a lookup: date → full day info.
   const statsMap = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const d of dayStats) map.set(d.date, d.sessions);
+    const map = new Map<string, DayInfo>();
+    for (const d of dayStats) map.set(d.date, d);
     return map;
   }, [dayStats]);
 
@@ -65,9 +87,13 @@ export function DateNav({
     return cells;
   }, [viewY, viewM]);
 
-  const maxSessions = useMemo(() => {
+  // Intensity is driven by airTime (not session count) because airTime
+  // more accurately reflects "how busy was this day" — 50 one-minute
+  // sessions and one two-hour session tell different stories, and the
+  // latter is the one you probably want to find.
+  const maxAirTimeMs = useMemo(() => {
     let max = 0;
-    for (const d of dayStats) if (d.sessions > max) max = d.sessions;
+    for (const d of dayStats) if (d.airTimeMs > max) max = d.airTimeMs;
     return max;
   }, [dayStats]);
 
@@ -166,20 +192,23 @@ export function DateNav({
         Today
       </Link>
 
-      {/* Calendar popover */}
+      {/* Calendar popover — anchored right so it opens leftward from
+          the button and stays inside the viewport. The DateNav sits in
+          the top-right of the page header where left-anchoring would
+          overflow the screen. */}
       {calOpen && (
         <div
           style={{
             position: "absolute",
             top: "calc(100% + 8px)",
-            left: 0,
+            right: 0,
             zIndex: 60,
             background: "var(--af-surface)",
             border: "1px solid var(--af-border-subtle)",
             borderRadius: 10,
             padding: "12px 14px",
             boxShadow: "0 8px 28px rgba(0,0,0,0.18)",
-            minWidth: 280,
+            minWidth: 300,
           }}
         >
           {/* Month header with arrows */}
@@ -263,15 +292,20 @@ export function DateNav({
               if (!day) {
                 return <div key={`blank-${i}`} />;
               }
-              const count = statsMap.get(day) ?? 0;
+              const info = statsMap.get(day);
+              const sessions = info?.sessions ?? 0;
+              const airTimeMs = info?.airTimeMs ?? 0;
+              const parallelMs = info?.parallelMs ?? 0;
+              const burstCount = info?.burstCount ?? 0;
+              const peakConcurrency = info?.peakConcurrency ?? 0;
               const isSelected = day === date;
               const isToday = day === today;
               const isFuture = day > today;
 
-              // Intensity based on session count.
+              // Intensity based on airTime.
               const intensity =
-                count > 0 && maxSessions > 0
-                  ? Math.min(1, count / maxSessions)
+                airTimeMs > 0 && maxAirTimeMs > 0
+                  ? Math.min(1, airTimeMs / maxAirTimeMs)
                   : 0;
 
               const dayNum = parseInt(day.split("-")[2]!, 10);
@@ -282,10 +316,27 @@ export function DateNav({
                   type="button"
                   onClick={() => pickDay(day)}
                   disabled={isFuture}
-                  title={count > 0 ? `${day}: ${count} session${count === 1 ? "" : "s"}` : day}
+                  onMouseEnter={(e) => {
+                    if (isFuture) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const parentRect =
+                      e.currentTarget.offsetParent?.getBoundingClientRect() ??
+                      rect;
+                    setHoverDay(day);
+                    setHoverPos({
+                      // Center below the day cell, relative to the popover.
+                      x: rect.left - parentRect.left + rect.width / 2,
+                      y: rect.bottom - parentRect.top + 6,
+                    });
+                  }}
+                  onMouseLeave={() => {
+                    setHoverDay(null);
+                    setHoverPos(null);
+                  }}
                   style={{
-                    width: 34,
-                    height: 34,
+                    position: "relative",
+                    width: 40,
+                    height: 40,
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
@@ -299,7 +350,7 @@ export function DateNav({
                     borderRadius: 6,
                     background:
                       intensity > 0
-                        ? `rgba(45, 212, 191, ${0.08 + intensity * 0.3})`
+                        ? `rgba(45, 212, 191, ${0.08 + intensity * 0.35})`
                         : "transparent",
                     color: isFuture
                       ? "var(--af-text-tertiary)"
@@ -314,18 +365,37 @@ export function DateNav({
                     opacity: isFuture ? 0.4 : 1,
                   }}
                 >
-                  <span>{dayNum}</span>
-                  {count > 0 && (
+                  <span style={{ lineHeight: 1 }}>{dayNum}</span>
+                  {airTimeMs > 0 && (
                     <span
                       style={{
-                        fontSize: 7,
-                        color: isSelected ? "var(--af-accent)" : "var(--af-text-tertiary)",
+                        fontSize: 8,
+                        color: isSelected
+                          ? "var(--af-accent)"
+                          : "var(--af-text-tertiary)",
                         lineHeight: 1,
                         fontWeight: 600,
+                        marginTop: 2,
                       }}
                     >
-                      {count}
+                      {fmtShortDur(airTimeMs)}
                     </span>
+                  )}
+                  {/* Parallelism indicator: small purple dot in the corner
+                      when any bursts happened that day. */}
+                  {burstCount > 0 && (
+                    <span
+                      style={{
+                        position: "absolute",
+                        top: 3,
+                        right: 3,
+                        width: 5,
+                        height: 5,
+                        borderRadius: "50%",
+                        background: "rgba(167, 139, 250, 0.95)",
+                        boxShadow: "0 0 0 1px var(--af-surface)",
+                      }}
+                    />
                   )}
                 </button>
               );
@@ -338,6 +408,7 @@ export function DateNav({
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
+              gap: 10,
               marginTop: 10,
               paddingTop: 8,
               borderTop: "1px solid var(--af-border-subtle)",
@@ -345,25 +416,165 @@ export function DateNav({
               color: "var(--af-text-tertiary)",
             }}
           >
-            <span>fewer sessions</span>
-            <div style={{ display: "flex", gap: 3 }}>
-              {[0, 0.15, 0.3, 0.5, 0.8].map((v, i) => (
-                <span
-                  key={i}
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: 2,
-                    background:
-                      v === 0
-                        ? "var(--af-border-subtle)"
-                        : `rgba(45, 212, 191, ${0.08 + v * 0.3})`,
-                  }}
-                />
-              ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span>less</span>
+              <div style={{ display: "flex", gap: 2 }}>
+                {[0, 0.15, 0.3, 0.5, 0.8].map((v, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 2,
+                      background:
+                        v === 0
+                          ? "var(--af-border-subtle)"
+                          : `rgba(45, 212, 191, ${0.08 + v * 0.35})`,
+                    }}
+                  />
+                ))}
+              </div>
+              <span>more active</span>
             </div>
-            <span>more sessions</span>
+            <div
+              style={{ display: "flex", alignItems: "center", gap: 5 }}
+              title="Days with at least one concurrency burst"
+            >
+              <span
+                style={{
+                  width: 5,
+                  height: 5,
+                  borderRadius: "50%",
+                  background: "rgba(167, 139, 250, 0.95)",
+                }}
+              />
+              parallel
+            </div>
           </div>
+
+          {/* Custom hover tooltip — rendered inside the popover so it
+              shares the popover's coordinate space and zIndex. */}
+          {hoverDay && hoverPos && (() => {
+            const info = statsMap.get(hoverDay);
+            const sessions = info?.sessions ?? 0;
+            const airTimeMs = info?.airTimeMs ?? 0;
+            const parallelMs = info?.parallelMs ?? 0;
+            const burstCount = info?.burstCount ?? 0;
+            const peakConcurrency = info?.peakConcurrency ?? 0;
+            return (
+              <div
+                style={{
+                  position: "absolute",
+                  left: Math.max(10, Math.min(hoverPos.x - 110, 290)),
+                  top: hoverPos.y,
+                  width: 220,
+                  pointerEvents: "none",
+                  background: "var(--af-surface-elevated)",
+                  border: "1px solid var(--af-border-subtle)",
+                  borderRadius: 8,
+                  padding: "9px 12px",
+                  boxShadow: "0 6px 22px rgba(0,0,0,0.22)",
+                  fontSize: 11,
+                  color: "var(--af-text)",
+                  zIndex: 65,
+                  lineHeight: 1.5,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontWeight: 700,
+                    fontSize: 11,
+                    marginBottom: 4,
+                  }}
+                >
+                  {hoverDay}
+                </div>
+                {sessions === 0 && airTimeMs === 0 && parallelMs === 0 ? (
+                  <div style={{ color: "var(--af-text-tertiary)", fontSize: 10 }}>
+                    no activity
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        color: "var(--af-text-secondary)",
+                        fontSize: 10,
+                      }}
+                    >
+                      <span>sessions</span>
+                      <strong style={{ color: "var(--af-text)" }}>
+                        {sessions}
+                      </strong>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        color: "var(--af-text-secondary)",
+                        fontSize: 10,
+                      }}
+                    >
+                      <span>active time</span>
+                      <strong style={{ color: "var(--af-text)" }}>
+                        {airTimeMs > 0 ? fmtShortDur(airTimeMs) : "—"}
+                      </strong>
+                    </div>
+                    {parallelMs > 0 && (
+                      <>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            color: "var(--af-text-secondary)",
+                            fontSize: 10,
+                            marginTop: 4,
+                            paddingTop: 4,
+                            borderTop: "1px dashed var(--af-border-subtle)",
+                          }}
+                        >
+                          <span>parallel time</span>
+                          <strong style={{ color: "var(--af-text)" }}>
+                            {fmtShortDur(parallelMs)}
+                          </strong>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            color: "var(--af-text-secondary)",
+                            fontSize: 10,
+                          }}
+                        >
+                          <span>peak concurrency</span>
+                          <strong
+                            style={{ color: "rgba(167, 139, 250, 1)" }}
+                          >
+                            ×{peakConcurrency}
+                          </strong>
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            color: "var(--af-text-secondary)",
+                            fontSize: 10,
+                          }}
+                        >
+                          <span>bursts</span>
+                          <strong style={{ color: "var(--af-text)" }}>
+                            {burstCount}
+                          </strong>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

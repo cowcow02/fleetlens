@@ -136,6 +136,20 @@ export function prettyProjectName(
   maxLen = 35,
 ): string {
   const parts = projectName.split("/").filter(Boolean);
+
+  // Git worktree paths are `<repo>/.worktrees/<name>`. Showing the last
+  // two segments (".worktrees/name") drops the most useful info — which
+  // repo the worktree belongs to. Rebuild as `<repo>/<name>` so the
+  // worktree reads as "this branch of that repo".
+  const wtIdx = parts.lastIndexOf(".worktrees");
+  if (wtIdx > 0 && wtIdx < parts.length - 1) {
+    const parent = parts[wtIdx - 1]!;
+    const worktree = parts[wtIdx + 1]!;
+    const name = `${parent}/${worktree}`;
+    if (name.length <= maxLen) return name;
+    return "…" + name.slice(name.length - maxLen + 1);
+  }
+
   const name =
     parts.length >= 2
       ? `${parts[parts.length - 2]}/${parts[parts.length - 1]}`

@@ -26,6 +26,37 @@ export function sessionDay(meta: SessionMeta): string | undefined {
   return toLocalDay(ms);
 }
 
+/**
+ * Reduce a cwd path to its canonical project identity.
+ *
+ * Git worktrees are a common pattern for running multi-agent fleets in
+ * parallel — `git worktree add .worktrees/kip-148 ...` creates a sibling
+ * working copy under `.worktrees/`, and each worktree has its own cwd,
+ * which Claude Code treats as a distinct "project". But conceptually
+ * every `.worktrees/<name>` belongs to the parent repo, not a new project.
+ *
+ * This helper strips the `/.worktrees/<name>` suffix so worktrees roll up
+ * under their parent repo everywhere: project list, sidebar, top projects,
+ * Gantt colors, project detail page, etc.
+ *
+ *   canonicalProjectName("/Users/foo/Repo/bar/.worktrees/kip-148")
+ *     === "/Users/foo/Repo/bar"
+ *   canonicalProjectName("/Users/foo/Repo/bar")
+ *     === "/Users/foo/Repo/bar"
+ */
+export function canonicalProjectName(projectName: string): string {
+  const wtIdx = projectName.lastIndexOf("/.worktrees/");
+  if (wtIdx >= 0) return projectName.slice(0, wtIdx);
+  return projectName;
+}
+
+/** Extract the worktree branch name from a worktree path, or null. */
+export function worktreeName(projectName: string): string | null {
+  const wtIdx = projectName.lastIndexOf("/.worktrees/");
+  if (wtIdx < 0) return null;
+  return projectName.slice(wtIdx + "/.worktrees/".length);
+}
+
 /* ================================================================= */
 /*  Daily activity — heatmap + line/bar                              */
 /* ================================================================= */
@@ -88,23 +119,67 @@ export function dailyActivity(sessions: SessionMeta[]): DailyBucket[] {
   let minDay: string | undefined;
   let maxDay: string | undefined;
 
-  for (const s of sessions) {
-    const day = sessionDay(s);
-    if (!day) continue;
+  const touchBucket = (day: string) => {
     if (!minDay || day < minDay) minDay = day;
     if (!maxDay || day > maxDay) maxDay = day;
+    const b = byDay.get(day) ?? makeDay(day);
+    byDay.set(day, b);
+    return b;
+  };
 
-    const bucket = byDay.get(day) ?? makeDay(day);
-    bucket.sessions++;
-    bucket.toolCalls += s.toolCallCount ?? 0;
-    bucket.turns += s.turnCount ?? 0;
-    bucket.tokens.input += s.totalUsage.input;
-    bucket.tokens.output += s.totalUsage.output;
-    bucket.tokens.cacheRead += s.totalUsage.cacheRead;
-    bucket.tokens.cacheWrite += s.totalUsage.cacheWrite;
-    bucket.durationMs += s.durationMs ?? 0;
-    bucket.airTimeMs += s.airTimeMs ?? 0;
-    byDay.set(day, bucket);
+  for (const s of sessions) {
+    // Session-level one-shot totals (tool calls, turns, usage, durationMs)
+    // are attributed to the day the session started. These are intrinsic
+    // to the session as a whole — splitting them across days would be
+    // both fiddly and misleading.
+    const startDay = sessionDay(s);
+    if (startDay) {
+      const bucket = touchBucket(startDay);
+      bucket.toolCalls += s.toolCallCount ?? 0;
+      bucket.turns += s.turnCount ?? 0;
+      bucket.tokens.input += s.totalUsage.input;
+      bucket.tokens.output += s.totalUsage.output;
+      bucket.tokens.cacheRead += s.totalUsage.cacheRead;
+      bucket.tokens.cacheWrite += s.totalUsage.cacheWrite;
+      bucket.durationMs += s.durationMs ?? 0;
+    }
+
+    // Active time + session presence get split by day based on the
+    // session's active segments. A long-running session that spans
+    // multiple local days contributes to every day its agent was
+    // actually working — matches what the Gantt chart shows and what a
+    // human would expect looking at a calendar heatmap.
+    //
+    // Fallback for old cached metas that predate `activeSegments`:
+    // attribute the whole airTimeMs to startDay (legacy behavior).
+    const segments = s.activeSegments;
+    if (segments && segments.length > 0) {
+      const touchedDays = new Set<string>();
+      for (const seg of segments) {
+        let cur = seg.startMs;
+        while (cur < seg.endMs) {
+          const day = toLocalDay(cur);
+          touchedDays.add(day);
+          // Compute the start-of-next-local-day to clip segments that
+          // cross midnight.
+          const d = new Date(cur);
+          d.setHours(24, 0, 0, 0);
+          const dayEndMs = Math.min(d.getTime(), seg.endMs);
+          const bucket = touchBucket(day);
+          bucket.airTimeMs += dayEndMs - cur;
+          cur = dayEndMs;
+        }
+      }
+      for (const day of touchedDays) {
+        const bucket = touchBucket(day);
+        bucket.sessions++;
+      }
+    } else if (startDay) {
+      // Legacy fallback: attribute to start day only.
+      const bucket = touchBucket(startDay);
+      bucket.sessions++;
+      bucket.airTimeMs += s.airTimeMs ?? 0;
+    }
   }
 
   // Fill gaps so the heatmap draws a continuous range.
@@ -141,31 +216,53 @@ export type ParallelismPoint = {
 };
 
 /**
- * Sweep-line algorithm over session intervals. Returns the active-count
- * curve sampled at every start/end boundary.
+ * Sweep-line algorithm over session active intervals. Returns the active-
+ * count curve sampled at every segment start/end boundary.
+ *
+ * Uses `SessionMeta.activeSegments` when present (split on 3-minute idle
+ * gaps) so long-idle sessions don't falsely count as "parallel" during
+ * their dead time. Falls back to first/last timestamp for old cached
+ * metas that predate the field.
  */
 export function computeParallelism(sessions: SessionMeta[]): ParallelismPoint[] {
   type Event = { ms: number; delta: number; sessionId: string };
   const events: Event[] = [];
   for (const s of sessions) {
-    if (!s.firstTimestamp || !s.lastTimestamp) continue;
-    const start = Date.parse(s.firstTimestamp);
-    const end = Date.parse(s.lastTimestamp);
-    if (Number.isNaN(start) || Number.isNaN(end) || end < start) continue;
-    events.push({ ms: start, delta: +1, sessionId: s.id });
-    events.push({ ms: end, delta: -1, sessionId: s.id });
+    const segs =
+      s.activeSegments && s.activeSegments.length > 0
+        ? s.activeSegments
+        : s.firstTimestamp && s.lastTimestamp
+          ? (() => {
+              const start = Date.parse(s.firstTimestamp!);
+              const end = Date.parse(s.lastTimestamp!);
+              if (Number.isNaN(start) || Number.isNaN(end) || end < start) return [];
+              return [{ startMs: start, endMs: end }];
+            })()
+          : [];
+    for (const seg of segs) {
+      events.push({ ms: seg.startMs, delta: +1, sessionId: s.id });
+      events.push({ ms: seg.endMs, delta: -1, sessionId: s.id });
+    }
   }
   events.sort((a, b) => a.ms - b.ms || b.delta - a.delta);
 
-  const active = new Set<string>();
+  // Track per-session active segment count so a session with multiple
+  // segments is only "removed" from the active set when its LAST segment
+  // ends. Otherwise back-to-back segments would briefly drop the count.
+  const segCount = new Map<string, number>();
   const points: ParallelismPoint[] = [];
   for (const e of events) {
-    if (e.delta === 1) active.add(e.sessionId);
-    else active.delete(e.sessionId);
+    if (e.delta === 1) {
+      segCount.set(e.sessionId, (segCount.get(e.sessionId) ?? 0) + 1);
+    } else {
+      const n = (segCount.get(e.sessionId) ?? 0) - 1;
+      if (n <= 0) segCount.delete(e.sessionId);
+      else segCount.set(e.sessionId, n);
+    }
     points.push({
       atMs: e.ms,
-      active: active.size,
-      sessions: Array.from(active).slice(0, 10),
+      active: segCount.size,
+      sessions: Array.from(segCount.keys()).slice(0, 10),
     });
   }
   return points;
@@ -391,6 +488,7 @@ export type GanttSession = {
   projectName: string;
   projectDir: string;
   firstUserPreview?: string;
+  lastAgentPreview?: string;
   model?: string;
   segments: ActiveSegment[];
   startMs: number;
@@ -417,6 +515,7 @@ export function buildGanttDay(
     projectName: string;
     projectDir: string;
     firstUserPreview?: string;
+    lastAgentPreview?: string;
     model?: string;
     events: { timestamp?: string }[];
     totalUsage: Usage;
@@ -449,6 +548,7 @@ export function buildGanttDay(
       projectName: s.projectName,
       projectDir: s.projectDir,
       firstUserPreview: s.firstUserPreview,
+      lastAgentPreview: s.lastAgentPreview,
       model: s.model,
       segments: daySegments,
       startMs,
@@ -481,15 +581,267 @@ export function buildGanttDay(
 }
 
 /* ================================================================= */
+/*  Parallelism bursts                                               */
+/* ================================================================= */
+
+export type ParallelismBurst = {
+  startMs: number;
+  endMs: number;
+  /** Peak concurrent active sessions at any moment in the burst. */
+  peak: number;
+  /** Unique session IDs that contributed segments to this burst. */
+  sessionIds: string[];
+  /** Unique project dirs — used to decide cross-project vs same-project. */
+  projectDirs: string[];
+  /** True when sessionIds span more than one project. */
+  crossProject: boolean;
+};
+
+/**
+ * Detect human-scale "bursts" of parallel agent activity from a Gantt day.
+ *
+ * Raw `detectParallelRuns` produces dozens of short overlap events per busy
+ * morning — each <3-min pause in one session splits the continuous work
+ * into a new run. Users don't think that way. They think in bursts: "that
+ * morning I was running 3 agents at once for about 20 minutes."
+ *
+ * This collapses raw overlap intervals into bursts using two rules:
+ *   1. Minimum duration — drop overlaps shorter than `minDurationMs`. Kills
+ *      accidental tab-switch overlaps (2–30 second artifacts).
+ *   2. Merge gap — overlaps within `mergeGapMs` of each other are fused
+ *      into one burst. Short idle pauses between agent messages don't
+ *      create new bursts.
+ *
+ * The `peak` reported is the max concurrent sessions *inside* the burst.
+ */
+type BurstInputSession = {
+  id: string;
+  projectDir: string;
+  segments: ActiveSegment[];
+};
+
+type BurstOpts = {
+  minDurationMs?: number;
+  mergeGapMs?: number;
+  minActive?: number;
+};
+
+/**
+ * Core burst detection over already-segmented sessions. Both the Gantt
+ * (one-day) and dashboard (all-time) entry points feed into this.
+ */
+function detectBurstsCore(
+  sessions: BurstInputSession[],
+  opts: BurstOpts,
+): ParallelismBurst[] {
+  const minDurationMs = opts.minDurationMs ?? 60_000; // 1 min
+  const mergeGapMs = opts.mergeGapMs ?? 10 * 60_000; // 10 min
+  const minActive = opts.minActive ?? 2;
+
+  type Evt = { ms: number; delta: number; sessionId: string };
+  const events: Evt[] = [];
+  for (const s of sessions) {
+    for (const seg of s.segments) {
+      if (seg.endMs <= seg.startMs) continue;
+      events.push({ ms: seg.startMs, delta: +1, sessionId: s.id });
+      events.push({ ms: seg.endMs, delta: -1, sessionId: s.id });
+    }
+  }
+  events.sort((a, b) => a.ms - b.ms || b.delta - a.delta);
+
+  // Active session multiset (a session with multiple segments stays "in"
+  // until its last segment closes).
+  const segCount = new Map<string, number>();
+
+  type RawRun = {
+    startMs: number;
+    endMs: number;
+    peak: number;
+    sessionIds: Set<string>;
+  };
+  const rawRuns: RawRun[] = [];
+  let cur: RawRun | null = null;
+
+  for (const e of events) {
+    if (e.delta === +1) {
+      segCount.set(e.sessionId, (segCount.get(e.sessionId) ?? 0) + 1);
+    } else {
+      const n = (segCount.get(e.sessionId) ?? 0) - 1;
+      if (n <= 0) segCount.delete(e.sessionId);
+      else segCount.set(e.sessionId, n);
+    }
+
+    const active = segCount.size;
+    if (active >= minActive) {
+      if (!cur) {
+        cur = {
+          startMs: e.ms,
+          endMs: e.ms,
+          peak: active,
+          sessionIds: new Set(segCount.keys()),
+        };
+      } else {
+        cur.endMs = e.ms;
+        if (active > cur.peak) cur.peak = active;
+        for (const sid of segCount.keys()) cur.sessionIds.add(sid);
+      }
+    } else if (cur) {
+      cur.endMs = e.ms;
+      rawRuns.push(cur);
+      cur = null;
+    }
+  }
+  if (cur) rawRuns.push(cur);
+
+  // Filter short overlap artifacts.
+  const significant = rawRuns.filter((r) => r.endMs - r.startMs >= minDurationMs);
+
+  // Merge runs that sit within `mergeGapMs` of each other — morning bursts
+  // usually involve the same two repos with brief swaps, and strict set
+  // equality leaves too much fragmentation.
+  const merged: RawRun[] = [];
+  for (const r of significant) {
+    const last = merged[merged.length - 1];
+    if (last && r.startMs - last.endMs <= mergeGapMs) {
+      last.endMs = r.endMs;
+      if (r.peak > last.peak) last.peak = r.peak;
+      for (const sid of r.sessionIds) last.sessionIds.add(sid);
+    } else {
+      merged.push({
+        startMs: r.startMs,
+        endMs: r.endMs,
+        peak: r.peak,
+        sessionIds: new Set(r.sessionIds),
+      });
+    }
+  }
+
+  // Project metadata for each burst.
+  const projectBySession = new Map<string, string>();
+  for (const s of sessions) projectBySession.set(s.id, s.projectDir);
+
+  return merged.map((r) => {
+    const projectDirs = Array.from(
+      new Set(
+        Array.from(r.sessionIds)
+          .map((sid) => projectBySession.get(sid))
+          .filter((p): p is string => !!p),
+      ),
+    );
+    return {
+      startMs: r.startMs,
+      endMs: r.endMs,
+      peak: r.peak,
+      sessionIds: Array.from(r.sessionIds),
+      projectDirs,
+      crossProject: projectDirs.length > 1,
+    };
+  });
+}
+
+/**
+ * Detect human-scale "bursts" of parallel agent activity from a Gantt day.
+ *
+ * Raw `detectParallelRuns` produces dozens of short overlap events per busy
+ * morning — each <3-min pause in one session splits the continuous work
+ * into a new run. Users don't think that way. They think in bursts: "that
+ * morning I was running 3 agents at once for about 20 minutes."
+ *
+ * This collapses raw overlap intervals into bursts using two rules:
+ *   1. Minimum duration — drop overlaps shorter than `minDurationMs`. Kills
+ *      accidental tab-switch overlaps (2–30 second artifacts).
+ *   2. Merge gap — overlaps within `mergeGapMs` of each other are fused
+ *      into one burst. Short idle pauses between agent messages don't
+ *      create new bursts.
+ *
+ * The `peak` reported is the max concurrent sessions *inside* the burst.
+ */
+export function computeParallelismBursts(
+  gantt: GanttDay,
+  opts: BurstOpts = {},
+): ParallelismBurst[] {
+  return detectBurstsCore(gantt.sessions, opts);
+}
+
+/**
+ * Aggregate parallelism bursts across a raw `SessionMeta[]` list using the
+ * cached `activeSegments` field. Returns bursts spanning the entire
+ * history, not just one day. Used by the dashboard to surface a global
+ * headline number (peak concurrency, total parallel time, burst count).
+ *
+ * Sessions without `activeSegments` are skipped — they fall back to the
+ * legacy first/last timestamp path only in `computeParallelism`, not here,
+ * because raw session duration is exactly the signal we're trying to
+ * avoid counting.
+ */
+export function computeBurstsFromSessions(
+  sessions: SessionMeta[],
+  opts: BurstOpts = {},
+): ParallelismBurst[] {
+  const input: BurstInputSession[] = [];
+  for (const s of sessions) {
+    if (!s.activeSegments || s.activeSegments.length === 0) continue;
+    input.push({
+      id: s.id,
+      projectDir: s.projectDir,
+      segments: s.activeSegments,
+    });
+  }
+  return detectBurstsCore(input, opts);
+}
+
+export type ParallelismBurstStats = {
+  /** Max peak concurrency across any single burst. */
+  peakConcurrent: number;
+  /** Sum of all burst durations in ms. */
+  totalParallelMs: number;
+  /** Number of bursts. */
+  burstCount: number;
+  /** How many bursts involve >1 project. */
+  crossProjectBurstCount: number;
+  /** Unique local days any burst touched. */
+  activeDayCount: number;
+};
+
+/** Summarize a burst list into dashboard-friendly headline numbers. */
+export function summarizeBursts(bursts: ParallelismBurst[]): ParallelismBurstStats {
+  let peakConcurrent = 0;
+  let totalParallelMs = 0;
+  let crossProjectBurstCount = 0;
+  const days = new Set<string>();
+  for (const b of bursts) {
+    if (b.peak > peakConcurrent) peakConcurrent = b.peak;
+    totalParallelMs += b.endMs - b.startMs;
+    if (b.crossProject) crossProjectBurstCount++;
+    days.add(toLocalDay(b.startMs));
+  }
+  return {
+    peakConcurrent,
+    totalParallelMs,
+    burstCount: bursts.length,
+    crossProjectBurstCount,
+    activeDayCount: days.size,
+  };
+}
+
+/* ================================================================= */
 /*  Project rollups                                                  */
 /* ================================================================= */
 
 export type ProjectRollup = {
-  /** The raw project dir name (-Users-foo-Repo-bar) */
+  /** Stable project identifier — the canonical cwd path. Call sites
+   *  should URL-encode it for use in href slugs. */
   projectDir: string;
-  /** Decoded project name (/Users/foo/Repo/bar) */
+  /** Canonical cwd path (worktrees rolled up to their parent repo). */
   projectName: string;
   sessions: SessionMeta[];
+  /** All raw SessionMeta.projectDir values that contributed to this rollup.
+   *  One project may include the parent repo plus any number of worktree
+   *  subdirs, each with its own raw dir under ~/.claude/projects/. */
+  rawProjectDirs: string[];
+  /** Number of distinct git worktrees (`.worktrees/<name>`) rolled up
+   *  into this project, excluding the parent repo itself. */
+  worktreeCount: number;
   metrics: HighLevelMetrics;
   lastActiveMs?: number;
 };
@@ -497,23 +849,40 @@ export type ProjectRollup = {
 export function groupByProject(sessions: SessionMeta[]): ProjectRollup[] {
   const map = new Map<string, ProjectRollup>();
   for (const s of sessions) {
-    const key = s.projectDir;
-    const cur = map.get(key) ?? {
-      projectDir: s.projectDir,
-      projectName: s.projectName,
-      sessions: [],
-      metrics: highLevelMetrics([]),
-      lastActiveMs: undefined,
-    };
+    const canonical = canonicalProjectName(s.projectName);
+    const key = canonical;
+    let cur = map.get(key);
+    if (!cur) {
+      cur = {
+        projectDir: canonical,
+        projectName: canonical,
+        sessions: [],
+        rawProjectDirs: [],
+        worktreeCount: 0,
+        metrics: highLevelMetrics([]),
+        lastActiveMs: undefined,
+      };
+      map.set(key, cur);
+    }
     cur.sessions.push(s);
+    if (!cur.rawProjectDirs.includes(s.projectDir)) {
+      cur.rawProjectDirs.push(s.projectDir);
+    }
     const last = s.lastTimestamp ? Date.parse(s.lastTimestamp) : undefined;
     if (last && (!cur.lastActiveMs || last > cur.lastActiveMs)) {
       cur.lastActiveMs = last;
     }
-    map.set(key, cur);
   }
   for (const p of map.values()) {
     p.metrics = highLevelMetrics(p.sessions);
+    // Count distinct worktrees — sessions whose projectName deviates
+    // from the canonical (so has `/.worktrees/<name>`).
+    const wtNames = new Set<string>();
+    for (const s of p.sessions) {
+      const wt = worktreeName(s.projectName);
+      if (wt) wtNames.add(wt);
+    }
+    p.worktreeCount = wtNames.size;
   }
   return Array.from(map.values()).sort(
     (a, b) => (b.lastActiveMs ?? 0) - (a.lastActiveMs ?? 0),

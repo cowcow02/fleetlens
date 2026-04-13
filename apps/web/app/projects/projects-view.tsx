@@ -57,7 +57,17 @@ const projectTableColumns: Column<ProjectRollup>[] = [
     sortValue: (p) => p.projectName,
     render: (p) => (
       <div>
-        <div style={{ fontWeight: 500 }}>{prettyProjectName(p.projectName)}</div>
+        <div
+          style={{
+            fontWeight: 500,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          {prettyProjectName(p.projectName)}
+          {p.worktreeCount > 0 && <WorktreeBadge count={p.worktreeCount} />}
+        </div>
         <div
           style={{
             fontSize: 10,
@@ -110,7 +120,7 @@ const projectTableColumns: Column<ProjectRollup>[] = [
   },
   {
     key: "airtime",
-    header: "Active time",
+    header: "Agent time",
     sortValue: (p) => p.metrics.totalAirTimeMs,
     align: "right",
     render: (p) => (
@@ -173,8 +183,27 @@ function ProjectCard({ project: p }: { project: ProjectRollup }) {
         gap: 10,
       }}
     >
-      <div style={{ fontSize: 14, fontWeight: 600, color: "var(--af-text)" }}>
-        {prettyProjectName(p.projectName)}
+      <div
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: "var(--af-text)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            minWidth: 0,
+          }}
+        >
+          {prettyProjectName(p.projectName)}
+        </span>
+        {p.worktreeCount > 0 && <WorktreeBadge count={p.worktreeCount} />}
       </div>
       <div
         style={{
@@ -198,7 +227,7 @@ function ProjectCard({ project: p }: { project: ProjectRollup }) {
         <Stat label="Sessions" value={String(p.metrics.sessionCount)} />
         <Stat label="Turns" value={String(p.metrics.totalTurns)} />
         <Stat label="Tools" value={String(p.metrics.totalToolCalls)} />
-        <Stat label="Air-time" value={formatDuration(p.metrics.totalAirTimeMs)} />
+        <Stat label="Agent time" value={formatDuration(p.metrics.totalAirTimeMs)} />
         <Stat label="Tokens" value={formatTokens(totalTokens)} />
         <Stat
           label="Last"
@@ -208,6 +237,27 @@ function ProjectCard({ project: p }: { project: ProjectRollup }) {
         />
       </div>
     </Link>
+  );
+}
+
+function WorktreeBadge({ count }: { count: number }) {
+  return (
+    <span
+      style={{
+        fontSize: 9,
+        fontWeight: 700,
+        padding: "2px 7px",
+        borderRadius: 100,
+        background: "rgba(167, 139, 250, 0.15)",
+        color: "rgba(167, 139, 250, 1)",
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+        flexShrink: 0,
+      }}
+      title={`${count} git worktree${count === 1 ? "" : "s"} rolled up into this project`}
+    >
+      +{count} wt
+    </span>
   );
 }
 

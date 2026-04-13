@@ -123,7 +123,7 @@ describe("highLevelMetrics", () => {
 });
 
 describe("groupByProject", () => {
-  it("groups sessions by projectDir and computes per-project metrics", () => {
+  it("groups sessions by canonical project name and computes per-project metrics", () => {
     const sessions = [
       mkMeta("a", "foo", "2026-04-10T10:00:00Z", "2026-04-10T11:00:00Z"),
       mkMeta("b", "foo", "2026-04-10T12:00:00Z", "2026-04-10T13:00:00Z"),
@@ -131,9 +131,38 @@ describe("groupByProject", () => {
     ];
     const groups = groupByProject(sessions);
     expect(groups).toHaveLength(2);
-    const foo = groups.find((g) => g.projectDir === "-Users-me-Repo-foo")!;
+    const foo = groups.find((g) => g.projectDir === "/Users/me/Repo/foo")!;
     expect(foo.sessions).toHaveLength(2);
     expect(foo.metrics.sessionCount).toBe(2);
+    expect(foo.worktreeCount).toBe(0);
+  });
+
+  it("rolls up git worktrees under their parent repo", () => {
+    const sessions = [
+      // Parent repo
+      mkMeta("parent", "foo", "2026-04-10T10:00:00Z", "2026-04-10T11:00:00Z"),
+      // Two worktrees of foo
+      mkMeta("wt1", "foo", "2026-04-10T12:00:00Z", "2026-04-10T13:00:00Z", {
+        projectName: "/Users/me/Repo/foo/.worktrees/kip-148",
+        projectDir: "-Users-me-Repo-foo--worktrees-kip-148",
+      }),
+      mkMeta("wt2", "foo", "2026-04-10T14:00:00Z", "2026-04-10T15:00:00Z", {
+        projectName: "/Users/me/Repo/foo/.worktrees/quality-wave",
+        projectDir: "-Users-me-Repo-foo--worktrees-quality-wave",
+      }),
+      // Unrelated project
+      mkMeta("bar", "bar", "2026-04-10T10:00:00Z", "2026-04-10T11:00:00Z"),
+    ];
+    const groups = groupByProject(sessions);
+    expect(groups).toHaveLength(2);
+    const foo = groups.find((g) => g.projectDir === "/Users/me/Repo/foo")!;
+    expect(foo.sessions).toHaveLength(3);
+    expect(foo.worktreeCount).toBe(2);
+    expect(foo.rawProjectDirs).toContain("-Users-me-Repo-foo");
+    expect(foo.rawProjectDirs).toContain("-Users-me-Repo-foo--worktrees-kip-148");
+    expect(foo.rawProjectDirs).toContain(
+      "-Users-me-Repo-foo--worktrees-quality-wave",
+    );
   });
 });
 

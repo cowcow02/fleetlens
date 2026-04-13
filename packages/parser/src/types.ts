@@ -86,6 +86,10 @@ export type SessionMeta = {
   status: "idle" | "running";
   /** derived: first user message preview — used in list cards */
   firstUserPreview?: string;
+  /** derived: most recent user message preview — used by the live widget
+   *  to surface "what am I currently working on" instead of showing the
+   *  (often stale) first message from hours ago. */
+  lastUserPreview?: string;
   /** derived: last "conclusion" agent message preview — used in list cards */
   lastAgentPreview?: string;
   /** derived: number of tool calls across the session */
@@ -103,6 +107,10 @@ export type SessionMeta = {
    *  the agent actively working" without counting user-away time,
    *  lid-closed time, or other long idle gaps. */
   airTimeMs?: number;
+  /** derived: contiguous active segments (same 3-minute idle split as
+   *  airTimeMs). Used by parallelism detection and mini-Gantts so
+   *  long-idle sessions don't get counted as "active" while dead. */
+  activeSegments?: { startMs: number; endMs: number }[];
 };
 
 /**

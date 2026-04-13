@@ -282,7 +282,7 @@ export default async function DashboardHome({
                       textAlign: "right",
                       minWidth: 54,
                     }}
-                    title="Active time (filters out idle gaps)"
+                    title="Agent time (filters out idle gaps)"
                   >
                     {formatDuration(s.airTimeMs ?? s.durationMs)}
                   </div>
