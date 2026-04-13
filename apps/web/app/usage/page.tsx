@@ -10,6 +10,7 @@ import { ArrowLeft, Activity } from "lucide-react";
 import { readUsageSnapshots, latestUsageSnapshot } from "@/lib/usage-data";
 import { UsageGauges } from "@/components/usage-gauges";
 import { UsageChart } from "@/components/usage-chart";
+import { OptionalChart } from "@/components/optional-chart";
 
 export const dynamic = "force-dynamic";
 
@@ -94,31 +95,39 @@ export default function UsagePage() {
             <UsageGauges snapshot={latest} />
           </section>
 
-          <section
-            style={{ display: "flex", flexDirection: "column", gap: 16 }}
-          >
+          <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <SectionLabel>History</SectionLabel>
-            <UsageChart
-              snapshots={snapshots}
-              seriesKey="five_hour"
-              title="5 hour window"
-              windowMs={5 * HOUR}
-              colorVar="var(--af-success)"
-            />
-            <UsageChart
-              snapshots={snapshots}
-              seriesKey="seven_day"
-              title="7 day window (all)"
-              windowMs={7 * DAY}
-              colorVar="var(--af-accent)"
-            />
-            <UsageChart
-              snapshots={snapshots}
-              seriesKey="seven_day_sonnet"
-              title="7 day window (Sonnet)"
-              windowMs={7 * DAY}
-              colorVar="var(--af-warning)"
-            />
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gap: 16,
+              }}
+            >
+              <UsageChart
+                snapshots={snapshots}
+                seriesKey="five_hour"
+                title="5 hour window"
+                windowMs={5 * HOUR}
+                colorVar="var(--af-success)"
+              />
+              <UsageChart
+                snapshots={snapshots}
+                seriesKey="seven_day"
+                title="7 day window (all)"
+                windowMs={7 * DAY}
+                colorVar="var(--af-accent)"
+              />
+            </div>
+            <OptionalChart storageKey="cclens:usage:show-sonnet" label="Sonnet window">
+              <UsageChart
+                snapshots={snapshots}
+                seriesKey="seven_day_sonnet"
+                title="7 day window (Sonnet)"
+                windowMs={7 * DAY}
+                colorVar="var(--af-warning)"
+              />
+            </OptionalChart>
           </section>
 
           <section
