@@ -8,8 +8,8 @@ import { latestUsageSnapshot } from "@/lib/usage-data";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Claude Lens",
-  description: "Local-only dashboard for Claude Code sessions.",
+  title: "fleetlens",
+  description: "Local-only dashboard for Claude Code sessions and agent fleets.",
 };
 
 export const dynamic = "force-dynamic";

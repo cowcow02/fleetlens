@@ -1,6 +1,6 @@
-# Claude Lens
+# fleetlens
 
-Local-only, privacy-first dashboard for Claude Code sessions. Reads JSONL transcripts from `~/.claude/projects/` and visualizes agent activity.
+Local-only, privacy-first dashboard for Claude Code sessions and agent fleets. Reads JSONL transcripts from `~/.claude/projects/` and visualizes agent activity.
 
 ## Architecture
 

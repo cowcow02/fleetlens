@@ -17,17 +17,17 @@ export async function start(args: string[]): Promise<void> {
   const status = getServerStatus();
   if (status.running) {
     const url = `http://localhost:${status.port}`;
-    console.log(`Claude Lens is already running on ${url} (PID ${status.pid})`);
+    console.log(`fleetlens is already running on ${url} (PID ${status.pid})`);
     if (!noOpen) openBrowser(url);
     return;
   }
 
-  console.log("Starting Claude Lens...");
+  console.log("Starting fleetlens...");
 
   try {
     const result = await startServer({ port });
     const url = `http://localhost:${result.port}`;
-    console.log(`Claude Lens running on ${url} (PID ${result.pid})`);
+    console.log(`fleetlens running on ${url} (PID ${result.pid})`);
     if (!noOpen) openBrowser(url);
   } catch (err) {
     console.error(`Failed to start: ${(err as Error).message}`);

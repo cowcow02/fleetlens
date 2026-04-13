@@ -25,11 +25,11 @@ export async function web(args: string[]): Promise<void> {
     return;
   }
 
-  console.log("Claude Lens is not running. Starting server...");
+  console.log("fleetlens is not running. Starting server...");
   try {
     const result = await startServer({});
     const url = `http://localhost:${result.port}${path}`;
-    console.log(`Claude Lens running on ${url} (PID ${result.pid})`);
+    console.log(`fleetlens running on ${url} (PID ${result.pid})`);
     if (!noOpen) openBrowser(url);
   } catch (err) {
     console.error(`Failed to start: ${(err as Error).message}`);

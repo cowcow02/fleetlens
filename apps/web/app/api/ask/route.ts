@@ -22,7 +22,7 @@ import { spawn } from "node:child_process";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const SYSTEM_PROMPT = `You are a session analyst for Claude Code transcripts. The user is viewing a session in the Claude Lens dashboard and wants your help understanding it.
+const SYSTEM_PROMPT = `You are a session analyst for Claude Code transcripts. The user is viewing a session in the fleetlens dashboard and wants your help understanding it.
 
 You will receive a structured summary of the session, then the user's question about it. Respond directly and concisely in markdown.
 
