@@ -96,7 +96,8 @@ function UsageRow({ label, window }: { label: string; window: UsageWindow | null
       <div
         style={{
           display: "flex",
-          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 6,
           fontSize: 10,
           color: "var(--af-text-secondary)",
           marginBottom: 2,
@@ -104,7 +105,23 @@ function UsageRow({ label, window }: { label: string; window: UsageWindow | null
         }}
       >
         <span>{label}</span>
-        <span style={{ fontWeight: 600, color: "var(--af-text)" }}>
+        {window?.resets_at && (
+          <span
+            suppressHydrationWarning
+            style={{
+              fontSize: 9,
+              color: "var(--af-text-tertiary)",
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            resets {formatResetTime(window.resets_at)}
+          </span>
+        )}
+        <span style={{ fontWeight: 600, color: "var(--af-text)", marginLeft: "auto" }}>
           {hasData ? `${clamped.toFixed(0)}%` : "—"}
         </span>
       </div>
@@ -128,6 +145,31 @@ function UsageRow({ label, window }: { label: string; window: UsageWindow | null
       </div>
     </div>
   );
+}
+
+function formatResetTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const diffSec = Math.round((then - now) / 1000);
+  const abs = Math.abs(diffSec);
+  const past = diffSec < 0;
+
+  let value: string;
+  if (abs < 60) {
+    value = `${abs}s`;
+  } else if (abs < 3600) {
+    value = `${Math.floor(abs / 60)}m`;
+  } else if (abs < 86400) {
+    const h = Math.floor(abs / 3600);
+    const m = Math.floor((abs % 3600) / 60);
+    value = m > 0 ? `${h}h${m}m` : `${h}h`;
+  } else {
+    const d = Math.floor(abs / 86400);
+    const h = Math.floor((abs % 86400) / 3600);
+    value = h > 0 ? `${d}d${h}h` : `${d}d`;
+  }
+
+  return past ? `${value} ago` : `in ${value}`;
 }
 
 function formatRelative(iso: string): string {

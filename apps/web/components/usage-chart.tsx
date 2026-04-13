@@ -32,9 +32,12 @@ export function UsageChart({
   /** CSS variable for this window's color (e.g. 'var(--af-success)') */
   colorVar: string;
 }) {
-  const width = 800;
-  const height = 260;
-  const padding = { top: 20, right: 20, bottom: 40, left: 52 };
+  // ViewBox dimensions chosen to match a typical full-width landscape
+  // chart so text renders without horizontal distortion when the SVG
+  // is scaled. Aspect is ~5.3:1 which matches a ~1280px wide page.
+  const width = 1280;
+  const height = 240;
+  const padding = { top: 24, right: 24, bottom: 44, left: 56 };
 
   const computed = useMemo(() => {
     const valid = snapshots
@@ -249,8 +252,11 @@ export function UsageChart({
       <div style={{ position: "relative" }}>
         <svg
           viewBox={`0 0 ${width} ${height}`}
-          style={{ width: "100%", height: 240, display: "block" }}
-          preserveAspectRatio="none"
+          style={{
+            width: "100%",
+            aspectRatio: `${width} / ${height}`,
+            display: "block",
+          }}
           onMouseMove={handleMouseMove}
           onMouseLeave={() => setHover(null)}
         >
