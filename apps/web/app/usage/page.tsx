@@ -1,5 +1,5 @@
 /**
- * Claude Code usage page — 5h/7d utilization gauges + time series.
+ * Claude Code usage page — 5h/7d utilization gauges + per-window time series.
  *
  * Reads from ~/.cclens/usage.jsonl (written by the cclens daemon).
  * No API endpoint — direct file read on the server.
@@ -12,6 +12,9 @@ import { UsageGauges } from "@/components/usage-gauges";
 import { UsageChart } from "@/components/usage-chart";
 
 export const dynamic = "force-dynamic";
+
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 
 export default function UsagePage() {
   const snapshots = readUsageSnapshots();
@@ -47,11 +50,31 @@ export default function UsagePage() {
             <UsageGauges snapshot={latest} />
           </section>
 
-          <section className="mb-6">
-            <h2 className="mb-3 text-sm font-medium uppercase tracking-wide text-af-muted">
-              History ({snapshots.length} snapshots)
+          <section className="mb-6 space-y-4">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-af-muted">
+              History
             </h2>
-            <UsageChart snapshots={snapshots} />
+            <UsageChart
+              snapshots={snapshots}
+              seriesKey="five_hour"
+              title="5 hour window"
+              windowMs={5 * HOUR}
+              color="#22c55e"
+            />
+            <UsageChart
+              snapshots={snapshots}
+              seriesKey="seven_day"
+              title="7 day window (all)"
+              windowMs={7 * DAY}
+              color="#3b82f6"
+            />
+            <UsageChart
+              snapshots={snapshots}
+              seriesKey="seven_day_sonnet"
+              title="7 day window (Sonnet)"
+              windowMs={7 * DAY}
+              color="#f59e0b"
+            />
           </section>
 
           <section className="text-xs text-af-muted">
