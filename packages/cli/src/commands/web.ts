@@ -1,15 +1,15 @@
 import { getServerStatus, startServer, openBrowser } from "../server.js";
 
 /**
- * `cclens open [page]` — open the dashboard in a browser.
+ * `cclens web [page]` — open the dashboard in a browser.
  * Starts the server first if it's not already running.
  *
  * Examples:
- *   cclens open           → http://localhost:3321/
- *   cclens open usage     → http://localhost:3321/usage
- *   cclens open sessions  → http://localhost:3321/sessions
+ *   cclens web           → http://localhost:3321/
+ *   cclens web usage     → http://localhost:3321/usage
+ *   cclens web sessions  → http://localhost:3321/sessions
  */
-export async function open(args: string[]): Promise<void> {
+export async function web(args: string[]): Promise<void> {
   const rawPath = args[0] ?? "";
   const path = rawPath.startsWith("/") ? rawPath : rawPath ? `/${rawPath}` : "";
 
@@ -26,7 +26,7 @@ export async function open(args: string[]): Promise<void> {
   try {
     const result = await startServer({});
     const url = `http://localhost:${result.port}${path}`;
-    console.log(`Claude Lens running on http://localhost:${result.port} (PID ${result.pid})`);
+    console.log(`Claude Lens running on ${url} (PID ${result.pid})`);
     openBrowser(url);
   } catch (err) {
     console.error(`Failed to start: ${(err as Error).message}`);
