@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 #
-# Claude Lens — one-line installer
+# Fleetlens — one-line installer (from-source, legacy path)
+#
+# The recommended install is:
+#   npm install -g fleetlens
+#
+# This script is for hacking on the repo itself. It clones from master
+# and runs the dev server.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/cowcow02/claude-lens/master/install.sh | bash
-#
-# What it does:
-#   1. Checks for Node.js >= 20 and pnpm (guides you to install if missing)
-#   2. Checks for ~/.claude/projects (your Claude Code data)
-#   3. Clones claude-lens into ~/claude-lens (or a custom dir)
-#   4. Installs dependencies
-#   5. Starts the dev server on port 3321
-#   6. Opens http://localhost:3321 in your browser
+#   curl -fsSL https://raw.githubusercontent.com/cowcow02/fleetlens/master/install.sh | bash
 #
 
 set -euo pipefail
@@ -24,8 +22,8 @@ DIM='\033[2m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-INSTALL_DIR="${CLAUDE_LENS_DIR:-$HOME/claude-lens}"
-REPO="https://github.com/cowcow02/claude-lens.git"
+INSTALL_DIR="${FLEETLENS_DIR:-$HOME/fleetlens}"
+REPO="https://github.com/cowcow02/fleetlens.git"
 PORT=3321
 
 info()  { echo -e "${CYAN}→${NC} $*"; }
@@ -34,8 +32,8 @@ warn()  { echo -e "${YELLOW}!${NC} $*"; }
 fail()  { echo -e "${RED}✗${NC} $*"; exit 1; }
 
 echo ""
-echo -e "${BOLD}Claude Lens${NC} — local dashboard for Claude Code sessions"
-echo -e "${DIM}https://github.com/cowcow02/claude-lens${NC}"
+echo -e "${BOLD}Fleetlens${NC} — Claude Code fleet analytics dashboard"
+echo -e "${DIM}https://github.com/cowcow02/fleetlens${NC}"
 echo ""
 
 # ─── Check Node.js ────────────────────────────────────────────────

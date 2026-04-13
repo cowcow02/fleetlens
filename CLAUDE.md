@@ -11,7 +11,7 @@ Brand: **Fleetlens** (capitalized, proper noun, displayed in UI). CLI binary and
 pnpm + Turborepo monorepo. Three packages that build in order: `parser → web → cli`.
 
 ```
-claude-lens/                          ← repo name is still "claude-lens" for historical reasons
+fleetlens/                            ← github.com/cowcow02/fleetlens
 ├── packages/
 │   ├── parser/   (@claude-lens/parser)   Pure JSONL parser + analytics. No fs, no network.
 │   └── cli/      (fleetlens)             Published to npm. Bundles parser + web standalone.
@@ -220,4 +220,4 @@ Default 3321. Override with `--port N` or `CCLENS_PORT` env var.
 
 - **UI**: `Fleetlens` (capitalized, proper noun). Sidebar header, page title, metric card labels in prose.
 - **CLI / npm / imports**: `fleetlens` (lowercase). Convention for Unix commands and npm packages. The `bin` entry in `packages/cli/package.json` is a single `fleetlens` binary.
-- **Workspace / repo**: still `claude-lens` on GitHub and `@claude-lens/parser` / `@claude-lens/web` as internal workspace names. Not worth renaming these — they're invisible to end users.
+- **GitHub repo**: `cowcow02/fleetlens`. Internal workspace package names (`@claude-lens/parser` / `@claude-lens/web`) are still the old brand — they're private, never published to npm, and renaming them would churn every import across the codebase for zero user-visible benefit.

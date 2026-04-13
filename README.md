@@ -34,8 +34,8 @@ That's it. `fleetlens start` brings up both the dashboard web server and the bac
 Or build from source:
 
 ```bash
-git clone https://github.com/cowcow02/claude-lens.git
-cd claude-lens
+git clone https://github.com/cowcow02/fleetlens.git
+cd fleetlens
 pnpm install
 NEXT_OUTPUT=standalone pnpm build
 node scripts/prepare-cli.mjs
@@ -128,7 +128,7 @@ Historical burndown charts described above.
 pnpm monorepo with Turborepo:
 
 ```
-claude-lens/
+fleetlens/
 ├── packages/
 │   ├── parser/              # @claude-lens/parser — pure JSONL parser + analytics
 │   └── cli/                 # fleetlens — published CLI + bundled standalone Next.js app
