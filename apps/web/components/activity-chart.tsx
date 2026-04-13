@@ -107,13 +107,21 @@ export function ActivityChart({
     );
   }
 
+  // Axis padding
+  const padL = 48; // y-axis labels
+  const padR = 8;
+  const padB = 22; // x-axis labels
+  const padT = 10;
+
+  const plotMinWidth = 600;
   const barGap = 2;
   const barWidth = Math.max(
     3,
-    Math.floor((600 - barGap * bars.length) / Math.max(1, bars.length)),
+    Math.floor((plotMinWidth - barGap * bars.length) / Math.max(1, bars.length)),
   );
-  const width = bars.length * (barWidth + barGap);
-  const chartHeight = height - 28;
+  const barsTotalWidth = bars.length * (barWidth + barGap);
+  const width = padL + Math.max(barsTotalWidth, plotMinWidth) + padR;
+  const chartHeight = height - padT - padB;
 
   return (
     <div>
@@ -173,28 +181,49 @@ export function ActivityChart({
             {config.unit === "ms" ? formatMs(hover.value) : hover.value.toLocaleString()}
           </div>
         )}
-        <svg width={Math.max(width, 600)} height={height} style={{ display: "block" }}>
-          {/* Baseline */}
-          <line
-            x1={0}
-            x2={Math.max(width, 600)}
-            y1={chartHeight}
-            y2={chartHeight}
-            stroke="var(--af-border-subtle)"
-            strokeDasharray="2 3"
-          />
+        <svg width={width} height={height} style={{ display: "block" }}>
+          {/* Y-axis gridlines + labels (0, 25, 50, 75, 100% of maxVal) */}
+          <g fontSize={10} fill="var(--af-text-tertiary)">
+            {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
+              const y = padT + (1 - frac) * chartHeight;
+              const raw = maxVal * frac;
+              const label =
+                config.unit === "ms"
+                  ? formatMs(raw)
+                  : raw >= 1_000_000
+                    ? `${(raw / 1_000_000).toFixed(1)}M`
+                    : raw >= 1_000
+                      ? `${(raw / 1_000).toFixed(1)}k`
+                      : Math.round(raw).toString();
+              return (
+                <g key={frac}>
+                  <line
+                    x1={padL}
+                    x2={width - padR}
+                    y1={y}
+                    y2={y}
+                    stroke="var(--af-border-subtle)"
+                    strokeDasharray={frac === 0 ? undefined : "2 3"}
+                  />
+                  <text x={padL - 6} y={y + 3} textAnchor="end">
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
 
           {/* Bars */}
           {bars.map((bar, i) => {
-            const h = maxVal > 0 ? (bar.value / maxVal) * (chartHeight - 4) : 0;
-            const y = chartHeight - h;
-            const x = i * (barWidth + barGap);
+            const h = maxVal > 0 ? (bar.value / maxVal) * chartHeight : 0;
+            const y = padT + chartHeight - h;
+            const x = padL + i * (barWidth + barGap);
             const isHovered = hover?.bucket.date === bar.bucket.date;
             return (
               <g key={bar.bucket.date}>
                 <rect
                   x={x}
-                  y={0}
+                  y={padT}
                   width={barWidth}
                   height={chartHeight}
                   fill="transparent"
@@ -217,17 +246,31 @@ export function ActivityChart({
             );
           })}
 
-          {/* Month labels every ~4 weeks */}
-          <g fontSize={9} fill="var(--af-text-tertiary)">
+          {/* X-axis labels — first day, middle day, last day, plus month starts */}
+          <g fontSize={10} fill="var(--af-text-tertiary)">
             {bars.map((bar, i) => {
               const d = bar.bucket.date;
-              const day = d.slice(-2);
-              if (day !== "01") return null;
-              const x = i * (barWidth + barGap) + barWidth / 2;
-              const month = new Date(`${d}T00:00:00`).toLocaleString(undefined, { month: "short" });
+              const isFirst = i === 0;
+              const isLast = i === bars.length - 1;
+              const isMonthStart = d.slice(-2) === "01";
+              // Show: first, last, month starts, and (when no month starts and range is short) the middle
+              const isMiddle =
+                bars.length > 3 &&
+                bars.length <= 31 &&
+                i === Math.floor(bars.length / 2) &&
+                !bars.some((b) => b.bucket.date.slice(-2) === "01");
+              if (!isFirst && !isLast && !isMonthStart && !isMiddle) return null;
+
+              const x = padL + i * (barWidth + barGap) + barWidth / 2;
+              const label = new Date(`${d}T00:00:00`).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+              });
+              const anchor = isFirst ? "start" : isLast ? "end" : "middle";
+              const xPos = isFirst ? padL : isLast ? width - padR : x;
               return (
-                <text key={d} x={x} y={height - 4} textAnchor="middle">
-                  {month}
+                <text key={d} x={xPos} y={height - 6} textAnchor={anchor}>
+                  {label}
                 </text>
               );
             })}
