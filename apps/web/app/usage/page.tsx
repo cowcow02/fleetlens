@@ -10,13 +10,9 @@
 
 import { Activity } from "lucide-react";
 import { readUsageSnapshots, latestUsageSnapshot } from "@/lib/usage-data";
-import { UsageChart } from "@/components/usage-chart";
-import { OptionalChart } from "@/components/optional-chart";
+import { UsageChartsDashboard } from "@/components/usage-charts-dashboard";
 
 export const dynamic = "force-dynamic";
-
-const HOUR = 60 * 60 * 1000;
-const DAY = 24 * HOUR;
 
 export default function UsagePage() {
   const snapshots = readUsageSnapshots();
@@ -59,35 +55,7 @@ export default function UsagePage() {
         <EmptyState />
       ) : (
         <>
-          <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <SectionLabel>7d utilization</SectionLabel>
-            <UsageChart
-              snapshots={snapshots}
-              seriesKey="seven_day"
-              windowMs={7 * DAY}
-              colorVar="var(--af-accent)"
-            />
-          </section>
-          <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <SectionLabel>5h utilization</SectionLabel>
-            <UsageChart
-              snapshots={snapshots}
-              seriesKey="five_hour"
-              windowMs={5 * HOUR}
-              colorVar="var(--af-success)"
-            />
-          </section>
-          <OptionalChart storageKey="cclens:usage:show-sonnet" label="Sonnet 7d utilization">
-            <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <SectionLabel>7d utilization (Sonnet)</SectionLabel>
-              <UsageChart
-                snapshots={snapshots}
-                seriesKey="seven_day_sonnet"
-                windowMs={7 * DAY}
-                colorVar="var(--af-warning)"
-              />
-            </section>
-          </OptionalChart>
+          <UsageChartsDashboard snapshots={snapshots} />
           <div
             style={{
               fontSize: 11,
@@ -101,22 +69,6 @@ export default function UsagePage() {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontSize: 11,
-        fontWeight: 600,
-        color: "var(--af-text)",
-        textTransform: "uppercase",
-        letterSpacing: "0.04em",
-      }}
-    >
-      {children}
     </div>
   );
 }

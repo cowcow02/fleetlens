@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Maximize2 } from "lucide-react";
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
 
 type SeriesKey = "five_hour" | "seven_day" | "seven_day_sonnet";
@@ -23,12 +24,15 @@ export function UsageChart({
   seriesKey,
   windowMs,
   colorVar,
+  onExpand,
 }: {
   snapshots: UsageSnapshot[];
   seriesKey: SeriesKey;
   windowMs: number;
   /** CSS variable for this window's color (e.g. 'var(--af-success)') */
   colorVar: string;
+  /** If provided, render a fullscreen-expand button that calls this handler. */
+  onExpand?: () => void;
 }) {
   // ViewBox dimensions chosen for a wide, compact chart that fits two
   // per MBP screen without scrolling while keeping the burndown line
@@ -191,6 +195,29 @@ export function UsageChart({
           {formatWindowSize(windowMs)} · resets{" "}
           {formatRelative(new Date(windowEnd).toISOString())}
         </div>
+        {onExpand && (
+          <button
+            type="button"
+            onClick={onExpand}
+            aria-label="Expand chart"
+            title="Expand"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 24,
+              height: 24,
+              borderRadius: 5,
+              background: "transparent",
+              border: "1px solid var(--af-border-subtle)",
+              color: "var(--af-text-tertiary)",
+              cursor: "pointer",
+              marginLeft: 4,
+            }}
+          >
+            <Maximize2 size={12} />
+          </button>
+        )}
       </div>
 
       {/* Chart + tooltip */}
