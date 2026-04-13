@@ -25,9 +25,11 @@ Install globally from npm:
 
 ```bash
 npm install -g fleetlens
-fleetlens web
-# → http://localhost:3321
+fleetlens start
+# → http://localhost:3321 — dashboard + usage daemon both running
 ```
+
+That's it. `fleetlens start` brings up both the dashboard web server and the background usage daemon in one call. Any future `fleetlens update` will auto-restart both against the new code.
 
 Or build from source:
 
@@ -37,27 +39,43 @@ cd claude-lens
 pnpm install
 NEXT_OUTPUT=standalone pnpm build
 node scripts/prepare-cli.mjs
-node packages/cli/dist/index.js web
-```
-
-Or use the legacy `install.sh` one-liner:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/cowcow02/claude-lens/master/install.sh | bash
+node packages/cli/dist/index.js start
 ```
 
 ## CLI
 
 ```bash
-fleetlens start [--port N] [--no-open]   # launch dashboard server
-fleetlens stop                           # graceful shutdown
-fleetlens web [page] [--no-open]         # open dashboard in browser (auto-starts)
-fleetlens usage [--save]                 # print 5h/7d plan utilization in terminal
+# Common
+fleetlens start [--port N] [--no-open] [--no-daemon]   # Start dashboard + usage daemon
+fleetlens stop                           # Stop dashboard + usage daemon
+fleetlens status                         # Server + daemon + latest snapshot, one glance
+fleetlens update                         # Upgrade to latest; stops + re-exec's cleanly
+
+# Terminal-only (no server needed)
 fleetlens stats [--live] [-s D] [--days N]   # ccusage-style daily token table
-fleetlens daemon start|stop|status|logs  # background poller for usage history
-fleetlens update                         # force reinstall latest
+fleetlens usage [--save]                 # Plan utilization (5h/7d) printed once
+
+# Advanced
+fleetlens web [page] [--no-open]         # Open the dashboard in a browser (auto-starts server only)
+fleetlens start --no-daemon              # Start only the web server (skip the daemon)
+fleetlens daemon start|stop|status|logs  # Manage the usage daemon by itself
+
 fleetlens version
 ```
+
+`fleetlens start` and `fleetlens stop` manage **both** the web server and the usage daemon as one unit — that's the common path. Use the `daemon` subcommand or `--no-daemon` flag only when you want to manage the two independently.
+
+### Auto-update
+
+Running `fleetlens start` checks npm for a newer version. If one exists, it:
+
+1. Stops any running web server + daemon
+2. Runs `npm install -g fleetlens@latest`
+3. Reports where it actually installed and warns if your `PATH` resolves `fleetlens` to a different Node install (the classic nvm / homebrew multi-install trap)
+4. Re-exec's straight into the newly-installed `dist/index.js` so `PATH` lookups can't land on the old binary
+5. The new process then launches a fresh server + daemon
+
+`fleetlens update` is the explicit version — same flow, but only tears down running services on a real version bump (reinstalling the same version is a no-op so it doesn't disrupt an open dashboard tab).
 
 ### The usage daemon
 
@@ -177,9 +195,20 @@ A single SSE stream (`/api/events`) watches both `~/.claude/projects/` (session 
 - **Skill-injection hiding** — skill docs auto-injected as user blocks are filtered out.
 - **Cache-aware cost estimation** — per-model pricing table with separate rates for input / output / cache-read / cache-write.
 
-### Parallel run detection
+### Parallel run detection + Concurrency bursts
 
-Sweep-line over session `[start, end]` intervals finds peaks and contiguous parallel regions. The Parallelism metric card shows total parallel time plus the **% of agent time spent in parallel** — the single most leadership-relevant number. Useful if you run multiple Claude sessions (git worktrees, multi-agent fleets, etc.).
+Sweep-line over session active segments finds peaks and contiguous parallel regions. Raw overlaps are noisy — a morning of back-and-forth work creates dozens of sub-minute artifacts. The Timeline page collapses them into **concurrency bursts** with two rules:
+
+- **Drop overlaps under 1 minute** (filters tab-switch noise)
+- **Merge overlaps within 10 minutes of each other** (fuses morning bursts into one)
+
+Each burst is colored **teal** (same-project) or **purple** (cross-project — genuinely interesting signal for multi-agent fleet work). The Timeline page shows:
+
+- A **Concurrency panel** with the day's bursts (first 3 by default, click to expand)
+- A **burst detail modal** with a focused mini-Gantt showing only the involved sessions, numbered tracks you can click to scroll to the matching session card, and per-session active-time percentages within the burst window
+- A **burst ribbon** at the top of the main Gantt that sticky-scrolls with the chart
+
+The overview's Parallelism metric card shows total parallel time + peak concurrency + % of agent time spent in parallel.
 
 ### PR shipping metrics
 
