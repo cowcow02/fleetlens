@@ -1,6 +1,6 @@
 {
   "name": "claude-lens-workspace",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "private": true,
   "description": "Claude Lens — local-only dashboard for Claude Code sessions. Heatmaps, timelines, parallel agent detection, PR metrics, and Ask Claude analysis.",
   "license": "MIT",
