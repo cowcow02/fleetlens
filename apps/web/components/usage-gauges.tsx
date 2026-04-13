@@ -53,17 +53,22 @@ function formatRelative(iso: string): string {
   const now = Date.now();
   const diffSec = Math.round((then - now) / 1000);
   const abs = Math.abs(diffSec);
-  const label = diffSec < 0 ? "ago" : "in";
+  const past = diffSec < 0;
 
-  if (abs < 60) return `${label === "ago" ? `${abs}s ago` : `in ${abs}s`}`;
-  if (abs < 3600) {
-    const m = Math.round(abs / 60);
-    return diffSec < 0 ? `${m}m ago` : `in ${m}m`;
+  let value: string;
+  if (abs < 60) {
+    value = `${abs}s`;
+  } else if (abs < 3600) {
+    value = `${Math.floor(abs / 60)}m`;
+  } else if (abs < 86400) {
+    const h = Math.floor(abs / 3600);
+    const m = Math.floor((abs % 3600) / 60);
+    value = m > 0 ? `${h}h${m}m` : `${h}h`;
+  } else {
+    const d = Math.floor(abs / 86400);
+    const h = Math.floor((abs % 86400) / 3600);
+    value = h > 0 ? `${d}d${h}h` : `${d}d`;
   }
-  if (abs < 86400) {
-    const h = Math.round(abs / 3600);
-    return diffSec < 0 ? `${h}h ago` : `in ${h}h`;
-  }
-  const d = Math.round(abs / 86400);
-  return diffSec < 0 ? `${d}d ago` : `in ${d}d`;
+
+  return past ? `${value} ago` : `in ${value}`;
 }
