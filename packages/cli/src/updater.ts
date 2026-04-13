@@ -237,6 +237,14 @@ export async function checkForUpdate(): Promise<void> {
   if (!shouldUpdate(current, latest)) return;
 
   console.log(`Updating ${PACKAGE_NAME} ${current} → ${latest}...`);
+
+  // Tear down any running server + daemon BEFORE installing so the
+  // re-exec brings up a fresh set of processes against the new code.
+  // Without this, `fleetlens start` on top of an already-running older
+  // server would update the binary but leave the old web server alive
+  // and serving stale code.
+  await stopRunningServices();
+
   const ok = runNpmInstall();
   if (ok) {
     reportInstallOutcome(latest);
@@ -248,6 +256,33 @@ export async function checkForUpdate(): Promise<void> {
         `  → Try manually: npm install -g ${PACKAGE_NAME}@latest\n` +
         `  → Or with sudo if your global npm prefix needs it.`,
     );
+  }
+}
+
+/**
+ * Stop the web server and usage daemon if either is running, printing
+ * a short report so the user can follow along. Used by the auto-update
+ * flow so a version bump always lands on fresh processes.
+ */
+async function stopRunningServices(): Promise<void> {
+  try {
+    const { getServerStatus, stopServer } = await import("./server.js");
+    const status = getServerStatus();
+    if (status.running) {
+      stopServer();
+      console.log(`  ✓ Stopped old server (PID ${status.pid})`);
+    }
+  } catch {
+    // Non-fatal — don't block the upgrade if stop fails.
+  }
+  try {
+    const { stopDaemonSilent } = await import("./commands/daemon.js");
+    const result = stopDaemonSilent();
+    if (result.stopped) {
+      console.log(`  ✓ Stopped old daemon (PID ${result.pid})`);
+    }
+  } catch {
+    // Non-fatal
   }
 }
 
@@ -265,6 +300,10 @@ export async function forceUpdate(): Promise<void> {
 
   if (shouldUpdate(current, latest)) {
     console.log(`Updating ${PACKAGE_NAME} ${current} → ${latest}...`);
+    // Only tear down running processes for a real upgrade. Reinstalling
+    // the same version doesn't need a restart and shouldn't disrupt
+    // anyone who has the dashboard open.
+    await stopRunningServices();
   } else {
     console.log(`Already on latest (${current}). Reinstalling...`);
   }
