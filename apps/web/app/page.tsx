@@ -130,7 +130,11 @@ export default async function DashboardHome({
         <MetricCard
           label="Sessions"
           value={metrics.sessionCount.toLocaleString()}
-          sub={`${metrics.totalTurns.toLocaleString()} turns total`}
+          sub={`${metrics.totalTurns.toLocaleString()} turns · avg ${
+            metrics.sessionCount
+              ? Math.round(metrics.totalTurns / metrics.sessionCount)
+              : 0
+          }/session`}
           icon={<ListTree size={13} />}
           tooltip="Total Claude Code sessions (one JSONL file = one session). A 'turn' is one user message that starts an agent response cycle."
         />
@@ -139,14 +143,14 @@ export default async function DashboardHome({
           value={formatDuration(metrics.totalAirTimeMs)}
           sub={
             buckets.filter((b) => b.airTimeMs > 0).length > 0
-              ? `avg ${formatDuration(
+              ? `${formatDuration(
                   metrics.totalAirTimeMs /
                     Math.max(1, buckets.filter((b) => b.airTimeMs > 0).length),
-                )} / active day`
+                )}/day · ${buckets.filter((b) => b.airTimeMs > 0).length} active days`
               : "no activity"
           }
           icon={<Clock size={13} />}
-          tooltip="Sum of time the agent was actively working across all sessions. Gaps longer than 3 minutes (user away, laptop lid closed) are excluded. This is NOT wall-clock duration."
+          tooltip="Sum of time the agent was actively working across all sessions. Gaps longer than 3 minutes (user away, laptop lid closed) are excluded. This is NOT wall-clock duration. Per-day average is across days with any activity."
         />
         <MetricCard
           label="Tool calls"
@@ -154,29 +158,6 @@ export default async function DashboardHome({
           sub={`avg ${metrics.sessionCount ? Math.round(metrics.totalToolCalls / metrics.sessionCount) : 0} / session`}
           icon={<Zap size={13} />}
           tooltip="Total tool invocations (Bash, Read, Edit, Write, Grep, Glob, Agent, etc.) across all sessions. Higher counts typically mean more complex tasks."
-        />
-        <MetricCard
-          label="Est. cost"
-          value={formatCost(estimateCostMulti(sessions))}
-          sub={`${formatTokens(totalInput)} in · ${formatTokens(metrics.totalTokens.output)} out`}
-          icon={<DollarSign size={13} />}
-          tooltip={`Estimated API spend priced per-model across all sessions.\nInput: ${formatTokens(metrics.totalTokens.input)}\nOutput: ${formatTokens(metrics.totalTokens.output)}\nCache read: ${formatTokens(metrics.totalTokens.cacheRead)}\nCache write: ${formatTokens(metrics.totalTokens.cacheWrite)}`}
-        />
-        <MetricCard
-          label="Code changes"
-          value={
-            <span>
-              <span style={{ color: "var(--af-success)" }}>
-                +{metrics.totalLinesAdded.toLocaleString()}
-              </span>
-              {" "}
-              <span style={{ color: "var(--af-danger)" }}>
-                -{metrics.totalLinesRemoved.toLocaleString()}
-              </span>
-            </span>
-          }
-          sub={`${metrics.totalFilesEdited.toLocaleString()} files edited`}
-          tooltip="Total lines added and removed across all Edit + Write tool calls. Files counted are unique file paths touched by the agent."
         />
         <MetricCard
           label="Parallelism"
@@ -187,10 +168,37 @@ export default async function DashboardHome({
           }
           sub={
             burstStats.burstCount > 0
-              ? `peak ×${burstStats.peakConcurrent} · ${burstStats.burstCount} burst${burstStats.burstCount === 1 ? "" : "s"} · ${burstStats.activeDayCount} day${burstStats.activeDayCount === 1 ? "" : "s"}`
+              ? `peak ×${burstStats.peakConcurrent} · ${Math.round(
+                  (burstStats.totalParallelMs /
+                    Math.max(1, metrics.totalAirTimeMs)) *
+                    100,
+                )}% of active time`
               : "no sustained parallelism"
           }
-          tooltip={`Total time ≥2 agents were working in parallel, with peak concurrency as the highest count in any single burst.\n${burstStats.crossProjectBurstCount} of ${burstStats.burstCount} bursts spanned multiple projects.`}
+          tooltip={`Total time ≥2 agents were working in parallel, with peak concurrency as the highest count in any single burst. Percentage shows what fraction of total active time was parallel.\n\n${burstStats.burstCount} burst${burstStats.burstCount === 1 ? "" : "s"} · ${burstStats.crossProjectBurstCount} spanned multiple projects.`}
+        />
+        <MetricCard
+          label="Code changes"
+          value={
+            <span>
+              <span style={{ color: "var(--af-success)" }}>
+                +{compactInt(metrics.totalLinesAdded)}
+              </span>
+              {" "}
+              <span style={{ color: "var(--af-danger)" }}>
+                -{compactInt(metrics.totalLinesRemoved)}
+              </span>
+            </span>
+          }
+          sub={`${metrics.totalFilesEdited.toLocaleString()} files`}
+          tooltip={`Total lines added and removed across all Edit + Write tool calls.\n+${metrics.totalLinesAdded.toLocaleString()} added\n-${metrics.totalLinesRemoved.toLocaleString()} removed\n${metrics.totalFilesEdited.toLocaleString()} unique files touched`}
+        />
+        <MetricCard
+          label="Est. cost"
+          value={formatCost(estimateCostMulti(sessions))}
+          sub={`${compactTokens(totalInput)} in · ${compactTokens(metrics.totalTokens.output)} out`}
+          icon={<DollarSign size={13} />}
+          tooltip={`Estimated API spend priced per-model across all sessions.\nInput: ${formatTokens(metrics.totalTokens.input)}\nOutput: ${formatTokens(metrics.totalTokens.output)}\nCache read: ${formatTokens(metrics.totalTokens.cacheRead)}\nCache write: ${formatTokens(metrics.totalTokens.cacheWrite)}`}
         />
       </section>
 
@@ -202,14 +210,25 @@ export default async function DashboardHome({
           gap: 16,
         }}
       >
-        <div className="af-panel">
+        <div
+          className="af-panel"
+          style={{ display: "flex", flexDirection: "column" }}
+        >
           <div className="af-panel-header">
             <span>Contribution heatmap</span>
             <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
               sessions / day
             </span>
           </div>
-          <div style={{ padding: 18 }}>
+          <div
+            style={{
+              padding: 18,
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
             <Heatmap buckets={buckets} valueKey="sessions" />
           </div>
         </div>
@@ -423,4 +442,20 @@ export default async function DashboardHome({
       </section>
     </div>
   );
+}
+
+/** Compact integer: 1.2k, 242.7k, 1.3M */
+function compactInt(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 10_000) return (n / 1000).toFixed(1) + "k";
+  if (n < 1_000_000) return (n / 1000).toFixed(1) + "k";
+  return (n / 1_000_000).toFixed(1) + "M";
+}
+
+/** Compact tokens up to billions: 8.5M, 1.2B, 7.8B */
+function compactTokens(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return (n / 1000).toFixed(1) + "k";
+  if (n < 1_000_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  return (n / 1_000_000_000).toFixed(1) + "B";
 }
