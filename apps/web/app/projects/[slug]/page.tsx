@@ -3,20 +3,13 @@ import Link from "next/link";
 import { listSessions, getSession } from "@/lib/data";
 import {
   canonicalProjectName,
-  detectParallelRuns,
   detectPrMarkers,
   sessionAirTimeMs,
 } from "@claude-lens/parser";
 import { DashboardView } from "@/components/dashboard-view";
-import { MetricCard } from "@/components/metric-card";
-import { ParallelRunsStrip } from "@/components/parallel-runs-strip";
-import {
-  formatDuration,
-  formatRelative,
-  prettyProjectName,
-  shortId,
-} from "@/lib/format";
-import { ArrowLeft, GitPullRequest } from "lucide-react";
+import { LiveBadge } from "@/components/live-badge";
+import { formatDuration, formatRelative, prettyProjectName } from "@/lib/format";
+import { ArrowLeft } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +29,6 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
 
   // Use the canonical name for display (no `.worktrees/<name>` suffix).
   const projectName = decodedCanonical;
-  const parallelRuns = detectParallelRuns(projectSessions, 2);
 
   // PR detection is per-session — it needs the event stream, so load the
   // detail for each session and scan. Cap at first 50 sessions so a project
@@ -52,6 +44,9 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
   const refinedAirMs = detailResults
     .filter((d): d is NonNullable<typeof d> => !!d)
     .reduce((a, d) => a + sessionAirTimeMs(d.events), 0);
+
+  const recentSessions = projectSessions.slice(0, 12);
+  const hasPrs = prMarkers.length > 0;
 
   return (
     <div
@@ -97,53 +92,36 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
 
       <DashboardView
         sessions={projectSessions}
-        override={{
-          activeTimeMs: refinedAirMs || undefined,
-          extraCards: (
-            <MetricCard
-              label="PRs shipped"
-              value={String(prMarkers.length)}
-              sub={
-                prMarkers.length > 0
-                  ? `${sliced.length} sessions scanned`
-                  : "scanned recent 50"
-              }
-              icon={<GitPullRequest size={13} />}
-              tooltip="PRs detected by scanning for `gh pr create` Bash commands in session transcripts. Only the most recent 50 sessions are scanned."
-            />
-          ),
-        }}
+        override={{ activeTimeMs: refinedAirMs || undefined }}
       />
 
-      {/* PR timeline + Parallel runs — two-column */}
+      {/* Pull requests shipped + Recent sessions — two columns (or one if no PRs) */}
       <section
         style={{
           display: "grid",
-          gridTemplateColumns: prMarkers.length > 0 && parallelRuns.length > 0 ? "1fr 1fr" : "1fr",
+          gridTemplateColumns: hasPrs ? "1fr 1fr" : "1fr",
           gap: 16,
         }}
       >
-        {prMarkers.length > 0 && (
+        {hasPrs && (
           <div className="af-panel">
             <div className="af-panel-header">
               <span>Pull requests shipped</span>
-              <span
-                style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}
-              >
+              <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
                 detected from `gh pr create` calls
               </span>
             </div>
             <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}>
               {prMarkers
                 .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
-                .slice(0, 25)
+                .slice(0, 12)
                 .map((m, i) => (
                   <Link
                     key={i}
                     href={`/sessions/${m.sessionId}`}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "100px 1fr 70px",
+                      gridTemplateColumns: "90px 1fr 60px",
                       gap: 10,
                       padding: "10px 14px",
                       border: "1px solid var(--af-border-subtle)",
@@ -159,6 +137,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
                         color: "var(--af-text-secondary)",
                         fontFamily: "var(--font-mono)",
                       }}
+                      suppressHydrationWarning
                     >
                       {formatRelative(m.timestamp)}
                     </div>
@@ -191,89 +170,85 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
           </div>
         )}
 
-        {parallelRuns.length > 0 && (
-          <div className="af-panel">
-            <div className="af-panel-header">
-              <span>Parallel runs</span>
-              <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
-                ≥ 2 concurrent sessions
-              </span>
-            </div>
-            <div style={{ padding: 14 }}>
-              <ParallelRunsStrip runs={parallelRuns} sessions={projectSessions} />
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* Session list */}
-      <div className="af-panel">
-        <div className="af-panel-header">
-          <span>Sessions</span>
-          <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
-            newest first
-          </span>
-        </div>
-        <div>
-          {projectSessions.map((s) => (
+        <div className="af-panel">
+          <div className="af-panel-header">
+            <span>Recent sessions</span>
             <Link
-              key={`${s.projectDir}/${s.id}`}
-              href={`/sessions/${s.id}`}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "100px 1fr 90px 90px",
-                gap: 14,
-                padding: "12px 18px",
-                fontSize: 12,
-                borderBottom: "1px solid var(--af-border-subtle)",
-                alignItems: "center",
-              }}
+              href="/sessions"
+              style={{ fontSize: 11, color: "var(--af-accent)", marginLeft: "auto" }}
             >
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--af-text-tertiary)",
-                }}
-              >
-                sesn_{shortId(s.id)}
-              </div>
-              <div
-                style={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  color: "var(--af-text)",
-                }}
-              >
-                {s.firstUserPreview || (
-                  <em style={{ color: "var(--af-text-tertiary)" }}>(no user message)</em>
-                )}
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--af-text-tertiary)",
-                  fontFamily: "var(--font-mono)",
-                  textAlign: "right",
-                }}
-                title="Agent time (filters out idle gaps)"
-              >
-                {formatDuration(s.airTimeMs ?? s.durationMs)}
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "var(--af-text-tertiary)",
-                  textAlign: "right",
-                }}
-              >
-                {s.firstTimestamp ? formatRelative(s.firstTimestamp) : "—"}
-              </div>
+              View all →
             </Link>
-          ))}
+          </div>
+          <div>
+            {recentSessions.map((s) => (
+              <Link
+                key={`${s.projectDir}/${s.id}`}
+                href={`/sessions/${s.id}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto auto",
+                  gap: 12,
+                  padding: "10px 18px",
+                  fontSize: 12,
+                  borderBottom: "1px solid var(--af-border-subtle)",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: "var(--af-text)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <LiveBadge mtimeIso={s.lastTimestamp} />
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {s.firstUserPreview || (
+                        <em style={{ color: "var(--af-text-tertiary)" }}>(no user message)</em>
+                      )}
+                    </span>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "var(--af-text-tertiary)",
+                    fontFamily: "var(--font-mono)",
+                    textAlign: "right",
+                    minWidth: 54,
+                  }}
+                  title="Agent time (filters out idle gaps)"
+                >
+                  {formatDuration(s.airTimeMs ?? s.durationMs)}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "var(--af-text-tertiary)",
+                    textAlign: "right",
+                    minWidth: 54,
+                  }}
+                  suppressHydrationWarning
+                >
+                  {s.firstTimestamp ? formatRelative(s.firstTimestamp) : "—"}
+                </div>
+              </Link>
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
