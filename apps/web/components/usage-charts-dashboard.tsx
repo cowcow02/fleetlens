@@ -69,29 +69,21 @@ export function UsageChartsDashboard({ snapshots }: { snapshots: UsageSnapshot[]
 
   return (
     <>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-          gap: 12,
-        }}
-      >
-        {MAIN_WINDOWS.map((w) => (
-          <section
-            key={w.key}
-            style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}
-          >
-            <SectionLabel>{w.label}</SectionLabel>
-            <UsageChart
-              snapshots={snapshots}
-              seriesKey={w.key}
-              windowMs={w.windowMs}
-              colorVar={w.colorVar}
-              onExpand={() => setExpanded(w)}
-            />
-          </section>
-        ))}
-      </div>
+      {MAIN_WINDOWS.map((w) => (
+        <section
+          key={w.key}
+          style={{ display: "flex", flexDirection: "column", gap: 6 }}
+        >
+          <SectionLabel>{w.label}</SectionLabel>
+          <UsageChart
+            snapshots={snapshots}
+            seriesKey={w.key}
+            windowMs={w.windowMs}
+            colorVar={w.colorVar}
+            onExpand={() => setExpanded(w)}
+          />
+        </section>
+      ))}
 
       <OptionalChart storageKey="cclens:usage:show-sonnet" label="Sonnet 7d utilization">
         <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
