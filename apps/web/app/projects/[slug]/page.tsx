@@ -2,39 +2,40 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { listSessions, getSession } from "@/lib/data";
 import {
-  dailyActivity,
+  canonicalProjectName,
   detectParallelRuns,
   detectPrMarkers,
-  highLevelMetrics,
   sessionAirTimeMs,
 } from "@claude-lens/parser";
-import { Heatmap } from "@/components/heatmap";
-import { ActivityChart } from "@/components/activity-chart";
+import { DashboardView } from "@/components/dashboard-view";
 import { MetricCard } from "@/components/metric-card";
 import { ParallelRunsStrip } from "@/components/parallel-runs-strip";
 import {
   formatDuration,
-  formatTokens,
   formatRelative,
   prettyProjectName,
   shortId,
-  estimateCostMulti,
-  formatCost,
 } from "@/lib/format";
-import { ArrowLeft, Clock, ListTree, Zap, DollarSign, GitPullRequest } from "lucide-react";
+import { ArrowLeft, GitPullRequest } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProjectDetail({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const decodedDir = decodeURIComponent(slug);
+  // Slugs are URL-encoded canonical project names (e.g.
+  // `%2FUsers%2Ffoo%2FRepo%2Fbar`). Match any session whose own
+  // canonicalProjectName resolves to the same path — that includes the
+  // parent repo AND any `/.worktrees/<name>` subdirs, so a project detail
+  // page naturally shows all parallel worktree activity in one view.
+  const decodedCanonical = decodeURIComponent(slug);
   const all = await listSessions();
-  const projectSessions = all.filter((s) => s.projectDir === decodedDir);
+  const projectSessions = all.filter(
+    (s) => canonicalProjectName(s.projectName) === decodedCanonical,
+  );
   if (projectSessions.length === 0) return notFound();
 
-  const projectName = projectSessions[0]!.projectName;
-  const metrics = highLevelMetrics(projectSessions);
-  const buckets = dailyActivity(projectSessions);
+  // Use the canonical name for display (no `.worktrees/<name>` suffix).
+  const projectName = decodedCanonical;
   const parallelRuns = detectParallelRuns(projectSessions, 2);
 
   // PR detection is per-session — it needs the event stream, so load the
@@ -51,12 +52,6 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
   const refinedAirMs = detailResults
     .filter((d): d is NonNullable<typeof d> => !!d)
     .reduce((a, d) => a + sessionAirTimeMs(d.events), 0);
-
-  const totalTokens =
-    metrics.totalTokens.input +
-    metrics.totalTokens.output +
-    metrics.totalTokens.cacheRead +
-    metrics.totalTokens.cacheWrite;
 
   return (
     <div
@@ -100,107 +95,25 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
         </p>
       </header>
 
-      {/* Metric cards */}
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
-          gap: 12,
+      <DashboardView
+        sessions={projectSessions}
+        override={{
+          activeTimeMs: refinedAirMs || undefined,
+          extraCards: (
+            <MetricCard
+              label="PRs shipped"
+              value={String(prMarkers.length)}
+              sub={
+                prMarkers.length > 0
+                  ? `${sliced.length} sessions scanned`
+                  : "scanned recent 50"
+              }
+              icon={<GitPullRequest size={13} />}
+              tooltip="PRs detected by scanning for `gh pr create` Bash commands in session transcripts. Only the most recent 50 sessions are scanned."
+            />
+          ),
         }}
-      >
-        <MetricCard
-          label="Sessions"
-          value={metrics.sessionCount.toLocaleString()}
-          sub={`${metrics.totalTurns.toLocaleString()} turns`}
-          icon={<ListTree size={13} />}
-          tooltip="Total Claude Code sessions in this project. A 'turn' is one user message that starts an agent response cycle."
-        />
-        <MetricCard
-          label="Air-time"
-          value={formatDuration(refinedAirMs || metrics.totalAirTimeMs)}
-          sub={`avg ${formatDuration(metrics.avgDurationMs)}`}
-          icon={<Clock size={13} />}
-          tooltip="Sum of time the agent was actively working. Gaps longer than 3 minutes (user away, laptop lid closed) are excluded — this is NOT wall-clock duration."
-        />
-        <MetricCard
-          label="Tool calls"
-          value={metrics.totalToolCalls.toLocaleString()}
-          sub={`avg ${Math.round(metrics.totalToolCalls / Math.max(1, metrics.sessionCount))}`}
-          icon={<Zap size={13} />}
-          tooltip="Total tool invocations (Bash, Read, Edit, Write, Grep, Glob, Agent, etc.) across all sessions. Higher counts typically mean more complex tasks."
-        />
-        <MetricCard
-          label="Est. cost"
-          value={formatCost(estimateCostMulti(projectSessions))}
-          sub={`${formatTokens(totalTokens)} in · ${formatTokens(metrics.totalTokens.output)} out`}
-          icon={<DollarSign size={13} />}
-          tooltip={`Estimated API spend based on each session's primary model.\nUpper bound — mixed-model sessions are priced at the primary model's rate.\nInput: ${formatTokens(metrics.totalTokens.input)}\nOutput: ${formatTokens(metrics.totalTokens.output)}\nCache read: ${formatTokens(metrics.totalTokens.cacheRead)}\nCache write: ${formatTokens(metrics.totalTokens.cacheWrite)}`}
-        />
-        <MetricCard
-          label="PRs shipped"
-          value={String(prMarkers.length)}
-          sub={prMarkers.length > 0 ? `${sliced.length} sessions scanned` : "scanned recent 50"}
-          icon={<GitPullRequest size={13} />}
-          tooltip="PRs detected by scanning for `gh pr create` Bash commands in session transcripts. Only the most recent 50 sessions are scanned."
-        />
-        <MetricCard
-          label="Code changes"
-          value={
-            <span>
-              <span style={{ color: "var(--af-success)" }}>
-                +{metrics.totalLinesAdded.toLocaleString()}
-              </span>
-              {" "}
-              <span style={{ color: "var(--af-danger)" }}>
-                -{metrics.totalLinesRemoved.toLocaleString()}
-              </span>
-            </span>
-          }
-          sub={`${metrics.totalFilesEdited.toLocaleString()} files edited`}
-          tooltip="Total lines added and removed across all Edit + Write tool calls. Files counted are unique file paths touched by the agent."
-        />
-        <MetricCard
-          label="Parallel peaks"
-          value={
-            parallelRuns.length > 0 ? String(Math.max(...parallelRuns.map((r) => r.peak))) : "—"
-          }
-          sub={`${parallelRuns.length} intervals`}
-          tooltip="Maximum number of Claude Code sessions running simultaneously. Detected via sweep-line over session start/end intervals."
-        />
-      </section>
-
-      {/* Heatmap + Activity chart — side by side */}
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 2fr",
-          gap: 16,
-        }}
-      >
-        <div className="af-panel">
-          <div className="af-panel-header">
-            <span>Contribution heatmap</span>
-            <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
-              sessions / day
-            </span>
-          </div>
-          <div style={{ padding: 18 }}>
-            <Heatmap buckets={buckets} valueKey="sessions" />
-          </div>
-        </div>
-
-        <div className="af-panel">
-          <div className="af-panel-header">
-            <span>Daily activity</span>
-            <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
-              click a metric to switch
-            </span>
-          </div>
-          <div style={{ padding: 18 }}>
-            <ActivityChart buckets={buckets} />
-          </div>
-        </div>
-      </section>
+      />
 
       {/* PR timeline + Parallel runs — two-column */}
       <section
