@@ -7,7 +7,8 @@
 
 import {
   dailyActivity,
-  detectParallelRuns,
+  computeBurstsFromSessions,
+  summarizeBursts,
   groupByProject,
   highLevelMetrics,
   type SessionMeta,
@@ -15,7 +16,6 @@ import {
 import { Heatmap } from "@/components/heatmap";
 import { ActivityChart } from "@/components/activity-chart";
 import { MetricCard } from "@/components/metric-card";
-import { ParallelRunsStrip } from "@/components/parallel-runs-strip";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { LiveBadge } from "@/components/live-badge";
 import { cutoffMs, parseRange } from "@/lib/date-range";
@@ -49,36 +49,32 @@ export default async function DashboardHome({
 
   const metrics = highLevelMetrics(sessions);
   const buckets = dailyActivity(sessions);
-  const parallelRuns = detectParallelRuns(sessions, 2);
-  // Top projects: session count desc with token count as tiebreaker.
+  const burstStats = summarizeBursts(computeBurstsFromSessions(sessions));
+  // Top projects: total tokens desc with session count as tiebreaker.
   const projects = groupByProject(sessions)
     .sort((a, b) => {
-      const byCount = b.metrics.sessionCount - a.metrics.sessionCount;
-      if (byCount !== 0) return byCount;
       const aTokens =
         a.metrics.totalTokens.input +
         a.metrics.totalTokens.output +
-        a.metrics.totalTokens.cacheRead;
+        a.metrics.totalTokens.cacheRead +
+        a.metrics.totalTokens.cacheWrite;
       const bTokens =
         b.metrics.totalTokens.input +
         b.metrics.totalTokens.output +
-        b.metrics.totalTokens.cacheRead;
-      return bTokens - aTokens;
+        b.metrics.totalTokens.cacheRead +
+        b.metrics.totalTokens.cacheWrite;
+      if (bTokens !== aTokens) return bTokens - aTokens;
+      return b.metrics.sessionCount - a.metrics.sessionCount;
     })
     .slice(0, 8);
 
   const totalInput =
     metrics.totalTokens.input + metrics.totalTokens.cacheRead + metrics.totalTokens.cacheWrite;
 
-  const LIVE_WINDOW_MS = 45_000;
-  const now = Date.now();
-  const liveSessions = sessions.filter((s) => {
-    if (!s.lastTimestamp) return false;
-    const ms = Date.parse(s.lastTimestamp);
-    return !Number.isNaN(ms) && now - ms <= LIVE_WINDOW_MS;
-  });
-  const liveIds = new Set(liveSessions.map((s) => s.id));
-  const recentSessions = sessions.filter((s) => !liveIds.has(s.id)).slice(0, 6);
+  // Recent sessions include live ones; the inline LiveBadge on each row
+  // shows the LIVE label when the session is currently active, and the
+  // floating LiveSessionsWidget handles the cross-page live indicator.
+  const recentSessions = sessions.slice(0, 6);
 
   return (
     <div
@@ -123,92 +119,6 @@ export default async function DashboardHome({
         <DateRangeFilter current={range} />
       </header>
 
-      {/* Live sessions */}
-      {liveSessions.length > 0 && (
-        <section
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${Math.min(liveSessions.length, 3)}, 1fr)`,
-            gap: 12,
-          }}
-        >
-          {liveSessions.map((s) => (
-            <Link
-              key={`${s.projectDir}/${s.id}`}
-              href={`/sessions/${s.id}`}
-              className="af-panel"
-              style={{
-                display: "block",
-                padding: "16px 20px",
-                borderLeft: "3px solid #ef4444",
-                transition: "border-color 0.15s",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  marginBottom: 8,
-                }}
-              >
-                <LiveBadge mtimeIso={s.lastTimestamp} size="md" />
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: "var(--af-text-tertiary)",
-                    fontFamily: "var(--font-mono)",
-                  }}
-                >
-                  {prettyProjectName(s.projectName)}
-                </span>
-              </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "var(--af-text)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  lineHeight: 1.4,
-                }}
-              >
-                {s.firstUserPreview || (
-                  <em style={{ color: "var(--af-text-tertiary)" }}>(no user message)</em>
-                )}
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
-                  color: "var(--af-text-secondary)",
-                  marginTop: 6,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-                title={s.lastAgentPreview}
-              >
-                {s.lastAgentPreview || <em style={{ color: "var(--af-text-tertiary)" }}>—</em>}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: 16,
-                  marginTop: 10,
-                  fontSize: 10,
-                  color: "var(--af-text-tertiary)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                <span>{s.turnCount ?? 0} turns</span>
-                <span>{formatDuration(s.airTimeMs ?? s.durationMs)}</span>
-                <span>{s.toolCallCount ?? 0} tools</span>
-              </div>
-            </Link>
-          ))}
-        </section>
-      )}
-
       {/* Metric cards */}
       <section
         style={{
@@ -250,7 +160,7 @@ export default async function DashboardHome({
           value={formatCost(estimateCostMulti(sessions))}
           sub={`${formatTokens(totalInput)} in · ${formatTokens(metrics.totalTokens.output)} out`}
           icon={<DollarSign size={13} />}
-          tooltip={`Estimated API spend based on each session's primary model.\nUpper bound — mixed-model sessions (e.g. Opus + Haiku tools) are priced at the primary model's rate.\nFor precise costs, use ccusage.\nInput: ${formatTokens(metrics.totalTokens.input)}\nOutput: ${formatTokens(metrics.totalTokens.output)}\nCache read: ${formatTokens(metrics.totalTokens.cacheRead)}\nCache write: ${formatTokens(metrics.totalTokens.cacheWrite)}`}
+          tooltip={`Estimated API spend priced per-model across all sessions.\nInput: ${formatTokens(metrics.totalTokens.input)}\nOutput: ${formatTokens(metrics.totalTokens.output)}\nCache read: ${formatTokens(metrics.totalTokens.cacheRead)}\nCache write: ${formatTokens(metrics.totalTokens.cacheWrite)}`}
         />
         <MetricCard
           label="Code changes"
@@ -269,10 +179,18 @@ export default async function DashboardHome({
           tooltip="Total lines added and removed across all Edit + Write tool calls. Files counted are unique file paths touched by the agent."
         />
         <MetricCard
-          label="Parallel peaks"
-          value={parallelRuns.length > 0 ? String(Math.max(...parallelRuns.map((r) => r.peak))) : "—"}
-          sub={`${parallelRuns.length} intervals`}
-          tooltip="Maximum number of Claude Code sessions running simultaneously. Detected via sweep-line over session start/end intervals. Useful for measuring multi-agent fleet parallelism."
+          label="Parallelism"
+          value={
+            burstStats.burstCount > 0
+              ? formatDuration(burstStats.totalParallelMs)
+              : "—"
+          }
+          sub={
+            burstStats.burstCount > 0
+              ? `peak ×${burstStats.peakConcurrent} · ${burstStats.burstCount} burst${burstStats.burstCount === 1 ? "" : "s"} · ${burstStats.activeDayCount} day${burstStats.activeDayCount === 1 ? "" : "s"}`
+              : "no sustained parallelism"
+          }
+          tooltip={`Total time where ≥2 agents were actively working in parallel, summed across all detected bursts. Peak concurrency is the highest agent count during any single burst.\n\nBursts are detected by sweep-line over session active segments (same 3-min idle-gap split as airtime), then:\n  • drop overlaps under 1 minute\n  • merge overlaps within 10 minutes of each other\n\nThis filters out accidental tab-switch artifacts and fragments — a morning of back-and-forth agent work becomes one burst, not forty.\n\n${burstStats.burstCount} burst${burstStats.burstCount === 1 ? "" : "s"} across ${burstStats.activeDayCount} day${burstStats.activeDayCount === 1 ? "" : "s"}. ${burstStats.crossProjectBurstCount} of ${burstStats.burstCount} bursts spanned multiple projects.`}
         />
       </section>
 
@@ -309,31 +227,19 @@ export default async function DashboardHome({
         </div>
       </section>
 
-      {/* Parallel runs + Top projects */}
+      {/* Top projects + Recent sessions */}
       <section
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "1fr 1.4fr",
           gap: 16,
         }}
       >
         <div className="af-panel">
           <div className="af-panel-header">
-            <span>Parallel runs</span>
-            <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
-              ≥ 2 concurrent sessions
-            </span>
-          </div>
-          <div style={{ padding: 14 }}>
-            <ParallelRunsStrip runs={parallelRuns} sessions={sessions} />
-          </div>
-        </div>
-
-        <div className="af-panel">
-          <div className="af-panel-header">
             <span>Top projects</span>
             <span style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontWeight: 400 }}>
-              by session count
+              by total tokens
             </span>
             <Link
               href="/projects"
@@ -419,105 +325,100 @@ export default async function DashboardHome({
             )}
           </div>
         </div>
-      </section>
 
-      {/* Recent sessions */}
-      <section className="af-panel">
-        <div className="af-panel-header">
-          <span>Recent sessions</span>
-          <Link href="/sessions" style={{ fontSize: 11, color: "var(--af-accent)", marginLeft: "auto" }}>
-            View all →
-          </Link>
-        </div>
-        <div>
-          {recentSessions.length === 0 ? (
-            <div className="af-empty">No sessions found in ~/.claude/projects</div>
-          ) : (
-            recentSessions.map((s) => (
-              <Link
-                key={`${s.projectDir}/${s.id}`}
-                href={`/sessions/${s.id}`}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1.4fr 1fr 90px 90px",
-                  gap: 14,
-                  padding: "12px 18px",
-                  fontSize: 12,
-                  borderBottom: "1px solid var(--af-border-subtle)",
-                  alignItems: "center",
-                }}
-              >
-                <div style={{ minWidth: 0 }}>
-                  <div
-                    style={{
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      color: "var(--af-text)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                    }}
-                  >
-                    <LiveBadge mtimeIso={s.lastTimestamp} />
-                    <span
+        <div className="af-panel">
+          <div className="af-panel-header">
+            <span>Recent sessions</span>
+            <Link
+              href="/sessions"
+              style={{ fontSize: 11, color: "var(--af-accent)", marginLeft: "auto" }}
+            >
+              View all →
+            </Link>
+          </div>
+          <div>
+            {recentSessions.length === 0 ? (
+              <div className="af-empty">No sessions found in ~/.claude/projects</div>
+            ) : (
+              recentSessions.map((s) => (
+                <Link
+                  key={`${s.projectDir}/${s.id}`}
+                  href={`/sessions/${s.id}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr auto auto",
+                    gap: 12,
+                    padding: "10px 18px",
+                    fontSize: 12,
+                    borderBottom: "1px solid var(--af-border-subtle)",
+                    alignItems: "center",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div
                       style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        color: "var(--af-text)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <LiveBadge mtimeIso={s.lastTimestamp} />
+                      <span
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {s.firstUserPreview || (
+                          <em style={{ color: "var(--af-text-tertiary)" }}>(no user message)</em>
+                        )}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: "var(--af-text-tertiary)",
+                        marginTop: 2,
+                        fontFamily: "var(--font-mono)",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {s.firstUserPreview || (
-                        <em style={{ color: "var(--af-text-tertiary)" }}>(no user message)</em>
-                      )}
-                    </span>
+                      {prettyProjectName(s.projectName)}
+                    </div>
                   </div>
                   <div
                     style={{
                       fontSize: 10,
                       color: "var(--af-text-tertiary)",
-                      marginTop: 2,
                       fontFamily: "var(--font-mono)",
+                      textAlign: "right",
+                      minWidth: 54,
+                    }}
+                    title="Active time (filters out idle gaps)"
+                  >
+                    {formatDuration(s.airTimeMs ?? s.durationMs)}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      color: "var(--af-text-tertiary)",
+                      textAlign: "right",
+                      minWidth: 54,
                     }}
                   >
-                    {prettyProjectName(s.projectName)}
+                    {s.firstTimestamp ? formatRelative(s.firstTimestamp) : "—"}
                   </div>
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--af-text-secondary)",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={s.lastAgentPreview}
-                >
-                  {s.lastAgentPreview || <em style={{ color: "var(--af-text-tertiary)" }}>—</em>}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "var(--af-text-tertiary)",
-                    fontFamily: "var(--font-mono)",
-                    textAlign: "right",
-                  }}
-                  title="Active time (filters out idle gaps)"
-                >
-                  {formatDuration(s.airTimeMs ?? s.durationMs)}
-                </div>
-                <div
-                  style={{
-                    fontSize: 10,
-                    color: "var(--af-text-tertiary)",
-                    textAlign: "right",
-                  }}
-                >
-                  {s.firstTimestamp ? formatRelative(s.firstTimestamp) : "—"}
-                </div>
-              </Link>
-            ))
-          )}
+                </Link>
+              ))
+            )}
+          </div>
         </div>
       </section>
     </div>
