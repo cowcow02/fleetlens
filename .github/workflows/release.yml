@@ -39,7 +39,7 @@ jobs:
         run: node scripts/prepare-cli.mjs
 
       - name: Build CLI
-        run: pnpm -F claude-lens build
+        run: pnpm -F cclens build
 
       - name: Publish to npm
         run: npm publish packages/cli/ --access public

@@ -8,7 +8,7 @@ describe("pid", () => {
   let dir: string;
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "claude-lens-test-"));
+    dir = mkdtempSync(join(tmpdir(), "cclens-test-"));
   });
 
   afterEach(() => {

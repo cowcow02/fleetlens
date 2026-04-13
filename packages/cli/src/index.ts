@@ -28,12 +28,12 @@ async function main() {
     case "version":
     case "--version":
     case "-v":
-      console.log(`claude-lens ${CLI_VERSION}`);
+      console.log(`cclens ${CLI_VERSION}`);
       break;
     case "help":
     case "--help":
     case "-h":
-      console.log(`Usage: claude-lens <command>
+      console.log(`Usage: cclens <command>
 
 Commands:
   start [--port N]            Start the dashboard server
@@ -43,7 +43,7 @@ Commands:
   version                     Print version`);
       break;
     default:
-      console.error(`Unknown command: ${command}\nRun 'claude-lens help' for usage.`);
+      console.error(`Unknown command: ${command}\nRun 'cclens help' for usage.`);
       process.exit(1);
   }
 }

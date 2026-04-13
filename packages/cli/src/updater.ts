@@ -2,7 +2,7 @@ import { execSync, spawnSync } from "node:child_process";
 
 declare const CLI_VERSION: string;
 
-const PACKAGE_NAME = "claude-lens";
+const PACKAGE_NAME = "cclens";
 const CHECK_TIMEOUT_MS = 3_000;
 
 /** Simple semver comparison. Returns true if remote > local. */
@@ -50,7 +50,7 @@ function runNpmInstall(): boolean {
 function reExec(): never {
   const result = spawnSync(process.argv[0], process.argv.slice(1), {
     stdio: "inherit",
-    env: { ...process.env, __CLAUDE_LENS_UPDATED: "1" },
+    env: { ...process.env, __CCLENS_UPDATED: "1" },
   });
   process.exit(result.status ?? 0);
 }
@@ -68,11 +68,11 @@ function isDevMode(): boolean {
 
 /**
  * Check for updates and auto-apply if a newer version exists.
- * Called at the start of `claude-lens start`.
+ * Called at the start of `cclens start`.
  */
 export async function checkForUpdate(): Promise<void> {
   if (isDevMode()) return; // skip in local dev
-  if (process.env.__CLAUDE_LENS_UPDATED === "1") return; // prevent re-exec loop
+  if (process.env.__CCLENS_UPDATED === "1") return; // prevent re-exec loop
 
   const latest = await fetchLatestVersion();
   if (latest === null) return; // offline or error
@@ -80,7 +80,7 @@ export async function checkForUpdate(): Promise<void> {
   const current = CLI_VERSION;
   if (!shouldUpdate(current, latest)) return;
 
-  console.log(`Updating claude-lens ${current} → ${latest}...`);
+  console.log(`Updating cclens ${current} → ${latest}...`);
   const ok = runNpmInstall();
   if (ok) {
     console.log("Updated successfully. Restarting...");
@@ -103,7 +103,7 @@ export async function forceUpdate(): Promise<void> {
   }
 
   if (shouldUpdate(current, latest)) {
-    console.log(`Updating claude-lens ${current} → ${latest}...`);
+    console.log(`Updating cclens ${current} → ${latest}...`);
   } else {
     console.log(`Already on latest (${current}). Reinstalling...`);
   }

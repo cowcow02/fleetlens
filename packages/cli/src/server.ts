@@ -5,7 +5,7 @@ import { existsSync } from "node:fs";
 import { writePid, readPid, isProcessAlive, cleanStalePid, removePid } from "./pid.js";
 import { homedir } from "node:os";
 
-const STATE_DIR = join(homedir(), ".claude-lens");
+const STATE_DIR = join(homedir(), ".cclens");
 const PID_FILE = join(STATE_DIR, "pid");
 const DEFAULT_PORT = 3321;
 
@@ -30,11 +30,11 @@ export function getServerStatus(): ServerStatus {
 }
 
 export async function startServer(opts: { port?: number } = {}): Promise<{ pid: number; port: number }> {
-  const port = opts.port ?? (parseInt(process.env.CLAUDE_LENS_PORT ?? "", 10) || DEFAULT_PORT);
+  const port = opts.port ?? (parseInt(process.env.CCLENS_PORT ?? "", 10) || DEFAULT_PORT);
   const serverJs = join(appDir(), "server.js");
 
   if (!existsSync(serverJs)) {
-    throw new Error(`Server not found at ${serverJs}. Reinstall with: npm install -g claude-lens`);
+    throw new Error(`Server not found at ${serverJs}. Reinstall with: npm install -g cclens`);
   }
 
   // Check if port is in use
@@ -52,7 +52,7 @@ export async function startServer(opts: { port?: number } = {}): Promise<{ pid: 
       ...process.env,
       PORT: String(port),
       HOSTNAME: "localhost",
-      CLAUDE_LENS_DATA_DIR: dataDir,
+      CCLENS_DATA_DIR: dataDir,
     },
     cwd: appDir(),
   });
