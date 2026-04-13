@@ -15,7 +15,7 @@ export type DateRange = {
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-const PRESETS: { key: RangePreset; label: string }[] = [
+const ALL_PRESETS: { key: RangePreset; label: string }[] = [
   { key: "current", label: "Current cycle" },
   { key: "24h", label: "24H" },
   { key: "7d", label: "7D" },
@@ -23,6 +23,20 @@ const PRESETS: { key: RangePreset; label: string }[] = [
   { key: "90d", label: "90D" },
   { key: "custom", label: "Custom" },
 ];
+
+/** Window types map to the sensible preset subset. */
+export type WindowType = "short" | "long";
+
+function presetsForWindow(type: WindowType): typeof ALL_PRESETS {
+  // Short windows (5h) support 24H — that's ~5 cycles worth of zoom.
+  // Long windows (7d) don't — 24H is inside a single cycle, so use
+  // 'Current cycle' instead. 7D is the shortest meaningful multi-cycle
+  // view for a 7-day window.
+  if (type === "long") {
+    return ALL_PRESETS.filter((p) => p.key !== "24h");
+  }
+  return ALL_PRESETS;
+}
 
 export function resolveRange(range: DateRange): { startMs?: number; endMs?: number } {
   const now = Date.now();
@@ -45,10 +59,15 @@ export function resolveRange(range: DateRange): { startMs?: number; endMs?: numb
 export function DateRangePicker({
   value,
   onChange,
+  windowType = "short",
 }: {
   value: DateRange;
   onChange: (next: DateRange) => void;
+  /** Controls which presets are available. 'long' hides 24H. */
+  windowType?: WindowType;
 }) {
+  const presets = presetsForWindow(windowType);
+
   const [customStart, setCustomStart] = useState<string>(() =>
     toDatetimeLocal(value.startMs ?? Date.now() - 7 * DAY),
   );
@@ -99,7 +118,7 @@ export function DateRangePicker({
           overflow: "hidden",
         }}
       >
-        {PRESETS.map((p, i) => (
+        {presets.map((p, i) => (
           <button
             key={p.key}
             type="button"
@@ -114,7 +133,7 @@ export function DateRangePicker({
                 value.preset === p.key ? "var(--af-accent)" : "var(--af-text-secondary)",
               border: "none",
               borderRight:
-                i < PRESETS.length - 1 ? "1px solid var(--af-border-subtle)" : "none",
+                i < presets.length - 1 ? "1px solid var(--af-border-subtle)" : "none",
               cursor: "pointer",
               letterSpacing: "0.02em",
             }}

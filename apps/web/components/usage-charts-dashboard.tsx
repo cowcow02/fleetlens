@@ -174,7 +174,11 @@ function ExpandedModal({
           >
             {config.label}
           </div>
-          <DateRangePicker value={range} onChange={setRange} />
+          <DateRangePicker
+            value={range}
+            onChange={setRange}
+            windowType={config.windowMs >= DAY ? "long" : "short"}
+          />
           <button
             type="button"
             onClick={onClose}

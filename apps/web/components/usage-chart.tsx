@@ -299,6 +299,24 @@ export function UsageChart({
             Time
           </text>
 
+          {/* Danger (<10% remaining) and caution (10–30%) bands at the bottom */}
+          <rect
+            x={padding.left}
+            y={yScale(10)}
+            width={plotW}
+            height={yScale(0) - yScale(10)}
+            fill="var(--af-danger)"
+            fillOpacity="0.07"
+          />
+          <rect
+            x={padding.left}
+            y={yScale(30)}
+            width={plotW}
+            height={yScale(10) - yScale(30)}
+            fill="var(--af-warning)"
+            fillOpacity="0.05"
+          />
+
           {/* Area fill under actual line */}
           <path d={areaPath} fill={colorVar} fillOpacity="0.1" />
 
