@@ -259,16 +259,34 @@ export async function checkForUpdate(): Promise<void> {
   }
 }
 
+type RunningState = {
+  serverWasRunning: boolean;
+  serverPort: number | null;
+  daemonWasRunning: boolean;
+};
+
 /**
  * Stop the web server and usage daemon if either is running, printing
  * a short report so the user can follow along. Used by the auto-update
  * flow so a version bump always lands on fresh processes.
+ *
+ * Returns the state of each service BEFORE it was stopped, so the
+ * caller (update command) can bring them back up with the same port
+ * after the new version is installed.
  */
-async function stopRunningServices(): Promise<void> {
+async function stopRunningServices(): Promise<RunningState> {
+  const state: RunningState = {
+    serverWasRunning: false,
+    serverPort: null,
+    daemonWasRunning: false,
+  };
+
   try {
     const { getServerStatus, stopServer } = await import("./server.js");
     const status = getServerStatus();
     if (status.running) {
+      state.serverWasRunning = true;
+      state.serverPort = status.port;
       stopServer();
       console.log(`  ✓ Stopped old server (PID ${status.pid})`);
     }
@@ -279,15 +297,72 @@ async function stopRunningServices(): Promise<void> {
     const { stopDaemonSilent } = await import("./commands/daemon.js");
     const result = stopDaemonSilent();
     if (result.stopped) {
+      state.daemonWasRunning = true;
       console.log(`  ✓ Stopped old daemon (PID ${result.pid})`);
     }
   } catch {
     // Non-fatal
   }
+
+  return state;
+}
+
+/**
+ * Bring the web server and usage daemon back up after an in-place
+ * update. Only restarts services that were actually running before
+ * the teardown — a user who runs `fleetlens update` without a dashboard
+ * open isn't asking for one to launch. Used by forceUpdate so the
+ * explicit `fleetlens update` command can self-heal a running setup.
+ *
+ * The helpers here are the CURRENT process's startServer / daemon
+ * helpers, but on disk the files they spawn (server.js, daemon-worker.js)
+ * have already been replaced by npm install — so the children that
+ * actually come up are the NEW version.
+ */
+async function restartServices(state: RunningState): Promise<void> {
+  if (!state.serverWasRunning && !state.daemonWasRunning) return;
+
+  if (state.serverWasRunning) {
+    try {
+      const { startServer } = await import("./server.js");
+      const result = await startServer({ port: state.serverPort ?? undefined });
+      console.log(
+        `  ✓ Restarted server on http://localhost:${result.port} (PID ${result.pid})`,
+      );
+    } catch (err) {
+      console.warn(
+        `  ! Could not restart server: ${(err as Error).message}\n    Run 'fleetlens start' manually.`,
+      );
+    }
+  }
+
+  if (state.daemonWasRunning) {
+    try {
+      const { startDaemonSilent } = await import("./commands/daemon.js");
+      const result = startDaemonSilent();
+      if (result.started) {
+        console.log(`  ✓ Restarted daemon (PID ${result.pid})`);
+      } else if (result.alreadyRunning) {
+        console.log(`  ✓ Daemon already running (PID ${result.pid})`);
+      } else {
+        console.warn(`  ! Could not restart daemon: ${result.error}`);
+      }
+    } catch (err) {
+      console.warn(
+        `  ! Could not restart daemon: ${(err as Error).message}\n    Run 'fleetlens daemon start' manually.`,
+      );
+    }
+  }
 }
 
 /**
  * Force update — always attempts install regardless of version.
+ *
+ * Behavior:
+ *   - Same version: reinstall in place, don't touch running services.
+ *   - Real upgrade: stop running services, install new version, then
+ *     bring services back up with the new code (matching the state
+ *     they were in before the update). No manual restart required.
  */
 export async function forceUpdate(): Promise<void> {
   const latest = await fetchLatestVersion();
@@ -298,24 +373,35 @@ export async function forceUpdate(): Promise<void> {
     process.exit(1);
   }
 
-  if (shouldUpdate(current, latest)) {
+  const isRealUpgrade = shouldUpdate(current, latest);
+  let priorState: RunningState | null = null;
+
+  if (isRealUpgrade) {
     console.log(`Updating ${PACKAGE_NAME} ${current} → ${latest}...`);
-    // Only tear down running processes for a real upgrade. Reinstalling
-    // the same version doesn't need a restart and shouldn't disrupt
-    // anyone who has the dashboard open.
-    await stopRunningServices();
+    // Capture what was running and stop it so the new version lands on
+    // a clean slate. We'll bring back whatever was alive.
+    priorState = await stopRunningServices();
   } else {
     console.log(`Already on latest (${current}). Reinstalling...`);
   }
 
   // Always attempt install (useful if installation is corrupted)
   const ok = runNpmInstall();
-  if (ok) {
-    reportInstallOutcome(latest);
-  } else {
+  if (!ok) {
     console.error("Update failed.");
     console.error(`  → Try manually: npm install -g ${PACKAGE_NAME}@latest`);
     console.error(`  → Or with sudo if your global npm prefix needs it.`);
     process.exit(1);
+  }
+
+  reportInstallOutcome(latest);
+
+  // If this was a real upgrade and services were running before, bring
+  // them back up against the new code.
+  if (isRealUpgrade && priorState) {
+    if (priorState.serverWasRunning || priorState.daemonWasRunning) {
+      console.log("");
+      await restartServices(priorState);
+    }
   }
 }
