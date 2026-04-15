@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
-import type { PresentationRow, ContentBlock } from "@claude-lens/parser";
+import { useEffect, useState } from "react";
+import type {
+  ContentBlock,
+  PresentationRow,
+  SessionEvent,
+} from "@claude-lens/parser";
 import type { TeamTurn } from "./adapter";
+import { TurnStepsList } from "../turn-steps";
 
 type Props = {
   turn: TeamTurn | null;
@@ -11,15 +16,29 @@ type Props = {
   onClose: () => void;
 };
 
+type View =
+  | { page: "steps" }
+  | { page: "step"; row: PresentationRow; index: number };
+
 export function TurnDrawer({ turn, trackLabel, trackColor, onClose }: Props) {
+  const [view, setView] = useState<View>({ page: "steps" });
+
+  // Reset to steps page when a different turn is opened.
+  useEffect(() => {
+    setView({ page: "steps" });
+  }, [turn?.id]);
+
   useEffect(() => {
     if (!turn) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (view.page === "step") setView({ page: "steps" });
+        else onClose();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [turn, onClose]);
+  }, [turn, onClose, view.page]);
 
   if (!turn) return null;
 
@@ -62,32 +81,51 @@ export function TurnDrawer({ turn, trackLabel, trackColor, onClose }: Props) {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            gap: 8,
             flexShrink: 0,
           }}
         >
-          <div>
-            <div
+          {view.page === "step" ? (
+            <button
+              onClick={() => setView({ page: "steps" })}
               style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: trackColor,
-                letterSpacing: "0.08em",
-                fontFamily: "ui-monospace, monospace",
-              }}
-            >
-              {trackLabel}
-            </div>
-            <div
-              style={{
+                background: "transparent",
+                border: "1px solid var(--af-border-subtle)",
+                color: "var(--af-text-secondary)",
+                padding: "4px 10px",
+                borderRadius: 4,
+                cursor: "pointer",
                 fontSize: 11,
-                color: "var(--af-text-tertiary)",
                 fontFamily: "ui-monospace, monospace",
-                marginTop: 2,
               }}
             >
-              {startStr} → {endStr} · {durationStr}
+              ← Back to steps
+            </button>
+          ) : (
+            <div>
+              <div
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: trackColor,
+                  letterSpacing: "0.08em",
+                  fontFamily: "ui-monospace, monospace",
+                }}
+              >
+                {trackLabel}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--af-text-tertiary)",
+                  fontFamily: "ui-monospace, monospace",
+                  marginTop: 2,
+                }}
+              >
+                {startStr} → {endStr} · {durationStr}
+              </div>
             </div>
-          </div>
+          )}
           <button
             onClick={onClose}
             aria-label="Close"
@@ -101,6 +139,7 @@ export function TurnDrawer({ turn, trackLabel, trackColor, onClose }: Props) {
               cursor: "pointer",
               fontSize: 14,
               lineHeight: 1,
+              flexShrink: 0,
             }}
           >
             ×
@@ -109,162 +148,211 @@ export function TurnDrawer({ turn, trackLabel, trackColor, onClose }: Props) {
 
         <div
           style={{
-            padding: "8px 16px",
-            borderBottom: "1px solid var(--af-border-subtle)",
-            display: "flex",
-            gap: 8,
-            fontSize: 11,
-            color: "var(--af-text-tertiary)",
-            fontFamily: "ui-monospace, monospace",
-            flexShrink: 0,
-          }}
-        >
-          <span>{summary.agentMessages} msg</span>
-          <span>·</span>
-          <span>{summary.toolCalls} tools</span>
-          {summary.errors > 0 && (
-            <>
-              <span>·</span>
-              <span style={{ color: "#f85149" }}>{summary.errors} errors</span>
-            </>
-          )}
-        </div>
-
-        <div
-          style={{
             flex: 1,
             overflowY: "auto",
             padding: "12px 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 12,
           }}
         >
-          {turn.megaRow.rows.map((row, i) => (
-            <RowBlock key={i} row={row} trackColor={trackColor} />
-          ))}
+          {view.page === "steps" ? (
+            <>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  fontSize: 11,
+                  color: "var(--af-text-tertiary)",
+                  fontFamily: "ui-monospace, monospace",
+                  marginBottom: 10,
+                }}
+              >
+                <span>{summary.agentMessages} msg</span>
+                <span>·</span>
+                <span>{summary.toolCalls} tools</span>
+                {summary.errors > 0 && (
+                  <>
+                    <span>·</span>
+                    <span style={{ color: "#f85149" }}>
+                      {summary.errors} err
+                    </span>
+                  </>
+                )}
+              </div>
+              <TurnStepsList
+                rows={turn.megaRow.rows}
+                onStepClick={(row, index) =>
+                  setView({ page: "step", row, index })
+                }
+              />
+            </>
+          ) : (
+            <StepDetail row={view.row} color={trackColor} />
+          )}
         </div>
       </div>
     </>
   );
 }
 
-function RowBlock({
-  row,
-  trackColor,
-}: {
-  row: PresentationRow;
-  trackColor: string;
-}) {
-  switch (row.kind) {
-    case "user":
-      return (
-        <Section label="HUMAN" color={trackColor}>
-          <Text>
-            {row.displayPreview ?? row.event.preview ?? ""}
-          </Text>
-        </Section>
-      );
-    case "agent": {
-      const fullText = blocksText(row.event.blocks);
-      return (
-        <Section label="AGENT" color={trackColor}>
-          <Text>{fullText || row.event.preview || ""}</Text>
-        </Section>
-      );
-    }
-    case "tool-group":
-      return (
-        <Section label="TOOLS" color={trackColor}>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-            {row.toolNames.map((t) => (
-              <span
-                key={t.name}
-                style={{
-                  fontSize: 10,
-                  padding: "2px 7px",
-                  background: "var(--af-surface-hover)",
-                  borderRadius: 3,
-                  color: "var(--af-text-secondary)",
-                  fontFamily: "ui-monospace, monospace",
-                }}
-              >
-                {t.name}
-                {t.count > 1 ? ` ×${t.count}` : ""}
-              </span>
-            ))}
-          </div>
-        </Section>
-      );
-    case "error":
-      return (
-        <Section label="ERROR" color="#f85149">
-          <Text>{row.message}</Text>
-        </Section>
-      );
-    case "interrupt":
-      return (
-        <Section label="INTERRUPT" color="#db6d28">
-          <Text>{row.event.preview ?? ""}</Text>
-        </Section>
-      );
-    case "model":
-      return (
-        <Section label="MODEL" color={trackColor}>
-          <Text>{row.event.preview ?? ""}</Text>
-        </Section>
-      );
-    case "task-notification":
-      return (
-        <Section label="TASK" color={trackColor}>
-          <Text>
-            [{row.status}] {row.summary}
-          </Text>
-        </Section>
-      );
+function StepDetail({ row, color }: { row: PresentationRow; color: string }) {
+  if (row.kind === "user") {
+    return (
+      <DetailCard
+        label="HUMAN"
+        color={color}
+        body={row.displayPreview ?? row.event.preview ?? ""}
+      />
+    );
   }
+  if (row.kind === "agent") {
+    const text = blocksText(row.event.blocks) || row.event.preview || "";
+    return <DetailCard label="AGENT" color={color} body={text} />;
+  }
+  if (row.kind === "tool-group") {
+    return (
+      <div>
+        <DetailCard
+          label={`${row.count} TOOL CALL${row.count === 1 ? "" : "S"}`}
+          color={color}
+          body=""
+        />
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            marginTop: 8,
+          }}
+        >
+          {row.events.map((ev, i) => (
+            <ToolCallCard key={i} event={ev} color={color} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (row.kind === "interrupt") {
+    return (
+      <DetailCard
+        label="INTERRUPT"
+        color="#f85149"
+        body={row.event.preview ?? "[interrupted]"}
+      />
+    );
+  }
+  if (row.kind === "error") {
+    return <DetailCard label="ERROR" color="#f85149" body={row.message} />;
+  }
+  if (row.kind === "model") {
+    return (
+      <DetailCard
+        label="MODEL CHANGE"
+        color={color}
+        body={row.event.preview ?? ""}
+      />
+    );
+  }
+  if (row.kind === "task-notification") {
+    return (
+      <DetailCard
+        label={`TASK ${row.status.toUpperCase()}`}
+        color={color}
+        body={row.summary}
+      />
+    );
+  }
+  return null;
 }
 
-function Section({
+function DetailCard({
   label,
   color,
-  children,
+  body,
 }: {
   label: string;
   color: string;
-  children: React.ReactNode;
+  body: string;
 }) {
   return (
-    <div>
+    <div
+      style={{
+        padding: "10px 12px",
+        background: "var(--af-surface-hover)",
+        borderLeft: `3px solid ${color}`,
+        borderRadius: 4,
+        marginBottom: 6,
+      }}
+    >
       <div
         style={{
           fontSize: 9,
-          fontWeight: 700,
           color,
-          letterSpacing: "0.08em",
-          fontFamily: "ui-monospace, monospace",
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
           marginBottom: 4,
+          fontFamily: "ui-monospace, monospace",
         }}
       >
         {label}
       </div>
-      {children}
+      {body && (
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--af-text)",
+            lineHeight: 1.5,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {body}
+        </div>
+      )}
     </div>
   );
 }
 
-function Text({ children }: { children: React.ReactNode }) {
+function ToolCallCard({
+  event,
+  color,
+}: {
+  event: SessionEvent;
+  color: string;
+}) {
+  const toolUse = (event.blocks ?? []).find((b) => b.type === "tool_use");
+  if (!toolUse) return null;
+  const name = (toolUse as { name?: string }).name ?? "?";
+  const input = (toolUse as { input?: unknown }).input ?? {};
+  let inputStr: string;
+  try {
+    inputStr = JSON.stringify(input, null, 2);
+  } catch {
+    inputStr = String(input);
+  }
   return (
     <div
       style={{
-        fontSize: 12,
-        color: "var(--af-text)",
-        whiteSpace: "pre-wrap",
-        wordBreak: "break-word",
-        lineHeight: 1.5,
+        padding: "8px 10px",
+        background: "var(--af-surface)",
+        border: "1px solid var(--af-border-subtle)",
+        borderRadius: 3,
+        fontSize: 10,
+        fontFamily: "ui-monospace, monospace",
       }}
     >
-      {children}
+      <div style={{ fontWeight: 600, color, marginBottom: 4 }}>{name}</div>
+      <pre
+        style={{
+          margin: 0,
+          color: "var(--af-text-secondary)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          maxHeight: 280,
+          overflow: "auto",
+        }}
+      >
+        {inputStr}
+      </pre>
     </div>
   );
 }

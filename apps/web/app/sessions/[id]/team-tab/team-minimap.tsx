@@ -6,6 +6,7 @@ import type { TimelineData, TeamTrack, TeamTurn } from "./adapter";
 const LANE_HEIGHT = 22;
 const LANE_GAP = 2;
 const LABEL_WIDTH = 100;
+const DEFAULT_VISIBLE_LANES = 4;
 
 type Props = {
   data: TimelineData;
@@ -23,6 +24,13 @@ type HoverState = {
 export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
   const span = Math.max(1, data.lastEventMs - data.firstEventMs);
   const [hover, setHover] = useState<HoverState | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const hasOverflow = data.tracks.length > DEFAULT_VISIBLE_LANES;
+  const visibleTracks =
+    hasOverflow && !expanded
+      ? data.tracks.slice(0, DEFAULT_VISIBLE_LANES)
+      : data.tracks;
+  const hiddenCount = data.tracks.length - DEFAULT_VISIBLE_LANES;
 
   const onLaneClick = (
     track: TeamTrack,
@@ -70,7 +78,7 @@ export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
       <div
         style={{ display: "flex", flexDirection: "column", gap: LANE_GAP }}
       >
-        {data.tracks.map((t) => (
+        {visibleTracks.map((t) => (
           <div
             key={t.id}
             style={{ display: "flex", alignItems: "center", gap: 6 }}
@@ -164,6 +172,35 @@ export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
           </div>
         ))}
       </div>
+
+      {hasOverflow && (
+        <div
+          style={{
+            marginTop: 6,
+            paddingLeft: LABEL_WIDTH + 6,
+            display: "flex",
+          }}
+        >
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            style={{
+              background: "var(--af-surface-hover)",
+              border: "1px solid var(--af-border-subtle)",
+              color: "var(--af-text-secondary)",
+              fontSize: 10,
+              fontFamily: "ui-monospace, monospace",
+              padding: "2px 8px",
+              borderRadius: 10,
+              cursor: "pointer",
+              lineHeight: 1.4,
+            }}
+          >
+            {expanded
+              ? "Show fewer"
+              : `+ ${hiddenCount} more agent${hiddenCount === 1 ? "" : "s"} — show all`}
+          </button>
+        </div>
+      )}
 
       {/* Playhead lives in an overlay that starts AFTER the label column so
           the % coordinate matches the strips exactly. */}

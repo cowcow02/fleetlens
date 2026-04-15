@@ -19,6 +19,15 @@ type Props = {
 
 export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [expandedTurns, setExpandedTurns] = useState<Set<string>>(new Set());
+  const toggleExpand = useCallback((turnId: string) => {
+    setExpandedTurns((prev) => {
+      const next = new Set(prev);
+      if (next.has(turnId)) next.delete(turnId);
+      else next.add(turnId);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!scrollTarget || !scrollRef.current) return;
@@ -191,6 +200,8 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
                     top={top}
                     height={height}
                     onClick={() => onTurnClick(turn)}
+                    isExpanded={expandedTurns.has(turn.id)}
+                    onToggleExpand={() => toggleExpand(turn.id)}
                   />
                 );
               })}
@@ -216,12 +227,16 @@ function TurnCell({
   top,
   height,
   onClick,
+  isExpanded,
+  onToggleExpand,
 }: {
   turn: TeamTurn;
   track: TeamTrack;
   top: number;
   height: number;
   onClick: () => void;
+  isExpanded: boolean;
+  onToggleExpand: () => void;
 }) {
   const [hover, setHover] = useState(false);
   const summary = turn.megaRow.summary;
@@ -246,7 +261,8 @@ function TurnCell({
         top: top + 2,
         left: 4,
         right: 4,
-        height,
+        height: isExpanded ? "auto" : height,
+        minHeight: isExpanded ? Math.max(height, 160) : undefined,
         background: hover ? "var(--af-surface-hover)" : "var(--af-surface)",
         borderLeft: `3px solid ${track.color}`,
         border: "1px solid var(--af-border-subtle)",
@@ -255,13 +271,19 @@ function TurnCell({
         padding: "6px 8px",
         fontSize: 10,
         lineHeight: 1.3,
-        overflow: "hidden",
+        overflow: isExpanded ? "visible" : "hidden",
         boxSizing: "border-box",
         display: "flex",
         flexDirection: "column",
         gap: 4,
         cursor: "pointer",
-        outline: hover ? `1px solid ${track.color}` : "none",
+        outline: isExpanded
+          ? `1px solid ${track.color}`
+          : hover
+            ? `1px solid ${track.color}`
+            : "none",
+        boxShadow: isExpanded ? "0 4px 16px rgba(0,0,0,0.18)" : undefined,
+        zIndex: isExpanded ? 5 : undefined,
         transition: "background 0.1s ease",
       }}
     >
@@ -269,6 +291,8 @@ function TurnCell({
         style={{
           display: "flex",
           justifyContent: "space-between",
+          alignItems: "center",
+          gap: 6,
           fontSize: 9,
           color: "var(--af-text-tertiary)",
           fontFamily: "ui-monospace, monospace",
@@ -279,7 +303,34 @@ function TurnCell({
           {summary.agentMessages} msg · {summary.toolCalls} tools
           {summary.errors > 0 ? ` · ${summary.errors} err` : ""}
         </span>
-        <span>{durationStr}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span>{durationStr}</span>
+          <button
+            data-turn-toggle
+            aria-label={isExpanded ? "Collapse" : "Expand"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand();
+            }}
+            style={{
+              background: "transparent",
+              border: "1px solid var(--af-border-subtle)",
+              color: "var(--af-text-secondary)",
+              width: 16,
+              height: 16,
+              borderRadius: 2,
+              fontSize: 9,
+              lineHeight: 1,
+              cursor: "pointer",
+              padding: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {isExpanded ? "▲" : "▼"}
+          </button>
+        </span>
       </div>
 
       {userText && (
@@ -320,14 +371,22 @@ function TurnCell({
             AGENT
           </div>
           <div
-            style={{
-              color: "var(--af-text)",
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
+            style={
+              isExpanded
+                ? {
+                    color: "var(--af-text)",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }
+                : {
+                    color: "var(--af-text)",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }
+            }
           >
             {firstAgent}
           </div>
@@ -354,7 +413,7 @@ function TurnCell({
         </div>
       )}
 
-      {showFinal && height > 120 && (
+      {showFinal && (isExpanded || height > 120) && (
         <div style={{ flexShrink: 0, minHeight: 0 }}>
           <div
             style={{
@@ -367,14 +426,22 @@ function TurnCell({
             RESULT
           </div>
           <div
-            style={{
-              color: "var(--af-text)",
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
+            style={
+              isExpanded
+                ? {
+                    color: "var(--af-text)",
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                  }
+                : {
+                    color: "var(--af-text)",
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }
+            }
           >
             {finalAgent}
           </div>
