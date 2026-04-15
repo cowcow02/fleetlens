@@ -12,6 +12,20 @@
 
 **Execution note:** This plan modifies parser + web + adds components. Recommended to execute on a feature branch (`feat/team-view`) and PR into master. All validation goes through vitest (parser) and the existing `pnpm verify` smoke script (web).
 
+**Deferred from spec for follow-up PRs (explicit non-goals of this plan):**
+- **SVG cross-column arrows** connecting sender/receiver cells with hover highlight. v1 shows messages inline in the receiver's column (and in the sender's column as a `SendMessage` tool cell) without connecting lines. The cross-session context is preserved because each row is time-aligned; arrows are a polish layer.
+- **Scroll-position marker in the sticky header.** The header shows the full team span; a marker that tracks current body scroll is a follow-up.
+- **Click-to-drill-in on a member span / row** opening the member's standalone session page. The Team Member badge on session lists already provides this path.
+- **Tab-state URL sync** (`?tab=team` / deep links). Tab state is local `useState` in v1, matching the existing session view convention. Lead badge navigates to the plain `/sessions/<id>` URL and relies on the session page auto-selecting the Team tab when `session.teamName` is set.
+
+**Verified against real code before writing the plan:**
+- `EventRole` in `packages/parser/src/types.ts:9-16` is exactly `"user" | "agent" | "agent-thinking" | "tool-call" | "tool-result" | "system" | "meta"` — plan uses these names directly.
+- `SessionEvent.toolName` exists as an optional field on tool-call events (`types.ts:59`); the tool_use block is inside `ev.blocks[]` with an `input` record — the plan's `extractSendMessage` walks `ev.blocks` looking for `type === "tool_use"`.
+- `SessionMeta.firstTimestamp` / `lastTimestamp` (ISO strings) exist on the meta object — plan uses these names directly.
+- `packages/parser/src/fs.ts` exports: `DEFAULT_ROOT`, `listSessions(opts)`, `getSession(id, opts)`, `readJsonlFile` — the team loader (Task 3.1) uses these, not the placeholder names the first draft mentioned.
+- `apps/web/lib/data.ts` exports cached server-side `listSessions()` and `getSession(id)` wrappers around the parser — web-side code goes through those, not direct parser imports.
+- `apps/web/app/sessions/[id]/session-view.tsx:132` uses a local `useState<"transcript" | "debug">` with an `af-tabs` / `af-tab-btn` DOM structure (not shadcn Tabs). The Team tab becomes a third button there. The file is 4650 lines; we do **not** split it — we add a new tab button and a small branch that renders `<TeamTabClient>` when `tab === "team"`.
+
 ---
 
 ## File Structure
@@ -30,7 +44,6 @@
 | `apps/web/app/sessions/[id]/team-tab/adapter.ts` | Converts `TeamView` + details into `MultiTrack` props |
 | `apps/web/app/sessions/[id]/team-tab/swim-lane-header.tsx` | Sticky header, shared ruler + lane bars + message ticks |
 | `apps/web/app/sessions/[id]/team-tab/multi-track.tsx` | Generic scrollable grid (`tracks`, `messages`, `zoom`) |
-| `apps/web/app/sessions/[id]/team-tab/cross-column-arrows.tsx` | SVG overlay drawing lead↔member arrows |
 | `apps/web/components/team-badge.tsx` | Shared `<TeamBadge session={...} />` pill |
 
 **Modified files:**
@@ -41,8 +54,8 @@
 | `packages/parser/src/parser.ts` | Populate new fields during `parseTranscript` / `toEvent` |
 | `packages/parser/src/fs.ts` | Add `scanForTeamName()` + `loadTeamForSession()` helpers |
 | `packages/parser/src/index.ts` | Export `groupByTeam`, `TeamView`, `TeamMessage` |
-| `apps/web/app/sessions/[id]/page.tsx` | Add "Team" tab trigger; render `team-tab-loader` when active |
-| `apps/web/app/sessions/[id]/session-view.tsx` | Filter `teammateMessage` events out of Conversation; add hidden-count banner |
+| `apps/web/app/sessions/[id]/page.tsx` | Server-load the team view when `session.teamName` is set and pass as optional prop |
+| `apps/web/app/sessions/[id]/session-view.tsx` | Add `team` tab button, filter `teammateMessage` events from transcript, add hidden-count banner |
 | `apps/web/app/sessions/page.tsx` | Render `<TeamBadge>` on session rows |
 | `apps/web/components/sidebar.tsx` | Render `<TeamBadge>` on sidebar recent sessions |
 | `apps/web/components/dashboard-view.tsx` | Render `<TeamBadge>` on dashboard recents card |
@@ -540,7 +553,11 @@ describe("groupByTeam", () => {
     expect(msgs.every((m) => m.toSessionId === "")).toBe(true);
   });
 
-  it("classifies idle-notification messages", () => {
+  it("tags SendMessage-sourced TeamMessages with kind=message", () => {
+    // TeamMessages come from the sender's SendMessage tool_use, not from
+    // the receiver's <teammate-message> delivery. idle-notification and
+    // shutdown-request kinds are a property of the teammateMessage parsing
+    // on SessionEvent (covered in parser.test.ts), not of groupByTeam.
     const lead = loadFixture(fix("team-lead.jsonl"), "lead-1");
     const a = loadFixture(fix("team-member-a.jsonl"), "mem-a");
     const b = loadFixture(fix("team-member-b.jsonl"), "mem-b");
@@ -550,10 +567,6 @@ describe("groupByTeam", () => {
       ["mem-b", { ...b, events: (b as any).events }],
     ]);
     const view = groupByTeam([lead, a, b], details as any)[0]!;
-    // Nothing in the fixtures currently produces an idle kind on the
-    // SendMessage pairing path (that'd come from the <teammate-message>
-    // on the receiving side). This test just asserts the kind field is
-    // populated with "message" for all SendMessage-sourced entries.
     expect(view.messages.every((m) => m.kind === "message")).toBe(true);
   });
 });
@@ -766,99 +779,60 @@ git commit -m "feat(parser): add groupByTeam() for lead/member correlation"
 
 ## Chunk 3: Node-side team loader
 
-### Task 3.1: Implement scanForTeamName + loadTeamForSession
+### Task 3.1: Implement loadTeamForSession
 
 **Files:**
 - Modify: `packages/parser/src/fs.ts`
 
-- [ ] **Step 1: Add the cheap scanner**
+`listSessions()` already parses every JSONL fully and returns `SessionMeta[]`. Once Task 1.2 lands, each meta carries `teamName` / `agentName`. That makes the team fan-out a trivial filter — no separate cheap-scanner needed.
 
-In `packages/parser/src/fs.ts`, add a new exported helper near the existing `readJsonlFile` utilities:
+- [ ] **Step 1: Add `loadTeamForSession` at the bottom of `fs.ts`**
+
+At the top of the file, add the new imports near the existing ones:
 
 ```ts
-/**
- * Cheap check: does the JSONL at `filePath` participate in team `teamName`?
- * Reads up to the first 50 lines and returns `true` as soon as it sees an
- * event with a matching `teamName` field. Returns `false` if no match by
- * line 50 or on any read error.
- */
-export async function scanForTeamName(
-  filePath: string,
-  teamName: string,
-): Promise<boolean> {
-  try {
-    const lines = await readJsonlFile(filePath);
-    const limit = Math.min(lines.length, 50);
-    for (let i = 0; i < limit; i++) {
-      const line = lines[i];
-      if (!line || typeof line !== "object") continue;
-      const tn = (line as { teamName?: unknown }).teamName;
-      if (typeof tn === "string" && tn === teamName) return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
+import { groupByTeam, type TeamView } from "./team.js";
 ```
 
-- [ ] **Step 2: Add `loadTeamForSession`**
-
-Below `scanForTeamName`, add:
+At the bottom of the file (after the existing exports), add:
 
 ```ts
-import { groupByTeam } from "./team.js";
-import type { TeamView } from "./team.js";
-
 /**
- * Load the team view for a given session. Returns null if the session has
- * no teamName (not participating in any team). Otherwise, scans all
- * projects in the projects root for siblings in the same team and returns
- * a TeamView + the SessionDetail map for the lead and every member.
+ * Load the full team view for a given session. Returns null when the
+ * session has no teamName (not part of any team). Otherwise, filters
+ * `listSessions()` by teamName, loads each participant's SessionDetail,
+ * clusters via groupByTeam, and returns the matching view.
  *
- * This is only called when the user opens the Team tab, so the fan-out
- * scan only fires on demand.
+ * Called on-demand when the user opens the Team tab — it reuses the
+ * module-scoped cache inside listSessions/getSession, so the fan-out
+ * is cheap after the first call.
  */
 export async function loadTeamForSession(
   sessionId: string,
-  projectsRoot: string = defaultProjectsRoot(),
+  opts: { root?: string } = {},
 ): Promise<{
   view: TeamView;
   details: Map<string, SessionDetail>;
 } | null> {
-  // 1. Load this session's detail to get its teamName.
-  const selfList = await listSessions(projectsRoot);
-  const self = selfList.find((s) => s.sessionId === sessionId);
+  const { root = DEFAULT_ROOT } = opts;
+
+  // 1. Check that this session has a team.
+  const all = await listSessions({ root });
+  const self = all.find((s) => s.sessionId === sessionId);
   if (!self || !self.teamName) return null;
   const teamName = self.teamName;
 
-  // 2. Find every other session whose JSONL carries the same teamName.
-  //    Use the cheap scanner first to avoid fully parsing every JSONL.
-  const candidates: SessionMeta[] = [];
-  for (const s of selfList) {
-    if (s.sessionId === self.sessionId) {
-      candidates.push(self);
-      continue;
-    }
-    // If the cheap meta scan already populated teamName, trust it.
-    if (s.teamName === teamName) {
-      candidates.push(s);
-      continue;
-    }
-    // Otherwise fall back to the first-50-lines scanner.
-    if (await scanForTeamName(s.filePath, teamName)) {
-      candidates.push(s);
-    }
-  }
+  // 2. Everyone in the same team — listSessions already populates teamName.
+  const candidates = all.filter((s) => s.teamName === teamName);
 
-  // 3. Parse each candidate fully.
+  // 3. Full parse for each candidate (cached).
   const details = new Map<string, SessionDetail>();
   for (const c of candidates) {
-    const d = await loadSessionDetail(c.sessionId, projectsRoot);
+    const d = await getSession(c.sessionId, { root });
     if (d) details.set(c.sessionId, d);
   }
 
-  // 4. Cluster.
+  // 4. Cluster and return the matching team view.
   const views = groupByTeam(candidates, details);
   const view = views.find((v) => v.teamName === teamName);
   if (!view) return null;
@@ -866,21 +840,24 @@ export async function loadTeamForSession(
 }
 ```
 
-**Integration notes for the implementer:** the existing `listSessions` and `loadSessionDetail` function names are illustrative — look up the actual exported names in `fs.ts` and match them. If `listSessions` already returns `SessionMeta` with `teamName` populated (because Task 1.2 taught `parseTranscript` to extract it), most of the cheap-scan fallback is unnecessary and you can shortcut to `s.teamName === teamName`.
-
-- [ ] **Step 3: Typecheck the parser package**
+- [ ] **Step 2: Typecheck the parser package**
 
 Run: `pnpm -F @claude-lens/parser exec tsc --noEmit`
 Expected: no errors.
 
-- [ ] **Step 4: Smoke-run against real sessions**
+- [ ] **Step 3: Manual end-to-end sanity check**
 
-The three real sessions we brainstormed against live on disk. Write a temporary script (NOT committed) to verify loadTeamForSession works end-to-end:
+Build and invoke against a real team session on disk (not committed):
 
 ```bash
+pnpm -F @claude-lens/parser build
 node -e '
 import("./packages/parser/dist/fs.js").then(async (fs) => {
-  const r = await fs.loadTeamForSession("3edd9aee-a722-42cc-a249-1d79a7d6af76");
+  const all = await fs.listSessions({ limit: 500 });
+  const team = all.find((s) => s.teamName);
+  if (!team) { console.log("no team sessions found"); return; }
+  const r = await fs.loadTeamForSession(team.sessionId);
+  console.log("team:", r?.view.teamName);
   console.log("lead:", r?.view.leadSessionId);
   console.log("members:", r?.view.memberSessionIds);
   console.log("messages:", r?.view.messages.length);
@@ -888,13 +865,9 @@ import("./packages/parser/dist/fs.js").then(async (fs) => {
 '
 ```
 
-(You'll need to `pnpm -F @claude-lens/parser build` first.)
+Expected: prints a team name, one lead sessionId, one or more member sessionIds, and a non-zero message count. Skips gracefully if no team sessions exist locally.
 
-Expected: lead is the lead sessionId, members include the two member sessionIds, messages >= 20.
-
-If the dist import path differs, use whatever the parser's built entry is.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add packages/parser/src/fs.ts
@@ -964,74 +937,74 @@ git commit -m "feat(web): hide teammate-message events from lead's conversation 
 
 ## Chunk 5: Web — Team tab + multi-track view
 
-### Task 5.1: Add the Team tab trigger
+### Task 5.1: Load the team view server-side in page.tsx
 
 **Files:**
 - Modify: `apps/web/app/sessions/[id]/page.tsx`
 
-- [ ] **Step 1: Read the file and locate the tab layout**
+The page is already a server component. We load the team view here (when `session.teamName` is set) and pass it as an optional prop to `SessionView`. `SessionView` is a large client component (~4650 lines) — we do **not** split it. We just add the new tab button + content branch inside it (Task 5.5).
 
-Find where Conversation / Timeline / Tools tabs are currently defined. Identify the tab primitive (likely a shadcn `Tabs` + `TabsList` + `TabsTrigger`).
+- [ ] **Step 1: Update page.tsx to pre-load team data**
 
-- [ ] **Step 2: Add a "Team" tab conditionally**
-
-Only render the trigger when `session.teamName` is truthy. Example shape:
+Replace `apps/web/app/sessions/[id]/page.tsx` with:
 
 ```tsx
-{session.teamName && (
-  <TabsTrigger value="team">Team</TabsTrigger>
-)}
-```
-
-And a matching `<TabsContent value="team">` that lazy-loads the Team tab loader:
-
-```tsx
-{session.teamName && (
-  <TabsContent value="team">
-    <TeamTabLoader sessionId={session.sessionId} />
-  </TabsContent>
-)}
-```
-
-Import `TeamTabLoader` from the team-tab directory (created next).
-
-- [ ] **Step 3: Commit placeholder (doesn't compile yet — skip until 5.2 done)**
-
-No commit yet — this depends on 5.2.
-
----
-
-### Task 5.2: Build the Team tab loader (server component)
-
-**Files:**
-- Create: `apps/web/app/sessions/[id]/team-tab/team-tab-loader.tsx`
-- Create: `apps/web/app/sessions/[id]/team-tab/adapter.ts`
-- Create: `apps/web/app/sessions/[id]/team-tab/team-tab-client.tsx`
-
-- [ ] **Step 1: Write the loader**
-
-Create `apps/web/app/sessions/[id]/team-tab/team-tab-loader.tsx`:
-
-```tsx
+import { notFound } from "next/navigation";
+import { getSession } from "@/lib/data";
 import { loadTeamForSession } from "@claude-lens/parser/fs";
-import { teamViewToMultiTrackProps } from "./adapter.js";
-import { TeamTabClient } from "./team-tab-client.js";
+import { teamViewToMultiTrackProps } from "./team-tab/adapter";
+import { SessionView } from "./session-view";
 
-export async function TeamTabLoader({ sessionId }: { sessionId: string }) {
-  const result = await loadTeamForSession(sessionId);
-  if (!result) {
-    return (
-      <div className="text-sm text-muted-foreground p-4">
-        This session isn't part of a team.
-      </div>
-    );
+export const dynamic = "force-dynamic";
+
+export default async function SessionDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const session = await getSession(id);
+  if (!session) return notFound();
+
+  // Pre-compute the team view on the server when this session has a team.
+  // teammateMessage-carrying user events are still kept in session.events
+  // below — SessionView filters them from the transcript at render time.
+  let teamProps = null;
+  if (session.teamName) {
+    const result = await loadTeamForSession(id);
+    if (result) {
+      teamProps = {
+        ...teamViewToMultiTrackProps(result.view, result.details),
+        teamName: result.view.teamName,
+      };
+    }
   }
-  const props = teamViewToMultiTrackProps(result.view, result.details);
-  return <TeamTabClient initial={props} teamName={result.view.teamName} />;
+
+  // Strip raw blob from events (same as before, for RSC payload).
+  const stripped = {
+    ...session,
+    events: session.events.map((e) => ({ ...e, raw: undefined })),
+  };
+
+  return <SessionView session={stripped} team={teamProps} />;
 }
 ```
 
-- [ ] **Step 2: Write the adapter**
+- [ ] **Step 2: Typecheck**
+
+`pnpm -F @claude-lens/web exec tsc --noEmit` — will fail until Tasks 5.2–5.5 land, which is fine. No commit yet.
+
+---
+
+### Task 5.2: Build the Team tab adapter + client component
+
+**Files:**
+- Create: `apps/web/app/sessions/[id]/team-tab/adapter.ts`
+- Create: `apps/web/app/sessions/[id]/team-tab/team-tab-client.tsx`
+
+Note: there is no separate loader component in this plan — `page.tsx` loads the team view server-side (Task 5.1) and passes it as a prop through `SessionView` into `TeamTabClient`. That keeps RSC→client payload boundaries clean and avoids a nested server component inside a large client component.
+
+- [ ] **Step 1: Write the adapter**
 
 Create `apps/web/app/sessions/[id]/team-tab/adapter.ts`:
 
@@ -1219,11 +1192,11 @@ export function TeamTabClient({
 }
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add apps/web/app/sessions/\[id\]/team-tab/
-git commit -m "feat(web): team tab loader, adapter, and client scaffold"
+git add apps/web/app/sessions/\[id\]/team-tab/adapter.ts apps/web/app/sessions/\[id\]/team-tab/team-tab-client.tsx
+git commit -m "feat(web): team tab adapter + client component scaffold"
 ```
 
 ---
@@ -1355,9 +1328,12 @@ import type { MultiTrackProps } from "./adapter.js";
 
 type Props = MultiTrackProps & { zoom: number };
 
+type CellEntry = { kind: string; label: string; preview: string };
 type MergedRow = {
   tsMs: number;
-  cells: Map<string, { kind: string; label: string; preview: string }>;
+  // Arrays, not single entries: if two events on the same track land in
+  // the same merge window we want to see both, not silently overwrite.
+  cells: Map<string, CellEntry[]>;
 };
 
 export function MultiTrack({
@@ -1413,25 +1389,27 @@ export function MultiTrack({
               {formatTime(row.tsMs)}
             </div>
             {tracks.map((t) => {
-              const cell = row.cells.get(t.id);
+              const entries = row.cells.get(t.id);
               return (
                 <div
                   key={t.id}
-                  className="p-2 border-b border-l border-border"
+                  className="p-2 border-b border-l border-border flex flex-col gap-1"
                   style={{ minHeight: `${height}px` }}
                 >
-                  {cell ? (
-                    <>
-                      <div
-                        className="text-[9px] mb-0.5"
-                        style={{ color: t.color }}
-                      >
-                        {cell.label}
+                  {entries && entries.length > 0 ? (
+                    entries.map((cell, ci) => (
+                      <div key={ci}>
+                        <div
+                          className="text-[9px] mb-0.5"
+                          style={{ color: t.color }}
+                        >
+                          {cell.label}
+                        </div>
+                        <div className="text-foreground/90 leading-snug">
+                          {cell.preview}
+                        </div>
                       </div>
-                      <div className="text-foreground/90 leading-snug">
-                        {cell.preview}
-                      </div>
-                    </>
+                    ))
                   ) : (
                     <span className="text-muted-foreground/40 italic">· idle ·</span>
                   )}
@@ -1467,24 +1445,23 @@ function mergeRows(tracks: MultiTrackProps["tracks"]): MergedRow[] {
   }
   all.sort((a, b) => a.tsMs - b.tsMs);
 
-  // Group entries that fall within a small window (e.g., 2 seconds) into
-  // one row so simultaneous events across tracks line up cleanly.
+  // Group entries that fall within a small window (2s) into one row so
+  // simultaneous events across different tracks line up. Multiple events
+  // on the SAME track within that window are appended into an array, not
+  // overwritten — we want to show all of them in that cell.
   const merged: MergedRow[] = [];
   const WINDOW_MS = 2_000;
   for (const e of all) {
     const last = merged[merged.length - 1];
+    const entry: CellEntry = { kind: e.kind, label: e.label, preview: e.preview };
     if (last && e.tsMs - last.tsMs <= WINDOW_MS) {
-      last.cells.set(e.trackId, {
-        kind: e.kind,
-        label: e.label,
-        preview: e.preview,
-      });
+      const arr = last.cells.get(e.trackId) ?? [];
+      arr.push(entry);
+      last.cells.set(e.trackId, arr);
     } else {
       merged.push({
         tsMs: e.tsMs,
-        cells: new Map([
-          [e.trackId, { kind: e.kind, label: e.label, preview: e.preview }],
-        ]),
+        cells: new Map([[e.trackId, [entry]]]),
       });
     }
   }
@@ -1509,22 +1486,83 @@ git commit -m "feat(web): multi-track body with event-anchored + strict-time zoo
 
 ---
 
-### Task 5.5: Wire up the Team tab trigger
+### Task 5.5: Add the Team tab button inside session-view.tsx
 
 **Files:**
-- Modify: `apps/web/app/sessions/[id]/page.tsx`
+- Modify: `apps/web/app/sessions/[id]/session-view.tsx`
 
-- [ ] **Step 1: Import and use `TeamTabLoader`**
+The existing tab primitive is two plain buttons inside a `<div className="af-tabs">` at around line 464, backed by `useState<"transcript" | "debug">` at line 132. We add a third `"team"` state value, a new button, and a conditional block that renders `<TeamTabClient>` when the tab is active.
 
-Add the import at the top:
+- [ ] **Step 1: Extend the tab state type**
+
+Find the `useState` for `tab` at `apps/web/app/sessions/[id]/session-view.tsx:132` and change:
 
 ```tsx
-import { TeamTabLoader } from "./team-tab/team-tab-loader.js";
+const [tab, setTab] = useState<"transcript" | "debug">("transcript");
 ```
 
-Wire the trigger + content as described in Task 5.1 (now uncommented since loader exists).
+to:
 
-- [ ] **Step 2: Rebuild and smoke**
+```tsx
+const [tab, setTab] = useState<"transcript" | "debug" | "team">(
+  props.team ? "team" : "transcript",
+);
+```
+
+The default is `"team"` when the page passed team props (i.e., this is a team lead session), so the lead badge link doesn't need a query param to land on the right tab.
+
+- [ ] **Step 2: Add the Team button**
+
+Near the existing two tab buttons (around line 464–477), add a third button, rendered only when `props.team` is truthy:
+
+```tsx
+{props.team && (
+  <button
+    className={`af-tab-btn ${tab === "team" ? "active" : ""}`}
+    onClick={() => setTab("team")}
+  >
+    Team
+  </button>
+)}
+```
+
+- [ ] **Step 3: Thread the `team` prop into SessionView**
+
+Find the `SessionView` props declaration and add an optional `team` field:
+
+```tsx
+import type { MultiTrackProps } from "./team-tab/adapter";
+// …
+type SessionViewProps = {
+  session: /* existing session type */;
+  team?: (MultiTrackProps & { teamName: string }) | null;
+};
+
+export function SessionView(props: SessionViewProps) {
+  const { session, team } = props;
+  // …
+}
+```
+
+Follow whatever the existing type declaration pattern is — the file already uses inline type annotations; match that style.
+
+- [ ] **Step 4: Render TeamTabClient when tab === "team"**
+
+At the spot where `tab === "transcript"` / `tab === "debug"` branches render their respective bodies, add:
+
+```tsx
+{tab === "team" && team && (
+  <TeamTabClient initial={team} teamName={team.teamName} />
+)}
+```
+
+Import `TeamTabClient` at the top of the file:
+
+```tsx
+import { TeamTabClient } from "./team-tab/team-tab-client";
+```
+
+- [ ] **Step 5: Rebuild and smoke manually**
 
 ```bash
 rm -rf apps/web/.next packages/cli/app
@@ -1534,18 +1572,23 @@ node packages/cli/dist/index.js stop
 node packages/cli/dist/index.js web usage --no-open
 ```
 
-Open http://localhost:3321/sessions/3edd9aee-a722-42cc-a249-1d79a7d6af76 and verify:
-- A "Team" tab appears next to the existing tabs.
-- Clicking it shows the swim-lane header with 3 colored lanes (lead + 2 members).
-- The multi-track body below shows the lead and member columns with interleaved rows.
-- The zoom slider at top-right actually resizes rows toward strict-time mode when dragged right.
+Open any local team-lead session (if one exists) at `http://localhost:3321/sessions/<leadId>`. Verify:
+- A third "Team" tab button appears next to Transcript / Debug.
+- The tab is selected by default when the session is a team lead.
+- Clicking it shows the swim-lane header with one colored lane per agent and a multi-track body below.
+- The zoom slider at the top resizes rows toward strict-time mode when dragged right.
+- Switching to Transcript shows the filtered conversation with the hidden-count banner from Task 4.1.
 
-- [ ] **Step 3: Commit**
+If no local team session exists, skip the visual check and rely on the typecheck + smoke pass in Task 5.6.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web/app/sessions/\[id\]/page.tsx
-git commit -m "feat(web): add Team tab trigger to lead session page"
+git add apps/web/app/sessions/\[id\]/session-view.tsx apps/web/app/sessions/\[id\]/page.tsx
+git commit -m "feat(web): add Team tab to session view and pre-load team data server-side"
 ```
+
+Note: this commit bundles the page.tsx change from Task 5.1 — those edits can't compile standalone, so they land together.
 
 ---
 
@@ -1554,19 +1597,40 @@ git commit -m "feat(web): add Team tab trigger to lead session page"
 **Files:**
 - Modify: `scripts/smoke.mjs`
 
-- [ ] **Step 1: Add a smoke route for the team-enabled lead session**
+`smoke.mjs` already discovers real sessions from `~/.claude/projects/` at runtime — no hardcoded IDs. We extend that discovery to detect a team-lead session (one whose JSONL has `teamName` but not `agentName`). If found, hit its page and assert the body contains a "Team" tab button. If no team session exists locally, the assertion is skipped with a dim note (so the test is a no-op on clean checkouts without regressing CI).
 
-Read `scripts/smoke.mjs` to find the route-checking pattern. Add a new assertion: hit `/sessions/3edd9aee-a722-42cc-a249-1d79a7d6af76` (or whatever lead session the smoke fixture expects) and assert the response body contains the string `"Team"` near a tab trigger. If the smoke script is purely a 200-check today, add a simple `response.text()` contains-check.
+- [ ] **Step 1: Read the smoke script to understand its discovery pattern**
 
-- [ ] **Step 2: Run `pnpm verify`**
+Run `cat scripts/smoke.mjs` and identify where it reads session files from `~/.claude/projects/` to pick a sample session. Match that pattern.
 
-Expected: PASS. Fix anything that breaks.
+- [ ] **Step 2: Add team-lead discovery + assertion**
 
-- [ ] **Step 3: Commit**
+Add a helper that scans the first 50 lines of each discovered JSONL for a `teamName` field (and absence of `agentName`), and the first result becomes the "team-lead sample". Then add a new route check:
+
+```js
+// After the existing route checks
+if (teamLeadSession) {
+  const { body, ok } = await hit(`/sessions/${teamLeadSession}`, "team lead session page");
+  if (ok && !/class="af-tab-btn[^"]*"[^>]*>\s*Team\s*</.test(body)) {
+    console.log(`${RED}FAIL${RESET}  Team tab button not found in body`);
+    process.exitCode = 1;
+  }
+} else {
+  console.log(`${DIM}skip${RESET}  no local team-lead session found — Team tab assertion skipped`);
+}
+```
+
+Match the existing file's utility names (`hit`, `CYAN`, `RED`, etc.) — the snippet above assumes the conventions seen at the top of `smoke.mjs`.
+
+- [ ] **Step 3: Run `pnpm verify`**
+
+Expected: PASS. If no local team-lead session exists, the team assertion is skipped and the rest of the suite still passes.
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add scripts/smoke.mjs
-git commit -m "test(smoke): assert Team tab renders on lead session page"
+git commit -m "test(smoke): discover team-lead sessions and assert Team tab renders"
 ```
 
 ---
@@ -1588,9 +1652,11 @@ export function TeamBadge({ session }: { session: SessionMeta }) {
   if (!session.teamName) return null;
   const isLead = !session.agentName;
   if (isLead) {
+    // Plain session URL — session-view.tsx defaults to the Team tab when
+    // the session has a teamName, so no query param is needed.
     return (
       <Link
-        href={`/sessions/${session.sessionId}?tab=team`}
+        href={`/sessions/${session.sessionId}`}
         className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30"
         title={`Team lead — ${session.teamName}`}
       >
