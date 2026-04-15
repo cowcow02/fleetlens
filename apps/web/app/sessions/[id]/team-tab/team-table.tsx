@@ -4,6 +4,8 @@ import { useRef, useEffect, useCallback, useState } from "react";
 import type { TimelineData, TeamTurn, TeamTrack, IdleBand } from "./adapter";
 import { yOfMs } from "./adapter";
 
+const HEADER_HEIGHT = 32;
+
 const TIME_COL_WIDTH = 80;
 const COL_GAP = 1;
 const COL_MIN_WIDTH = 240;
@@ -119,28 +121,43 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
               color: "var(--af-text-tertiary)",
               fontFamily: "ui-monospace, monospace",
               textTransform: "uppercase",
+              position: "sticky",
+              left: 0,
+              zIndex: 7,
+              background: "var(--af-surface-hover)",
+              borderRight: "1px solid var(--af-border-subtle)",
             }}
           >
             Time
           </div>
-          {data.tracks.map((t) => (
-            <div
-              key={t.id}
-              style={{
-                padding: 8,
-                fontSize: 11,
-                fontWeight: t.isLead ? 700 : 600,
-                color: t.color,
-                fontFamily: "ui-monospace, monospace",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-              title={t.label}
-            >
-              {t.isLead ? "LEAD" : t.label}
-            </div>
-          ))}
+          {data.tracks.map((t, idx) => {
+            const stickyLead = idx === 0;
+            return (
+              <div
+                key={t.id}
+                style={{
+                  padding: 8,
+                  fontSize: 11,
+                  fontWeight: t.isLead ? 700 : 600,
+                  color: t.color,
+                  fontFamily: "ui-monospace, monospace",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  ...(stickyLead && {
+                    position: "sticky",
+                    left: TIME_COL_WIDTH + COL_GAP,
+                    zIndex: 6,
+                    background: "var(--af-surface-hover)",
+                    borderRight: "1px solid var(--af-border-subtle)",
+                  }),
+                }}
+                title={t.label}
+              >
+                {t.isLead ? "LEAD" : t.label}
+              </div>
+            );
+          })}
         </div>
 
         <div
@@ -153,7 +170,10 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
         >
           <div
             style={{
-              position: "relative",
+              position: "sticky",
+              left: 0,
+              zIndex: 4,
+              background: "var(--af-surface-elevated)",
               height: data.totalHeightPx + 20,
               borderRight: "1px solid var(--af-border-subtle)",
             }}
@@ -161,6 +181,7 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
             {data.timeTicks.map((tick, i) => (
               <div
                 key={i}
+                title={formatFullTimestamp(tick.tsMs)}
                 style={{
                   position: "absolute",
                   top: tick.yPx,
@@ -179,11 +200,16 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
             ))}
           </div>
 
-          {data.tracks.map((track) => (
+          {data.tracks.map((track, trackIdx) => (
             <div
               key={track.id}
               style={{
-                position: "relative",
+                position: trackIdx === 0 ? "sticky" : "relative",
+                ...(trackIdx === 0 && {
+                  left: TIME_COL_WIDTH + COL_GAP,
+                  zIndex: 3,
+                  background: "var(--af-surface-elevated)",
+                }),
                 height: data.totalHeightPx + 20,
                 borderRight: "1px solid var(--af-border-subtle)",
               }}
@@ -203,6 +229,49 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
                     isExpanded={expandedTurns.has(turn.id)}
                     onToggleExpand={() => toggleExpand(turn.id)}
                   />
+                );
+              })}
+              {track.turns.slice(1).map((turn, i) => {
+                const prev = track.turns[i]!;
+                const gapMs = turn.startMs - prev.endMs;
+                if (gapMs <= 0) return null;
+                // Skip if fully inside a team-wide idle band (hatch already covers it)
+                const coveredByTeamIdle = data.idleBands.some(
+                  (b) => b.startMs <= prev.endMs && b.endMs >= turn.startMs,
+                );
+                if (coveredByTeamIdle) return null;
+                const top = yOfMs(data.yAnchors, prev.endMs);
+                const bottom = yOfMs(data.yAnchors, turn.startMs);
+                const gapHeight = bottom - top;
+                if (gapHeight <= 40) return null;
+                return (
+                  <div
+                    key={`idle-${prev.id}-${turn.id}`}
+                    title={`${formatFullTimestamp(prev.endMs)} → ${formatFullTimestamp(turn.startMs)}`}
+                    style={{
+                      position: "absolute",
+                      top: top + 2,
+                      left: 8,
+                      right: 8,
+                      height: gapHeight - 4,
+                      pointerEvents: "none",
+                      zIndex: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        position: "sticky",
+                        top: HEADER_HEIGHT + 6,
+                        display: "inline-block",
+                        fontSize: 10,
+                        fontStyle: "italic",
+                        fontFamily: "ui-monospace, monospace",
+                        color: "var(--af-text-tertiary)",
+                      }}
+                    >
+                      idle {formatIdle(gapMs)}
+                    </span>
+                  </div>
                 );
               })}
             </div>
@@ -466,6 +535,7 @@ function IdleBandStrip({
 }) {
   return (
     <div
+      title={`${formatFullTimestamp(band.startMs)} → ${formatFullTimestamp(band.endMs)}`}
       style={{
         position: "absolute",
         top: band.yPx,
@@ -476,21 +546,47 @@ function IdleBandStrip({
           "repeating-linear-gradient(135deg, var(--af-surface) 0, var(--af-surface) 6px, var(--af-surface-hover) 6px, var(--af-surface-hover) 12px)",
         borderTop: "1px solid var(--af-border-subtle)",
         borderBottom: "1px solid var(--af-border-subtle)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 9,
-        color: "var(--af-text-tertiary)",
-        fontFamily: "ui-monospace, monospace",
-        textTransform: "uppercase",
-        letterSpacing: "0.05em",
         zIndex: 1,
         pointerEvents: "none",
       }}
     >
-      {formatIdle(band.durationMs)} idle
+      <div
+        style={{
+          position: "sticky",
+          left: "50%",
+          top: 0,
+          height: "100%",
+          width: "fit-content",
+          transform: "translateX(-50%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 9,
+          color: "var(--af-text-tertiary)",
+          fontFamily: "ui-monospace, monospace",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          whiteSpace: "nowrap",
+          padding: "0 8px",
+          background: "var(--af-surface-elevated)",
+          borderRadius: 3,
+        }}
+      >
+        {formatIdle(band.durationMs)} idle
+      </div>
     </div>
   );
+}
+
+function formatFullTimestamp(tsMs: number): string {
+  return new Date(tsMs).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 function formatDuration(ms: number): string {

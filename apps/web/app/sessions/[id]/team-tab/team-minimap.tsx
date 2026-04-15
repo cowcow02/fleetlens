@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { TimelineData, TeamTrack, TeamTurn } from "./adapter";
 import { xOfMs, msOfXFrac } from "./adapter";
 
-const LANE_HEIGHT = 22;
+const LANE_HEIGHT = 24;
 const LANE_GAP = 2;
 const LABEL_WIDTH = 100;
 const DEFAULT_VISIBLE_LANES = 4;
@@ -149,9 +149,11 @@ export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
                 position: "relative",
                 height: LANE_HEIGHT,
                 background: "var(--af-surface-hover)",
-                borderRadius: 2,
+                borderRadius: 3,
                 overflow: "hidden",
                 cursor: "pointer",
+                padding: "3px 2px",
+                boxSizing: "border-box",
               }}
               onClick={(e) => onLaneClick(t, e)}
             >
@@ -165,13 +167,16 @@ export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
                     key={turn.id}
                     style={{
                       position: "absolute",
-                      left: `${left}%`,
-                      top: 2,
-                      width: `${width}%`,
-                      height: LANE_HEIGHT - 4,
+                      left: `calc(${left}% + 1px)`,
+                      top: 3,
+                      width: `calc(${width}% - 2px)`,
+                      minWidth: 4,
+                      height: LANE_HEIGHT - 10,
                       background: t.color,
-                      opacity: 0.85,
-                      borderRadius: 1,
+                      opacity: 0.88,
+                      borderRadius: 3,
+                      border: `1px solid ${t.color}`,
+                      boxSizing: "border-box",
                     }}
                     onMouseEnter={(e) =>
                       setHover({
@@ -206,11 +211,12 @@ export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
                     style={{
                       position: "absolute",
                       left: `${left}%`,
-                      bottom: 1,
+                      bottom: 2,
                       width: `${w}%`,
                       height: 3,
                       background: t.color,
                       opacity: 0.5,
+                      borderRadius: 1,
                     }}
                     title={`subagent: ${sa.agentType}`}
                   />
