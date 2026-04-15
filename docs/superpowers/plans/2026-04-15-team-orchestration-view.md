@@ -39,7 +39,6 @@
 | `packages/parser/test/fixtures/team-lead.jsonl` | Trimmed lead fixture (5–10 events) |
 | `packages/parser/test/fixtures/team-member-a.jsonl` | Trimmed member fixture (3–5 events) |
 | `packages/parser/test/fixtures/team-member-b.jsonl` | Trimmed second member fixture |
-| `apps/web/app/sessions/[id]/team-tab/team-tab-loader.tsx` | Server component; loads team view for a session |
 | `apps/web/app/sessions/[id]/team-tab/team-tab-client.tsx` | Client wrapper; owns zoom state |
 | `apps/web/app/sessions/[id]/team-tab/adapter.ts` | Converts `TeamView` + details into `MultiTrack` props |
 | `apps/web/app/sessions/[id]/team-tab/swim-lane-header.tsx` | Sticky header, shared ruler + lane bars + message ticks |
@@ -367,6 +366,8 @@ return {
 ```
 
 Do not classify on the tool_result path — team deliveries are always `message.content` text, not tool_results.
+
+**Important:** preserve every field that the existing return objects already set (`index`, `uuid`, `parentUuid`, `timestamp`, `role`, `rawType`, `preview`, `blocks`, `raw`). Only *add* the new `teammateMessage` field. Do not drop or rename anything.
 
 - [ ] **Step 5: Run tests to verify green**
 
