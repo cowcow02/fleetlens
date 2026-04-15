@@ -3,24 +3,35 @@
 import { useState } from "react";
 import type { TimelineData, TeamTurn } from "./adapter";
 import type { SeekTarget } from "./team-table";
-import { TeamMinimap } from "./team-minimap";
 import { TeamTable } from "./team-table";
 import { TurnDrawer } from "./turn-drawer";
 
 export function TeamTabClient({
   initial,
   teamName,
+  playheadMs,
+  onPlayheadChange,
+  seekTarget,
 }: {
   initial: TimelineData;
   teamName: string;
+  /** Current playhead — owned by session-view so the sticky TeamMinimap
+   *  and the table body stay in sync without a duplicated minimap inside
+   *  the tab. The body publishes its top-of-viewport ms via onPlayheadChange. */
+  playheadMs: number | null;
+  onPlayheadChange: (tsMs: number | null) => void;
+  /** Click on the sticky minimap → request the table to scroll. */
+  seekTarget: SeekTarget | null;
 }) {
-  const [playheadMs, setPlayheadMs] = useState<number | null>(null);
-  const [seekTarget, setSeekTarget] = useState<SeekTarget | null>(null);
   const [selectedTurn, setSelectedTurn] = useState<TeamTurn | null>(null);
 
   const selectedTrack = selectedTurn
     ? initial.tracks.find((t) => t.id === selectedTurn.trackId)
     : null;
+
+  // playheadMs is owned by the parent; it isn't read here directly but
+  // the prop exists so future drawer/highlight features can consume it.
+  void playheadMs;
 
   return (
     <div
@@ -47,14 +58,9 @@ export function TeamTabClient({
           {initial.tracks.length} agent{initial.tracks.length === 1 ? "" : "s"}
         </div>
       </div>
-      <TeamMinimap
-        data={initial}
-        playheadMs={playheadMs}
-        onSeek={(tsMs, trackId) => setSeekTarget({ tsMs, trackId })}
-      />
       <TeamTable
         data={initial}
-        onPlayheadChange={setPlayheadMs}
+        onPlayheadChange={onPlayheadChange}
         scrollTarget={seekTarget}
         onTurnClick={setSelectedTurn}
       />
