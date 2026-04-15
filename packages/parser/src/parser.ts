@@ -19,6 +19,29 @@ function truncate(s: string, n = 200): string {
   return one.length > n ? one.slice(0, n - 1) + "…" : one;
 }
 
+const TEAMMATE_MSG_RE =
+  /^\s*<teammate-message\s+teammate_id="([^"]+)"[^>]*>([\s\S]*?)<\/teammate-message>\s*$/;
+
+function classifyTeammateMessage(
+  text: string,
+): SessionEvent["teammateMessage"] | undefined {
+  const m = text.match(TEAMMATE_MSG_RE);
+  if (!m) return undefined;
+  const teammateId = m[1]!;
+  const body = m[2]!.trim();
+  let kind: "message" | "idle-notification" | "shutdown-request" = "message";
+  if (body.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(body) as { type?: string };
+      if (parsed.type === "idle_notification") kind = "idle-notification";
+      else if (parsed.type === "shutdown_request") kind = "shutdown-request";
+    } catch {
+      /* not JSON, treat as message */
+    }
+  }
+  return { teammateId, body, kind };
+}
+
 function extractUsage(u: unknown): Usage | undefined {
   if (!u || typeof u !== "object") return undefined;
   const r = u as Record<string, unknown>;
@@ -96,6 +119,7 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
     const c = msg.content;
 
     if (typeof c === "string") {
+      const tm = classifyTeammateMessage(c);
       return {
         index,
         uuid,
@@ -106,6 +130,7 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
         preview: truncate(c, 200),
         blocks: [{ type: "text", text: c }],
         raw,
+        teammateMessage: tm,
       };
     }
 
@@ -131,6 +156,7 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
       const textBlock = (c as ContentBlock[]).find(
         (b): b is { type: "text"; text: string } => b?.type === "text",
       );
+      const tm = textBlock ? classifyTeammateMessage(textBlock.text) : undefined;
       return {
         index,
         uuid,
@@ -141,6 +167,7 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
         preview: textBlock ? truncate(textBlock.text, 200) : truncate(JSON.stringify(c), 200),
         blocks: c as ContentBlock[],
         raw,
+        teammateMessage: tm,
       };
     }
   }

@@ -278,3 +278,70 @@ describe("parseTranscript — team fields", () => {
     expect(meta.agentName).toBeUndefined();
   });
 });
+
+describe("parseTranscript — teammateMessage classification", () => {
+  const base = {
+    type: "user",
+    sessionId: "s1",
+    timestamp: "2026-04-15T10:00:00Z",
+    uuid: "u1",
+    parentUuid: null,
+  };
+
+  function withContent(content: unknown) {
+    return [{ ...base, message: { content } }];
+  }
+
+  it("tags a basic teammate-message wrapper", () => {
+    const lines = withContent(
+      '<teammate-message teammate_id="team-lead">hello from lead</teammate-message>',
+    );
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage).toEqual({
+      teammateId: "team-lead",
+      body: "hello from lead",
+      kind: "message",
+    });
+  });
+
+  it("handles attributes like color and summary", () => {
+    const lines = withContent(
+      '<teammate-message teammate_id="kip-121" color="blue" summary="PR #104 ready">PR merged</teammate-message>',
+    );
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage?.teammateId).toBe("kip-121");
+    expect(events[0]!.teammateMessage?.body).toBe("PR merged");
+  });
+
+  it("classifies idle notifications by JSON body type", () => {
+    const lines = withContent(
+      '<teammate-message teammate_id="kip-121">{"type":"idle_notification","from":"kip-121"}</teammate-message>',
+    );
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage?.kind).toBe("idle-notification");
+  });
+
+  it("classifies shutdown requests by JSON body type", () => {
+    const lines = withContent(
+      '<teammate-message teammate_id="team-lead">{"type":"shutdown_request","requestId":"x"}</teammate-message>',
+    );
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage?.kind).toBe("shutdown-request");
+  });
+
+  it("leaves teammateMessage undefined on real human user input", () => {
+    const lines = withContent("add a new feature please");
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage).toBeUndefined();
+  });
+
+  it("accepts wrapper inside an array content block", () => {
+    const lines = withContent([
+      { type: "text",
+        text: '<teammate-message teammate_id="kip-121">PR merged</teammate-message>' },
+    ]);
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage?.teammateId).toBe("kip-121");
+    expect(events[0]!.teammateMessage?.body).toBe("PR merged");
+  });
+});
