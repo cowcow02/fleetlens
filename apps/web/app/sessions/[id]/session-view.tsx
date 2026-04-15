@@ -39,7 +39,7 @@ import { formatGap, formatOffset, formatRelative, formatTokens, shortId } from "
 import { LiveBadge } from "@/components/live-badge";
 import { AskClaudeButton, AskClaudeDrawer } from "@/components/ask-claude";
 import { TailMode } from "@/components/tail-mode";
-import type { MultiTrackProps } from "./team-tab/adapter";
+import type { TimelineData } from "./team-tab/adapter";
 import { TeamTabClient } from "./team-tab/team-tab-client";
 
 /* ------------------------------------------------------------------ */
@@ -135,7 +135,7 @@ export function SessionView({
   team,
 }: {
   session: SessionDetail;
-  team?: (MultiTrackProps & { teamName: string }) | null;
+  team?: (TimelineData & { teamName: string }) | null;
 }) {
   const [tab, setTab] = useState<"transcript" | "debug" | "team">(
     team ? "team" : "transcript",

@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 import { getSession } from "@/lib/data";
 import { loadTeamForSession } from "@claude-lens/parser/fs";
 import {
-  teamViewToMultiTrackProps,
-  type MultiTrackProps,
+  teamViewToTimelineData,
+  type TimelineData,
 } from "./team-tab/adapter";
 import { SessionView } from "./session-view";
 
@@ -18,12 +18,12 @@ export default async function SessionDetailPage({
   const session = await getSession(id);
   if (!session) return notFound();
 
-  let teamProps: (MultiTrackProps & { teamName: string }) | null = null;
+  let teamProps: (TimelineData & { teamName: string }) | null = null;
   if (session.teamName) {
     const result = await loadTeamForSession(id);
     if (result) {
       teamProps = {
-        ...teamViewToMultiTrackProps(result.view, result.details),
+        ...teamViewToTimelineData(result.view, result.details),
         teamName: result.view.teamName,
       };
     }

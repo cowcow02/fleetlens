@@ -1,40 +1,44 @@
 "use client";
 
 import { useState } from "react";
-import type { MultiTrackProps } from "./adapter";
-import { SwimLaneHeader } from "./swim-lane-header";
-import { MultiTrack } from "./multi-track";
+import type { TimelineData, TeamTurn } from "./adapter";
+import { TimelineCanvas } from "./timeline-canvas";
+import { TurnDrawer } from "./turn-drawer";
 
 export function TeamTabClient({
   initial,
   teamName,
 }: {
-  initial: MultiTrackProps;
+  initial: TimelineData;
   teamName: string;
 }) {
-  const [zoom, setZoom] = useState(0);
+  const [selectedTurn, setSelectedTurn] = useState<TeamTurn | null>(null);
+
+  const selectedTrack = selectedTurn
+    ? initial.tracks.find((t) => t.id === selectedTurn.trackId)
+    : null;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
         <h2 style={{ fontSize: 14, fontWeight: 600, margin: 0 }}>Team: {teamName}</h2>
-        <label style={{
-          display: "flex", alignItems: "center", gap: 8,
-          fontSize: 11, color: "var(--af-text-tertiary, #888)",
-        }}>
-          <span>Event-anchored</span>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={zoom}
-            onChange={(e) => setZoom(Number(e.target.value))}
-          />
-          <span>Strict time</span>
-        </label>
+        <div style={{ fontSize: 11, color: "var(--af-text-tertiary)" }}>
+          {initial.tracks.length} agent{initial.tracks.length === 1 ? "" : "s"} · click a
+          turn to inspect
+        </div>
       </div>
-      <SwimLaneHeader {...initial} />
-      <MultiTrack {...initial} zoom={zoom} />
+      <TimelineCanvas data={initial} onTurnClick={setSelectedTurn} />
+      <TurnDrawer
+        turn={selectedTurn}
+        trackLabel={selectedTrack?.isLead ? "LEAD" : (selectedTrack?.label ?? "")}
+        onClose={() => setSelectedTurn(null)}
+      />
     </div>
   );
 }
