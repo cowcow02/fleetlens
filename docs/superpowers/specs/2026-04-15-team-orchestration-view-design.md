@@ -27,6 +27,7 @@ The engineer interacting with the lead is the human user; they need a single uni
 - No team-level dashboard rollups (teams-per-day, aggregate team metrics).
 - No edit / annotation / export of the team view.
 - No support for Gemini CLI / other agent tooling *yet* — but data model and components are shaped so a second adapter could be added without reworking the primitives. Forward compatibility is kept by making the visualization primitive generic (tracks + messages), not Claude Code-specific.
+- **No CLI surface changes.** Team detection is a web-side concern; `fleetlens` CLI gets no new subcommand and no new flags.
 
 ## JSONL protocol discovery
 
@@ -133,7 +134,7 @@ type TeamView = {
 
 function groupByTeam(
   sessions: SessionMeta[],
-  details: Map<string, SessionDetail>,
+  details: Map<string, SessionDetail>,  // SessionDetail is an existing parser type
 ): TeamView[];
 ```
 
@@ -143,8 +144,9 @@ function groupByTeam(
 2. Within each group, the session(s) without `agentName` are lead candidates. Pick the one whose detail contains a `TeamCreate` tool_use; if none has one (e.g. the team was resumed after restart), pick the earliest-started session without `agentName`. If the group has zero sessions without `agentName`, skip the group — it's an orphaned/incomplete team.
 3. For every other session, its `agentName` is its canonical teammate id. Stored on the map.
 4. Message pairing — walk every session's events in order. For each `SendMessage` tool_use, construct a `TeamMessage` with the source being `{fromSessionId: this session, fromTeammateId: this session's agentName ?? "team-lead"}`, and resolve `toSessionId` by looking up `to` in the group's `agentName → sessionId` map (or the lead's sessionId if `to === "team-lead"`). The body is `input.message`. Timestamp comes from the event's `timestamp` field.
-5. Optionally cross-check each pair against the corresponding `<teammate-message>` delivery on the receiving side (same `body`, ts within ~5s). A mismatch logs a warning but isn't fatal; the outbound tool_use is the source of truth.
-6. Sort all messages in the group by `tsMs`.
+5. Sort all messages in the group by `tsMs`.
+
+The outbound `SendMessage` tool_use is the sole source of truth for messages. We do not cross-validate against the receiving side's `<teammate-message>` delivery — it would only detect protocol drift, which isn't a failure mode we handle.
 
 `groupByTeam` is a pure function. It doesn't read from disk; the caller is responsible for loading `sessions` and `details` via `fs.ts`.
 
@@ -161,7 +163,7 @@ async function loadTeamForSession(
 
 1. Load the `SessionMeta` + `SessionDetail` for `sessionId`.
 2. If `teamName` is undefined → return `null` (no team).
-3. Walk `projectsRoot/*` to collect every session whose first few events (cheap scan, no full parse) carry a matching `teamName`. Worktree projects are included automatically because they're sibling directories at the same level.
+3. Walk `projectsRoot/*` to collect every session whose JSONL carries a matching `teamName`. For each candidate `*.jsonl`, read up to the first 50 lines, parse each as JSON, and return as soon as a `teamName` field matching the target team is seen (reject if the first 50 lines contain a different `teamName` or none at all). No full-session parse at this phase. Worktree projects are included automatically because they're sibling directories at the same level.
 4. Fully parse each team session's `SessionDetail`.
 5. Call `groupByTeam`, return the team view containing `sessionId` along with the detail map.
 
@@ -234,12 +236,14 @@ A new `<TeamBadge session={sessionMeta} />` component is added to every session 
 - **"Team Lead"** — accent-colored pill when `teamName && !agentName`. Links directly to the session's Team tab (not the Conversation tab).
 - **"Team Member"** — de-emphasized muted pill when `teamName && agentName`. Links to the member's own session page.
 
-Rendered in: sidebar recent sessions, `/sessions` list, calendar day view, dashboard "recent sessions" card.
+Rendered in all four existing session-row sites in one pass: sidebar recent sessions, `/sessions` list, calendar day view, dashboard "recent sessions" card. The badge is a pure function of `SessionMeta`, so adding it everywhere is a single shared component and costs no more than adding it to one site.
 
 ### Lead's conversation tab cleanup
 
-The existing Conversation tab on a lead session filters out `user` events whose `teammateMessage` is set. A collapsed banner at the top reads:
+The existing Conversation tab on a lead session filters out `user` events whose `teammateMessage` is set. A non-interactive compact banner at the top reads:
 > "N inbound team messages hidden — open the Team tab to see them."
+
+The banner is purely informational; there is no expand-in-place behavior. The Team tab is the single canonical place to see team traffic.
 
 This directly addresses the second pain point: today the conversation view is polluted with team chatter that looks like user input.
 
