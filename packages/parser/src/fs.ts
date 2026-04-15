@@ -797,7 +797,9 @@ export async function loadTeamForSession(
   if (!self || !self.teamName) return null;
   const teamName = self.teamName;
 
-  const candidates = all.filter((s) => s.teamName === teamName);
+  const candidates = all.filter(
+    (s) => s.teamName === teamName && !s.filePath.includes("/subagents/"),
+  );
 
   const loaded = await Promise.all(
     candidates.map((c) => getSession(c.sessionId, { root })),
