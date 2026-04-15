@@ -27,6 +27,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseTranscript } from "./parser.js";
 import { canonicalProjectName, worktreeName } from "./analytics.js";
+import { groupByTeam, type TeamView } from "./team.js";
 import type { SessionDetail, SessionEvent, SessionMeta, SubagentRun, Usage } from "./types.js";
 
 export const DEFAULT_ROOT = path.join(os.homedir(), ".claude", "projects");
@@ -770,4 +771,42 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
       worktreeCount: a.worktreeBranches.size,
     }))
     .sort((a, b) => b.lastActiveMs - a.lastActiveMs);
+}
+
+/**
+ * Load the full team view for a given session. Returns null when the
+ * session has no teamName (not part of any team). Otherwise, filters
+ * `listSessions()` by teamName, loads each participant's SessionDetail,
+ * clusters via groupByTeam, and returns the matching view.
+ *
+ * Called on-demand when the user opens the Team tab — it reuses the
+ * module-scoped cache inside listSessions/getSession, so the fan-out
+ * is cheap after the first call.
+ */
+export async function loadTeamForSession(
+  sessionId: string,
+  opts: { root?: string } = {},
+): Promise<{
+  view: TeamView;
+  details: Map<string, SessionDetail>;
+} | null> {
+  const { root = DEFAULT_ROOT } = opts;
+
+  const all = await listSessions({ root });
+  const self = all.find((s) => s.sessionId === sessionId);
+  if (!self || !self.teamName) return null;
+  const teamName = self.teamName;
+
+  const candidates = all.filter((s) => s.teamName === teamName);
+
+  const details = new Map<string, SessionDetail>();
+  for (const c of candidates) {
+    const d = await getSession(c.sessionId, { root });
+    if (d) details.set(c.sessionId, d);
+  }
+
+  const views = groupByTeam(candidates, details);
+  const view = views.find((v) => v.teamName === teamName);
+  if (!view) return null;
+  return { view, details };
 }
