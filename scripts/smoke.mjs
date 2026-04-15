@@ -116,15 +116,31 @@ async function findTeamLeadSession() {
         if (!f.endsWith(".jsonl")) continue;
         try {
           const raw = await readFile(join(root, p.name, f), "utf8");
-          const lines = raw.split("\n").slice(0, 50);
+          // Match the parser's isTeamLead rule: teamName present, agentName
+          // absent, and at least one orchestration signal — TeamCreate or an
+          // outbound SendMessage to a non-lead recipient. A bare teamName
+          // tag is just an environmental artifact (Claude Code attaches it
+          // to any chat opened in a /team window) and isn't enough to
+          // surface a Team tab in the UI.
+          const lines = raw.split("\n").slice(0, 200);
           let hasTeam = false;
           let hasAgent = false;
+          let hasTeamCreate = false;
+          let hasOutboundDispatch = false;
           for (const line of lines) {
             if (!line.trim()) continue;
             if (line.includes('"teamName"')) hasTeam = true;
             if (line.includes('"agentName"')) hasAgent = true;
+            if (line.includes('"name":"TeamCreate"')) hasTeamCreate = true;
+            if (
+              line.includes('"name":"SendMessage"') &&
+              line.includes('"to":"') &&
+              !line.includes('"to":"team-lead"')
+            ) {
+              hasOutboundDispatch = true;
+            }
           }
-          if (hasTeam && !hasAgent) {
+          if (hasTeam && !hasAgent && (hasTeamCreate || hasOutboundDispatch)) {
             return { sessionId: f.replace(/\.jsonl$/, "") };
           }
         } catch {
