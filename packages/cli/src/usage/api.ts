@@ -1,4 +1,10 @@
-import { readOAuthToken } from "./token.js";
+import { readOAuthCredentials } from "./token.js";
+
+/**
+ * Treat a token as already-expired this many ms before its nominal expiry.
+ * Small skew so we don't fire a request the exact second it dies.
+ */
+const EXPIRY_SKEW_MS = 60 * 1000;
 
 /**
  * Claude Code's internal usage endpoint. Same data source as the `/usage`
@@ -33,17 +39,27 @@ export type UsageSnapshot = {
 };
 
 export class UsageApiError extends Error {
-  constructor(message: string, readonly code: "no_token" | "http" | "parse" | "network") {
+  constructor(
+    message: string,
+    readonly code: "no_token" | "expired" | "http" | "parse" | "network",
+  ) {
     super(message);
   }
 }
 
 export async function fetchUsage(): Promise<UsageSnapshot> {
-  const token = readOAuthToken();
-  if (!token) {
+  const creds = readOAuthCredentials();
+  if (!creds) {
     throw new UsageApiError(
       "No Claude Code OAuth token found. Run `claude` to log in first.",
       "no_token",
+    );
+  }
+
+  if (creds.expiresAt - EXPIRY_SKEW_MS <= Date.now()) {
+    throw new UsageApiError(
+      "Claude Code OAuth token expired. Open Claude Code to refresh it.",
+      "expired",
     );
   }
 
@@ -51,7 +67,7 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
   try {
     res = await fetch(USAGE_ENDPOINT, {
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${creds.accessToken}`,
         "anthropic-beta": BETA_HEADER,
       },
     });
