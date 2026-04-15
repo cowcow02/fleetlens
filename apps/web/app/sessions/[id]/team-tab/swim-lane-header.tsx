@@ -14,7 +14,7 @@ export function SwimLaneHeader({
       zIndex: 10,
       borderRadius: 6,
       border: "1px solid var(--af-border-subtle)",
-      background: "var(--af-bg)",
+      background: "var(--af-surface-elevated)",
       padding: "8px 12px",
     }}>
       <TimeRuler firstMs={firstEventMs} lastMs={lastEventMs} />
