@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { TimelineData, TeamTurn } from "./adapter";
 import type { SeekTarget } from "./team-table";
 import { TeamTable } from "./team-table";
+import { DEFAULT_VISIBLE_LANES } from "./team-minimap";
 import { TurnDrawer } from "./turn-drawer";
 
 export function TeamTabClient({
@@ -12,6 +13,7 @@ export function TeamTabClient({
   playheadMs,
   onPlayheadChange,
   seekTarget,
+  expanded,
 }: {
   initial: TimelineData;
   teamName: string;
@@ -22,8 +24,18 @@ export function TeamTabClient({
   onPlayheadChange: (tsMs: number | null) => void;
   /** Click on the sticky minimap → request the table to scroll. */
   seekTarget: SeekTarget | null;
+  /** Whether the minimap is showing all lanes (true) or just the first
+   *  DEFAULT_VISIBLE_LANES (false). Table columns track the same state. */
+  expanded: boolean;
 }) {
   const [selectedTurn, setSelectedTurn] = useState<TeamTurn | null>(null);
+
+  const visibleTrackIds = useMemo(() => {
+    const ids = expanded
+      ? initial.tracks.map((t) => t.id)
+      : initial.tracks.slice(0, DEFAULT_VISIBLE_LANES).map((t) => t.id);
+    return new Set(ids);
+  }, [expanded, initial.tracks]);
 
   const selectedTrack = selectedTurn
     ? initial.tracks.find((t) => t.id === selectedTurn.trackId)
@@ -63,6 +75,7 @@ export function TeamTabClient({
         onPlayheadChange={onPlayheadChange}
         scrollTarget={seekTarget}
         onTurnClick={setSelectedTurn}
+        visibleTrackIds={visibleTrackIds}
       />
       <TurnDrawer
         turn={selectedTurn}

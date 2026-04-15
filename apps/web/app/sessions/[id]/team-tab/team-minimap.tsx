@@ -7,12 +7,14 @@ import { xOfMs, msOfXFrac } from "./adapter";
 const LANE_HEIGHT = 24;
 const LANE_GAP = 2;
 const LABEL_WIDTH = 100;
-const DEFAULT_VISIBLE_LANES = 4;
+export const DEFAULT_VISIBLE_LANES = 4;
 
 type Props = {
   data: TimelineData;
   playheadMs: number | null;
   onSeek: (tsMs: number, trackId?: string) => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
 };
 
 type HoverState = {
@@ -22,9 +24,14 @@ type HoverState = {
   clientY: number;
 };
 
-export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
+export function TeamMinimap({
+  data,
+  playheadMs,
+  onSeek,
+  expanded,
+  onToggleExpanded,
+}: Props) {
   const [hover, setHover] = useState<HoverState | null>(null);
-  const [expanded, setExpanded] = useState(false);
   const hasOverflow = data.tracks.length > DEFAULT_VISIBLE_LANES;
   const visibleTracks =
     hasOverflow && !expanded
@@ -105,8 +112,8 @@ export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
                 width: `calc(${width}% * (100% - ${LABEL_WIDTH}px) / 100%)`,
                 background:
                   "repeating-linear-gradient(135deg, transparent 0, transparent 4px, var(--af-border-subtle) 4px, var(--af-border-subtle) 6px)",
-                pointerEvents: "none",
                 zIndex: 1,
+                cursor: "help",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -236,7 +243,7 @@ export function TeamMinimap({ data, playheadMs, onSeek }: Props) {
           }}
         >
           <button
-            onClick={() => setExpanded((v) => !v)}
+            onClick={onToggleExpanded}
             style={{
               background: "var(--af-surface-hover)",
               border: "1px solid var(--af-border-subtle)",

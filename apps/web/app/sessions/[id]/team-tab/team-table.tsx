@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import type { TimelineData, TeamTurn, TeamTrack, IdleBand } from "./adapter";
 import { yOfMs } from "./adapter";
 
@@ -17,9 +17,22 @@ type Props = {
   onPlayheadChange: (tsMs: number | null) => void;
   scrollTarget: SeekTarget | null;
   onTurnClick: (turn: TeamTurn) => void;
+  /** Track ids currently visible in the table — derived from the shared
+   *  minimap expanded state so minimap lanes and table columns stay in sync. */
+  visibleTrackIds: Set<string>;
 };
 
-export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }: Props) {
+export function TeamTable({
+  data,
+  onPlayheadChange,
+  scrollTarget,
+  onTurnClick,
+  visibleTrackIds,
+}: Props) {
+  const visibleTracks = useMemo(
+    () => data.tracks.filter((t) => visibleTrackIds.has(t.id)),
+    [data.tracks, visibleTrackIds],
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
   const [expandedTurns, setExpandedTurns] = useState<Set<string>>(new Set());
   const toggleExpand = useCallback((turnId: string) => {
@@ -37,7 +50,7 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
     scrollRef.current.scrollTop = Math.max(0, targetY - 40);
 
     if (scrollTarget.trackId) {
-      const colIndex = data.tracks.findIndex((t) => t.id === scrollTarget.trackId);
+      const colIndex = visibleTracks.findIndex((t) => t.id === scrollTarget.trackId);
       if (colIndex !== -1) {
         const targetX = TIME_COL_WIDTH + colIndex * (COL_MIN_WIDTH + COL_GAP);
         const viewport = scrollRef.current.clientWidth;
@@ -47,7 +60,7 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
         );
       }
     }
-  }, [scrollTarget, data.yAnchors, data.tracks]);
+  }, [scrollTarget, data.yAnchors, visibleTracks]);
 
   const onScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -75,7 +88,7 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
     onPlayheadChange(ts);
   }, [data.yAnchors, onPlayheadChange]);
 
-  const gridTemplate = `${TIME_COL_WIDTH}px repeat(${data.tracks.length}, minmax(${COL_MIN_WIDTH}px, 1fr))`;
+  const gridTemplate = `${TIME_COL_WIDTH}px repeat(${visibleTracks.length}, minmax(${COL_MIN_WIDTH}px, 1fr))`;
 
   return (
     <div
@@ -96,7 +109,7 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
         style={{
           position: "relative",
           width:
-            TIME_COL_WIDTH + data.tracks.length * (COL_MIN_WIDTH + COL_GAP),
+            TIME_COL_WIDTH + visibleTracks.length * (COL_MIN_WIDTH + COL_GAP),
           minWidth: "100%",
           height: data.totalHeightPx + 72,
         }}
@@ -130,7 +143,7 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
           >
             Time
           </div>
-          {data.tracks.map((t, idx) => {
+          {visibleTracks.map((t, idx) => {
             const stickyLead = idx === 0;
             return (
               <div
@@ -200,7 +213,7 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
             ))}
           </div>
 
-          {data.tracks.map((track, trackIdx) => (
+          {visibleTracks.map((track, trackIdx) => (
             <div
               key={track.id}
               style={{
@@ -281,7 +294,7 @@ export function TeamTable({ data, onPlayheadChange, scrollTarget, onTurnClick }:
             <IdleBandStrip
               key={i}
               band={band}
-              totalCols={data.tracks.length + 1}
+              totalCols={visibleTracks.length + 1}
             />
           ))}
         </div>
@@ -342,9 +355,6 @@ function TurnCell({
         lineHeight: 1.3,
         overflow: isExpanded ? "visible" : "hidden",
         boxSizing: "border-box",
-        display: "flex",
-        flexDirection: "column",
-        gap: 4,
         cursor: "pointer",
         outline: isExpanded
           ? `1px solid ${track.color}`
@@ -356,6 +366,18 @@ function TurnCell({
         transition: "background 0.1s ease",
       }}
     >
+      {/* Sticky inner wrapper — pins the content just below the sticky
+          column header row so text stays readable while the tall cell
+          scrolls past. The nearest scroll ancestor is the table scrollRef. */}
+      <div
+        style={{
+          position: "sticky",
+          top: HEADER_HEIGHT + 8,
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+        }}
+      >
       <div
         style={{
           display: "flex",
@@ -522,6 +544,7 @@ function TurnCell({
           (no preview)
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -546,7 +569,10 @@ function IdleBandStrip({
           "repeating-linear-gradient(135deg, var(--af-surface) 0, var(--af-surface) 6px, var(--af-surface-hover) 6px, var(--af-surface-hover) 12px)",
         borderTop: "1px solid var(--af-border-subtle)",
         borderBottom: "1px solid var(--af-border-subtle)",
-        zIndex: 1,
+        // Above sticky TIME col (zIndex:4) and sticky LEAD col (zIndex:3) so
+        // the hatched pattern is continuous across the full width. Still
+        // below the sticky column-header row (zIndex:5) so the header wins.
+        zIndex: 4,
         pointerEvents: "none",
       }}
     >

@@ -101,6 +101,9 @@ export function SessionView({
     tsMs: number;
     trackId?: string;
   } | null>(null);
+  // Shared collapsed-lanes state — the minimap's "+ N more" button toggles
+  // both the minimap lanes AND the body table columns for a unified view.
+  const [teamExpanded, setTeamExpanded] = useState(false);
   const [filter, setFilter] = useState<FilterMode>("turns");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
@@ -552,6 +555,8 @@ export function SessionView({
             data={team}
             playheadMs={teamPlayheadMs}
             onSeek={(tsMs, trackId) => setTeamSeekTarget({ tsMs, trackId })}
+            expanded={teamExpanded}
+            onToggleExpanded={() => setTeamExpanded((v) => !v)}
           />
         ) : (
           <Minimap
@@ -593,6 +598,7 @@ export function SessionView({
             playheadMs={teamPlayheadMs}
             onPlayheadChange={setTeamPlayheadMs}
             seekTarget={teamSeekTarget}
+            expanded={teamExpanded}
           />
         ) : tab === "transcript" ? (
           <>
