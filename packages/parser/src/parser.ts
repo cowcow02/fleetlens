@@ -376,6 +376,7 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
         typeof rawMsg?.content === "string" ? rawMsg.content : "";
       const isHidden =
         rawContent.startsWith("<command-name>") ||
+        rawContent.startsWith("<local-command-caveat>") ||
         rawContent.startsWith("Base directory for this skill:") ||
         rawContent.startsWith("<task-notification>");
       // Teammate messages on LEAD sessions are protocol noise (idle
