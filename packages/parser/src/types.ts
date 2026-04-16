@@ -63,6 +63,20 @@ export type SessionEvent = {
   attachmentType?: string;
   /** full raw JSONL line — for debug panel */
   raw: unknown;
+  /** Set when this user event is a cross-session team message delivery.
+   *  The event is NOT real human input — it's an inbound `<teammate-message>`
+   *  wrapper from a sibling team session. `teammateId` is the sender. */
+  teammateMessage?: {
+    teammateId: string;
+    body: string;
+    kind:
+      | "message"
+      | "idle-notification"
+      | "shutdown-request"
+      | "shutdown-approved"
+      | "task-assignment"
+      | "teammate-terminated";
+  };
 };
 
 export type SessionMeta = {
@@ -111,6 +125,21 @@ export type SessionMeta = {
    *  airTimeMs). Used by parallelism detection and mini-Gantts so
    *  long-idle sessions don't get counted as "active" while dead. */
   activeSegments?: { startMs: number; endMs: number }[];
+  /** Team identifier — present on every event when a session participates in a team.
+   *  Derived from the top-level `teamName` field that Claude Code writes on all
+   *  events in team sessions. First non-empty value wins. */
+  teamName?: string;
+  /** Canonical teammate id for this session. Present on member sessions,
+   *  undefined on leads. Derived from the top-level `agentName` field that
+   *  Claude Code writes on all events in a member session. Used to pair
+   *  lead-side SendMessage.to values directly. */
+  agentName?: string;
+  /** True only when this session has actual team-orchestration activity:
+   *  a TeamCreate tool_use, OR an outbound SendMessage to a non-lead
+   *  recipient. A bare `teamName` field isn't enough — Claude Code can
+   *  tag a one-off chat with whatever team context happened to be active.
+   *  Gate "is this session a team lead" UI on this flag. */
+  isTeamLead?: boolean;
 };
 
 /**

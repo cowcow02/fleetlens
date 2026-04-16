@@ -8,6 +8,7 @@ import {
 } from "@claude-lens/parser";
 import { DashboardView } from "@/components/dashboard-view";
 import { LiveBadge } from "@/components/live-badge";
+import { TeamBadge } from "@/components/team-badge";
 import { formatDuration, formatRelative, prettyProjectName } from "@/lib/format";
 import { ArrowLeft } from "lucide-react";
 
@@ -219,6 +220,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
                         <em style={{ color: "var(--af-text-tertiary)" }}>(no user message)</em>
                       )}
                     </span>
+                    <TeamBadge session={s} linkable={false} />
                   </div>
                 </div>
                 <div

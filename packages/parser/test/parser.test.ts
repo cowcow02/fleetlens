@@ -240,3 +240,194 @@ describe("buildMegaRows", () => {
     }
   });
 });
+
+describe("parseTranscript — team fields", () => {
+  it("extracts teamName from top-level event field", () => {
+    const lines = [
+      { type: "user", sessionId: "s1", teamName: "my-team",
+        message: { content: "hi" }, timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.teamName).toBe("my-team");
+  });
+
+  it("leaves teamName undefined when absent", () => {
+    const lines = [
+      { type: "user", sessionId: "s1",
+        message: { content: "hi" }, timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.teamName).toBeUndefined();
+  });
+
+  it("extracts agentName on member session", () => {
+    const lines = [
+      { type: "user", sessionId: "s1", teamName: "t", agentName: "kip-127",
+        message: { content: "hi" }, timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.agentName).toBe("kip-127");
+  });
+
+  it("leaves agentName undefined on lead session", () => {
+    const lines = [
+      { type: "user", sessionId: "s1", teamName: "t",
+        message: { content: "hi" }, timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.agentName).toBeUndefined();
+  });
+
+  it("does NOT mark a session as team lead just because it has a teamName tag", () => {
+    // Reproduces the bug where a one-off chat opened in an existing team
+    // context gets tagged with teamName but is doing zero team work.
+    const lines = [
+      { type: "user", sessionId: "s1", teamName: "orphan-team",
+        message: { content: "explain the harness" },
+        timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.teamName).toBe("orphan-team");
+    expect(meta.isTeamLead).toBe(false);
+  });
+
+  it("marks a session as team lead when it contains TeamCreate", () => {
+    const lines = [
+      { type: "user", sessionId: "s1", teamName: "t",
+        message: { content: "start team" },
+        timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
+      { type: "assistant", sessionId: "s1", teamName: "t",
+        timestamp: "2026-04-15T10:00:05Z", uuid: "u2", parentUuid: "u1",
+        requestId: "r1",
+        message: { id: "m1", model: "claude-opus", content: [
+          { type: "tool_use", id: "tu1", name: "TeamCreate",
+            input: { team_name: "t", agent_type: "orchestrator" } },
+        ] } },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.isTeamLead).toBe(true);
+  });
+
+  it("marks a session as team lead when it contains an outbound SendMessage", () => {
+    const lines = [
+      { type: "user", sessionId: "s1", teamName: "t",
+        message: { content: "go" },
+        timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
+      { type: "assistant", sessionId: "s1", teamName: "t",
+        timestamp: "2026-04-15T10:00:05Z", uuid: "u2", parentUuid: "u1",
+        requestId: "r1",
+        message: { id: "m1", model: "claude-opus", content: [
+          { type: "tool_use", id: "tu1", name: "SendMessage",
+            input: { to: "member-a", message: "do task" } },
+        ] } },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.isTeamLead).toBe(true);
+  });
+
+  it("does NOT mark a member session as team lead even with SendMessage to team-lead", () => {
+    // Members send to "team-lead", not to other agents — that's a reply,
+    // not a dispatch, and shouldn't qualify them as a lead.
+    const lines = [
+      { type: "user", sessionId: "s1", teamName: "t", agentName: "member-a",
+        message: { content: "hi" },
+        timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
+      { type: "assistant", sessionId: "s1", teamName: "t", agentName: "member-a",
+        timestamp: "2026-04-15T10:00:05Z", uuid: "u2", parentUuid: "u1",
+        requestId: "r1",
+        message: { id: "m1", model: "claude-opus", content: [
+          { type: "tool_use", id: "tu1", name: "SendMessage",
+            input: { to: "team-lead", message: "done" } },
+        ] } },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.isTeamLead).toBe(false);
+    expect(meta.agentName).toBe("member-a");
+  });
+});
+
+describe("parseTranscript — teammateMessage classification", () => {
+  const base = {
+    type: "user",
+    sessionId: "s1",
+    timestamp: "2026-04-15T10:00:00Z",
+    uuid: "u1",
+    parentUuid: null,
+  };
+
+  function withContent(content: unknown) {
+    return [{ ...base, message: { content } }];
+  }
+
+  it("tags a basic teammate-message wrapper", () => {
+    const lines = withContent(
+      '<teammate-message teammate_id="team-lead">hello from lead</teammate-message>',
+    );
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage).toEqual({
+      teammateId: "team-lead",
+      body: "hello from lead",
+      kind: "message",
+    });
+  });
+
+  it("handles attributes like color and summary", () => {
+    const lines = withContent(
+      '<teammate-message teammate_id="kip-121" color="blue" summary="PR #104 ready">PR merged</teammate-message>',
+    );
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage?.teammateId).toBe("kip-121");
+    expect(events[0]!.teammateMessage?.body).toBe("PR merged");
+  });
+
+  it("classifies idle notifications by JSON body type", () => {
+    const lines = withContent(
+      '<teammate-message teammate_id="kip-121">{"type":"idle_notification","from":"kip-121"}</teammate-message>',
+    );
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage?.kind).toBe("idle-notification");
+  });
+
+  it("classifies shutdown requests by JSON body type", () => {
+    const lines = withContent(
+      '<teammate-message teammate_id="team-lead">{"type":"shutdown_request","requestId":"x"}</teammate-message>',
+    );
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage?.kind).toBe("shutdown-request");
+  });
+
+  it("leaves teammateMessage undefined on real human user input", () => {
+    const lines = withContent("add a new feature please");
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage).toBeUndefined();
+  });
+
+  it("accepts wrapper inside an array content block", () => {
+    const lines = withContent([
+      { type: "text",
+        text: '<teammate-message teammate_id="kip-121">PR merged</teammate-message>' },
+    ]);
+    const { events } = parseTranscript(lines);
+    expect(events[0]!.teammateMessage?.teammateId).toBe("kip-121");
+    expect(events[0]!.teammateMessage?.body).toBe("PR merged");
+  });
+
+  it("excludes teammate-message events from turnCount / first / last user previews", () => {
+    // Simulates a team lead transcript: real human prompt, inbound team
+    // reply, human follow-up. turnCount should be 2 (the human messages
+    // only), and previews should surface the human text — not the inbound
+    // cross-session deliveries.
+    const lines = [
+      { ...base, uuid: "h1", timestamp: "2026-04-15T10:00:00Z",
+        message: { content: "start the team" } },
+      { ...base, uuid: "tm1", timestamp: "2026-04-15T10:05:00Z",
+        message: { content: '<teammate-message teammate_id="member-a">PR merged</teammate-message>' } },
+      { ...base, uuid: "h2", timestamp: "2026-04-15T10:10:00Z",
+        message: { content: "good, now do the next one" } },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.turnCount).toBe(2);
+    expect(meta.firstUserPreview).toBe("start the team");
+    expect(meta.lastUserPreview).toBe("good, now do the next one");
+  });
+});

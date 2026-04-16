@@ -39,6 +39,25 @@ import { formatGap, formatOffset, formatRelative, formatTokens, shortId } from "
 import { LiveBadge } from "@/components/live-badge";
 import { AskClaudeButton, AskClaudeDrawer } from "@/components/ask-claude";
 import { TailMode } from "@/components/tail-mode";
+import type { TimelineData } from "./team-tab/adapter";
+import { TeamTabClient } from "./team-tab/team-tab-client";
+import { TeamMinimap } from "./team-tab/team-minimap";
+import {
+  ROLE_THEMES,
+  MAX_INLINE_STEPS,
+  rowPreview,
+  formatToolSummary,
+  shortenToolName,
+  TurnStepsList,
+} from "./turn-steps";
+import {
+  ToolUseCard,
+  ToolCardShell,
+  CodeBlock,
+  DiffView,
+  PathLabel,
+  type ToolUseInput,
+} from "./tool-cards";
 
 /* ------------------------------------------------------------------ */
 /*  Constants + theming                                               */
@@ -51,63 +70,6 @@ const IDLE_THRESHOLD_MS = 2000;
  *  Transcript rows reserve this as scroll-margin so scrollIntoView lands
  *  them below the sticky area instead of hidden underneath. */
 const STICKY_HEADER_HEIGHT = 310;
-
-type RoleTheme = {
-  label: string;
-  bg: string;
-  fg: string;
-  mini: string;
-};
-
-/**
- * Palette modeled on Claude Managed Agents' Sessions view — muted,
- * desaturated tones that read cleanly against the cream background.
- * `bg`/`fg` drive the in-row pill; `mini` drives the timeline block fill.
- */
-const ROLE_THEMES: Record<PresentationRowKind, RoleTheme> = {
-  user: {
-    label: "User",
-    bg: "rgba(201, 112, 112, 0.18)",
-    fg: "#8B3A3A",
-    mini: "#C97070",
-  },
-  agent: {
-    label: "Agent",
-    bg: "rgba(92, 132, 195, 0.18)",
-    fg: "#2E4A7A",
-    mini: "#5C84C3",
-  },
-  "tool-group": {
-    label: "Tool",
-    bg: "rgba(138, 133, 128, 0.16)",
-    fg: "#44403C",
-    mini: "#8A8580",
-  },
-  interrupt: {
-    label: "Interrupt",
-    bg: "rgba(217, 119, 6, 0.14)",
-    fg: "#78350F",
-    mini: "#D97706",
-  },
-  model: {
-    label: "Model",
-    bg: "rgba(168, 85, 247, 0.12)",
-    fg: "#581C87",
-    mini: "#A855F7",
-  },
-  error: {
-    label: "Error",
-    bg: "rgba(197, 48, 48, 0.18)",
-    fg: "#8B1818",
-    mini: "#C53030",
-  },
-  "task-notification": {
-    label: "Task",
-    bg: "rgba(100, 116, 139, 0.12)",
-    fg: "#475569",
-    mini: "#64748B",
-  },
-};
 
 type FilterMode = "turns" | "meaningful" | "all" | PresentationRowKind;
 
@@ -128,8 +90,59 @@ const FILTER_MODES: { value: FilterMode; label: string }[] = [
 /** Drawer width in px — reserved on the transcript's right edge when open. */
 const DRAWER_WIDTH = 460;
 
-export function SessionView({ session }: { session: SessionDetail }) {
-  const [tab, setTab] = useState<"transcript" | "debug">("transcript");
+type TabId = "transcript" | "team" | "debug";
+const VALID_TABS: TabId[] = ["transcript", "team", "debug"];
+
+export function SessionView({
+  session,
+  team,
+  teamLead,
+}: {
+  session: SessionDetail;
+  team?: (TimelineData & { teamName: string }) | null;
+  teamLead?: { leadSessionId: string; teamName: string; agentName: string } | null;
+}) {
+  const readHash = (): TabId => {
+    if (typeof window === "undefined") return "transcript";
+    const h = window.location.hash.replace("#", "");
+    if (VALID_TABS.includes(h as TabId)) return h as TabId;
+    return "transcript";
+  };
+  const [tab, setTabRaw] = useState<TabId>(readHash);
+  const setTab = (t: TabId) => {
+    setTabRaw(t);
+    window.history.replaceState(null, "", `#${t}`);
+  };
+  // Re-read hash on client mount and whenever the session changes (Next.js
+  // reuses this component across /sessions/[id] navigations, so useState
+  // doesn't reinitialize — the old tab would stick without this).
+  useEffect(() => {
+    setTabRaw(readHash());
+  }, [session.sessionId]);
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash.replace("#", "");
+      if (VALID_TABS.includes(h as TabId)) setTabRaw(h as TabId);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  // Team tab — playhead (set by TeamTable as the user scrolls) and seek
+  // target (set by TeamMinimap clicks). Hoisted to session-view so the
+  // sticky-header TeamMinimap and the body's TeamTable share the same
+  // state without duplicating the minimap.
+  const [teamPlayheadMs, setTeamPlayheadMs] = useState<number | null>(null);
+  const [teamSeekTarget, setTeamSeekTarget] = useState<{
+    tsMs: number;
+    trackId?: string;
+  } | null>(null);
+  // Member track ids currently in the table's horizontal viewport, published
+  // by TeamTable on scroll. The sticky TeamMinimap uses this to mirror the
+  // table's current agents in its default (collapsed) lane set.
+  const [teamVisibleTrackIds, setTeamVisibleTrackIds] = useState<string[]>([]);
+  // When the user explicitly clicks "Show all" in the minimap we display
+  // every lane regardless of table scroll position.
+  const [teamExpanded, setTeamExpanded] = useState(false);
   const [filter, setFilter] = useState<FilterMode>("turns");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
@@ -164,11 +177,28 @@ export function SessionView({ session }: { session: SessionDetail }) {
    *  screen real-estate once you're deep in reading. Hysteresis (60
    *  vs 80) prevents flicker at the boundary. */
   const [collapsed, setCollapsed] = useState(false);
+  // When the user explicitly clicks the toggle, suppress auto-collapse
+  // for a short period so the scroll listener doesn't immediately undo it.
+  const manualPinRef = useRef(0);
+  const toggleCollapsed = () => {
+    setCollapsed((v) => !v);
+    manualPinRef.current = Date.now();
+  };
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
-    const main = el.closest("main") as HTMLElement | null;
-    if (!main) return;
+    const mainEl = el.closest("main") as HTMLElement | null;
+    if (!mainEl) return;
+    // Team tab has its own fixed-height scroll container, so listening
+    // to `main` alone misses all vertical scroll when the inner table
+    // is what's moving. Pick the team table's scroll element as the
+    // scroll target when on team tab (it has data-team-scroll). Falls
+    // back to the main element for every other tab.
+    const teamScroll =
+      tab === "team"
+        ? (document.querySelector("[data-team-scroll]") as HTMLElement | null)
+        : null;
+    const main = teamScroll ?? mainEl;
     // Track scroll direction to avoid jitter. Collapse only when
     // scrolling DOWN past a threshold; expand only at scrollTop===0.
     // This eliminates the loop where collapse changes height → scroll
@@ -179,12 +209,15 @@ export function SessionView({ session }: { session: SessionDetail }) {
     const update = () => {
       raf = 0;
       if (locked) return;
+      // Respect manual pin — user clicked the toggle, don't override
+      // their choice for 2 seconds so the next scroll doesn't fight it.
+      if (Date.now() - manualPinRef.current < 2000) return;
       const y = main.scrollTop;
       const dir = y - lastY; // positive = scrolling down
       lastY = y;
       setCollapsed((prev) => {
-        // Expand: only when user scrolled all the way to the top.
-        if (prev && y <= 0) {
+        // Expand: when user scrolls UP (iOS-style reveal).
+        if (prev && dir < 0) {
           locked = true;
           setTimeout(() => { locked = false; }, 300);
           return false;
@@ -207,7 +240,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
       main.removeEventListener("scroll", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, []);
+  }, [tab]);
 
   // Run after every render that changed scrollIntent — the DOM is now
   // guaranteed up-to-date (including any drawer grid reflow).
@@ -227,6 +260,22 @@ export function SessionView({ session }: { session: SessionDetail }) {
   const { events, durationMs, totalUsage, model, eventCount, projectName } = session;
   const airTimeMs = session.airTimeMs ?? durationMs;
 
+  /** Inbound `<teammate-message>` events are cross-session team traffic
+   *  wrapped in a synthetic user event. On the LEAD's transcript these are
+   *  protocol noise (idle notifications, task assignments) — hide them and
+   *  point the user to the Team tab. On a MEMBER's transcript the teammate
+   *  messages ARE the task instructions from the lead, so we keep them
+   *  visible — hiding them would strip all context from the member's work. */
+  const isLead = session.isTeamLead;
+  const teammateCount = useMemo(
+    () => (isLead ? events.filter((e) => e.teammateMessage).length : 0),
+    [events, isLead],
+  );
+  const visibleEvents = useMemo(
+    () => (teammateCount === 0 ? events : events.filter((e) => !e.teammateMessage)),
+    [events, teammateCount],
+  );
+
   // A session is "live" if its last event was within 45 seconds.
   const isSessionLive = (() => {
     if (!session.lastTimestamp) return false;
@@ -238,7 +287,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
   const prMarkers = useMemo(() => detectPrMarkers(session), [session]);
 
   /** Build the full presentation stream once. */
-  const allRows = useMemo(() => buildPresentation(events), [events]);
+  const allRows = useMemo(() => buildPresentation(visibleEvents), [visibleEvents]);
 
   /** Collapse the presentation stream into conversational turns (user →
    *  agent loop → next user). Used by the "turns" filter mode. */
@@ -269,7 +318,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
       return flattenMegaRows(megaRows, expandedTurns);
     }
     if (filter === "all")
-      return allRowsAsRawRows(events).map((r) => ({
+      return allRowsAsRawRows(visibleEvents).map((r) => ({
         kind: "presentation",
         row: r,
       }));
@@ -281,10 +330,12 @@ export function SessionView({ session }: { session: SessionDetail }) {
         return r.kind === filter;
       })
       .map((r) => ({ kind: "presentation", row: r }));
-  }, [filter, megaRows, expandedTurns, allRows, events]);
+  }, [filter, megaRows, expandedTurns, allRows, visibleEvents]);
 
   const selectedEvent =
-    selectedIndex !== null ? (events.find((e) => e.index === selectedIndex) ?? null) : null;
+    selectedIndex !== null
+      ? (visibleEvents.find((e) => e.index === selectedIndex) ?? null)
+      : null;
   const selectedRow =
     selectedIndex !== null
       ? (allRows.find((r) => rowPrimaryIndex(r) === selectedIndex) ?? null)
@@ -331,9 +382,104 @@ export function SessionView({ session }: { session: SessionDetail }) {
           padding: "18px 40px 0",
         }}
       >
-        {/* Collapsible top block — breadcrumb + title + meta-stats + tabs.
-            Hidden once the user scrolls past ~80px so the mini-map alone
-            stays pinned and the transcript gets more vertical space. */}
+        {/* Always-visible compact bar: breadcrumb + tabs + toggle — stays
+            accessible even when the header body is collapsed on scroll. */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            marginBottom: collapsed ? 6 : 6,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 12,
+              color: "var(--af-text-tertiary)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <Link
+              href="/sessions"
+              style={{
+                color: "var(--af-text-tertiary)",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <ArrowLeft size={12} /> Sessions
+            </Link>
+            <span style={{ margin: "0 8px" }}>/</span>
+            <span style={{ fontFamily: "var(--font-mono)" }}>sesn_{shortId(session.id)}</span>
+            {teamLead && (
+              <>
+                <span style={{ margin: "0 8px" }}>·</span>
+                <Link
+                  href={`/sessions/${teamLead.leadSessionId}#team`}
+                  style={{
+                    color: "var(--af-accent)",
+                    textDecoration: "none",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    fontWeight: 500,
+                  }}
+                  title={`View team lead for ${teamLead.teamName}`}
+                >
+                  {teamLead.agentName} in {teamLead.teamName} ↗
+                </Link>
+              </>
+            )}
+          </div>
+          <div className="af-tabs" style={{ flexShrink: 0, marginLeft: "auto" }}>
+            <button
+              className={`af-tab-btn ${tab === "transcript" ? "active" : ""}`}
+              onClick={() => setTab("transcript")}
+            >
+              Transcript
+            </button>
+            {team && (
+              <button
+                className={`af-tab-btn ${tab === "team" ? "active" : ""}`}
+                onClick={() => setTab("team")}
+              >
+                Team
+              </button>
+            )}
+            <button
+              className={`af-tab-btn ${tab === "debug" ? "active" : ""}`}
+              onClick={() => setTab("debug")}
+            >
+              Debug
+            </button>
+          </div>
+          <button
+            onClick={toggleCollapsed}
+            title={collapsed ? "Show session details" : "Hide session details"}
+            style={{
+              background: "var(--af-surface-hover)",
+              border: "1px solid var(--af-border-subtle)",
+              borderRadius: 4,
+              width: 24,
+              height: 24,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              color: "var(--af-text-secondary)",
+              flexShrink: 0,
+              transition: "transform 0.2s ease",
+              transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
+            }}
+          >
+            <ChevronUp size={14} />
+          </button>
+        </div>
+
+        {/* Collapsible block — title + meta-stats + filter toolbar.
+            Hidden on scroll-down so the minimap gets more space. */}
         <div
           style={{
             maxHeight: collapsed ? 0 : 500,
@@ -345,29 +491,6 @@ export function SessionView({ session }: { session: SessionDetail }) {
             pointerEvents: collapsed ? "none" : "auto",
           }}
         >
-        {/* Breadcrumb */}
-        <div
-          style={{
-            fontSize: 12,
-            color: "var(--af-text-tertiary)",
-            marginBottom: 6,
-          }}
-        >
-          <Link
-            href="/sessions"
-            style={{
-              color: "var(--af-text-tertiary)",
-              textDecoration: "none",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
-            <ArrowLeft size={12} /> Sessions
-          </Link>
-          <span style={{ margin: "0 8px" }}>/</span>
-          <span style={{ fontFamily: "var(--font-mono)" }}>sesn_{shortId(session.id)}</span>
-        </div>
 
         {/* Single-line compact header — title + inline dot-separated stats */}
         <div
@@ -453,7 +576,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
           </span>
         </div>
 
-        {/* Tabs + toolbar */}
+        {/* Toolbar (filter, copy, ask-claude) */}
         <div
           className="flex items-center"
           style={{
@@ -461,29 +584,6 @@ export function SessionView({ session }: { session: SessionDetail }) {
             paddingBottom: 8,
           }}
         >
-          <div className="af-tabs">
-            <button
-              className={`af-tab-btn ${tab === "transcript" ? "active" : ""}`}
-              onClick={() => setTab("transcript")}
-            >
-              Transcript
-            </button>
-            <button
-              className={`af-tab-btn ${tab === "debug" ? "active" : ""}`}
-              onClick={() => setTab("debug")}
-            >
-              Debug
-            </button>
-          </div>
-
-          <div
-            style={{
-              width: 1,
-              height: 20,
-              background: "var(--af-border-subtle)",
-            }}
-          />
-
           <select
             value={filter}
             onChange={(e) =>
@@ -508,7 +608,7 @@ export function SessionView({ session }: { session: SessionDetail }) {
             {filter === "turns"
               ? `${megaRows.filter((m) => m.kind === "turn").length} turns · ${allRows.length} actions`
               : filter === "meaningful"
-                ? `${allRows.length} rows (of ${events.length} raw events)`
+                ? `${allRows.length} rows (of ${visibleEvents.length} raw events)`
                 : `${displayRows.length} rows`}
           </span>
 
@@ -553,23 +653,37 @@ export function SessionView({ session }: { session: SessionDetail }) {
             transition: "padding-bottom 0.2s ease",
           }}
         >
-        <Minimap
-          displayRows={displayRows}
-          durationMs={durationMs ?? 0}
-          selectedIndex={selectedIndex}
-          onSelect={scrollToIndex}
-          headerOffset={headerH}
-          subagents={session.subagents}
-          collapsed={collapsed}
-          prMarkers={prMarkers}
-          selectedSubagentId={selectedSubagentId}
-          onSelectSubagent={(id) => {
-            setSelectedSubagentId(id);
-            // Close the event drawer so we don't have two drawers fighting
-            // for the same right-side real estate.
-            if (id) setSelectedIndex(null);
-          }}
-        />
+        {tab === "team" && team ? (
+          <TeamMinimap
+            data={team}
+            playheadMs={teamPlayheadMs}
+            onSeek={(tsMs, trackId) => {
+              setTeamSeekTarget({ tsMs, trackId });
+              if (teamExpanded) setTeamExpanded(false);
+            }}
+            expanded={teamExpanded}
+            onToggleExpanded={() => setTeamExpanded((v) => !v)}
+            visibleTrackIds={teamVisibleTrackIds}
+          />
+        ) : (
+          <Minimap
+            displayRows={displayRows}
+            durationMs={durationMs ?? 0}
+            selectedIndex={selectedIndex}
+            onSelect={scrollToIndex}
+            headerOffset={headerH}
+            subagents={session.subagents}
+            collapsed={collapsed}
+            prMarkers={prMarkers}
+            selectedSubagentId={selectedSubagentId}
+            onSelectSubagent={(id) => {
+              setSelectedSubagentId(id);
+              // Close the event drawer so we don't have two drawers fighting
+              // for the same right-side real estate.
+              if (id) setSelectedIndex(null);
+            }}
+          />
+        )}
         </div>
       </div>
 
@@ -584,16 +698,59 @@ export function SessionView({ session }: { session: SessionDetail }) {
           transition: "padding-right 0.15s ease",
         }}
       >
-        {tab === "transcript" ? (
-          <TranscriptList
-            displayRows={displayRows}
-            rowRefs={rowRefs}
-            selectedIndex={selectedIndex}
-            onSelect={setSelectedIndex}
-            onToggleTurn={toggleTurn}
-            stickyOffset={headerH + 16}
-            isSessionLive={isSessionLive}
+        {tab === "team" && team ? (
+          <TeamTabClient
+            initial={team}
+            teamName={team.teamName}
+            playheadMs={teamPlayheadMs}
+            onPlayheadChange={setTeamPlayheadMs}
+            onVisibleTrackIdsChange={setTeamVisibleTrackIds}
+            seekTarget={teamSeekTarget}
           />
+        ) : tab === "transcript" ? (
+          <>
+            {teammateCount > 0 && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--af-text-tertiary, #888)",
+                  background: "var(--af-surface-subtle, rgba(255,255,255,0.04))",
+                  border: "1px solid var(--af-border-subtle, rgba(255,255,255,0.08))",
+                  borderRadius: 6,
+                  padding: "6px 10px",
+                  marginBottom: 8,
+                }}
+              >
+                {teammateCount} inbound team message
+                {teammateCount === 1 ? "" : "s"} hidden —{" "}
+                <button
+                  onClick={() => setTab("team")}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--af-accent)",
+                    cursor: "pointer",
+                    padding: 0,
+                    font: "inherit",
+                    textDecoration: "underline",
+                  }}
+                >
+                  open the Team tab
+                </button>{" "}
+                to see them.
+              </div>
+            )}
+            <TranscriptList
+              displayRows={displayRows}
+              rowRefs={rowRefs}
+              selectedIndex={selectedIndex}
+              onSelect={setSelectedIndex}
+              onToggleTurn={toggleTurn}
+              stickyOffset={headerH + 16}
+              isSessionLive={isSessionLive}
+              team={team}
+            />
+          </>
         ) : (
           <DebugList events={events} />
         )}
@@ -740,53 +897,6 @@ function flattenMegaRows(megaRows: MegaRow[], expanded: Set<number>): DisplayRow
     }
   }
   return out;
-}
-
-function rowPreview(r: PresentationRow): string {
-  switch (r.kind) {
-    case "user":
-      return r.displayPreview ?? r.event.preview;
-    case "agent":
-      return r.event.preview;
-    case "tool-group":
-      return formatToolSummary(r.toolNames);
-    case "interrupt":
-      return "Interrupted";
-    case "model":
-      return tokenSummaryLine(r.event.usage);
-    case "error":
-      return r.message;
-    case "task-notification": {
-      const icon =
-        r.status === "success"
-          ? "✓"
-          : r.status === "failed"
-            ? "✗"
-            : r.status === "running"
-              ? "…"
-              : "•";
-      return `${icon} ${r.summary}`;
-    }
-  }
-}
-
-/** Render a compact "Bash ×3 · Read ×2 · Grep · Edit" style summary.
- *  Truncates after 4 unique tools with "+N more". */
-function formatToolSummary(toolNames: { name: string; count: number }[]): string {
-  const MAX = 4;
-  const shown = toolNames.slice(0, MAX);
-  const overflow = toolNames.length - MAX;
-  const parts = shown.map((t) => {
-    const display = shortenToolName(t.name);
-    return t.count > 1 ? `${display} ×${t.count}` : display;
-  });
-  if (overflow > 0) parts.push(`+${overflow} more`);
-  return parts.join(" · ");
-}
-
-function tokenSummaryLine(u: SessionEvent["usage"]): string {
-  if (!u) return "0 input · 0 output · 0 cache read · 0 cache write";
-  return `${u.input} input · ${u.output} output · ${u.cacheRead} cache read · ${u.cacheWrite} cache write`;
 }
 
 /** Fallback for "All events" filter mode — wraps each raw event in a
@@ -2203,6 +2313,7 @@ function TranscriptList({
   onToggleTurn,
   stickyOffset,
   isSessionLive,
+  team,
 }: {
   displayRows: DisplayRow[];
   rowRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>;
@@ -2211,6 +2322,7 @@ function TranscriptList({
   onToggleTurn: (firstPrimaryIndex: number) => void;
   stickyOffset: number;
   isSessionLive?: boolean;
+  team?: (TimelineData & { teamName: string }) | null;
 }) {
   // Find the last collapsed turn index so we can mark it as in-progress
   // when the session is live.
@@ -2238,6 +2350,7 @@ function TranscriptList({
           stickyOffset={stickyOffset}
           onClick={() => onToggleTurn(idx)}
           inProgress={i === lastCollapsedTurnIdx}
+          team={team}
           refCb={(el) => {
             rowRefs.current[idx] = el;
           }}
@@ -2326,17 +2439,13 @@ function IdleDivider({ gapMs }: { gapMs: number }) {
 /*    3. Final agent preview (answer / conclusion)                     */
 /* ------------------------------------------------------------------ */
 
-/** Max number of steps shown inline in a collapsed turn. Larger turns are
- *  truncated with a "+N more" line; the user can click to expand the turn
- *  to see everything. */
-const MAX_INLINE_STEPS = 12;
-
 function CollapsedTurnRow({
   turn,
   onClick,
   refCb,
   stickyOffset,
   inProgress,
+  team,
 }: {
   turn: TurnMegaRow;
   /** Fires when the user wants to fully expand this turn into the
@@ -2346,6 +2455,7 @@ function CollapsedTurnRow({
   refCb: (el: HTMLDivElement | null) => void;
   stickyOffset: number;
   inProgress?: boolean;
+  team?: (TimelineData & { teamName: string }) | null;
 }) {
   const theme = ROLE_THEMES.agent;
   const s = turn.summary;
@@ -2387,7 +2497,7 @@ function CollapsedTurnRow({
       data-sl-toffset={turn.tOffsetMs ?? 0}
       style={{
         display: "grid",
-        gridTemplateColumns: "20px 74px 1fr auto auto",
+        gridTemplateColumns: "20px 84px 1fr auto auto",
         columnGap: 12,
         alignItems: "start",
         padding: "14px 12px 0 12px",
@@ -2441,7 +2551,7 @@ function CollapsedTurnRow({
 
         {/* Stats line */}
         <div onClick={stop}>
-          <TurnStatsLine summary={s} durationMs={turn.durationMs} rows={turn.rows} />
+          <TurnStatsLine summary={s} durationMs={turn.durationMs} rows={turn.rows} team={team} />
         </div>
 
         {/* 2. Steps list — each middle row as a compact bullet */}
@@ -2684,10 +2794,12 @@ function TurnStatsLine({
   summary,
   durationMs,
   rows,
+  team,
 }: {
   summary: TurnSummary;
   durationMs?: number;
   rows: PresentationRow[];
+  team?: (TimelineData & { teamName: string }) | null;
 }) {
   // Aggregate tool calls into activity categories.
   let editCount = 0;
@@ -2699,6 +2811,7 @@ function TurnStatsLine({
   let agentCount = 0;
   let otherToolCount = 0;
   let lastFilePath: string | undefined;
+  const dispatchedNames: string[] = [];
 
   for (const r of rows) {
     if (r.kind !== "tool-group") continue;
@@ -2734,9 +2847,12 @@ function TurnStatsLine({
         case "Glob":
           globCount++;
           break;
-        case "Agent":
+        case "Agent": {
           agentCount++;
+          const agentName = typeof input?.name === "string" ? input.name : undefined;
+          if (agentName) dispatchedNames.push(agentName);
           break;
+        }
         default:
           otherToolCount++;
           break;
@@ -2778,11 +2894,58 @@ function TurnStatsLine({
     );
   }
   if (agentCount > 0) {
-    phrases.push(
-      <span key="agent">
-        dispatched <b style={{ fontWeight: 600 }}>{agentCount}</b> sub-agent{agentCount === 1 ? "" : "s"}
-      </span>,
-    );
+    // When team data is available and we extracted agent names from the
+    // tool inputs, render clickable member chips instead of a plain count.
+    const nameToSession = team
+      ? new Map(team.tracks.filter((t) => !t.isLead).map((t) => [t.label, t.id]))
+      : null;
+    if (dispatchedNames.length > 0 && nameToSession && nameToSession.size > 0) {
+      phrases.push(
+        <span key="agent" style={{ display: "inline-flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+          dispatched{" "}
+          {dispatchedNames.map((n, i) => {
+            const sid = nameToSession.get(n);
+            return sid ? (
+              <Link
+                key={i}
+                href={`/sessions/${sid}`}
+                style={{
+                  fontSize: 10,
+                  padding: "1px 7px",
+                  background: "var(--af-surface-hover)",
+                  border: "1px solid var(--af-border-subtle)",
+                  borderRadius: 10,
+                  color: "var(--af-text-secondary)",
+                  textDecoration: "none",
+                  fontWeight: 600,
+                }}
+              >
+                {n}
+              </Link>
+            ) : (
+              <span
+                key={i}
+                style={{
+                  fontSize: 10,
+                  padding: "1px 7px",
+                  background: "var(--af-surface-hover)",
+                  borderRadius: 10,
+                  color: "var(--af-text-tertiary)",
+                }}
+              >
+                {n}
+              </span>
+            );
+          })}
+        </span>,
+      );
+    } else {
+      phrases.push(
+        <span key="agent">
+          dispatched <b style={{ fontWeight: 600 }}>{agentCount}</b> sub-agent{agentCount === 1 ? "" : "s"}
+        </span>,
+      );
+    }
   }
   if (otherToolCount > 0 && phrases.length === 0) {
     phrases.push(
@@ -2860,125 +3023,6 @@ function TurnStatsLine({
           └ {shortPath}
         </div>
       )}
-    </div>
-  );
-}
-
-/** Bulleted list of everything that happened in the middle of a turn.
- *  Each row is a one-line compact entry with role + preview. Capped at
- *  MAX_INLINE_STEPS items with an overflow indicator. */
-function TurnStepsList({ rows }: { rows: PresentationRow[] }) {
-  const overflow = Math.max(0, rows.length - MAX_INLINE_STEPS);
-  const shown = overflow > 0 ? rows.slice(-MAX_INLINE_STEPS) : rows;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 2,
-        paddingLeft: 2,
-        borderLeft: "1px solid var(--af-border-subtle)",
-        paddingBlock: 2,
-      }}
-    >
-      {overflow > 0 && (
-        <div
-          style={{
-            fontSize: 11,
-            color: "var(--af-text-tertiary)",
-            fontStyle: "italic",
-            paddingLeft: 12,
-            paddingBottom: 2,
-          }}
-        >
-          {overflow} earlier step{overflow === 1 ? "" : "s"} …
-        </div>
-      )}
-      {shown.map((r, i) => (
-        <TurnStepLine key={i} row={r} />
-      ))}
-    </div>
-  );
-}
-
-/** One step in the middle list. Renders a small role marker + the preview
- *  for that row, truncated to one line. */
-function TurnStepLine({ row }: { row: PresentationRow }) {
-  const theme = ROLE_THEMES[row.kind];
-  const label = theme.label;
-  const preview = rowPreview(row);
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "46px 1fr",
-        columnGap: 8,
-        fontSize: 12,
-        lineHeight: 1.45,
-        color: row.kind === "error" ? "var(--af-danger)" : "var(--af-text-secondary)",
-      }}
-    >
-      <span
-        style={{
-          fontSize: 10,
-          fontWeight: 600,
-          background: theme.bg,
-          color: theme.fg,
-          padding: "1px 6px",
-          borderRadius: 3,
-          textAlign: "center",
-          justifySelf: "start",
-          maxWidth: "100%",
-        }}
-      >
-        {label}
-      </span>
-      <span
-        style={{
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          minWidth: 0,
-        }}
-      >
-        {row.kind === "tool-group" ? (
-          <span>
-            {row.toolNames.slice(0, 4).map((t, i) => (
-              <span key={t.name}>
-                {i > 0 && (
-                  <span style={{ color: "var(--af-text-tertiary)", margin: "0 5px" }}>·</span>
-                )}
-                <b style={{ fontWeight: 600 }}>{shortenToolName(t.name)}</b>
-                {t.count > 1 && (
-                  <span
-                    style={{
-                      color: "var(--af-text-tertiary)",
-                      fontFamily: "var(--font-mono)",
-                      marginLeft: 3,
-                    }}
-                  >
-                    ×{t.count}
-                  </span>
-                )}
-              </span>
-            ))}
-            {row.toolNames.length > 4 && (
-              <span
-                style={{
-                  color: "var(--af-text-tertiary)",
-                  marginLeft: 6,
-                  fontSize: 10,
-                }}
-              >
-                +{row.toolNames.length - 4}
-              </span>
-            )}
-          </span>
-        ) : (
-          preview
-        )}
-      </span>
     </div>
   );
 }
@@ -3082,6 +3126,8 @@ function TranscriptRow({
   const event = row.kind === "tool-group" ? row.events[0] : row.event;
   const usage = event.usage;
   const hasUsage = row.kind === "agent" && usage && (usage.input > 0 || usage.output > 0);
+  const isTeammateMsg = row.kind === "user" && !!row.event.teammateMessage;
+  const roleLabel = isTeammateMsg ? "Team Lead" : theme.label;
 
   const preview = rowPreview(row);
 
@@ -3096,7 +3142,7 @@ function TranscriptRow({
         // Empty 20px prefix column keeps the role pill at the same x-offset
         // as collapsed turn rows (which have a chevron there). Ensures the
         // User/Agent/Tool tags align vertically in the transcript.
-        gridTemplateColumns: "20px 74px 1fr auto auto",
+        gridTemplateColumns: "20px 84px 1fr auto auto",
         gap: 14,
         alignItems: "center",
         padding: "11px 12px",
@@ -3134,7 +3180,7 @@ function TranscriptRow({
           color: theme.fg,
         }}
       >
-        {theme.label}
+        {roleLabel}
       </span>
 
       <span
@@ -4085,473 +4131,6 @@ function DrawerContent({ event, row }: { event: SessionEvent; row: PresentationR
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  ToolUseCard — pretty rendering of tool_use blocks                 */
-/*                                                                     */
-/*  Claude Code emits tool calls with varying input schemas. Raw JSON */
-/*  dumps are unreadable; instead we dispatch on tool name and render */
-/*  a human-friendly card tailored to each common tool.               */
-/* ------------------------------------------------------------------ */
-
-type ToolUseInput = Record<string, unknown> | unknown;
-
-function shortenToolName(name: string): string {
-  // mcp__plugin_linear_linear__get_issue → linear.get_issue
-  const m = name.match(/^mcp__(?:plugin_)?([^_]+)_(?:\1_)?(.+)$/);
-  if (m) return `${m[1]}.${m[2]}`;
-  // mcp__claude_ai_Gmail__search_threads → gmail.search_threads
-  const m2 = name.match(/^mcp__claude_ai_([^_]+)__(.+)$/);
-  if (m2) return `${m2[1].toLowerCase()}.${m2[2]}`;
-  return name;
-}
-
-/** Split an absolute path into (dir, filename) with an abbreviated dir
- *  (last 3 segments max) for compact display.  */
-function splitPath(p: string): { dir: string; file: string } {
-  const parts = p.split("/");
-  const file = parts[parts.length - 1] ?? p;
-  const dirParts = parts.slice(0, -1).filter(Boolean);
-  let dir = dirParts.join("/");
-  if (dirParts.length > 4) {
-    dir = "…/" + dirParts.slice(-3).join("/");
-  }
-  return { dir, file };
-}
-
-function PathLabel({ path }: { path: string }) {
-  const { dir, file } = splitPath(path);
-  return (
-    <code
-      style={{
-        fontSize: 12,
-        background: "var(--af-border-subtle)",
-        padding: "2px 8px",
-        borderRadius: 4,
-        fontFamily: "var(--font-mono)",
-        color: "var(--af-text)",
-      }}
-    >
-      {dir && <span style={{ color: "var(--af-text-tertiary)" }}>{dir}/</span>}
-      <b style={{ fontWeight: 600 }}>{file}</b>
-    </code>
-  );
-}
-
-function ToolCardShell({
-  icon,
-  label,
-  children,
-}: {
-  icon: React.ReactNode;
-  label: React.ReactNode;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        border: "1px solid var(--af-border-subtle)",
-        borderRadius: 8,
-        background: "var(--background)",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          padding: "8px 12px",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          borderBottom: children ? "1px solid var(--af-border-subtle)" : "none",
-          fontSize: 12,
-          color: "var(--af-text-secondary)",
-        }}
-      >
-        <span style={{ fontSize: 13 }}>{icon}</span>
-        <span>{label}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function CodeBlock({ text, maxHeight = 280 }: { text: string; maxHeight?: number }) {
-  return (
-    <pre
-      style={{
-        margin: 0,
-        padding: "10px 12px",
-        fontFamily: "var(--font-mono)",
-        fontSize: 11.5,
-        lineHeight: 1.55,
-        color: "var(--af-text)",
-        whiteSpace: "pre",
-        overflow: "auto",
-        maxHeight,
-      }}
-    >
-      {text}
-    </pre>
-  );
-}
-
-function DiffView({ oldText, newText }: { oldText: string; newText: string }) {
-  const oldLines = oldText.split("\n");
-  const newLines = newText.split("\n");
-  return (
-    <pre
-      style={{
-        margin: 0,
-        padding: "10px 12px",
-        fontFamily: "var(--font-mono)",
-        fontSize: 11.5,
-        lineHeight: 1.55,
-        whiteSpace: "pre",
-        overflow: "auto",
-        maxHeight: 320,
-      }}
-    >
-      {oldLines.map((line, i) => (
-        <div
-          key={`o${i}`}
-          style={{
-            background: "rgba(220, 38, 38, 0.08)",
-            color: "#991B1B",
-            padding: "0 4px",
-            borderLeft: "3px solid #DC2626",
-          }}
-        >
-          <span style={{ opacity: 0.6, userSelect: "none" }}>− </span>
-          {line || "\u00A0"}
-        </div>
-      ))}
-      {newLines.map((line, i) => (
-        <div
-          key={`n${i}`}
-          style={{
-            background: "rgba(5, 150, 105, 0.08)",
-            color: "#065F46",
-            padding: "0 4px",
-            borderLeft: "3px solid #059669",
-          }}
-        >
-          <span style={{ opacity: 0.6, userSelect: "none" }}>+ </span>
-          {line || "\u00A0"}
-        </div>
-      ))}
-    </pre>
-  );
-}
-
-function ToolUseCard({ name, input }: { name: string; input: ToolUseInput }) {
-  const i = (input ?? {}) as Record<string, unknown>;
-  const str = (k: string): string | undefined =>
-    typeof i[k] === "string" ? (i[k] as string) : undefined;
-  const num = (k: string): number | undefined =>
-    typeof i[k] === "number" ? (i[k] as number) : undefined;
-
-  // --- Write -------------------------------------------------------
-  if (name === "Write") {
-    const filePath = str("file_path") ?? "";
-    const content = str("content") ?? "";
-    return (
-      <ToolCardShell
-        icon="📝"
-        label={
-          <>
-            <b>Write</b> <PathLabel path={filePath} />
-          </>
-        }
-      >
-        <CodeBlock text={content} />
-      </ToolCardShell>
-    );
-  }
-
-  // --- Edit --------------------------------------------------------
-  if (name === "Edit") {
-    const filePath = str("file_path") ?? "";
-    const oldStr = str("old_string") ?? "";
-    const newStr = str("new_string") ?? "";
-    const replaceAll = i.replace_all === true;
-    return (
-      <ToolCardShell
-        icon="✏️"
-        label={
-          <>
-            <b>Edit</b> <PathLabel path={filePath} />
-            {replaceAll && (
-              <span
-                style={{
-                  fontSize: 10,
-                  color: "var(--af-warning)",
-                  background: "var(--af-warning-subtle)",
-                  padding: "1px 6px",
-                  borderRadius: 10,
-                }}
-              >
-                replace all
-              </span>
-            )}
-          </>
-        }
-      >
-        <DiffView oldText={oldStr} newText={newStr} />
-      </ToolCardShell>
-    );
-  }
-
-  // --- Read --------------------------------------------------------
-  if (name === "Read") {
-    const filePath = str("file_path") ?? "";
-    const offset = num("offset");
-    const limit = num("limit");
-    const range =
-      offset !== undefined || limit !== undefined
-        ? ` · lines ${offset ?? 1}${limit !== undefined ? `–${(offset ?? 0) + limit}` : "…"}`
-        : "";
-    return (
-      <ToolCardShell
-        icon="📖"
-        label={
-          <>
-            <b>Read</b> <PathLabel path={filePath} />
-            <span style={{ color: "var(--af-text-tertiary)" }}>{range}</span>
-          </>
-        }
-      />
-    );
-  }
-
-  // --- Bash --------------------------------------------------------
-  if (name === "Bash") {
-    const command = str("command") ?? "";
-    const description = str("description");
-    const runInBg = i.run_in_background === true;
-    return (
-      <ToolCardShell
-        icon="⚡"
-        label={
-          <>
-            <b>Bash</b>
-            {description && (
-              <span
-                style={{
-                  color: "var(--af-text)",
-                  fontStyle: "italic",
-                }}
-              >
-                {description}
-              </span>
-            )}
-            {runInBg && (
-              <span
-                style={{
-                  fontSize: 10,
-                  color: "var(--af-info)",
-                  background: "var(--af-info-subtle)",
-                  padding: "1px 6px",
-                  borderRadius: 10,
-                }}
-              >
-                background
-              </span>
-            )}
-          </>
-        }
-      >
-        <CodeBlock text={command} maxHeight={220} />
-      </ToolCardShell>
-    );
-  }
-
-  // --- Grep --------------------------------------------------------
-  if (name === "Grep") {
-    const pattern = str("pattern") ?? "";
-    const path = str("path");
-    const glob = str("glob");
-    const type = str("type");
-    const outputMode = str("output_mode");
-    return (
-      <ToolCardShell
-        icon="🔍"
-        label={
-          <>
-            <b>Grep</b>{" "}
-            <code
-              style={{
-                background: "var(--af-border-subtle)",
-                padding: "1px 6px",
-                borderRadius: 4,
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-              }}
-            >
-              {pattern}
-            </code>
-            {path && (
-              <>
-                {" in "}
-                <PathLabel path={path} />
-              </>
-            )}
-            {(glob || type || outputMode) && (
-              <span
-                style={{
-                  color: "var(--af-text-tertiary)",
-                  fontSize: 11,
-                  marginLeft: 6,
-                }}
-              >
-                {[
-                  glob && `glob=${glob}`,
-                  type && `type=${type}`,
-                  outputMode && `mode=${outputMode}`,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </span>
-            )}
-          </>
-        }
-      />
-    );
-  }
-
-  // --- Glob --------------------------------------------------------
-  if (name === "Glob") {
-    const pattern = str("pattern") ?? "";
-    const path = str("path");
-    return (
-      <ToolCardShell
-        icon="📁"
-        label={
-          <>
-            <b>Glob</b>{" "}
-            <code
-              style={{
-                background: "var(--af-border-subtle)",
-                padding: "1px 6px",
-                borderRadius: 4,
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-              }}
-            >
-              {pattern}
-            </code>
-            {path && (
-              <>
-                {" in "}
-                <PathLabel path={path} />
-              </>
-            )}
-          </>
-        }
-      />
-    );
-  }
-
-  // --- Skill -------------------------------------------------------
-  if (name === "Skill") {
-    const skill = str("skill") ?? "";
-    const args = str("args");
-    return (
-      <ToolCardShell
-        icon="🧩"
-        label={
-          <>
-            <b>/{skill}</b>
-            {args && <span style={{ color: "var(--af-text-secondary)" }}>{args}</span>}
-          </>
-        }
-      />
-    );
-  }
-
-  // --- ToolSearch --------------------------------------------------
-  if (name === "ToolSearch") {
-    const query = str("query") ?? "";
-    const max = num("max_results");
-    return (
-      <ToolCardShell
-        icon="🔎"
-        label={
-          <>
-            <b>ToolSearch</b>{" "}
-            <code
-              style={{
-                background: "var(--af-border-subtle)",
-                padding: "1px 6px",
-                borderRadius: 4,
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-              }}
-            >
-              {query}
-            </code>
-            {max !== undefined && (
-              <span style={{ color: "var(--af-text-tertiary)", fontSize: 11 }}>max={max}</span>
-            )}
-          </>
-        }
-      />
-    );
-  }
-
-  // --- TodoWrite ---------------------------------------------------
-  if (name === "TodoWrite") {
-    const todos = Array.isArray(i.todos) ? (i.todos as Array<Record<string, unknown>>) : [];
-    return (
-      <ToolCardShell icon="✅" label={<b>TodoWrite · {todos.length} items</b>}>
-        <div style={{ padding: "10px 12px", fontSize: 12 }}>
-          {todos.map((t, ti) => {
-            const status = String(t.status ?? "pending");
-            const content =
-              typeof t.content === "string"
-                ? t.content
-                : typeof t.activeForm === "string"
-                  ? t.activeForm
-                  : "";
-            const icon = status === "completed" ? "✔" : status === "in_progress" ? "◐" : "○";
-            return (
-              <div
-                key={ti}
-                style={{
-                  display: "flex",
-                  gap: 8,
-                  padding: "2px 0",
-                  opacity: status === "completed" ? 0.6 : 1,
-                  textDecoration: status === "completed" ? "line-through" : "none",
-                }}
-              >
-                <span style={{ color: "var(--af-text-tertiary)" }}>{icon}</span>
-                <span>{content}</span>
-              </div>
-            );
-          })}
-        </div>
-      </ToolCardShell>
-    );
-  }
-
-  // --- MCP tools (linear, slack, etc.) -----------------------------
-  if (name.startsWith("mcp__")) {
-    const short = shortenToolName(name);
-    return (
-      <ToolCardShell icon="🔌" label={<b>{short}</b>}>
-        <CodeBlock text={JSON.stringify(input, null, 2)} maxHeight={200} />
-      </ToolCardShell>
-    );
-  }
-
-  // --- Fallback ----------------------------------------------------
-  return (
-    <ToolCardShell icon="🔧" label={<b>{name}</b>}>
-      <CodeBlock text={JSON.stringify(input, null, 2)} maxHeight={220} />
-    </ToolCardShell>
-  );
-}
-
 function BlockView({ block }: { block: ContentBlock }) {
   if (block.type === "text") {
     return (

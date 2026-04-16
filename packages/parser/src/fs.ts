@@ -27,6 +27,7 @@ import os from "node:os";
 import path from "node:path";
 import { parseTranscript } from "./parser.js";
 import { canonicalProjectName, worktreeName } from "./analytics.js";
+import { groupByTeam, type TeamView } from "./team.js";
 import type { SessionDetail, SessionEvent, SessionMeta, SubagentRun, Usage } from "./types.js";
 
 export const DEFAULT_ROOT = path.join(os.homedir(), ".claude", "projects");
@@ -770,4 +771,74 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
       worktreeCount: a.worktreeBranches.size,
     }))
     .sort((a, b) => b.lastActiveMs - a.lastActiveMs);
+}
+
+/**
+ * Load the full team view for a given session. Returns null when the
+ * session has no teamName (not part of any team). Otherwise, filters
+ * `listSessions()` by teamName, loads each participant's SessionDetail,
+ * clusters via groupByTeam, and returns the matching view.
+ *
+ * Called on-demand when the user opens the Team tab — it reuses the
+ * module-scoped cache inside listSessions/getSession, so the fan-out
+ * is cheap after the first call.
+ */
+export async function loadTeamForSession(
+  sessionId: string,
+  opts: { root?: string } = {},
+): Promise<{
+  view: TeamView;
+  details: Map<string, SessionDetail>;
+} | null> {
+  const { root = DEFAULT_ROOT } = opts;
+
+  const all = await listSessions({ root });
+  const self = all.find((s) => s.sessionId === sessionId);
+  if (!self || !self.teamName) return null;
+  const teamName = self.teamName;
+
+  const candidates = all.filter(
+    (s) => s.teamName === teamName && !s.filePath.includes("/subagents/"),
+  );
+
+  const loaded = await Promise.all(
+    candidates.map((c) => getSession(c.sessionId, { root })),
+  );
+  const details = new Map<string, SessionDetail>();
+  candidates.forEach((c, i) => {
+    const d = loaded[i];
+    if (d) details.set(c.sessionId, d);
+  });
+
+  const views = groupByTeam(candidates, details);
+  const view = views.find((v) => v.teamName === teamName);
+  if (!view) return null;
+  return { view, details };
+}
+
+/** Lightweight lookup: given a team member session, return the lead
+ *  session ID + team name without loading full details. Returns null if
+ *  the session isn't a team member or no lead is found. */
+export async function findTeamLead(
+  sessionId: string,
+  opts: { root?: string } = {},
+): Promise<{ leadSessionId: string; teamName: string; agentName: string } | null> {
+  const { root = DEFAULT_ROOT } = opts;
+  const all = await listSessions({ root });
+  const self = all.find((s) => s.sessionId === sessionId);
+  if (!self || !self.teamName || !self.agentName) return null;
+  // Already a lead — no parent to navigate to.
+  if (self.isTeamLead) return null;
+  const candidates = all.filter(
+    (s) =>
+      s.teamName === self.teamName &&
+      s.isTeamLead &&
+      !s.filePath.includes("/subagents/"),
+  );
+  if (candidates.length === 0) return null;
+  return {
+    leadSessionId: candidates[0]!.sessionId,
+    teamName: self.teamName,
+    agentName: self.agentName,
+  };
 }

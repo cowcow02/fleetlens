@@ -19,6 +19,37 @@ function truncate(s: string, n = 200): string {
   return one.length > n ? one.slice(0, n - 1) + "…" : one;
 }
 
+// Matches any text that starts with <teammate-message> — handles both
+// single-block and multi-block (batched) deliveries. Captures the first
+// teammate_id and the first body for classification; multi-block messages
+// are still classified from the first block.
+const TEAMMATE_MSG_RE =
+  /^\s*<teammate-message\s+teammate_id="([^"]+)"[^>]*>([\s\S]*?)<\/teammate-message>/;
+
+function classifyTeammateMessage(
+  text: string,
+): SessionEvent["teammateMessage"] | undefined {
+  const m = text.match(TEAMMATE_MSG_RE);
+  if (!m) return undefined;
+  const teammateId = m[1]!;
+  const body = m[2]!.trim();
+  type TmKind = NonNullable<SessionEvent["teammateMessage"]>["kind"];
+  let kind: TmKind = "message";
+  if (body.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(body) as { type?: string };
+      if (parsed.type === "idle_notification") kind = "idle-notification";
+      else if (parsed.type === "shutdown_request") kind = "shutdown-request";
+      else if (parsed.type === "shutdown_approved") kind = "shutdown-approved";
+      else if (parsed.type === "task_assignment") kind = "task-assignment";
+      else if (parsed.type === "teammate_terminated") kind = "teammate-terminated";
+    } catch {
+      /* not JSON, treat as message */
+    }
+  }
+  return { teammateId, body, kind };
+}
+
 function extractUsage(u: unknown): Usage | undefined {
   if (!u || typeof u !== "object") return undefined;
   const r = u as Record<string, unknown>;
@@ -96,6 +127,7 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
     const c = msg.content;
 
     if (typeof c === "string") {
+      const tm = classifyTeammateMessage(c);
       return {
         index,
         uuid,
@@ -106,6 +138,7 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
         preview: truncate(c, 200),
         blocks: [{ type: "text", text: c }],
         raw,
+        teammateMessage: tm,
       };
     }
 
@@ -131,6 +164,7 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
       const textBlock = (c as ContentBlock[]).find(
         (b): b is { type: "text"; text: string } => b?.type === "text",
       );
+      const tm = textBlock ? classifyTeammateMessage(textBlock.text) : undefined;
       return {
         index,
         uuid,
@@ -141,6 +175,7 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
         preview: textBlock ? truncate(textBlock.text, 200) : truncate(JSON.stringify(c), 200),
         blocks: c as ContentBlock[],
         raw,
+        teammateMessage: tm,
       };
     }
   }
@@ -284,6 +319,10 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
   let sessionId = "";
   let cwd: string | undefined;
   let gitBranch: string | undefined;
+  let teamName: string | undefined;
+  let agentName: string | undefined;
+  let hasTeamCreate = false;
+  let hasOutboundDispatch = false;
   let toolCallCount = 0;
   let turnCount = 0;
   let firstUserPreview: string | undefined;
@@ -302,6 +341,15 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       ) as { type: "tool_use"; name: string; input?: Record<string, unknown> } | undefined;
       if (toolBlock) {
         const input = toolBlock.input ?? {};
+        // Team-orchestration evidence: a session is only a "lead" when it
+        // actually creates a team or dispatches outbound messages. A bare
+        // teamName field on events isn't enough — Claude Code can tag a
+        // one-off chat with whatever team context happened to be active.
+        if (toolBlock.name === "TeamCreate") hasTeamCreate = true;
+        if (toolBlock.name === "SendMessage") {
+          const to = typeof input.to === "string" ? (input.to as string) : "";
+          if (to && to !== "team-lead") hasOutboundDispatch = true;
+        }
         const fp = typeof input.file_path === "string" ? (input.file_path as string) : undefined;
         if (toolBlock.name === "Edit" && fp) {
           filesEdited.add(fp);
@@ -330,8 +378,20 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
         rawContent.startsWith("<command-name>") ||
         rawContent.startsWith("Base directory for this skill:") ||
         rawContent.startsWith("<task-notification>");
-      if (!isHidden) {
-        if (!firstUserPreview) firstUserPreview = e.preview;
+      // Teammate messages on LEAD sessions are protocol noise (idle
+      // notifications, task assignments) — skip them for preview/turn
+      // counting. On MEMBER sessions the teammate message IS the task
+      // instruction from the lead, so use it as the preview.
+      // Members have agentName set; leads don't. Use this as a proxy
+      // since the full isTeamLead flag is computed after the event loop.
+      const isTeamNoise =
+        e.teammateMessage !== undefined && !agentName;
+      if (!isHidden && !isTeamNoise) {
+        if (!firstUserPreview) {
+          firstUserPreview = e.teammateMessage
+            ? e.teammateMessage.body
+            : e.preview;
+        }
         turnCount++;
         // Track the most recent "real" user message so the live widget
         // can surface "what am I working on RIGHT NOW" instead of the
@@ -350,6 +410,8 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
     if (typeof o.sessionId === "string" && !sessionId) sessionId = o.sessionId;
     if (typeof o.cwd === "string" && !cwd) cwd = o.cwd;
     if (typeof o.gitBranch === "string" && !gitBranch) gitBranch = o.gitBranch;
+    if (typeof o.teamName === "string" && !teamName) teamName = o.teamName;
+    if (typeof o.agentName === "string" && !agentName) agentName = o.agentName;
     if (o.type === "assistant") {
       const m = o.message as Record<string, unknown> | undefined;
       if (m) {
@@ -398,6 +460,12 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       linesAdded,
       linesRemoved,
       filesEdited: filesEdited.size,
+      teamName,
+      agentName,
+      isTeamLead:
+        teamName !== undefined &&
+        agentName === undefined &&
+        (hasTeamCreate || hasOutboundDispatch),
     },
   };
 }

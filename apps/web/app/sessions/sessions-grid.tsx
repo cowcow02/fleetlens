@@ -13,6 +13,7 @@ import {
 } from "@/lib/format";
 import { Search, Wrench, MessagesSquare, Clock } from "lucide-react";
 import { LiveBadge } from "@/components/live-badge";
+import { TeamBadge } from "@/components/team-badge";
 import { DataTable, type Column } from "@/components/data-table";
 import { useViewToggle } from "@/components/view-toggle";
 
@@ -41,10 +42,13 @@ export function SessionsGrid({ sessions }: { sessions: SessionMeta[] }) {
           s.projectName.toLowerCase().includes(q),
       );
     }
-    // "Longest" uses active time (airTimeMs), not wall-clock duration.
-    // Otherwise a session that sat idle for 14 days with one message
-    // would out-rank a session that was actively coding for 4 hours.
-    if (sortBy === "longest")
+    if (sortBy === "newest")
+      rows.sort(
+        (a, b) =>
+          (b.firstTimestamp ? Date.parse(b.firstTimestamp) : 0) -
+          (a.firstTimestamp ? Date.parse(a.firstTimestamp) : 0),
+      );
+    else if (sortBy === "longest")
       rows.sort(
         (a, b) =>
           (b.airTimeMs ?? b.durationMs ?? 0) - (a.airTimeMs ?? a.durationMs ?? 0),
@@ -169,7 +173,19 @@ const sessionTableColumns: Column<SessionMeta>[] = [
         }}
         title={s.projectName}
       >
-        <div style={{ fontWeight: 500 }}>{prettyProjectName(s.projectName)}</div>
+        <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+          <span
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              minWidth: 0,
+            }}
+          >
+            {prettyProjectName(s.projectName)}
+          </span>
+          <TeamBadge session={s} />
+        </div>
         <div
           style={{
             fontSize: 10,
@@ -199,6 +215,20 @@ const sessionTableColumns: Column<SessionMeta>[] = [
       >
         {s.firstUserPreview || "—"}
       </div>
+    ),
+  },
+  {
+    key: "created",
+    header: "Created",
+    sortValue: (s) => (s.firstTimestamp ? Date.parse(s.firstTimestamp) : 0),
+    align: "right",
+    render: (s) => (
+      <span
+        suppressHydrationWarning
+        style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
+      >
+        {s.firstTimestamp ? formatRelative(s.firstTimestamp) : "—"}
+      </span>
     ),
   },
   {
@@ -325,6 +355,7 @@ function SessionCard({ session: s }: { session: SessionMeta }) {
           >
             {prettyProjectName(s.projectName)}
           </span>
+          <TeamBadge session={s} linkable={false} />
         </div>
         <div
           style={{

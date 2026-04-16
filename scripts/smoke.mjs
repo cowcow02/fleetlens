@@ -59,7 +59,7 @@ async function hit(path, label) {
 
     if (ok) {
       console.log(`${GREEN}✓${RESET} ${label.padEnd(30)} ${DIM}${fmtMs(dur)}${RESET} ${DIM}${url}${RESET}`);
-      return { ok: true };
+      return { ok: true, body };
     } else {
       const snippet = body.slice(0, 400).replace(/\s+/g, " ");
       console.log(
@@ -86,6 +86,66 @@ async function pickFirstSessionId() {
         if (jsonl) return jsonl.replace(/\.jsonl$/, "");
       } catch {
         // skip
+      }
+    }
+  } catch {
+    // no .claude/projects — fall through
+  }
+  return null;
+}
+
+/**
+ * Walk ~/.claude/projects/ looking for a session JSONL whose meta/system
+ * events mention a team name but no agent name — that's the lead session
+ * and is what surfaces the Team tab in the UI. Reads only the first ~50
+ * lines of each file to keep this cheap.
+ */
+async function findTeamLeadSession() {
+  try {
+    const root = join(homedir(), ".claude", "projects");
+    const projects = await readdir(root, { withFileTypes: true });
+    for (const p of projects) {
+      if (!p.isDirectory()) continue;
+      let files;
+      try {
+        files = await readdir(join(root, p.name));
+      } catch {
+        continue;
+      }
+      for (const f of files) {
+        if (!f.endsWith(".jsonl")) continue;
+        try {
+          const raw = await readFile(join(root, p.name, f), "utf8");
+          // Match the parser's isTeamLead rule: teamName present, agentName
+          // absent, and at least one orchestration signal — TeamCreate or an
+          // outbound SendMessage to a non-lead recipient. A bare teamName
+          // tag is just an environmental artifact (Claude Code attaches it
+          // to any chat opened in a /team window) and isn't enough to
+          // surface a Team tab in the UI.
+          const lines = raw.split("\n").slice(0, 200);
+          let hasTeam = false;
+          let hasAgent = false;
+          let hasTeamCreate = false;
+          let hasOutboundDispatch = false;
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            if (line.includes('"teamName"')) hasTeam = true;
+            if (line.includes('"agentName"')) hasAgent = true;
+            if (line.includes('"name":"TeamCreate"')) hasTeamCreate = true;
+            if (
+              line.includes('"name":"SendMessage"') &&
+              line.includes('"to":"') &&
+              !line.includes('"to":"team-lead"')
+            ) {
+              hasOutboundDispatch = true;
+            }
+          }
+          if (hasTeam && !hasAgent && (hasTeamCreate || hasOutboundDispatch)) {
+            return { sessionId: f.replace(/\.jsonl$/, "") };
+          }
+        } catch {
+          // skip
+        }
       }
     }
   } catch {
@@ -147,9 +207,10 @@ async function main() {
     process.exit(1);
   }
 
-  const [sessionId, projectDir] = await Promise.all([
+  const [sessionId, projectDir, teamLead] = await Promise.all([
     pickFirstSessionId(),
     pickFirstProjectCanonicalPath(),
+    findTeamLeadSession(),
   ]);
 
   const results = [];
@@ -169,6 +230,35 @@ async function main() {
     );
   } else {
     console.log(`${DIM}— skipping project detail (no .claude/projects data)${RESET}`);
+  }
+
+  if (teamLead) {
+    const r = await hit(
+      `/sessions/${teamLead.sessionId}`,
+      "Team lead session",
+    );
+    results.push(r);
+    if (r.ok && r.body) {
+      // The Team tab button is the third `af-tab-btn` rendered on a
+      // team-lead session page. If it's missing, the team prop wasn't
+      // plumbed through or loadTeamForSession returned null.
+      const hasTeamTab = /af-tab-btn[^"']*["'][^>]*>\s*Team\s*</.test(r.body);
+      if (!hasTeamTab) {
+        console.log(
+          `${RED}✗${RESET} Team tab button not found in team-lead page body`,
+        );
+        process.exitCode = 1;
+        results.push({ ok: false });
+      } else {
+        console.log(
+          `${GREEN}✓${RESET} ${"Team tab button present".padEnd(30)} ${DIM}/sessions/${teamLead.sessionId}${RESET}`,
+        );
+      }
+    }
+  } else {
+    console.log(
+      `${DIM}— skipping Team tab assertion (no local team-lead session found)${RESET}`,
+    );
   }
 
   const failed = results.filter((r) => !r.ok).length;

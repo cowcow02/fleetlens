@@ -36,6 +36,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     lastAgentPreview: s.lastAgentPreview,
     firstTimestamp: s.firstTimestamp,
     lastTimestamp: s.lastTimestamp,
+    teamName: s.teamName,
+    agentName: s.agentName,
   }));
 
   // Read the theme cookie set by the client-side ThemeToggle.
