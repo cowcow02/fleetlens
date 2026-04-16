@@ -44,17 +44,29 @@ export function sessionDay(meta: SessionMeta): string | undefined {
  *   canonicalProjectName("/Users/foo/Repo/bar")
  *     === "/Users/foo/Repo/bar"
  */
+const WORKTREE_MARKERS = ["/.claude/worktrees/", "/.worktrees/"] as const;
+
+function findWorktreeMarker(projectName: string): { idx: number; marker: string } | null {
+  for (const marker of WORKTREE_MARKERS) {
+    const idx = projectName.lastIndexOf(marker);
+    if (idx >= 0) return { idx, marker };
+  }
+  return null;
+}
+
 export function canonicalProjectName(projectName: string): string {
-  const wtIdx = projectName.lastIndexOf("/.worktrees/");
-  if (wtIdx >= 0) return projectName.slice(0, wtIdx);
+  const hit = findWorktreeMarker(projectName);
+  if (hit) return projectName.slice(0, hit.idx);
   return projectName;
 }
 
 /** Extract the worktree branch name from a worktree path, or null. */
 export function worktreeName(projectName: string): string | null {
-  const wtIdx = projectName.lastIndexOf("/.worktrees/");
-  if (wtIdx < 0) return null;
-  return projectName.slice(wtIdx + "/.worktrees/".length);
+  const hit = findWorktreeMarker(projectName);
+  if (!hit) return null;
+  const tail = projectName.slice(hit.idx + hit.marker.length);
+  const slash = tail.indexOf("/");
+  return slash >= 0 ? tail.slice(0, slash) : tail;
 }
 
 /* ================================================================= */
