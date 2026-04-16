@@ -59,6 +59,18 @@ export type MinimapIdleBand = {
   label: string;
 };
 
+/** When the total team span exceeds DAY_PAGE_HOURS we switch the minimap
+ *  from a single compressed strip into day pages, each rendered on its own
+ *  x-scale so a single day has the whole minimap width to itself. Page
+ *  nav arrows move between pages. */
+export type DayPage = {
+  startMs: number;
+  endMs: number;
+  label: string;
+  xAnchors: XAnchor[];
+  minimapIdleBands: MinimapIdleBand[];
+};
+
 export type TimelineData = {
   tracks: TeamTrack[];
   yAnchors: YAnchor[];
@@ -68,13 +80,25 @@ export type TimelineData = {
   lastEventMs: number;
   timeTicks: { tsMs: number; yPx: number; label: string }[];
   /** Event-anchored x-scale for the minimap. Same spirit as yAnchors:
-   *  active intervals get proportional width, all-idle stretches collapse. */
+   *  active intervals get proportional width, all-idle stretches collapse.
+   *  When dayPages is set, minimap consumers should prefer those; this one
+   *  still covers the full span for consumers that don't paginate. */
   xAnchors: XAnchor[];
   minimapIdleBands: MinimapIdleBand[];
   /** True when the team spans more than one local day — consumers can
    *  show full dates in hover cards / labels instead of just times. */
   multiDay: boolean;
+  /** Present when the team span exceeds DAY_PAGE_HOURS. The minimap
+   *  splits itself across these pages instead of cramming everything
+   *  into one compressed strip. */
+  dayPages?: DayPage[];
 };
+
+/** Code-level knob for the day-page width. 24h is the default that fits
+ *  most multi-day team traces; 12h is available for fleets that run in
+ *  shorter bursts. Not exposed to users. */
+const DAY_PAGE_HOURS = 24;
+const DAY_PAGE_MS = DAY_PAGE_HOURS * 60 * 60 * 1000;
 
 const LEAD_COLOR = "#f0b429";
 const MEMBER_COLORS = [
@@ -142,6 +166,12 @@ export function teamViewToTimelineData(
     multiDay,
   );
 
+  const spanMs = view.lastEventMs - view.firstEventMs;
+  const dayPages =
+    spanMs > DAY_PAGE_MS
+      ? buildDayPages(allTurns, view.firstEventMs, view.lastEventMs, multiDay)
+      : undefined;
+
   return {
     tracks,
     yAnchors,
@@ -153,7 +183,73 @@ export function teamViewToTimelineData(
     xAnchors,
     minimapIdleBands,
     multiDay,
+    dayPages,
   };
+}
+
+/** Walk the full span in DAY_PAGE_HOURS slices starting at the local-day
+ *  boundary that contains firstEventMs. Each page runs buildXFunction
+ *  over just the turns that overlap its window so the compressed scale
+ *  is tight to that day's actual activity. */
+function buildDayPages(
+  allTurns: TeamTurn[],
+  firstEventMs: number,
+  lastEventMs: number,
+  multiDay: boolean,
+): DayPage[] {
+  // Anchor page 0 at local midnight of firstEventMs so successive pages
+  // line up with real calendar days (feels natural when labels show
+  // "Mar 27", "Mar 28", etc.).
+  const firstDate = new Date(firstEventMs);
+  const pageStart = new Date(
+    firstDate.getFullYear(),
+    firstDate.getMonth(),
+    firstDate.getDate(),
+  ).getTime();
+
+  const pages: DayPage[] = [];
+  let cursor = pageStart;
+  while (cursor < lastEventMs) {
+    const startMs = cursor;
+    const endMs = Math.min(lastEventMs, cursor + DAY_PAGE_MS);
+    const clampedStart = Math.max(startMs, firstEventMs);
+    // Keep any turn that touches this window.
+    const pageTurns = allTurns.filter(
+      (t) => t.endMs >= clampedStart && t.startMs <= endMs,
+    );
+    // Skip empty days. A long team span can have multi-day gaps where
+    // nothing actually happened — showing blank pages for those just
+    // forces the user to click through noise. The minimap's job is to
+    // visualize activity, so days without any are dropped entirely.
+    if (pageTurns.length === 0) {
+      cursor += DAY_PAGE_MS;
+      continue;
+    }
+    const windowStart = clampedStart;
+    const windowEnd = endMs;
+    const { xAnchors, minimapIdleBands } = buildXFunction(
+      pageTurns,
+      windowStart,
+      windowEnd,
+      multiDay,
+    );
+    pages.push({
+      startMs: windowStart,
+      endMs: windowEnd,
+      label: formatDayLabel(startMs),
+      xAnchors,
+      minimapIdleBands,
+    });
+    cursor += DAY_PAGE_MS;
+  }
+  return pages;
+}
+
+function formatDayLabel(ms: number): string {
+  return new Date(ms).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function isMultiDay(firstMs: number, lastMs: number): boolean {

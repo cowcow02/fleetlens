@@ -1,6 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useRef, useEffect, useCallback, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import type { TimelineData, TeamTurn, TeamTrack, IdleBand } from "./adapter";
 import { yOfMs } from "./adapter";
 
@@ -72,22 +74,29 @@ export function TeamTable({
 
   useEffect(() => {
     if (!scrollTarget || !scrollRef.current) return;
-    const targetY = yOfMs(data.yAnchors, scrollTarget.tsMs);
-    scrollRef.current.scrollTop = Math.max(0, targetY - 40);
+    const el = scrollRef.current;
+    // Land the row a comfortable margin below the sticky column header
+    // (HEADER_HEIGHT) so it's visible, not half-occluded.
+    const rawY = yOfMs(data.yAnchors, scrollTarget.tsMs);
+    const targetTop = Math.max(0, rawY - HEADER_HEIGHT - 12);
 
+    let targetLeft = el.scrollLeft;
     if (scrollTarget.trackId) {
       const colIndex = data.tracks.findIndex((t) => t.id === scrollTarget.trackId);
       if (colIndex !== -1) {
-        const targetX = TIME_COL_WIDTH + colIndex * (COL_MIN_WIDTH + COL_GAP);
-        const viewport = scrollRef.current.clientWidth;
-        const nextLeft = Math.max(
+        const targetColX = TIME_COL_WIDTH + colIndex * (COL_MIN_WIDTH + COL_GAP);
+        const viewport = el.clientWidth;
+        targetLeft = Math.max(
           0,
-          targetX - viewport / 2 + COL_MIN_WIDTH / 2,
+          targetColX - viewport / 2 + COL_MIN_WIDTH / 2,
         );
-        programmaticLeftRef.current = nextLeft;
-        scrollRef.current.scrollLeft = nextLeft;
       }
     }
+    // Single scrollTo for both axes so vertical and horizontal animate
+    // together. Mark the horizontal target as programmatic so the
+    // scroll listener's "user panned" grace timer doesn't fire.
+    programmaticLeftRef.current = targetLeft;
+    el.scrollTo({ top: targetTop, left: targetLeft, behavior: "smooth" });
   }, [scrollTarget, data.yAnchors, data.tracks]);
 
   const onScroll = useCallback(() => {
@@ -216,6 +225,7 @@ export function TeamTable({
     <div
       ref={scrollRef}
       onScroll={onScroll}
+      data-team-scroll=""
       style={{
         position: "relative",
         flex: 1,
@@ -275,8 +285,9 @@ export function TeamTable({
           {data.tracks.map((t, idx) => {
             const stickyLead = idx === 0;
             return (
-              <div
+              <Link
                 key={t.id}
+                href={`/sessions/${t.id}`}
                 style={{
                   padding: 8,
                   fontSize: 11,
@@ -286,6 +297,10 @@ export function TeamTable({
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
+                  textDecoration: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
                   ...(stickyLead && {
                     position: "sticky",
                     left: TIME_COL_WIDTH + COL_GAP,
@@ -294,10 +309,18 @@ export function TeamTable({
                     borderRight: "1px solid var(--af-border-subtle)",
                   }),
                 }}
-                title={t.label}
+                title={`${t.label} — open session`}
               >
-                {t.isLead ? "LEAD" : t.label}
-              </div>
+                <span
+                  style={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  {t.isLead ? "LEAD" : t.label}
+                </span>
+                <ExternalLink size={10} style={{ opacity: 0.6, flexShrink: 0 }} />
+              </Link>
             );
           })}
         </div>

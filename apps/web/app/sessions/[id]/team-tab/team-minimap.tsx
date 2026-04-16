@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import type { TimelineData, TeamTrack, TeamTurn } from "./adapter";
+import Link from "next/link";
+import * as React from "react";
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import type { TimelineData, TeamTrack, TeamTurn, XAnchor, MinimapIdleBand } from "./adapter";
 import { xOfMs, msOfXFrac } from "./adapter";
 
 const LANE_HEIGHT = 24;
@@ -41,6 +44,34 @@ export function TeamMinimap({
   const [hover, setHover] = useState<HoverState | null>(null);
   const hasOverflow = data.tracks.length > DEFAULT_VISIBLE_LANES;
 
+  // Day-page mode: when the team span exceeds 24h, the adapter pre-computes
+  // per-day x-scales and we render one page at a time. The minimap's
+  // rangeStart/rangeEnd, xAnchors, and idle bands all come from the active
+  // page instead of the global ones.
+  const dayPages = data.dayPages ?? null;
+  const [pageIndex, setPageIndex] = useState(0);
+  // Follow the playhead: if the table scrolls into a different day, advance
+  // the minimap page to match so the user's focus stays in view.
+  useEffect(() => {
+    if (!dayPages || playheadMs == null) return;
+    const match = dayPages.findIndex(
+      (p) => playheadMs >= p.startMs && playheadMs <= p.endMs,
+    );
+    if (match !== -1 && match !== pageIndex) setPageIndex(match);
+  }, [dayPages, playheadMs, pageIndex]);
+  // Clamp pageIndex in case the dataset shrinks between renders.
+  const safePageIndex = dayPages
+    ? Math.min(Math.max(0, pageIndex), dayPages.length - 1)
+    : 0;
+  const activePage = dayPages ? dayPages[safePageIndex] : null;
+
+  const activeXAnchors: XAnchor[] = activePage ? activePage.xAnchors : data.xAnchors;
+  const activeIdleBands: MinimapIdleBand[] = activePage
+    ? activePage.minimapIdleBands
+    : data.minimapIdleBands;
+  const rangeStartMs = activePage ? activePage.startMs : data.firstEventMs;
+  const rangeEndMs = activePage ? activePage.endMs : data.lastEventMs;
+
   // Compute which tracks are "active" (shown at full height). The minimap
   // always renders every track so CSS transitions can animate lanes in and
   // out when the active set changes; non-active lanes collapse to height 0
@@ -69,7 +100,9 @@ export function TeamMinimap({
   // Event-anchored x-scale — active intervals stay proportional with a floor,
   // all-idle intervals (including multi-day overnight gaps) collapse into
   // compact bands. Shared across lanes so cross-agent alignment holds.
-  const xOf = (ms: number) => xOfMs(data.xAnchors, ms);
+  // In day-page mode, xOf uses the current page's anchors so each day
+  // fills the minimap width instead of sharing a cramped global strip.
+  const xOf = (ms: number) => xOfMs(activeXAnchors, ms);
 
   const onLaneClick = (
     track: TeamTrack,
@@ -78,13 +111,27 @@ export function TeamMinimap({
     const rect = e.currentTarget.getBoundingClientRect();
     const x = Math.max(0, e.clientX - rect.left);
     const frac = Math.min(1, x / Math.max(1, rect.width));
-    onSeek(msOfXFrac(data.xAnchors, frac), track.id);
+    onSeek(msOfXFrac(activeXAnchors, frac), track.id);
   };
 
+  // Playhead only renders when it's inside the current page's window.
   const playheadFrac =
-    playheadMs != null
+    playheadMs != null && playheadMs >= rangeStartMs && playheadMs <= rangeEndMs
       ? Math.max(0, Math.min(1, xOf(playheadMs)))
       : null;
+
+  // Turn bars are clipped to the active page — bars whose entire range is
+  // outside the current day window are skipped, bars that straddle the
+  // boundary get clamped to the window's edges.
+  const clipTurn = (turn: TeamTurn) => {
+    if (turn.endMs < rangeStartMs || turn.startMs > rangeEndMs) return null;
+    return {
+      id: turn.id,
+      startMs: Math.max(turn.startMs, rangeStartMs),
+      endMs: Math.min(turn.endMs, rangeEndMs),
+      original: turn,
+    };
+  };
 
   return (
     <div
@@ -103,15 +150,60 @@ export function TeamMinimap({
         style={{
           display: "flex",
           justifyContent: "space-between",
+          alignItems: "center",
           fontSize: 9,
           color: "var(--af-text-tertiary)",
           fontFamily: "ui-monospace, monospace",
           marginBottom: 6,
           paddingLeft: LABEL_WIDTH,
+          gap: 8,
         }}
       >
-        <span>{formatEdge(data.firstEventMs, data.multiDay)}</span>
-        <span>{formatEdge(data.lastEventMs, data.multiDay)}</span>
+        <span>{formatEdge(rangeStartMs, data.multiDay)}</span>
+        {dayPages && dayPages.length > 1 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 10,
+              fontWeight: 600,
+              color: "var(--af-text-secondary)",
+            }}
+          >
+            <button
+              onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
+              disabled={safePageIndex === 0}
+              aria-label="Previous day"
+              style={pageBtnStyle(safePageIndex === 0)}
+            >
+              <ChevronLeft size={11} />
+            </button>
+            <span
+              style={{
+                minWidth: 64,
+                textAlign: "center",
+                fontFamily: "ui-monospace, monospace",
+              }}
+            >
+              {activePage?.label ?? ""}{" "}
+              <span style={{ opacity: 0.55 }}>
+                ({safePageIndex + 1}/{dayPages.length})
+              </span>
+            </span>
+            <button
+              onClick={() =>
+                setPageIndex((i) => Math.min(dayPages.length - 1, i + 1))
+              }
+              disabled={safePageIndex === dayPages.length - 1}
+              aria-label="Next day"
+              style={pageBtnStyle(safePageIndex === dayPages.length - 1)}
+            >
+              <ChevronRight size={11} />
+            </button>
+          </div>
+        )}
+        <span>{formatEdge(rangeEndMs, data.multiDay)}</span>
       </div>
 
       <div
@@ -123,8 +215,9 @@ export function TeamMinimap({
       >
         {/* Hatched idle bands spanning all lanes. Positioned as an overlay
             so they line up exactly with the lane strips' x axis (both use
-            the shared xOfMs scale). */}
-        {data.minimapIdleBands.map((band, i) => {
+            the shared xOfMs scale). Uses the active page's idle bands in
+            day-page mode. */}
+        {activeIdleBands.map((band, i) => {
           const left = band.xFracStart * 100;
           const width = Math.max(0.5, (band.xFracEnd - band.xFracStart) * 100);
           return (
@@ -178,7 +271,8 @@ export function TeamMinimap({
               pointerEvents: isActive ? "auto" : "none",
             }}
           >
-            <div
+            <Link
+              href={`/sessions/${t.id}`}
               style={{
                 width: LABEL_WIDTH - 6,
                 fontSize: 10,
@@ -188,11 +282,12 @@ export function TeamMinimap({
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
+                textDecoration: "none",
               }}
-              title={t.label}
+              title={`${t.label} — open session`}
             >
               {t.isLead ? "LEAD" : t.label}
-            </div>
+            </Link>
             <div
               style={{
                 flex: 1,
@@ -208,8 +303,10 @@ export function TeamMinimap({
               onClick={(e) => onLaneClick(t, e)}
             >
               {t.turns.map((turn) => {
-                const leftFrac = xOf(turn.startMs);
-                const rightFrac = xOf(turn.endMs);
+                const clipped = clipTurn(turn);
+                if (!clipped) return null;
+                const leftFrac = xOf(clipped.startMs);
+                const rightFrac = xOf(clipped.endMs);
                 const left = leftFrac * 100;
                 const width = Math.max(0.4, (rightFrac - leftFrac) * 100);
                 return (
@@ -230,7 +327,7 @@ export function TeamMinimap({
                     }}
                     onMouseEnter={(e) =>
                       setHover({
-                        turn,
+                        turn: clipped.original,
                         track: t,
                         clientX: e.clientX,
                         clientY: e.clientY,
@@ -249,10 +346,12 @@ export function TeamMinimap({
               })}
               {t.subagents.map((sa, i) => {
                 if (sa.startMs == null) return null;
-                const startFrac = xOf(sa.startMs);
-                const endFrac = xOf(
-                  sa.startMs + (sa.durationMs ?? 0),
-                );
+                const saEnd = sa.startMs + (sa.durationMs ?? 0);
+                if (saEnd < rangeStartMs || sa.startMs > rangeEndMs) return null;
+                const clampedStart = Math.max(sa.startMs, rangeStartMs);
+                const clampedEnd = Math.min(saEnd, rangeEndMs);
+                const startFrac = xOf(clampedStart);
+                const endFrac = xOf(clampedEnd);
                 const left = startFrac * 100;
                 const w = Math.max(0.2, (endFrac - startFrac) * 100) || 0.4;
                 return (
@@ -518,6 +617,23 @@ function HoverCard({
       )}
     </div>
   );
+}
+
+function pageBtnStyle(disabled: boolean): React.CSSProperties {
+  return {
+    background: "transparent",
+    border: "1px solid var(--af-border-subtle)",
+    color: disabled ? "var(--af-text-tertiary)" : "var(--af-text-secondary)",
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.4 : 1,
+    padding: 0,
+  };
 }
 
 function formatEdge(ms: number, multiDay: boolean): string {
