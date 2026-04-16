@@ -4,5 +4,6 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     globals: false,
+    fileParallelism: false, // DB integration tests share state
   },
 });

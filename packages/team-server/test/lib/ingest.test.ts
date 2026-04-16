@@ -33,8 +33,14 @@ beforeAll(async () => {
   process.env.DATABASE_URL = TEST_DB;
   await runMigrations();
 
+  // Clean up any leftovers from prior runs
+  await pool.query("DELETE FROM ingest_log WHERE team_id IN (SELECT id FROM teams WHERE slug = 'ingest-test-team')");
+  await pool.query("DELETE FROM daily_rollups WHERE team_id IN (SELECT id FROM teams WHERE slug = 'ingest-test-team')");
+  await pool.query("DELETE FROM members WHERE team_id IN (SELECT id FROM teams WHERE slug = 'ingest-test-team')");
+  await pool.query("DELETE FROM teams WHERE slug = 'ingest-test-team'");
+
   const teamRes = await pool.query(
-    `INSERT INTO teams (slug, name) VALUES ('test-team', 'Test Team') RETURNING id`
+    `INSERT INTO teams (slug, name) VALUES ('ingest-test-team', 'Ingest Test Team') RETURNING id`
   );
   teamId = teamRes.rows[0].id;
 
