@@ -219,8 +219,11 @@ function FullTurnCard({
       {userRow && userRow.kind === "user" && (() => {
         const tm = userRow.event.teammateMessage;
         const label = tm ? `From ${tm.teammateId}` : "Human";
+        // Drawer shows the full body — no truncation. For teammate
+        // messages the body is the complete instruction or protocol
+        // payload extracted from the <teammate-message> wrapper.
         const text = tm
-          ? formatTeammatePreview(tm)
+          ? tm.body
           : (userRow.displayPreview ?? userRow.event.preview ?? "");
         return (
           <ExpandableTextBlock
@@ -299,31 +302,40 @@ function ExpandableTextBlock({
         {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         <span style={{ color }}>{label}</span>
       </div>
-      <div
-        style={
-          expanded
-            ? {
-                marginTop: 6,
-                fontSize: 13,
-                lineHeight: 1.45,
-                color: "var(--af-text)",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-              }
-            : {
-                marginTop: 4,
-                fontSize: 13,
-                lineHeight: 1.45,
-                color: "var(--af-text)",
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }
-        }
-      >
-        {text}
-      </div>
+      {expanded ? (
+        <div className="sl-prose" style={{ fontSize: 13, marginTop: 6 }}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: (props) => (
+                <a
+                  {...props}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: "var(--af-accent)", textDecoration: "underline" }}
+                />
+              ),
+            }}
+          >
+            {text}
+          </ReactMarkdown>
+        </div>
+      ) : (
+        <div
+          style={{
+            marginTop: 4,
+            fontSize: 13,
+            lineHeight: 1.45,
+            color: "var(--af-text)",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}
+        >
+          {text}
+        </div>
+      )}
     </div>
   );
 }
