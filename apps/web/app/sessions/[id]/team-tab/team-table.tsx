@@ -85,7 +85,10 @@ export function TeamTable({
     let targetLeft = el.scrollLeft;
     if (scrollTarget.trackId) {
       const colIndex = data.tracks.findIndex((t) => t.id === scrollTarget.trackId);
-      if (colIndex !== -1) {
+      // Skip horizontal scroll for the lead column (index 0) — it's
+      // sticky and always visible, so panning to it would just displace
+      // the member columns the user was looking at.
+      if (colIndex > 0) {
         const targetColX = TIME_COL_WIDTH + colIndex * (COL_MIN_WIDTH + COL_GAP);
         const viewport = el.clientWidth;
         targetLeft = Math.max(
