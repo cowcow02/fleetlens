@@ -19,6 +19,9 @@ import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { appendSnapshot } from "./usage/storage.js";
 import { isUsable, readOAuthCredentials } from "./usage/token.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
+import { readTeamConfig } from "./team/config.js";
+import { buildDailyRollup, buildIngestPayload, pushToTeamServer } from "./team/push.js";
+import { enqueuePayload, dequeuePayloads } from "./team/queue.js";
 
 const STATE_DIR = join(homedir(), ".cclens");
 const USAGE_LOG = join(STATE_DIR, "usage.jsonl");
@@ -58,6 +61,50 @@ async function tick(): Promise<PollOutcome> {
     }
     log("error", `unexpected error: ${(err as Error).stack ?? err}`);
     return "auth";
+  }
+}
+
+async function teamTick(): Promise<void> {
+  const config = readTeamConfig();
+  if (!config) return;
+
+  try {
+    const { scanProjects } = await import("@claude-lens/parser/fs");
+    const { parseTranscript } = await import("@claude-lens/parser");
+
+    const projectDirs = scanProjects();
+    const allSessions: import("@claude-lens/parser").SessionMeta[] = [];
+    const today = new Date().toISOString().slice(0, 10);
+
+    for (const dir of projectDirs) {
+      const sessions = parseTranscript(dir);
+      for (const s of sessions) {
+        const sessionDay = s.firstTimestamp ? new Date(s.firstTimestamp).toISOString().slice(0, 10) : null;
+        if (sessionDay === today) allSessions.push(s);
+      }
+    }
+
+    const rollup = buildDailyRollup(allSessions, today);
+    const payload = buildIngestPayload(rollup);
+    const result = await pushToTeamServer(config, payload);
+
+    if (result.ok) {
+      log("info", `team push ok: ${rollup.sessions} sessions, ${Math.round(rollup.agentTimeMs / 60000)}m agent time`);
+      const queued = dequeuePayloads();
+      for (const q of queued) {
+        try {
+          await pushToTeamServer(config, q as any);
+        } catch {
+          enqueuePayload(q);
+          break;
+        }
+      }
+    } else {
+      log("warn", `team push failed (${result.status}): ${JSON.stringify(result.body)}`);
+      enqueuePayload(payload);
+    }
+  } catch (err) {
+    log("warn", `team push error: ${(err as Error).message}`);
   }
 }
 
@@ -112,6 +159,8 @@ async function runLoop(): Promise<void> {
         }
         const outcome = await tick();
         scheduleAfter(Date.now(), outcome);
+        // Team push is independent of usage poll outcome
+        await teamTick();
       }
     }
     await sleep(WATCHDOG_INTERVAL_MS);
