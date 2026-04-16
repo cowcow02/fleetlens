@@ -45,6 +45,11 @@ async function main() {
       await daemon(args.slice(1));
       break;
     }
+    case "team": {
+      const { team } = await import("./commands/team.js");
+      await team(args.slice(1));
+      break;
+    }
     case "version":
     case "--version":
     case "-v":
@@ -69,6 +74,12 @@ Advanced:
   web [page] [--no-open]            Open dashboard in browser without auto-starting daemon
   start --no-daemon                 Start only the web server (no daemon)
   daemon <start|stop|status|logs>   Manage the usage daemon by itself
+
+Team:
+  team join <url> <token>           Pair with a team server
+  team status                       Show team pairing state
+  team leave                        Unpair from team server
+  team logs                         Show team-related daemon logs
 
   version                           Print version`);
       break;
