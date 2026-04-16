@@ -1,0 +1,13 @@
+aws_region = "us-east-1"
+
+hostname    = "fleetlens.example.com"
+admin_email = "admin@example.com"
+
+# VPC and subnets — use your existing infrastructure
+vpc_id            = "vpc-0123456789abcdef0"
+subnet_ids        = ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"]
+public_subnet_ids = ["subnet-0123456789abcdef2", "subnet-0123456789abcdef3"]
+
+# ACM certificate for HTTPS (recommended)
+# Create via: aws acm request-certificate --domain-name fleetlens.example.com --validation-method DNS
+certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
