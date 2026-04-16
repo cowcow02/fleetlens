@@ -90,6 +90,9 @@ const FILTER_MODES: { value: FilterMode; label: string }[] = [
 /** Drawer width in px — reserved on the transcript's right edge when open. */
 const DRAWER_WIDTH = 460;
 
+type TabId = "transcript" | "team" | "debug";
+const VALID_TABS: TabId[] = ["transcript", "team", "debug"];
+
 export function SessionView({
   session,
   team,
@@ -99,12 +102,10 @@ export function SessionView({
   team?: (TimelineData & { teamName: string }) | null;
   teamLead?: { leadSessionId: string; teamName: string; agentName: string } | null;
 }) {
-  type TabId = "transcript" | "team" | "debug";
-  const validTabs: TabId[] = ["transcript", "team", "debug"];
   const readHash = (): TabId => {
     if (typeof window === "undefined") return "transcript";
     const h = window.location.hash.replace("#", "");
-    if (validTabs.includes(h as TabId)) return h as TabId;
+    if (VALID_TABS.includes(h as TabId)) return h as TabId;
     return "transcript";
   };
   const [tab, setTabRaw] = useState<TabId>(readHash);
@@ -121,7 +122,7 @@ export function SessionView({
   useEffect(() => {
     const onHash = () => {
       const h = window.location.hash.replace("#", "");
-      if (validTabs.includes(h as TabId)) setTabRaw(h as TabId);
+      if (VALID_TABS.includes(h as TabId)) setTabRaw(h as TabId);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);

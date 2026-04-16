@@ -1,3 +1,4 @@
+import { formatGap } from "@/lib/format";
 import type {
   TeamView,
   SessionDetail,
@@ -252,6 +253,22 @@ function formatDayLabel(ms: number): string {
   });
 }
 
+type ActiveRegion = { startMs: number; endMs: number };
+
+function mergeActiveRegions(turns: TeamTurn[]): ActiveRegion[] {
+  const sorted = [...turns].sort((a, b) => a.startMs - b.startMs);
+  const active: ActiveRegion[] = [];
+  for (const t of sorted) {
+    const last = active[active.length - 1];
+    if (last && t.startMs <= last.endMs) {
+      if (t.endMs > last.endMs) last.endMs = t.endMs;
+    } else {
+      active.push({ startMs: t.startMs, endMs: t.endMs });
+    }
+  }
+  return active;
+}
+
 function isMultiDay(firstMs: number, lastMs: number): boolean {
   const a = new Date(firstMs);
   const b = new Date(lastMs);
@@ -330,19 +347,7 @@ function buildYFunction(
     };
   }
 
-  // Merge overlapping turn intervals across all lanes → active regions.
-  // Gaps between active regions are "all-idle" candidates for compression.
-  const sorted = [...allTurns].sort((a, b) => a.startMs - b.startMs);
-  type Active = { startMs: number; endMs: number };
-  const active: Active[] = [];
-  for (const t of sorted) {
-    const last = active[active.length - 1];
-    if (last && t.startMs <= last.endMs) {
-      if (t.endMs > last.endMs) last.endMs = t.endMs;
-    } else {
-      active.push({ startMs: t.startMs, endMs: t.endMs });
-    }
-  }
+  const active = mergeActiveRegions(allTurns);
 
   const anchorSet = new Set<number>();
   anchorSet.add(firstEventMs);
@@ -473,20 +478,7 @@ function buildXFunction(
     };
   }
 
-  // Same active-region merge as buildYFunction — we treat the union of
-  // all turns across all lanes as "active" and the gaps as candidates
-  // for compression.
-  const sorted = [...allTurns].sort((a, b) => a.startMs - b.startMs);
-  type Active = { startMs: number; endMs: number };
-  const active: Active[] = [];
-  for (const t of sorted) {
-    const last = active[active.length - 1];
-    if (last && t.startMs <= last.endMs) {
-      if (t.endMs > last.endMs) last.endMs = t.endMs;
-    } else {
-      active.push({ startMs: t.startMs, endMs: t.endMs });
-    }
-  }
+  const active = mergeActiveRegions(allTurns);
 
   // Build the interval list: alternating active / idle spans that cover
   // [firstEventMs, lastEventMs] end to end.
@@ -564,7 +556,7 @@ function buildXFunction(
 }
 
 function idleLabel(startMs: number, endMs: number, multiDay: boolean): string {
-  const dur = formatIdleDuration(endMs - startMs);
+  const dur = `${formatGap(endMs - startMs)} idle`;
   if (!multiDay) return dur;
   const a = new Date(startMs);
   const b = new Date(endMs);
@@ -575,14 +567,6 @@ function idleLabel(startMs: number, endMs: number, multiDay: boolean): string {
   if (sameDay) return dur;
   const toDate = b.toLocaleDateString([], { month: "short", day: "numeric" });
   return `${dur} → ${toDate}`;
-}
-
-function formatIdleDuration(ms: number): string {
-  if (ms < 60_000) return `${Math.round(ms / 1000)}s idle`;
-  if (ms < 3600_000) return `${Math.round(ms / 60_000)}m idle`;
-  const h = Math.floor(ms / 3600_000);
-  const m = Math.round((ms % 3600_000) / 60_000);
-  return m > 0 ? `${h}h ${m}m idle` : `${h}h idle`;
 }
 
 export function xOfMs(anchors: XAnchor[], tsMs: number): number {

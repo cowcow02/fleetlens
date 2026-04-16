@@ -9,7 +9,7 @@ import { TurnDrawer } from "./turn-drawer";
 export function TeamTabClient({
   initial,
   teamName,
-  playheadMs,
+  playheadMs: _playheadMs,
   onPlayheadChange,
   onVisibleTrackIdsChange,
   seekTarget,
@@ -28,10 +28,6 @@ export function TeamTabClient({
   const selectedTrack = selectedTurn
     ? initial.tracks.find((t) => t.id === selectedTurn.trackId)
     : null;
-
-  // playheadMs is owned by the parent; it isn't read here directly but
-  // the prop exists so future drawer/highlight features can consume it.
-  void playheadMs;
 
   return (
     <div

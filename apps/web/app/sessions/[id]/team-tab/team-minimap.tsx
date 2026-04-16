@@ -4,8 +4,10 @@ import Link from "next/link";
 import * as React from "react";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { formatGap } from "@/lib/format";
 import type { TimelineData, TeamTrack, TeamTurn, XAnchor, MinimapIdleBand } from "./adapter";
 import { xOfMs, msOfXFrac } from "./adapter";
+import { formatTeammatePreview } from "./format";
 
 const LANE_HEIGHT = 24;
 const LANE_GAP = 2;
@@ -472,7 +474,7 @@ function HoverCard({
       >
         <span>{track.isLead ? "LEAD" : track.label}</span>
         <span style={{ color: "var(--af-text-tertiary)", fontWeight: 500 }}>
-          {formatEdge(turn.startMs, multiDay)} → {formatEdge(turn.endMs, multiDay)} · {formatDuration(turn.durationMs)}
+          {formatEdge(turn.startMs, multiDay)} → {formatEdge(turn.endMs, multiDay)} · {formatGap(turn.durationMs)}
         </span>
       </div>
       <div
@@ -630,13 +632,6 @@ function formatEdge(ms: number, multiDay: boolean): string {
   return `${date} ${time}`;
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(0)}s`;
-  if (ms < 3600_000) return `${(ms / 60_000).toFixed(1)}m`;
-  return `${(ms / 3600_000).toFixed(1)}h`;
-}
-
 function IdleBandOverlay({ band }: { band: MinimapIdleBand }) {
   const [hovered, setHovered] = useState(false);
   const left = band.xFracStart * 100;
@@ -685,21 +680,3 @@ function IdleBandOverlay({ band }: { band: MinimapIdleBand }) {
   );
 }
 
-function formatTeammatePreview(
-  tm: NonNullable<import("@claude-lens/parser").SessionEvent["teammateMessage"]>,
-): string {
-  switch (tm.kind) {
-    case "idle-notification":
-      return `${tm.teammateId} is idle / available`;
-    case "shutdown-request":
-      return `${tm.teammateId} requesting shutdown`;
-    case "shutdown-approved":
-      return `${tm.teammateId} shutdown approved`;
-    case "teammate-terminated":
-      return `${tm.teammateId} has shut down`;
-    case "task-assignment":
-      return `task assigned to ${tm.teammateId}`;
-    default:
-      return tm.body.length > 120 ? tm.body.slice(0, 120) + "…" : tm.body;
-  }
-}

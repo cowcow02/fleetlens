@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useRef, useEffect, useCallback, useState } from "react";
 import { ExternalLink } from "lucide-react";
+import { formatGap } from "@/lib/format";
 import type { TimelineData, TeamTurn, TeamTrack, IdleBand } from "./adapter";
 import { yOfMs } from "./adapter";
+import { formatTeammatePreview } from "./format";
 
 const HEADER_HEIGHT = 32;
 
@@ -194,8 +196,19 @@ export function TeamTable({
     if (visibleMembers.length === 0) return;
 
     const hasTurnAtTs = (trackIdx: number) => {
-      const track = data.tracks[trackIdx]!;
-      return track.turns.some((t) => t.startMs <= ts && t.endMs >= ts);
+      const turns = data.tracks[trackIdx]!.turns;
+      if (turns.length === 0) return false;
+      // Binary search — turns are sorted by startMs.
+      let lo = 0;
+      let hi = turns.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const t = turns[mid]!;
+        if (t.endMs < ts) lo = mid + 1;
+        else if (t.startMs > ts) hi = mid - 1;
+        else return true;
+      }
+      return false;
     };
     const anyVisibleActive = visibleMembers.some((r) => hasTurnAtTs(r.trackIdx));
     if (anyVisibleActive) return;
@@ -434,7 +447,7 @@ export function TeamTable({
                         color: "var(--af-text-tertiary)",
                       }}
                     >
-                      idle {formatIdle(gapMs)}
+                      idle {formatGap(gapMs)}
                     </span>
                   </div>
                 );
@@ -443,11 +456,7 @@ export function TeamTable({
           ))}
 
           {data.idleBands.map((band, i) => (
-            <IdleBandStrip
-              key={i}
-              band={band}
-              totalCols={data.tracks.length + 1}
-            />
+            <IdleBandStrip key={i} band={band} />
           ))}
         </div>
       </div>
@@ -474,7 +483,7 @@ function TurnCell({
 }) {
   const [hover, setHover] = useState(false);
   const summary = turn.megaRow.summary;
-  const durationStr = formatDuration(turn.durationMs);
+  const durationStr = formatGap(turn.durationMs);
 
   const tmMsg =
     turn.userPrompt && "event" in turn.userPrompt
@@ -720,10 +729,8 @@ function TurnCell({
 
 function IdleBandStrip({
   band,
-  totalCols: _totalCols,
 }: {
   band: IdleBand;
-  totalCols: number;
 }) {
   return (
     <div
@@ -767,7 +774,7 @@ function IdleBandStrip({
           borderRadius: 3,
         }}
       >
-        {formatIdle(band.durationMs)} idle
+        {formatGap(band.durationMs)} idle
       </div>
     </div>
   );
@@ -784,36 +791,3 @@ function formatFullTimestamp(tsMs: number): string {
   });
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(0)}s`;
-  if (ms < 3600_000) return `${(ms / 60_000).toFixed(1)}m`;
-  return `${(ms / 3600_000).toFixed(1)}h`;
-}
-
-function formatIdle(ms: number): string {
-  if (ms < 60_000) return `${(ms / 1000).toFixed(0)}s`;
-  if (ms < 3600_000) return `${Math.round(ms / 60_000)}m`;
-  const h = Math.floor(ms / 3600_000);
-  const m = Math.round((ms % 3600_000) / 60_000);
-  return `${h}h ${m}m`;
-}
-
-function formatTeammatePreview(
-  tm: NonNullable<import("@claude-lens/parser").SessionEvent["teammateMessage"]>,
-): string {
-  switch (tm.kind) {
-    case "idle-notification":
-      return `${tm.teammateId} is idle / available`;
-    case "shutdown-request":
-      return `${tm.teammateId} requesting shutdown`;
-    case "shutdown-approved":
-      return `${tm.teammateId} shutdown approved`;
-    case "teammate-terminated":
-      return `${tm.teammateId} has shut down`;
-    case "task-assignment":
-      return `task assigned to ${tm.teammateId}`;
-    default:
-      return tm.body.length > 120 ? tm.body.slice(0, 120) + "…" : tm.body;
-  }
-}
