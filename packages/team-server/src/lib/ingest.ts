@@ -1,6 +1,7 @@
 import pg from "pg";
 import { getPool } from "../db/pool.js";
 import { IngestPayload } from "./zod-schemas.js";
+import { broadcastEvent } from "./sse.js";
 
 export async function processIngest(
   raw: unknown,
@@ -49,5 +50,6 @@ export async function processIngest(
     client.release();
   }
 
+  broadcastEvent(teamId, "roster-updated", { memberId });
   return { accepted: true, nextSyncAfter: new Date(Date.now() + 5 * 60 * 1000).toISOString() };
 }
