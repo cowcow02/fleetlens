@@ -4,7 +4,10 @@ import type { MemberRow, RollupRow } from "../lib/queries";
 export function MemberProfile({ member, rollups }: { member: MemberRow; rollups: RollupRow[] }) {
   const totalAgentTime = rollups.reduce((sum, r) => sum + Number(r.agent_time_ms), 0);
   const totalSessions = rollups.reduce((sum, r) => sum + r.sessions, 0);
-  const totalTokens = rollups.reduce((sum, r) => sum + Number(r.tokens_input) + Number(r.tokens_output), 0);
+  const totalTokens = rollups.reduce(
+    (sum, r) => sum + Number(r.tokens_input) + Number(r.tokens_output) + Number(r.tokens_cache_read) + Number(r.tokens_cache_write),
+    0,
+  );
   const maxDayMs = Math.max(...rollups.map((r) => Number(r.agent_time_ms)), 1);
 
   return (
@@ -98,7 +101,7 @@ export function MemberProfile({ member, rollups }: { member: MemberRow; rollups:
                 <td>{formatAgentTime(Number(r.agent_time_ms))}</td>
                 <td>{r.sessions}</td>
                 <td>{r.tool_calls}</td>
-                <td>{formatTokens(Number(r.tokens_input) + Number(r.tokens_output))}</td>
+                <td>{formatTokens(Number(r.tokens_input) + Number(r.tokens_output) + Number(r.tokens_cache_read) + Number(r.tokens_cache_write))}</td>
               </tr>
             ))}
           </tbody>

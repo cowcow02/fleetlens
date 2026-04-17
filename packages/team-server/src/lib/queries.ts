@@ -53,7 +53,7 @@ export async function loadRoster(teamId: string, pool: pg.Pool): Promise<RosterR
       COALESCE(SUM(r.sessions), 0)::int AS week_sessions,
       COALESCE(SUM(r.tool_calls), 0)::int AS week_tool_calls,
       COALESCE(SUM(r.turns), 0)::int AS week_turns,
-      COALESCE(SUM(r.tokens_input + r.tokens_output), 0)::bigint AS week_tokens
+      COALESCE(SUM(r.tokens_input + r.tokens_output + r.tokens_cache_read + r.tokens_cache_write), 0)::bigint AS week_tokens
     FROM memberships m
     JOIN user_accounts u ON u.id = m.user_account_id
     LEFT JOIN daily_rollups r ON r.membership_id = m.id AND r.team_id = m.team_id AND r.day >= $2

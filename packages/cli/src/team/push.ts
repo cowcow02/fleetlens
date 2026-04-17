@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { dailyActivity, type DailyBucket, type SessionMeta } from "@claude-lens/parser";
+import { dailyActivity, sessionDay, type DailyBucket, type SessionMeta } from "@claude-lens/parser";
 import type { TeamConfig } from "./config.js";
 
 export type DailyRollup = {
@@ -33,10 +33,27 @@ export function bucketToRollup(b: DailyBucket): DailyRollup {
   };
 }
 
+// dailyActivity counts a session in every day its agent-time touched (so
+// summing across days double-counts cross-midnight sessions). For the
+// daily_rollups table we want start-day-only attribution so that SUM(sessions)
+// equals the total unique session count, matching the solo edition's headline
+// metric. airTime / tokens / tool_calls / turns still use dailyActivity's
+// semantics (split agent time across days; attribute session-scoped totals
+// to the starting day).
 export function buildRollupsForRange(sessions: SessionMeta[], sinceDay?: string): DailyRollup[] {
   const buckets = dailyActivity(sessions);
-  const kept = sinceDay ? buckets.filter((b) => b.date >= sinceDay) : buckets;
-  return kept.map(bucketToRollup);
+  const startCounts = new Map<string, number>();
+  for (const s of sessions) {
+    const d = sessionDay(s);
+    if (d) startCounts.set(d, (startCounts.get(d) ?? 0) + 1);
+  }
+
+  return buckets
+    .filter((b) => !sinceDay || b.date >= sinceDay)
+    .map((b) => ({
+      ...bucketToRollup(b),
+      sessions: startCounts.get(b.date) ?? 0,
+    }));
 }
 
 export function buildIngestPayload(rollup: DailyRollup): IngestPayload {

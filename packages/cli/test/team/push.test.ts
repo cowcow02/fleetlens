@@ -74,6 +74,20 @@ describe("buildRollupsForRange", () => {
     expect(days).toContain("2026-04-16");
   });
 
+  it("attributes sessions to start-day only (no multi-day double count)", () => {
+    // Two sessions that started the same day
+    const day = "2026-04-14";
+    const startMs = Date.parse(`${day}T10:00:00.000Z`);
+    const longSession = makeSession(day, {
+      id: "long",
+      activeSegments: [{ startMs, endMs: startMs + 3 * 24 * 3600 * 1000 }], // 3-day span
+    });
+    const rollups = buildRollupsForRange([longSession]);
+    const totalSessions = rollups.reduce((sum, r) => sum + r.sessions, 0);
+    expect(totalSessions).toBe(1);
+    expect(rollups.find((r) => r.day === day)?.sessions).toBe(1);
+  });
+
   it("respects sinceDay filter", () => {
     const rollups = buildRollupsForRange(
       [makeSession("2026-04-14"), makeSession("2026-04-15"), makeSession("2026-04-16")],
