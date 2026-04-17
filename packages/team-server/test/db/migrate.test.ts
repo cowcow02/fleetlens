@@ -3,7 +3,7 @@ import { runMigrations } from "../../src/db/migrate.js";
 import { getPool } from "../../src/db/pool.js";
 
 beforeAll(async () => {
-  process.env.DATABASE_URL = "postgres://localhost:5432/fleetlens_test";
+  process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://localhost:5432/fleetlens_test";
   await runMigrations();
 });
 

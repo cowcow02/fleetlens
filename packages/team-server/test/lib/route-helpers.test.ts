@@ -23,7 +23,7 @@ function makeNextReqWithCookie(cookie: string, url = "http://localhost/api/test"
   });
 }
 
-process.env.DATABASE_URL = "postgres://localhost:5432/fleetlens_dev";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://localhost:5432/fleetlens_dev";
 
 let pool: ReturnType<typeof getPool>;
 let adminCookieToken: string;

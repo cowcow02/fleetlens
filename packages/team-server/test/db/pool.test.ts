@@ -22,7 +22,7 @@ describe("getPool", () => {
   });
 
   it("returns the same pool instance on repeated calls (singleton)", async () => {
-    process.env.DATABASE_URL = "postgres://localhost:5432/fleetlens_dev";
+    process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://localhost:5432/fleetlens_dev";
     vi.resetModules();
     const { getPool } = await import("../../src/db/pool.js");
     const p1 = getPool();

@@ -8,7 +8,7 @@ import { POST as logoutPOST } from "../../src/app/api/auth/logout/route.js";
 import { GET as preflightGET } from "../../src/app/api/auth/preflight/route.js";
 import { createInvite } from "../../src/lib/members.js";
 
-process.env.DATABASE_URL = "postgres://localhost:5432/fleetlens_dev";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://localhost:5432/fleetlens_dev";
 
 let pool: ReturnType<typeof getPool>;
 

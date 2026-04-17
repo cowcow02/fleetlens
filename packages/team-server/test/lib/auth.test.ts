@@ -13,7 +13,7 @@ import {
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
 import { generateToken, sha256 } from "../../src/lib/crypto.js";
 
-process.env.DATABASE_URL = "postgres://localhost:5432/fleetlens_dev";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://localhost:5432/fleetlens_dev";
 
 let pool: ReturnType<typeof getPool>;
 

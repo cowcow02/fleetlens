@@ -6,7 +6,7 @@ import { createUserAccount } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
 import { createInvite, redeemInvite } from "../../src/lib/members.js";
 
-process.env.DATABASE_URL = "postgres://localhost:5432/fleetlens_dev";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://localhost:5432/fleetlens_dev";
 
 let pool: ReturnType<typeof getPool>;
 let adminUserId: string;

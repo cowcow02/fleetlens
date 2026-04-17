@@ -6,7 +6,7 @@ import { PUT } from "../../src/app/api/team/settings/email/route.js";
 import { createUserAccount, createSession } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
 
-process.env.DATABASE_URL = "postgres://localhost:5432/fleetlens_dev";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://localhost:5432/fleetlens_dev";
 
 let pool: ReturnType<typeof getPool>;
 let adminCookieToken: string;

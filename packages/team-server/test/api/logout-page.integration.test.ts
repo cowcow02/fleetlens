@@ -5,7 +5,7 @@ import { runMigrations } from "../../src/db/migrate.js";
 import { GET, POST } from "../../src/app/logout/route.js";
 import { createUserAccount, createSession } from "../../src/lib/auth.js";
 
-process.env.DATABASE_URL = "postgres://localhost:5432/fleetlens_dev";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "postgres://localhost:5432/fleetlens_dev";
 process.env.BASE_URL = "http://localhost:3322";
 
 let pool: ReturnType<typeof getPool>;
