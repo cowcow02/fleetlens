@@ -6,7 +6,7 @@ export async function teamLogs() {
   const logPath = join(homedir(), ".cclens", "daemon.log");
   try {
     const lines = readFileSync(logPath, "utf8").trim().split("\n");
-    const teamLines = lines.filter(l => l.includes("team push") || l.includes("team "));
+    const teamLines = lines.filter((l) => l.includes("team "));
     if (teamLines.length === 0) {
       console.log("No team-related log entries found.");
       return;

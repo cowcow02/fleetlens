@@ -20,7 +20,7 @@ import { appendSnapshot } from "./usage/storage.js";
 import { isUsable, readOAuthCredentials } from "./usage/token.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
 import { readTeamConfig } from "./team/config.js";
-import { buildDailyRollup, buildIngestPayload, pushToTeamServer } from "./team/push.js";
+import { buildDailyRollup, buildIngestPayload, pushToTeamServer, type IngestPayload } from "./team/push.js";
 import { enqueuePayload, dequeuePayloads } from "./team/queue.js";
 
 const STATE_DIR = join(homedir(), ".cclens");
@@ -70,12 +70,14 @@ async function teamTick(): Promise<void> {
 
   try {
     const { listSessions } = await import("@claude-lens/parser/fs");
-    const today = new Date().toISOString().slice(0, 10);
+    const { toLocalDay } = await import("@claude-lens/parser");
+    const today = toLocalDay(Date.now());
 
     const allSessions = await listSessions();
     const todaySessions = allSessions.filter((s) => {
-      const sessionDay = s.firstTimestamp ? new Date(s.firstTimestamp).toISOString().slice(0, 10) : null;
-      return sessionDay === today;
+      if (!s.firstTimestamp) return false;
+      const ms = Date.parse(s.firstTimestamp);
+      return !Number.isNaN(ms) && toLocalDay(ms) === today;
     });
 
     const rollup = buildDailyRollup(todaySessions, today);
@@ -84,12 +86,11 @@ async function teamTick(): Promise<void> {
 
     if (result.ok) {
       log("info", `team push ok: ${rollup.sessions} sessions, ${Math.round(rollup.agentTimeMs / 60000)}m agent time`);
-      const queued = dequeuePayloads();
-      for (const q of queued) {
-        try {
-          await pushToTeamServer(config, q as any);
-        } catch {
-          enqueuePayload(q);
+      const queued = dequeuePayloads() as IngestPayload[];
+      for (let i = 0; i < queued.length; i++) {
+        const qResult = await pushToTeamServer(config, queued[i]);
+        if (!qResult.ok) {
+          for (const remaining of queued.slice(i)) enqueuePayload(remaining);
           break;
         }
       }

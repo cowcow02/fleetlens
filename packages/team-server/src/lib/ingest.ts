@@ -11,20 +11,21 @@ export async function processIngest(
 ) {
   const p = pool || getPool();
   const payload = IngestPayload.parse(raw);
-
-  const existing = await p.query("SELECT 1 FROM ingest_log WHERE ingest_id = $1", [payload.ingestId]);
-  if (existing.rowCount && existing.rowCount > 0) return { accepted: true, deduplicated: true };
+  const r = payload.dailyRollup;
 
   const client = await p.connect();
   try {
     await client.query("BEGIN");
 
-    await client.query(
-      "INSERT INTO ingest_log (ingest_id, team_id, member_id) VALUES ($1, $2, $3)",
+    const logRes = await client.query(
+      "INSERT INTO ingest_log (ingest_id, team_id, member_id) VALUES ($1, $2, $3) ON CONFLICT (ingest_id) DO NOTHING RETURNING 1",
       [payload.ingestId, teamId, memberId]
     );
+    if (logRes.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return { accepted: true, deduplicated: true };
+    }
 
-    const r = payload.dailyRollup;
     await client.query(`
       INSERT INTO daily_rollups (team_id, member_id, day, agent_time_ms, sessions, tool_calls, turns,
                                  tokens_input, tokens_output, tokens_cache_read, tokens_cache_write)

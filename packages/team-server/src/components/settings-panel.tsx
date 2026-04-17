@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 
-export function SettingsPanel({ team, members, teamSlug }: { team: any; members: any[]; teamSlug: string }) {
+type TeamRow = { id: string; name: string; slug: string; created_at: string };
+type MemberRow = {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  role: string;
+  revoked_at: string | null;
+};
+
+export function SettingsPanel({ team, members }: { team: TeamRow; members: MemberRow[] }) {
   const [teamName, setTeamName] = useState(team.name);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -59,7 +68,7 @@ export function SettingsPanel({ team, members, teamSlug }: { team: any; members:
             </tr>
           </thead>
           <tbody>
-            {members.map((m: any) => (
+            {members.map((m) => (
               <tr key={m.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
                 <td style={{ padding: 8 }}>{m.display_name || "—"}</td>
                 <td style={{ padding: 8, color: "#6b7280" }}>{m.email || "—"}</td>

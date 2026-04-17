@@ -40,15 +40,13 @@ export async function claimTeam(raw: unknown, bootstrapHash: string, bootstrapEx
     const admin = memberRes.rows[0];
 
     const sessionToken = generateToken(32);
-    await client.query(
-      "INSERT INTO admin_sessions (member_id, token_hash, expires_at) VALUES ($1, $2, $3)",
-      [admin.id, sha256(sessionToken), new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)]
-    );
-
     const recoveryToken = "rt_" + generateToken(32);
+    const sessionExpiry = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+    const recoveryExpiry = new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000);
     await client.query(
-      "INSERT INTO admin_sessions (member_id, token_hash, expires_at) VALUES ($1, $2, $3)",
-      [admin.id, sha256(recoveryToken), new Date(Date.now() + 10 * 365 * 24 * 60 * 60 * 1000)]
+      `INSERT INTO admin_sessions (member_id, token_hash, expires_at, purpose)
+       VALUES ($1, $2, $3, 'session'), ($1, $4, $5, 'recovery')`,
+      [admin.id, sha256(sessionToken), sessionExpiry, sha256(recoveryToken), recoveryExpiry]
     );
 
     await client.query(

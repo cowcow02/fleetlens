@@ -41,9 +41,7 @@ export function dequeuePayloads(queuePath = QUEUE_PATH): unknown[] {
       if (now - new Date(entry.enqueuedAt).getTime() < MAX_AGE_MS) {
         valid.push(entry);
       }
-    } catch {
-      // Skip malformed
-    }
+    } catch {}
   }
 
   // Clear the queue file

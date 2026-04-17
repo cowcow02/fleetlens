@@ -1,23 +1,7 @@
-function formatAgentTime(ms: number): string {
-  const hours = Math.floor(ms / 3600000);
-  const minutes = Math.floor((ms % 3600000) / 60000);
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
+import { formatAgentTime, formatTokens, timeAgo } from "../lib/format.js";
+import type { RosterRow } from "../lib/queries.js";
 
-function timeAgo(date: string | null): string {
-  if (!date) return "Never";
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-export function RosterCard({ member, teamSlug }: { member: any; teamSlug: string }) {
+export function RosterCard({ member, teamSlug }: { member: RosterRow; teamSlug: string }) {
   return (
     <a href={`/team/${teamSlug}/members/${member.id}`}
        style={{
@@ -54,11 +38,11 @@ export function RosterCard({ member, teamSlug }: { member: any; teamSlug: string
         </div>
         <div>
           <div style={{ color: "#6b7280" }}>Sessions</div>
-          <div style={{ fontWeight: 600 }}>{Number(member.week_sessions)}</div>
+          <div style={{ fontWeight: 600 }}>{member.week_sessions}</div>
         </div>
         <div>
           <div style={{ color: "#6b7280" }}>Tokens</div>
-          <div style={{ fontWeight: 600 }}>{(Number(member.week_tokens) / 1000).toFixed(0)}k</div>
+          <div style={{ fontWeight: 600 }}>{formatTokens(Number(member.week_tokens))}</div>
         </div>
       </div>
     </a>

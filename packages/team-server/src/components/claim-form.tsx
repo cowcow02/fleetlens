@@ -2,10 +2,12 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { RecoveryTokenModal } from "./recovery-token-modal.js";
 
 export function ClaimForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [recovery, setRecovery] = useState<{ token: string; slug: string } | null>(null);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -33,16 +35,21 @@ export function ClaimForm() {
       }
 
       const data = await res.json();
-      if (data.recoveryToken) {
-        alert(`IMPORTANT: Save your recovery token!\n\n${data.recoveryToken}\n\nYou will not see this again.`);
-      }
-
-      router.push(`/team/${data.team.slug}`);
+      setRecovery({ token: data.recoveryToken, slug: data.team.slug });
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
+  }
+
+  if (recovery) {
+    return (
+      <RecoveryTokenModal
+        recoveryToken={recovery.token}
+        onDismiss={() => router.push(`/team/${recovery.slug}`)}
+      />
+    );
   }
 
   return (

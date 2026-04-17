@@ -37,10 +37,12 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id    uuid NOT NULL REFERENCES members ON DELETE CASCADE,
   token_hash   text NOT NULL UNIQUE,
+  purpose      text NOT NULL DEFAULT 'session' CHECK (purpose IN ('session','recovery')),
   created_at   timestamptz NOT NULL DEFAULT now(),
   expires_at   timestamptz NOT NULL,
   last_used_at timestamptz
 );
+ALTER TABLE admin_sessions ADD COLUMN IF NOT EXISTS purpose text NOT NULL DEFAULT 'session';
 
 CREATE TABLE IF NOT EXISTS daily_rollups (
   team_id          uuid NOT NULL REFERENCES teams ON DELETE CASCADE,

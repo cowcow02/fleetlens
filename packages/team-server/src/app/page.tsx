@@ -3,15 +3,9 @@ import { getPool } from "../db/pool.js";
 import { ClaimForm } from "../components/claim-form.js";
 
 export default async function RootPage() {
-  const pool = getPool();
-
-  try {
-    const teams = await pool.query("SELECT slug FROM teams LIMIT 1");
-    if (teams.rowCount && teams.rowCount > 0) {
-      redirect(`/team/${teams.rows[0].slug}`);
-    }
-  } catch {
-    // DB not ready yet
+  const teams = await getPool().query("SELECT slug FROM teams LIMIT 1");
+  if (teams.rowCount && teams.rowCount > 0) {
+    redirect(`/team/${teams.rows[0].slug}`);
   }
 
   return (
