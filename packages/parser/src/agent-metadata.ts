@@ -51,3 +51,10 @@ export const agentMetadata: AgentMetadata[] = [
 export function getAgentMetadata(kind: AgentKind): AgentMetadata | undefined {
   return agentMetadata.find((m) => m.kind === kind);
 }
+
+const KNOWN_AGENT_KINDS = new Set(agentMetadata.map((m) => m.kind));
+
+/** Type guard that narrows an unknown string to a registered AgentKind. */
+export function isAgentKind(s: string | undefined | null): s is AgentKind {
+  return typeof s === "string" && KNOWN_AGENT_KINDS.has(s);
+}

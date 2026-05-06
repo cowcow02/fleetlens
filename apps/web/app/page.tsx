@@ -1,5 +1,5 @@
 /**
- * Dashboard home — high-level metrics across all Claude Code sessions.
+ * Dashboard home — high-level metrics across every observed agent.
  *
  * Everything here is server-rendered from @claude-lens/parser/fs, then
  * passed down to small interactive client components (heatmap, chart).
@@ -7,6 +7,8 @@
 
 import {
   groupByProject,
+  type AgentKind,
+  agentMetadata,
   type SessionMeta,
 } from "@claude-lens/parser";
 import { DashboardView } from "@/components/dashboard-view";
@@ -112,11 +114,17 @@ export default async function DashboardHome({
             {sessions.length} of {allSessions.length} session
             {allSessions.length === 1 ? "" : "s"} across{" "}
             {(() => {
-              const claude = allSessions.filter((s) => (s.agent ?? "claude-code") === "claude-code").length;
-              const codex = allSessions.filter((s) => s.agent === "codex").length;
-              const parts: string[] = [];
-              if (claude) parts.push(`${claude} Claude Code`);
-              if (codex) parts.push(`${codex} Codex`);
+              const counts = new Map<AgentKind, number>();
+              for (const s of allSessions) {
+                const k = (s.agent ?? "claude-code") as AgentKind;
+                counts.set(k, (counts.get(k) ?? 0) + 1);
+              }
+              const parts = agentMetadata
+                .map((m) => {
+                  const n = counts.get(m.kind) ?? 0;
+                  return n > 0 ? `${n} ${m.displayName}` : null;
+                })
+                .filter((s): s is string => s !== null);
               return parts.length ? parts.join(" + ") : "no observed agents yet";
             })()}.
           </p>

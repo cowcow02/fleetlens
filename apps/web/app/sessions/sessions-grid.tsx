@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AgentKind, SessionMeta } from "@claude-lens/parser";
-import { getAgentMetadata } from "@claude-lens/parser";
+import { getAgentMetadata, isAgentKind } from "@claude-lens/parser";
 import type { DayOutcome, EntryEnrichmentStatus } from "@claude-lens/entries";
 import {
   formatDuration,
@@ -47,8 +47,7 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
   const query = searchParams.get("q") ?? "";
   const project = searchParams.get("project") ?? "all";
   const agentParam = searchParams.get("agent");
-  const agent: AgentKind | "all" =
-    agentParam === "claude-code" || agentParam === "codex" ? agentParam : "all";
+  const agent: AgentKind | "all" = isAgentKind(agentParam) ? agentParam : "all";
   const sortBy: SortBy = isSortBy(searchParams.get("sort"))
     ? (searchParams.get("sort") as SortBy)
     : "newest";

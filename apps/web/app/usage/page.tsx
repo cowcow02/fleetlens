@@ -29,15 +29,10 @@ import {
   type AgentKind,
   agentMetadata,
   getAgentMetadata,
+  isAgentKind,
 } from "@claude-lens/parser";
 
 export const dynamic = "force-dynamic";
-
-const KNOWN_AGENT_KINDS = new Set(agentMetadata.map((m) => m.kind));
-
-function isAgentKind(s: string | undefined): s is AgentKind {
-  return typeof s === "string" && KNOWN_AGENT_KINDS.has(s);
-}
 
 function agentLabel(kind: AgentKind): string {
   return getAgentMetadata(kind)?.displayName ?? kind;
