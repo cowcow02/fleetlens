@@ -24,6 +24,10 @@ export type AgentMetadata = {
   shortLabel: string;
   /** CSS color used everywhere this agent surfaces. */
   accentColor: string;
+  /** Single-character glyph evoking the agent's brand. Rendered in
+   *  accentColor wherever a tiny inline visual cue is needed (Gantt
+   *  rails, outcome pills, list rows). Pick something that reads at 10px. */
+  iconChar: string;
 };
 
 export const CLAUDE_CODE_METADATA: AgentMetadata = {
@@ -31,6 +35,7 @@ export const CLAUDE_CODE_METADATA: AgentMetadata = {
   displayName: "Claude Code",
   shortLabel: "Claude",
   accentColor: "var(--af-accent)",
+  iconChar: "✦",
 };
 
 export const CODEX_METADATA: AgentMetadata = {
@@ -38,6 +43,7 @@ export const CODEX_METADATA: AgentMetadata = {
   displayName: "Codex (OpenAI)",
   shortLabel: "Codex",
   accentColor: "rgb(16, 163, 127)",
+  iconChar: "◆",
 };
 
 /** Ordered list of registered agent metadata. UI iterates this for

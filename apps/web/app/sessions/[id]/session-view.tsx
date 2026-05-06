@@ -4825,7 +4825,7 @@ function EntryDayStrip({ entry }: { entry: Entry }) {
           📅 {fmtDate}
         </span>
         {isTrivial ? (
-          <OutcomePill outcome="trivial" size="md" />
+          <OutcomePill outcome="trivial" size="md" agent={entry.agent} />
         ) : isPending ? (
           <OutcomePill
             outcome={null}
@@ -4833,9 +4833,10 @@ function EntryDayStrip({ entry }: { entry: Entry }) {
             sessionId={entry.session_id}
             localDay={entry.local_day}
             size="md"
+            agent={entry.agent}
           />
         ) : enr.outcome ? (
-          <OutcomePill outcome={enr.outcome} size="md" />
+          <OutcomePill outcome={enr.outcome} size="md" agent={entry.agent} />
         ) : null}
         <span
           style={{

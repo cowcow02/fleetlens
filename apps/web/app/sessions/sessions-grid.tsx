@@ -381,7 +381,9 @@ const sessionTableColumns: Column<SessionRow>[] = [
 ];
 
 function OutcomeCell({ row }: { row: SessionRow }) {
-  if (row.outcome) return <OutcomePill outcome={row.outcome} size="sm" label="text" />;
+  if (row.outcome) {
+    return <OutcomePill outcome={row.outcome} size="sm" label="text" agent={row.session.agent} />;
+  }
   if (row.enrichmentStatus && row.latestLocalDay && row.enrichmentStatus !== "skipped_trivial") {
     return (
       <OutcomePill
@@ -390,6 +392,7 @@ function OutcomeCell({ row }: { row: SessionRow }) {
         sessionId={row.session.id}
         localDay={row.latestLocalDay}
         size="sm"
+        agent={row.session.agent}
       />
     );
   }
@@ -463,7 +466,7 @@ function SessionCard({ row }: { row: SessionRow }) {
       {(outcome || showPending) && (
         <div onClick={(e) => e.stopPropagation()}>
           {outcome ? (
-            <OutcomePill outcome={outcome} size="md" />
+            <OutcomePill outcome={outcome} size="md" agent={s.agent} />
           ) : showPending ? (
             <OutcomePill
               outcome={null}
@@ -471,6 +474,7 @@ function SessionCard({ row }: { row: SessionRow }) {
               sessionId={s.id}
               localDay={latestLocalDay!}
               size="md"
+              agent={s.agent}
             />
           ) : null}
         </div>

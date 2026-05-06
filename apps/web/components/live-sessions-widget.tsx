@@ -214,7 +214,7 @@ export function LiveSessionsWidget({
               style={{ marginBottom: 4 }}
             >
               {sum.outcome ? (
-                <OutcomePill outcome={sum.outcome} size="sm" label="text" />
+                <OutcomePill outcome={sum.outcome} size="sm" label="text" agent={s.agent} />
               ) : sum.enrichmentStatus !== "skipped_trivial" ? (
                 <OutcomePill
                   outcome={null}
@@ -222,6 +222,7 @@ export function LiveSessionsWidget({
                   sessionId={s.id}
                   localDay={sum.localDay}
                   size="sm"
+                  agent={s.agent}
                 />
               ) : null}
             </div>

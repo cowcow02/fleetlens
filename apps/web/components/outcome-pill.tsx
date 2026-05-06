@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { DayOutcome } from "@claude-lens/entries";
+import type { AgentKind } from "@claude-lens/parser";
+import { AgentIcon } from "@/components/agent-icon";
 
 export type EntryOutcome = Exclude<DayOutcome, "idle">;
 
@@ -31,12 +33,13 @@ type Size = keyof typeof SIZES;
 type Label = "icon" | "text" | "both";
 
 type Props =
-  | { outcome: DayOutcome | EntryOutcome; size?: Size; label?: Label; pending?: never }
-  | { outcome: null; pending: true; sessionId?: string; localDay: string; size?: Size };
+  | { outcome: DayOutcome | EntryOutcome; size?: Size; label?: Label; agent?: AgentKind; pending?: never }
+  | { outcome: null; pending: true; sessionId?: string; localDay: string; size?: Size; agent?: AgentKind };
 
 export function OutcomePill(props: Props) {
   const size = props.size ?? "md";
   const dim = SIZES[size];
+  const agentIconSize = dim.fontSize + 1;
 
   if ("pending" in props && props.pending) {
     const style: React.CSSProperties = {
@@ -59,6 +62,7 @@ export function OutcomePill(props: Props) {
         style={style}
         title={`Generate ${props.localDay} digest →`}
       >
+        {props.agent && <AgentIcon agent={props.agent} size={agentIconSize} />}
         <span aria-hidden style={{ lineHeight: 1 }}>{PENDING_STYLE.icon}</span>
         <span>{PENDING_STYLE.label}</span>
       </Link>
@@ -85,6 +89,7 @@ export function OutcomePill(props: Props) {
 
   return (
     <span style={style} title={variant.label}>
+      {props.agent && <AgentIcon agent={props.agent} size={agentIconSize} />}
       {showIcon && <span aria-hidden style={{ lineHeight: 1 }}>{variant.icon}</span>}
       {showText && <span>{variant.label}</span>}
     </span>

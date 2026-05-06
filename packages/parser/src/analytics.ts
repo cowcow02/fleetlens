@@ -508,6 +508,7 @@ export function computeActiveSegments(
 
 export type GanttSession = {
   id: string;
+  agent?: AgentKind;
   projectName: string;
   projectDir: string;
   firstUserPreview?: string;
@@ -535,6 +536,7 @@ export type GanttDay = {
 export function buildGanttDay(
   sessions: {
     id: string;
+    agent?: AgentKind;
     projectName: string;
     projectDir: string;
     firstUserPreview?: string;
@@ -568,6 +570,7 @@ export function buildGanttDay(
 
     ganttSessions.push({
       id: s.id,
+      agent: s.agent,
       projectName: s.projectName,
       projectDir: s.projectDir,
       firstUserPreview: s.firstUserPreview,

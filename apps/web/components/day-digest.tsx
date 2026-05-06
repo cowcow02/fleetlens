@@ -473,7 +473,7 @@ function SessionRow({ entry }: { entry: Entry }) {
         <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--af-text-tertiary)", width: 40, textAlign: "right" }}>
           {durMin}m
         </span>
-        {outcome && <OutcomePill outcome={outcome} size="sm" label="text" />}
+        {outcome && <OutcomePill outcome={outcome} size="sm" label="text" agent={entry.agent} />}
       </div>
       {summary && (
         <div style={{
