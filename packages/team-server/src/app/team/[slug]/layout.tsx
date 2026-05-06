@@ -3,8 +3,7 @@ import { cookies } from "next/headers";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { instanceState } from "../../../lib/server-config";
-import { LATEST_VERSION as LATEST_CHANGELOG_VERSION } from "../../../lib/changelog";
-import { ChangelogNavLink } from "../../../components/changelog-nav-link";
+import { NavFooter } from "../../../components/nav-footer";
 
 export default async function TeamLayout({
   children,
@@ -62,12 +61,7 @@ export default async function TeamLayout({
           {isAdmin && <a href={`/team/${slug}/plan`}>Plan <span className="mono">02</span></a>}
           {isAdmin && <a href={`/team/${slug}/settings`}>Settings <span className="mono">03</span></a>}
           {state.allowMultipleTeams && <a href="/teams/new">+ New team</a>}
-          <div className="shell-nav-label">Account</div>
-          <div className="mono" style={{ fontSize: 11, color: "var(--mute)", padding: "4px 0 8px" }}>
-            {session.user.email}
-          </div>
-          <a href={`/team/${slug}/me`}>My account · pair CLI</a>
-          <a href="/logout">Sign out</a>
+
           {session.user.is_staff && (
             <>
               <div className="shell-nav-label">Server admin</div>
@@ -75,8 +69,11 @@ export default async function TeamLayout({
               <a href="/admin/staff">Staff</a>
             </>
           )}
-          <div className="shell-nav-label">About</div>
-          <ChangelogNavLink latestVersion={LATEST_CHANGELOG_VERSION} />
+
+          <div className="shell-nav-label">Account</div>
+          <a href={`/team/${slug}/me`}>My account · pair CLI</a>
+
+          <NavFooter email={session.user.email} />
         </nav>
         <main className="shell-main">{children}</main>
       </div>

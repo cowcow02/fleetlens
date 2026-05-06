@@ -2,8 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "../../db/pool";
 import { validateSession } from "../../lib/auth";
-import { LATEST_VERSION as LATEST_CHANGELOG_VERSION } from "../../lib/changelog";
-import { ChangelogNavLink } from "../../components/changelog-nav-link";
+import { NavFooter } from "../../components/nav-footer";
 
 export const dynamic = "force-dynamic";
 
@@ -38,16 +37,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               <a href={`/team/${primaryTeamSlug}`}>← Back to team</a>
             </>
           )}
-          <div className="shell-nav-label">Account</div>
-          <div className="mono" style={{ fontSize: 11, color: "var(--mute)", padding: "4px 0 8px" }}>
-            {session.user.email}
-          </div>
-          <a href="/logout">Sign out</a>
+
           <div className="shell-nav-label">Server admin</div>
           <a href="/admin/updates">Updates</a>
           <a href="/admin/staff">Staff</a>
-          <div className="shell-nav-label">About</div>
-          <ChangelogNavLink latestVersion={LATEST_CHANGELOG_VERSION} />
+
+          <NavFooter email={session.user.email} />
         </nav>
         <main className="shell-main">{children}</main>
       </div>

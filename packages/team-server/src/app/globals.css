@@ -117,6 +117,15 @@ input, textarea, select { font: inherit; color: inherit; }
   font-weight: 500;
 }
 .shell-nav a .mono { font-size: 10px; color: var(--mute); }
+
+/* Footer cluster: small utility links that shouldn't pick up the body
+ * nav's chunky padding + left-border highlight. */
+.shell-nav-footer { margin-top: auto; padding-top: 18px; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 10px; }
+.shell-nav-footer .mono.email { font-size: 11px; color: var(--mute); padding-left: 12px; word-break: break-all; }
+.shell-nav-footer .row { display: flex; align-items: center; gap: 10px; padding-left: 12px; }
+.shell-nav-footer .row a { display: inline; padding: 0; margin: 0; border: none; font-size: 12px; color: var(--mute); white-space: nowrap; background: none; }
+.shell-nav-footer .row a:hover { background: none; color: var(--ink); border: none; }
+.shell-nav-footer .row .sep { color: var(--mute-soft); font-size: 11px; }
 .shell-main { padding: 36px 48px 80px; }
 
 /* Section headings */
