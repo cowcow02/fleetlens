@@ -227,7 +227,7 @@ Files:
 - `apps/web/app/api/digest/{day,week,month}/[key]/route.ts` — GET (read cached) + POST (run pipeline, stream SSE).
 - `apps/web/app/api/digest/{week,month}-index/route.ts` — picker source for the history list.
 - `apps/web/app/insights/page.tsx` — server component. Auto-fires last-completed-week digest when the cache is empty and no interactive pipeline lock is currently fresh.
-- `packages/cli/src/perception/backfill.ts` — daemon-side counterpart: after the first successful perception sweep on each boot, fires the same week-digest pipeline if AI is on, the digest isn't cached, entries exist, and no interactive lock is fresh. Opt-out via `ai_features.auto_backfill_last_week`.
+- `packages/cli/src/perception/backfill.ts` — daemon-side counterpart: after the first successful perception sweep on each boot, fires both the week-digest pipeline (last completed ISO week) and the day-digest pipeline (yesterday) if AI is on, the digest isn't cached, entries exist, and no interactive lock is fresh. Opt-out via `ai_features.auto_backfill_last_week` and `ai_features.auto_backfill_yesterday` respectively. The homepage `AutoGenerateYesterday` trigger remains as a fallback so users running with `--no-daemon` still get yesterday's digest on first homepage visit.
 - `apps/web/components/{week,month}-digest.tsx` — presentational. Pure functions of their digest type.
 - `apps/web/components/{week,month}-digest-view.tsx` — client wrappers that handle SSE generation + force-regen.
 
@@ -235,7 +235,7 @@ Key invariants:
 - **Raw JSONL enters the pipeline only at entry-build time.** After that, every layer sees the digest one level below it — never raw transcripts, never sessions.
 - **Past-period digests are immutable on disk.** `~/.cclens/digests/{day,week,month}/<key>.json`. Schema-version bump is the only permitted regeneration trigger.
 - **Current period uses 10-min in-memory TTL.** Today's day digest, this week's week digest, this month's month digest are never persisted; they live in-process and recompute on expiry.
-- **Auto-fire is week-only.** Both `/insights` (on first visit while cache is empty) and the daemon's boot backfill generate last week's digest; monthly stays manual. The interactive pipeline lock (`~/.cclens/llm-interactive.lock`, heartbeat-refreshed every 30 s) is the single source of truth for "currently running" — there's no separate fire-once-per-week file. A half-completed run leaves no digest and no fresh lock, so the next caller naturally retries.
+- **Auto-fire covers yesterday + last week.** Yesterday's day digest auto-fires on daemon boot (and on homepage load as a fallback for `--no-daemon`). Last week's week digest auto-fires on daemon boot and on first `/insights` visit while its cache is empty. Monthly stays manual. The interactive pipeline lock (`~/.cclens/llm-interactive.lock`, heartbeat-refreshed every 30 s) is the single source of truth for "currently running" across all auto-fire paths — there's no separate fire-once file. A half-completed run leaves no digest and no fresh lock, so the next caller naturally retries.
 - **Persistence keys are sortable.** `week-YYYY-MM-DD` (Monday) / `month-YYYY-MM`. Lexical sort = reverse-chronological.
 
 ## State directory

@@ -21,7 +21,7 @@ import { isUsable, readOAuthCredentials } from "./usage/token.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
 import { runTeamSync } from "./team/sync.js";
 import { runPerceptionSweep } from "./perception/worker.js";
-import { backfillLastWeekDigest } from "./perception/backfill.js";
+import { backfillLastWeekDigest, backfillYesterdayDigest } from "./perception/backfill.js";
 
 const STATE_DIR = join(homedir(), ".cclens");
 const USAGE_LOG = join(STATE_DIR, "usage.jsonl");
@@ -63,10 +63,13 @@ const perceptionHandle: NodeJS.Timeout = setInterval(async () => {
     if (!backfillAttempted) {
       backfillAttempted = true;
       // Detached: a long LLM run shouldn't block the next sweep tick. Errors
-      // are caught inside backfillLastWeekDigest; this .catch is belt-and-
-      // braces against unexpected throws.
+      // are caught inside the backfill helpers; these .catch handlers are
+      // belt-and-braces against unexpected throws.
       void backfillLastWeekDigest({ log }).catch((err) => {
         log("warn", `auto-backfill: failed (${(err as Error).message})`);
+      });
+      void backfillYesterdayDigest({ log }).catch((err) => {
+        log("warn", `auto-backfill-day: failed (${(err as Error).message})`);
       });
     }
   } catch (err) {

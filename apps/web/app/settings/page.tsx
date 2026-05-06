@@ -16,6 +16,7 @@ export default function SettingsPage() {
         <AiFeaturesForm initial={{
           enabled: s.ai_features.enabled,
           autoBackfillLastWeek: s.ai_features.autoBackfillLastWeek,
+          autoBackfillYesterday: s.ai_features.autoBackfillYesterday,
         }} />
       </section>
     </main>

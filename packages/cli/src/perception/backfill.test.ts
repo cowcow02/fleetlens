@@ -7,7 +7,10 @@ import {
   __setInteractiveLockPathForTest, writeInteractiveLock, removeInteractiveLock,
 } from "@claude-lens/entries/node";
 import { __setEntriesDirForTest, __setDigestsDirForTest } from "@claude-lens/entries/fs";
-import { backfillLastWeekDigest, lastCompletedWeekMonday } from "./backfill.js";
+import {
+  backfillLastWeekDigest, backfillYesterdayDigest,
+  lastCompletedWeekMonday, yesterdayLocalDay,
+} from "./backfill.js";
 
 // Pin clock to a known Sunday so lastCompletedWeekMonday is deterministic.
 // Sunday 2026-04-26 12:00 local → last completed week starts Mon 2026-04-13.
@@ -60,6 +63,7 @@ describe("backfillLastWeekDigest gates", () => {
         model: "sonnet",
         monthlyBudgetUsd: null,
         autoBackfillLastWeek: true,
+        autoBackfillYesterday: true,
       },
     });
   });
@@ -76,7 +80,8 @@ describe("backfillLastWeekDigest gates", () => {
   it("ai_disabled: skip when AI features off", async () => {
     writeSettings({
       ai_features: {
-        enabled: false, model: "sonnet", monthlyBudgetUsd: null, autoBackfillLastWeek: true,
+        enabled: false, model: "sonnet", monthlyBudgetUsd: null,
+        autoBackfillLastWeek: true, autoBackfillYesterday: true,
       },
     });
     const fakePipeline = vi.fn();
@@ -88,7 +93,8 @@ describe("backfillLastWeekDigest gates", () => {
   it("autofill_disabled: skip when only the auto-backfill flag is off", async () => {
     writeSettings({
       ai_features: {
-        enabled: true, model: "sonnet", monthlyBudgetUsd: null, autoBackfillLastWeek: false,
+        enabled: true, model: "sonnet", monthlyBudgetUsd: null,
+        autoBackfillLastWeek: false, autoBackfillYesterday: true,
       },
     });
     const fakePipeline = vi.fn();
@@ -163,6 +169,134 @@ describe("backfillLastWeekDigest gates", () => {
     expect(call[1].currentWeekMonday).toBe("2026-04-20");
 
     expect(logs.some(([lvl, m]) => lvl === "info" && m.includes(`fired week-${EXPECTED_MONDAY}`))).toBe(true);
+  });
+});
+
+describe("backfillYesterdayDigest gates", () => {
+  // Pinned clock: Mon 2026-04-27 12:00 local → yesterday is Sun 2026-04-26.
+  const FROZEN_DAY_NOW = new Date("2026-04-27T12:00:00").getTime();
+  const EXPECTED_YESTERDAY = "2026-04-26";
+
+  let tmp: string;
+  let entriesDir: string;
+  let digestsDir: string;
+
+  beforeEach(() => {
+    tmp = mkdtempSync(join(tmpdir(), "backfill-day-"));
+    entriesDir = join(tmp, "entries");
+    digestsDir = join(tmp, "digests");
+    mkdirSync(entriesDir, { recursive: true });
+    mkdirSync(digestsDir, { recursive: true });
+    __setSettingsPathForTest(join(tmp, "settings.json"));
+    __setEntriesDirForTest(entriesDir);
+    __setDigestsDirForTest(digestsDir);
+    __setInteractiveLockPathForTest(join(tmp, "llm-interactive.lock"));
+
+    writeSettings({
+      ai_features: {
+        enabled: true,
+        model: "sonnet",
+        monthlyBudgetUsd: null,
+        autoBackfillLastWeek: true,
+        autoBackfillYesterday: true,
+      },
+    });
+  });
+
+  afterEach(() => {
+    removeInteractiveLock();
+  });
+
+  it("yesterdayLocalDay: today's ms → previous local day", () => {
+    expect(yesterdayLocalDay(FROZEN_DAY_NOW)).toBe(EXPECTED_YESTERDAY);
+  });
+
+  it("ai_disabled: skip when AI features off", async () => {
+    writeSettings({
+      ai_features: {
+        enabled: false, model: "sonnet", monthlyBudgetUsd: null,
+        autoBackfillLastWeek: true, autoBackfillYesterday: true,
+      },
+    });
+    const fakePipeline = vi.fn();
+    const r = await backfillYesterdayDigest({ now: FROZEN_DAY_NOW, runPipeline: fakePipeline as never });
+    expect(r).toEqual({ fired: false, reason: "ai_disabled", key: EXPECTED_YESTERDAY });
+    expect(fakePipeline).not.toHaveBeenCalled();
+  });
+
+  it("autofill_disabled: skip when only the day auto-backfill flag is off", async () => {
+    writeSettings({
+      ai_features: {
+        enabled: true, model: "sonnet", monthlyBudgetUsd: null,
+        autoBackfillLastWeek: true, autoBackfillYesterday: false,
+      },
+    });
+    const fakePipeline = vi.fn();
+    const r = await backfillYesterdayDigest({ now: FROZEN_DAY_NOW, runPipeline: fakePipeline as never });
+    expect(r).toEqual({ fired: false, reason: "autofill_disabled", key: EXPECTED_YESTERDAY });
+    expect(fakePipeline).not.toHaveBeenCalled();
+  });
+
+  it("already_cached: skip when yesterday's day digest exists on disk", async () => {
+    const dayDir = join(digestsDir, "day");
+    mkdirSync(dayDir, { recursive: true });
+    writeFileSync(join(dayDir, `${EXPECTED_YESTERDAY}.json`), JSON.stringify({
+      schema_version: 1, scope: "day", key: EXPECTED_YESTERDAY,
+      window: { start_local_day: EXPECTED_YESTERDAY, end_local_day: EXPECTED_YESTERDAY },
+      agent_min: 0, projects: [], shipped: [],
+      generated_iso: "2026-04-27T00:00:00.000Z", generation_ms: 1, model: null,
+    }));
+    const fakePipeline = vi.fn();
+    const r = await backfillYesterdayDigest({ now: FROZEN_DAY_NOW, runPipeline: fakePipeline as never });
+    expect(r).toEqual({ fired: false, reason: "already_cached", key: EXPECTED_YESTERDAY });
+    expect(fakePipeline).not.toHaveBeenCalled();
+  });
+
+  it("no_entries: skip when no entries exist for yesterday", async () => {
+    const fakePipeline = vi.fn();
+    const r = await backfillYesterdayDigest({ now: FROZEN_DAY_NOW, runPipeline: fakePipeline as never });
+    expect(r).toEqual({ fired: false, reason: "no_entries", key: EXPECTED_YESTERDAY });
+    expect(fakePipeline).not.toHaveBeenCalled();
+  });
+
+  it("in_flight: skip when the interactive pipeline lock is fresh", async () => {
+    const e = makeEntry(EXPECTED_YESTERDAY, "abc-123");
+    const key = `${e.session_id}__${EXPECTED_YESTERDAY}`;
+    writeFileSync(join(entriesDir, `${key}.json`), JSON.stringify(e));
+    writeInteractiveLock();
+
+    const fakePipeline = vi.fn();
+    const r = await backfillYesterdayDigest({ now: FROZEN_DAY_NOW, runPipeline: fakePipeline as never });
+    expect(r).toEqual({ fired: false, reason: "in_flight", key: EXPECTED_YESTERDAY });
+    expect(fakePipeline).not.toHaveBeenCalled();
+  });
+
+  it("ok: fires the day pipeline when all gates open", async () => {
+    const e = makeEntry(EXPECTED_YESTERDAY, "abc-123");
+    const key = `${e.session_id}__${EXPECTED_YESTERDAY}`;
+    writeFileSync(join(entriesDir, `${key}.json`), JSON.stringify(e));
+
+    const fakePipeline = vi.fn(async function* () {
+      yield { type: "saved", path: `/fake/path/${EXPECTED_YESTERDAY}.json` };
+      yield { type: "digest", digest: { scope: "day", key: EXPECTED_YESTERDAY } as never };
+    });
+    const logs: Array<[string, string]> = [];
+    const r = await backfillYesterdayDigest({
+      now: FROZEN_DAY_NOW,
+      runPipeline: fakePipeline as never,
+      log: (lvl, msg) => logs.push([lvl, msg]),
+    });
+
+    expect(r).toEqual({ fired: true, reason: "ok", key: EXPECTED_YESTERDAY });
+    expect(fakePipeline).toHaveBeenCalledTimes(1);
+    const call = fakePipeline.mock.calls[0] as unknown as [string, {
+      caller: string; todayLocalDay: string;
+    }];
+    expect(call[0]).toBe(EXPECTED_YESTERDAY);
+    expect(call[1].caller).toBe("daemon");
+    expect(call[1].todayLocalDay).toBe("2026-04-27");
+
+    expect(logs.some(([lvl, m]) => lvl === "info" && m.includes(`fired day-${EXPECTED_YESTERDAY}`))).toBe(true);
   });
 });
 

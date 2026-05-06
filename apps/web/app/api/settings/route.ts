@@ -34,6 +34,7 @@ export async function PUT(req: Request) {
       ...current.ai_features,
       ...(update.enabled !== undefined ? { enabled: update.enabled } : {}),
       ...(update.autoBackfillLastWeek !== undefined ? { autoBackfillLastWeek: update.autoBackfillLastWeek } : {}),
+      ...(update.autoBackfillYesterday !== undefined ? { autoBackfillYesterday: update.autoBackfillYesterday } : {}),
     },
   });
   return NextResponse.json({ ok: true });
