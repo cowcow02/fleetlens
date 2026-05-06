@@ -13,6 +13,8 @@
     "test:coverage": "turbo test:coverage",
     "version": "node scripts/version-sync.mjs && git add packages/*/package.json apps/*/package.json",
     "smoke": "node scripts/smoke.mjs",
+    "changelog:sync": "node scripts/build-changelog.mjs",
+    "changelog:check": "node scripts/check-changelog.mjs",
     "verify": "pnpm typecheck && pnpm smoke",
     "clean": "turbo clean && rm -rf node_modules"
   },

@@ -31,6 +31,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Assert CHANGELOG entry for tag
+        if: startsWith(github.ref, 'refs/tags/server-v')
+        run: node scripts/check-changelog.mjs
+
+      - name: Sync changelog data
+        run: node scripts/build-changelog.mjs
+
       - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3

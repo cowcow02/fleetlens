@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { instanceState } from "../../../lib/server-config";
+import { loadChangelog, latestVersion } from "../../../lib/changelog";
+import { ChangelogNavLink } from "../../../components/changelog-nav-link";
 
 export default async function TeamLayout({
   children,
@@ -66,6 +68,8 @@ export default async function TeamLayout({
           </div>
           <a href={`/team/${slug}/me`}>My account · pair CLI</a>
           <a href="/logout">Sign out</a>
+          <div className="shell-nav-label">About</div>
+          <ChangelogNavLink latestVersion={latestVersion(loadChangelog())} />
         </nav>
         <main className="shell-main">{children}</main>
       </div>

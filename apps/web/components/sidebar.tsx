@@ -21,6 +21,7 @@ import {
 import { formatRelative, prettyProjectName } from "@/lib/format";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UsageSidebar } from "@/components/usage-sidebar";
+import { ChangelogIcon } from "@/components/changelog-icon";
 import type { UsageSnapshot } from "@/lib/usage-data";
 
 export type ProjectRef = {
@@ -59,11 +60,13 @@ export function Sidebar({
   totalSessions,
   currentUsage,
   version,
+  latestChangelogVersion,
 }: {
   projects: ProjectRef[];
   totalSessions: number;
   currentUsage: UsageSnapshot | null;
   version: string;
+  latestChangelogVersion: string | null;
 }) {
   const pathname = usePathname();
   const [pins, setPins] = useState<Set<string>>(new Set());
@@ -283,6 +286,10 @@ export function Sidebar({
         <span style={{ flex: 1, minWidth: 0 }}>
           {totalSessions} sessions · {projects.length} projects
         </span>
+        <ChangelogIcon
+          latestVersion={latestChangelogVersion}
+          active={pathname === "/changelog"}
+        />
         <Link
           href="/settings"
           aria-label="Settings"

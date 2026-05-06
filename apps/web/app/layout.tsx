@@ -11,6 +11,7 @@ import { JobQueueWidget } from "@/components/job-queue-widget";
 import { listProjects, listSessions, walkJsonlFiles } from "@claude-lens/parser/fs";
 import { latestUsageSnapshot } from "@/lib/usage-data";
 import { buildEntriesIndex } from "@/lib/entries-index";
+import { loadChangelog, latestVersion } from "@/lib/changelog";
 import pkg from "../package.json" with { type: "json" };
 import "./globals.css";
 
@@ -82,6 +83,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             totalSessions={totalSessions}
             currentUsage={currentUsage}
             version={pkg.version}
+            latestChangelogVersion={latestVersion(loadChangelog())}
           />
           <main
             style={{
