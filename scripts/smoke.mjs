@@ -221,6 +221,7 @@ async function main() {
   results.push(await hit("/projects", "Projects grid"));
   results.push(await hit("/settings", "Settings"));
   results.push(await hit("/insights", "Insights (V2 hero)"));
+  results.push(await hit("/changelog", "Changelog"));
   results.push(await hit("/api/digest/week-index?count=4", "Week index API"));
   results.push(await hit("/api/digest/month-index?count=3", "Month index API"));
   results.push(await hit("/day", "Day (today, via redirect)"));

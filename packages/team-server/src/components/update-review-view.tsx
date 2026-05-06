@@ -72,11 +72,15 @@ export function UpdateReviewView({
         <div className="subsection-head">
           <h2>Database changes</h2>
           <span className="kicker">
-            {migrations.length} migration{migrations.length === 1 ? "" : "s"}
+            {migrations.length === 0
+              ? "no new migrations"
+              : `${migrations.length} new migration${migrations.length === 1 ? "" : "s"}`}
           </span>
         </div>
         {migrations.length === 0 ? (
-          <p style={{ marginTop: 12 }}>No migrations in this release.</p>
+          <p style={{ marginTop: 12 }}>
+            All migrations bundled in v{version} are already applied to this database.
+          </p>
         ) : (
           <ul style={{ listStyle: "none", padding: 0, marginTop: 12 }}>
             {migrations.map((m) => (

@@ -28,8 +28,12 @@ html, body {
   text-rendering: optimizeLegibility;
 }
 
+html { height: 100%; }
 body {
-  min-height: 100vh;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background-image:
     linear-gradient(to right, transparent 0, transparent calc(100% - 1px), var(--rule-soft) calc(100% - 1px));
   background-size: 64px 100%;
@@ -81,8 +85,18 @@ input, textarea, select { font: inherit; color: inherit; }
 .masthead-meta span { white-space: nowrap; }
 .masthead-meta .dot { color: var(--rule); }
 
-/* Shell layout */
-.shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+/* Shell layout — body is a flex column (masthead + shell), shell is a
+ * grid that fills the remaining viewport. Nav and main each handle their
+ * own overflow so the page itself never scrolls; the footer cluster
+ * (margin-top: auto inside the nav) is always reachable. */
+.masthead { flex: 0 0 auto; }
+.shell {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
 .shell-nav {
   border-right: 1px solid var(--ink);
   padding: 24px 20px 24px 40px;
@@ -90,6 +104,7 @@ input, textarea, select { font: inherit; color: inherit; }
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
 }
 .shell-nav-label {
   font-family: "JetBrains Mono", monospace;
@@ -117,7 +132,28 @@ input, textarea, select { font: inherit; color: inherit; }
   font-weight: 500;
 }
 .shell-nav a .mono { font-size: 10px; color: var(--mute); }
-.shell-main { padding: 36px 48px 80px; }
+
+/* Footer cluster: small utility links that shouldn't pick up the body
+ * nav's chunky padding + left-border highlight. */
+.shell-nav-footer {
+  margin-top: auto;
+  /* Negative side margins + matching padding pull the border-top all the
+   * way to the nav's left/right edges while keeping the email/link content
+   * indented in line with the rest of the nav. */
+  margin-left: -40px;
+  margin-right: -20px;
+  padding: 18px 20px 0 40px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.shell-nav-footer .mono.email { font-size: 11px; color: var(--mute); padding-left: 12px; word-break: break-all; }
+.shell-nav-footer .row { display: flex; align-items: center; gap: 10px; padding-left: 12px; }
+.shell-nav-footer .row a { display: inline; padding: 0; margin: 0; border: none; font-size: 12px; color: var(--mute); white-space: nowrap; background: none; }
+.shell-nav-footer .row a:hover { background: none; color: var(--ink); border: none; }
+.shell-nav-footer .row .sep { color: var(--mute-soft); font-size: 11px; }
+.shell-main { padding: 36px 48px 80px; overflow-y: auto; min-width: 0; }
 
 /* Section headings */
 .section-head {

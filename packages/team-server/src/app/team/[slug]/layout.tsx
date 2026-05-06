@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { instanceState } from "../../../lib/server-config";
+import { NavFooter } from "../../../components/nav-footer";
 
 export default async function TeamLayout({
   children,
@@ -60,12 +61,19 @@ export default async function TeamLayout({
           {isAdmin && <a href={`/team/${slug}/plan`}>Plan <span className="mono">02</span></a>}
           {isAdmin && <a href={`/team/${slug}/settings`}>Settings <span className="mono">03</span></a>}
           {state.allowMultipleTeams && <a href="/teams/new">+ New team</a>}
+
+          {session.user.is_staff && (
+            <>
+              <div className="shell-nav-label">Server admin</div>
+              <a href="/admin/updates">Updates</a>
+              <a href="/admin/staff">Staff</a>
+            </>
+          )}
+
           <div className="shell-nav-label">Account</div>
-          <div className="mono" style={{ fontSize: 11, color: "var(--mute)", padding: "4px 0 8px" }}>
-            {session.user.email}
-          </div>
           <a href={`/team/${slug}/me`}>My account · pair CLI</a>
-          <a href="/logout">Sign out</a>
+
+          <NavFooter email={session.user.email} />
         </nav>
         <main className="shell-main">{children}</main>
       </div>

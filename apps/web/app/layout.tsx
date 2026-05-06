@@ -12,6 +12,7 @@ import { listProjects, walkJsonlFiles } from "@claude-lens/parser/fs";
 import { listSessions } from "@/lib/data";
 import { latestUsageSnapshot } from "@/lib/usage-data";
 import { buildEntriesIndex } from "@/lib/entries-index";
+import { LATEST_VERSION as LATEST_CHANGELOG_VERSION } from "@/lib/changelog";
 import pkg from "../package.json" with { type: "json" };
 import "./globals.css";
 
@@ -85,6 +86,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             totalSessions={totalSessions}
             currentUsage={currentUsage}
             version={pkg.version}
+            latestChangelogVersion={LATEST_CHANGELOG_VERSION}
           />
           <main
             style={{
