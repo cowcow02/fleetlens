@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 1
 
       - name: Claude PR review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@2cc1ac1331eac7a6a96d716dd204dd2888d0fcd2 # v1.0.112; @v1 broken by upstream install regression (anthropics/claude-code-action#1290)
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           track_progress: true
