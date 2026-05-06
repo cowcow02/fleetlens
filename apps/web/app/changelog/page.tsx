@@ -59,8 +59,8 @@ function DateHeader({ date, firstInList }: { date: string; firstInList: boolean 
         gap: 10,
         marginTop: firstInList ? 0 : 22,
         marginBottom: 10,
-        borderTop: "1px solid var(--af-border-subtle)",
-        paddingTop: 18,
+        borderTop: firstInList ? "none" : "1px solid var(--af-border-subtle)",
+        paddingTop: firstInList ? 0 : 18,
       }}
     >
       <span
