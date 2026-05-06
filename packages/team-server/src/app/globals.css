@@ -90,6 +90,14 @@ input, textarea, select { font: inherit; color: inherit; }
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* Stick to viewport so the footer cluster (margin-top: auto) is always
+   * reachable without scrolling the main pane. align-self: start prevents
+   * the grid cell from stretching to the row height. */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  align-self: start;
+  overflow-y: auto;
 }
 .shell-nav-label {
   font-family: "JetBrains Mono", monospace;
