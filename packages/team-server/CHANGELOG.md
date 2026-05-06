@@ -4,6 +4,20 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.7.0] — 2026-05-06
+
+### Added
+- In-app `/changelog` route with hand-curated release notes; reachable from the team nav under About, with a red dot when an unread version exists.
+- Server-update notice now surfaces inside the team Settings page (admin-only) instead of a global page banner. Operators see current vs. latest version, "Last checked" time, and a "Review update →" link to the existing review screen.
+
+### Changed
+- Unified left-nav across team, admin, and changelog pages: TEAM / SERVER ADMIN (staff only) / ACCOUNT sections in the body, email + Changelog · Sign out footer cluster, full-width divider above the footer.
+- `/admin/updates` and `/admin/staff` share the team-shell chrome rather than carrying their own bespoke masthead and nav.
+- App shell bound to viewport via flex-column body — only the main pane scrolls, footer is always reachable without scrolling.
+
+### Fixed
+- Server-update review screen at `/admin/updates/<version>` now filters out migrations already applied to the running database. An operator on v0.6.0 reviewing v0.6.3 sees "1 new migration" instead of the previous misleading "4 migrations".
+
 ## [0.6.3] — 2026-05-04
 
 ### Changed
