@@ -39,7 +39,7 @@ import {
 } from "@claude-lens/parser";
 import { estimateCost, formatCost, formatGap, formatOffset, formatRelative, formatTokens, shortId } from "@/lib/format";
 import { LiveBadge } from "@/components/live-badge";
-import { AskClaudeButton, AskClaudeDrawer } from "@/components/ask-claude";
+import { AskButton, AskDrawer } from "@/components/ask";
 import { TailMode } from "@/components/tail-mode";
 import type { TimelineData } from "./team-tab/adapter";
 import { TeamTabClient } from "./team-tab/team-tab-client";
@@ -152,7 +152,7 @@ export function SessionView({
   const [filter, setFilter] = useState<FilterMode>("turns");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
-  const [askClaudeOpen, setAskClaudeOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set());
   /** When a timeline click sets the index we also want to scroll. Track that
    *  intent separately so selection via row-click doesn't auto-scroll. */
@@ -679,7 +679,7 @@ export function SessionView({
           </span>
         </div>
 
-        {/* Toolbar (filter, copy, ask-claude) */}
+        {/* Toolbar (filter, copy, ask) */}
         <div
           className="flex items-center"
           style={{
@@ -734,9 +734,9 @@ export function SessionView({
           >
             <Copy size={12} /> Copy all
           </button>
-          <AskClaudeButton
+          <AskButton
             onClick={() => {
-              setAskClaudeOpen((p) => !p);
+              setAskOpen((p) => !p);
               setSelectedIndex(null);
               setSelectedSubagentId(null);
             }}
@@ -942,8 +942,8 @@ export function SessionView({
         );
       })()}
 
-      {/* Ask Claude drawer */}
-      {askClaudeOpen && (
+      {/* Ask drawer */}
+      {askOpen && (
         <aside
           style={{
             position: "fixed",
@@ -959,9 +959,9 @@ export function SessionView({
             flexDirection: "column",
           }}
         >
-          <AskClaudeDrawer
+          <AskDrawer
             sessionId={session.id}
-            onClose={() => setAskClaudeOpen(false)}
+            onClose={() => setAskOpen(false)}
           />
         </aside>
       )}

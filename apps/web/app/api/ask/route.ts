@@ -1,5 +1,5 @@
 /**
- * Ask Claude about a session.
+ * Ask an LLM about a session.
  *
  * POST /api/ask
  *   { sessionId: string, question: string, model?: "haiku" | "sonnet" | "opus" }

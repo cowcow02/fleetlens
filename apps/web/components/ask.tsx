@@ -1,15 +1,16 @@
 "use client";
 
 /**
- * "Ask Claude" drawer for session analysis.
+ * Ask drawer for session analysis.
  *
  * Renders as a right-side panel with:
  * - Quick-action buttons (Identify errors, Analyze performance, etc.)
  * - Free-form textarea for custom questions
  * - Streaming markdown response
  *
- * Calls POST /api/ask which spawns `claude -p` under the hood, using
- * the user's local keychain auth. No API key management required.
+ * Calls POST /api/ask which spawns `claude -p` under the hood today;
+ * the analyzer becomes pluggable when the LLM runner abstraction lands.
+ * The subject session can come from any registered agent.
  */
 
 import React, { useCallback, useRef, useState } from "react";
@@ -19,9 +20,9 @@ import {
   AlertTriangle,
   BarChart3,
   Lightbulb,
-  MessageCircle,
   Route,
   Send,
+  Sparkles,
   X,
   Loader2,
 } from "lucide-react";
@@ -58,7 +59,7 @@ const QUICK_ACTIONS = [
   },
 ];
 
-export function AskClaudeButton({ onClick }: { onClick: () => void }) {
+export function AskButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
@@ -86,13 +87,13 @@ export function AskClaudeButton({ onClick }: { onClick: () => void }) {
         e.currentTarget.style.color = "var(--af-accent)";
       }}
     >
-      <MessageCircle size={13} />
-      Ask Claude
+      <Sparkles size={13} />
+      Ask
     </button>
   );
 }
 
-export function AskClaudeDrawer({
+export function AskDrawer({
   sessionId,
   onClose,
 }: {
@@ -232,7 +233,7 @@ export function AskClaudeDrawer({
           flexShrink: 0,
         }}
       >
-        <MessageCircle size={16} color="var(--af-accent)" />
+        <Sparkles size={16} color="var(--af-accent)" />
         <span
           style={{
             fontSize: 14,
@@ -241,7 +242,7 @@ export function AskClaudeDrawer({
             flex: 1,
           }}
         >
-          Ask Claude
+          Ask about this session
         </span>
         <button
           onClick={onClose}
@@ -280,8 +281,8 @@ export function AskClaudeDrawer({
                 lineHeight: 1.5,
               }}
             >
-              Ask Claude to analyze this session. Pick a quick action or type
-              your own question.
+              Run an AI analysis on this session. Pick a quick action or
+              type your own question.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {QUICK_ACTIONS.map((action) => (
