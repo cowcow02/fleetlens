@@ -1,12 +1,12 @@
 import { Client } from "pg";
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-export async function applyPreDrizzleBaselineIfNeeded(client: Client): Promise<void> {
+export async function applyPreDrizzleBaselineIfNeeded(
+  client: Client,
+  migrationsFolder: string,
+): Promise<void> {
   // Fresh DB? If user_accounts doesn't exist, nothing to baseline —
   // let the normal migrator run everything from 0000.
   const existing = await client.query(
@@ -30,7 +30,7 @@ export async function applyPreDrizzleBaselineIfNeeded(client: Client): Promise<v
   // repairing pre-existing rows that were inserted by v0.4.2's buggy baseline
   // (which used Date.now() instead of folderMillis(0000)).
   const journal = JSON.parse(
-    readFileSync(join(__dirname, "migrations", "meta", "_journal.json"), "utf8"),
+    readFileSync(join(migrationsFolder, "meta", "_journal.json"), "utf8"),
   ) as { entries: Array<{ idx: number; when: number }> };
   const firstEntry = journal.entries.find((e) => e.idx === 0);
   if (!firstEntry) throw new Error("baseline: 0000 entry missing from _journal.json");
@@ -58,7 +58,7 @@ export async function applyPreDrizzleBaselineIfNeeded(client: Client): Promise<v
   }
 
   // Not yet baselined — insert the row for the first time.
-  const sqlPath = join(__dirname, "migrations", "0000_initial.sql");
+  const sqlPath = join(migrationsFolder, "0000_initial.sql");
   const sql = readFileSync(sqlPath, "utf8");
   const hash = createHash("sha256").update(sql).digest("hex");
 

@@ -36,7 +36,7 @@ describe("applyPreDrizzleBaselineIfNeeded", () => {
   });
 
   it("does nothing when user_accounts does not exist (fresh DB)", async () => {
-    await applyPreDrizzleBaselineIfNeeded(client);
+    await applyPreDrizzleBaselineIfNeeded(client, MIGRATIONS_DIR);
     const { rows } = await client.query(
       "SELECT to_regclass('drizzle.__drizzle_migrations') AS tbl",
     );
@@ -55,7 +55,7 @@ describe("applyPreDrizzleBaselineIfNeeded", () => {
       `INSERT INTO user_accounts (email, password_hash) VALUES ('canary@example.com', 'x')`,
     );
 
-    await applyPreDrizzleBaselineIfNeeded(client);
+    await applyPreDrizzleBaselineIfNeeded(client, MIGRATIONS_DIR);
 
     // Verify the journal entry's created_at is EXACTLY 0000's folderMillis.
     // Drizzle's migrator picks the max created_at row, then only applies
@@ -93,8 +93,8 @@ describe("applyPreDrizzleBaselineIfNeeded", () => {
     const sql = readFileSync(join(MIGRATIONS_DIR, "0000_initial.sql"), "utf8");
     await client.query(sql);
 
-    await applyPreDrizzleBaselineIfNeeded(client);
-    await applyPreDrizzleBaselineIfNeeded(client);
+    await applyPreDrizzleBaselineIfNeeded(client, MIGRATIONS_DIR);
+    await applyPreDrizzleBaselineIfNeeded(client, MIGRATIONS_DIR);
 
     const { rows } = await client.query(
       `SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations`,
@@ -119,7 +119,7 @@ describe("applyPreDrizzleBaselineIfNeeded", () => {
     );
 
     // Run the new baseline — should repair in place.
-    await applyPreDrizzleBaselineIfNeeded(client);
+    await applyPreDrizzleBaselineIfNeeded(client, MIGRATIONS_DIR);
 
     const journal = JSON.parse(
       readFileSync(join(MIGRATIONS_DIR, "meta/_journal.json"), "utf8"),

@@ -4,6 +4,12 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.7.1] — 2026-05-06
+
+### Fixed
+- Database migrations now actually ship with the production Docker image. Earlier releases unintentionally excluded the SQL files from the Next.js standalone bundle, so the startup hook reported `[instrumentation] migrations complete` without applying anything. Migrations introduced from v0.6.0 onward (e.g. `0003_membership_cycle_peaks`) silently skipped on every Cloud Run deploy, leaving production schemas drifting behind the running code.
+- `migrate.ts` now resolves the migrations folder against `process.cwd()` as well as the source `__dirname`, and **throws loudly** if `_journal.json` isn't found at either candidate. Future bundling regressions will fail boot loudly instead of pretending success.
+
 ## [0.7.0] — 2026-05-06
 
 ### Added
