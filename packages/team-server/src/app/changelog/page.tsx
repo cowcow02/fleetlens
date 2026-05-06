@@ -14,7 +14,7 @@ const DEFAULT_TONE = { fg: "var(--mute)", bg: "var(--rule-soft)" };
 
 export default function ChangelogPage() {
   return (
-    <main style={{ maxWidth: 760, margin: "0 auto", padding: "40px 32px" }}>
+    <div style={{ maxWidth: 760, margin: "0 auto" }}>
       <ChangelogMarkRead version={LATEST_VERSION} />
       <header style={{ marginBottom: 28, borderBottom: "1px solid var(--rule)", paddingBottom: 16 }}>
         <h1 className="serif" style={{ fontSize: 32, margin: 0 }}>
@@ -43,7 +43,7 @@ export default function ChangelogPage() {
           })}
         </div>
       )}
-    </main>
+    </div>
   );
 }
 
