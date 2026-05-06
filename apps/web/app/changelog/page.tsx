@@ -1,15 +1,21 @@
-import { loadChangelog, latestVersion, type ChangelogEntry } from "@/lib/changelog";
+import { Fragment } from "react";
+import { ENTRIES, LATEST_VERSION, type ChangelogEntry } from "@/lib/changelog";
 import { ChangelogMarkRead } from "@/components/changelog-mark-read";
 
 export const metadata = { title: "Changelog · Fleetlens" };
 
-export default function ChangelogPage() {
-  const entries = loadChangelog();
-  const latest = latestVersion(entries);
+const SECTION_TONES: Record<string, { fg: string; bg: string }> = {
+  fixed:   { fg: "#c4673b", bg: "rgba(196, 103, 59, 0.12)" },
+  added:   { fg: "#3a8b5e", bg: "rgba(58, 139, 94, 0.12)" },
+  changed: { fg: "#5b6cc4", bg: "rgba(91, 108, 196, 0.12)" },
+  removed: { fg: "#a64545", bg: "rgba(166, 69, 69, 0.12)" },
+};
+const DEFAULT_TONE = { fg: "var(--af-text-tertiary)", bg: "var(--af-surface-hover)" };
 
+export default function ChangelogPage() {
   return (
     <main style={{ maxWidth: 720, margin: "0 auto", padding: "32px 24px" }}>
-      <ChangelogMarkRead version={latest} />
+      <ChangelogMarkRead version={LATEST_VERSION} />
       <header style={{ marginBottom: 28 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.01em", margin: 0 }}>
           Changelog
@@ -19,26 +25,22 @@ export default function ChangelogPage() {
         </p>
       </header>
 
-      {entries.length === 0 ? (
+      {ENTRIES.length === 0 ? (
         <p style={{ color: "var(--af-text-tertiary)", fontSize: 13 }}>
           No releases recorded yet.
         </p>
       ) : (
         <div>
-          {entries.map((entry, idx) => {
-            const prevDate = idx > 0 ? entries[idx - 1].date : null;
+          {ENTRIES.map((entry, idx) => {
+            const prevDate = idx > 0 ? ENTRIES[idx - 1].date : null;
             const showDateHeader = entry.date && entry.date !== prevDate;
             return (
-              <div key={entry.version}>
+              <Fragment key={entry.version}>
                 {showDateHeader && (
                   <DateHeader date={entry.date!} firstInList={idx === 0} />
                 )}
-                <EntryCard
-                  entry={entry}
-                  isLatest={idx === 0}
-                  showTopBorder={idx > 0 && !showDateHeader}
-                />
-              </div>
+                <EntryCard entry={entry} isLatest={idx === 0} />
+              </Fragment>
             );
           })}
         </div>
@@ -55,7 +57,6 @@ function DateHeader({ date, firstInList }: { date: string; firstInList: boolean 
         display: "flex",
         alignItems: "baseline",
         gap: 10,
-        padding: "4px 0",
         marginTop: firstInList ? 0 : 22,
         marginBottom: 10,
         borderTop: "1px solid var(--af-border-subtle)",
@@ -81,28 +82,12 @@ function DateHeader({ date, firstInList }: { date: string; firstInList: boolean 
   );
 }
 
-function EntryCard({
-  entry,
-  isLatest,
-  showTopBorder,
-}: {
-  entry: ChangelogEntry;
-  isLatest: boolean;
-  showTopBorder: boolean;
-}) {
+function EntryCard({ entry, isLatest }: { entry: ChangelogEntry; isLatest: boolean }) {
   const simple =
     entry.sections.length === 1 && entry.sections[0].bullets.length === 1;
 
   return (
-    <section
-      id={`v${entry.version}`}
-      style={{
-        paddingTop: showTopBorder ? 14 : 0,
-        marginTop: showTopBorder ? 14 : 0,
-        borderTop: showTopBorder ? "1px dashed var(--af-border-subtle)" : "none",
-        marginBottom: 18,
-      }}
-    >
+    <section id={`v${entry.version}`} style={{ marginBottom: 18 }}>
       <div
         style={{
           display: "flex",
@@ -124,7 +109,7 @@ function EntryCard({
           v{entry.version}
         </h2>
         {simple && <SectionPill kind={entry.sections[0].kind} />}
-        {isLatest && <Pill text="latest" tone="muted" />}
+        {isLatest && <LatestPill />}
       </div>
 
       {entry.sections.length === 0 ? (
@@ -179,15 +164,7 @@ function EntryCard({
 }
 
 function SectionPill({ kind }: { kind: string }) {
-  const tone = kind.toLowerCase() === "fixed"
-    ? { fg: "#c4673b", bg: "rgba(196, 103, 59, 0.12)" }
-    : kind.toLowerCase() === "added"
-    ? { fg: "#3a8b5e", bg: "rgba(58, 139, 94, 0.12)" }
-    : kind.toLowerCase() === "changed"
-    ? { fg: "#5b6cc4", bg: "rgba(91, 108, 196, 0.12)" }
-    : kind.toLowerCase() === "removed"
-    ? { fg: "#a64545", bg: "rgba(166, 69, 69, 0.12)" }
-    : { fg: "var(--af-text-tertiary)", bg: "var(--af-surface-hover)" };
+  const tone = SECTION_TONES[kind.toLowerCase()] ?? DEFAULT_TONE;
   return (
     <span
       style={{
@@ -206,10 +183,7 @@ function SectionPill({ kind }: { kind: string }) {
   );
 }
 
-function Pill({ text, tone }: { text: string; tone: "accent" | "muted" }) {
-  const palette = tone === "accent"
-    ? { fg: "var(--af-accent)", bg: "var(--af-accent-subtle)" }
-    : { fg: "var(--af-text-tertiary)", bg: "var(--af-surface-hover)" };
+function LatestPill() {
   return (
     <span
       style={{
@@ -217,20 +191,17 @@ function Pill({ text, tone }: { text: string; tone: "accent" | "muted" }) {
         fontWeight: 500,
         padding: "2px 7px",
         borderRadius: 99,
-        background: palette.bg,
-        color: palette.fg,
+        background: "var(--af-surface-hover)",
+        color: "var(--af-text-tertiary)",
         fontFamily: "var(--font-mono)",
         letterSpacing: "0.02em",
       }}
     >
-      {text}
+      latest
     </span>
   );
 }
 
-// Inline-code rendering: split text on `…` pairs and wrap each in <code>.
-// Keeps the parser data plain while letting the page show backtick spans
-// the way the markdown source intended.
 function renderInline(text: string): React.ReactNode[] {
   const parts = text.split(/(`[^`]+`)/g);
   return parts.map((p, i) => {
@@ -257,8 +228,7 @@ function renderInline(text: string): React.ReactNode[] {
 function relativeDate(date: string): string | null {
   const t = Date.parse(`${date}T12:00:00`);
   if (Number.isNaN(t)) return null;
-  const diffMs = Date.now() - t;
-  const days = Math.round(diffMs / 86_400_000);
+  const days = Math.round((Date.now() - t) / 86_400_000);
   if (days < 0) return null;
   if (days === 0) return "today";
   if (days === 1) return "yesterday";

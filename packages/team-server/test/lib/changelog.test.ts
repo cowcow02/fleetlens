@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseChangelog, loadChangelog, latestVersion } from "../../src/lib/changelog";
+import { parseChangelog, ENTRIES, LATEST_VERSION } from "../../src/lib/changelog";
 
 describe("parseChangelog", () => {
   it("parses a single entry with sections and bullets", () => {
@@ -98,21 +98,15 @@ Some prose introduction.
   });
 });
 
-describe("latestVersion", () => {
-  it("returns the first entry's version", () => {
-    expect(latestVersion(parseChangelog("## [9.9.9]\n### Added\n- x\n"))).toBe("9.9.9");
-  });
-  it("returns null on empty input", () => {
-    expect(latestVersion([])).toBeNull();
-  });
-});
-
-describe("loadChangelog (real generated data)", () => {
-  it("parses the bundled team-edition changelog into at least one entry", () => {
-    const entries = loadChangelog();
-    expect(entries.length).toBeGreaterThan(0);
-    for (const e of entries) {
+describe("bundled team-edition data", () => {
+  it("ENTRIES contains at least one entry with semver versions", () => {
+    expect(ENTRIES.length).toBeGreaterThan(0);
+    for (const e of ENTRIES) {
       expect(e.version).toMatch(/^\d+\.\d+\.\d+$/);
     }
+  });
+
+  it("LATEST_VERSION matches the topmost entry", () => {
+    expect(LATEST_VERSION).toBe(ENTRIES[0]?.version ?? null);
   });
 });

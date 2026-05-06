@@ -1,15 +1,21 @@
-import { loadChangelog, latestVersion, type ChangelogEntry } from "../../lib/changelog";
+import { Fragment } from "react";
+import { ENTRIES, LATEST_VERSION, type ChangelogEntry } from "../../lib/changelog";
 import { ChangelogMarkRead } from "../../components/changelog-mark-read";
 
 export const metadata = { title: "Changelog · Fleetlens" };
 
-export default function ChangelogPage() {
-  const entries = loadChangelog();
-  const latest = latestVersion(entries);
+const SECTION_TONES: Record<string, { fg: string; bg: string }> = {
+  fixed:   { fg: "var(--accent)",      bg: "var(--accent-soft)" },
+  added:   { fg: "var(--positive)",    bg: "rgba(47, 93, 59, 0.12)" },
+  changed: { fg: "var(--ink-soft)",    bg: "var(--rule-soft)" },
+  removed: { fg: "var(--danger)",      bg: "rgba(122, 27, 27, 0.12)" },
+};
+const DEFAULT_TONE = { fg: "var(--mute)", bg: "var(--rule-soft)" };
 
+export default function ChangelogPage() {
   return (
     <main style={{ maxWidth: 760, margin: "0 auto", padding: "40px 32px" }}>
-      <ChangelogMarkRead version={latest} />
+      <ChangelogMarkRead version={LATEST_VERSION} />
       <header style={{ marginBottom: 28, borderBottom: "1px solid var(--rule)", paddingBottom: 16 }}>
         <h1 className="serif" style={{ fontSize: 32, margin: 0 }}>
           Changelog
@@ -19,24 +25,20 @@ export default function ChangelogPage() {
         </p>
       </header>
 
-      {entries.length === 0 ? (
+      {ENTRIES.length === 0 ? (
         <p style={{ color: "var(--mute)", fontSize: 14 }}>No releases recorded yet.</p>
       ) : (
         <div>
-          {entries.map((entry, idx) => {
-            const prevDate = idx > 0 ? entries[idx - 1].date : null;
+          {ENTRIES.map((entry, idx) => {
+            const prevDate = idx > 0 ? ENTRIES[idx - 1].date : null;
             const showDateHeader = entry.date && entry.date !== prevDate;
             return (
-              <div key={entry.version}>
+              <Fragment key={entry.version}>
                 {showDateHeader && (
                   <DateHeader date={entry.date!} firstInList={idx === 0} />
                 )}
-                <EntryCard
-                  entry={entry}
-                  isLatest={idx === 0}
-                  showTopBorder={idx > 0 && !showDateHeader}
-                />
-              </div>
+                <EntryCard entry={entry} isLatest={idx === 0} />
+              </Fragment>
             );
           })}
         </div>
@@ -76,27 +78,11 @@ function DateHeader({ date, firstInList }: { date: string; firstInList: boolean 
   );
 }
 
-function EntryCard({
-  entry,
-  isLatest,
-  showTopBorder,
-}: {
-  entry: ChangelogEntry;
-  isLatest: boolean;
-  showTopBorder: boolean;
-}) {
+function EntryCard({ entry, isLatest }: { entry: ChangelogEntry; isLatest: boolean }) {
   const simple = entry.sections.length === 1 && entry.sections[0].bullets.length === 1;
 
   return (
-    <section
-      id={`v${entry.version}`}
-      style={{
-        paddingTop: showTopBorder ? 14 : 0,
-        marginTop: showTopBorder ? 14 : 0,
-        borderTop: showTopBorder ? "1px dashed var(--rule-soft)" : "none",
-        marginBottom: 18,
-      }}
-    >
+    <section id={`v${entry.version}`} style={{ marginBottom: 18 }}>
       <div
         style={{
           display: "flex",
@@ -110,7 +96,7 @@ function EntryCard({
           v{entry.version}
         </h2>
         {simple && <SectionPill kind={entry.sections[0].kind} />}
-        {isLatest && <Pill text="latest" tone="muted" />}
+        {isLatest && <LatestPill />}
       </div>
 
       {entry.sections.length === 0 ? (
@@ -147,15 +133,7 @@ function EntryCard({
 }
 
 function SectionPill({ kind }: { kind: string }) {
-  const tone = kind.toLowerCase() === "fixed"
-    ? { fg: "var(--accent)", bg: "var(--accent-soft)" }
-    : kind.toLowerCase() === "added"
-    ? { fg: "var(--positive)", bg: "rgba(47, 93, 59, 0.12)" }
-    : kind.toLowerCase() === "changed"
-    ? { fg: "var(--ink-soft)", bg: "var(--rule-soft)" }
-    : kind.toLowerCase() === "removed"
-    ? { fg: "var(--danger)", bg: "rgba(122, 27, 27, 0.12)" }
-    : { fg: "var(--mute)", bg: "var(--rule-soft)" };
+  const tone = SECTION_TONES[kind.toLowerCase()] ?? DEFAULT_TONE;
   return (
     <span
       className="mono"
@@ -175,10 +153,7 @@ function SectionPill({ kind }: { kind: string }) {
   );
 }
 
-function Pill({ text, tone }: { text: string; tone: "accent" | "muted" }) {
-  const palette = tone === "accent"
-    ? { fg: "var(--accent)", bg: "var(--accent-soft)" }
-    : { fg: "var(--mute)", bg: "var(--rule-soft)" };
+function LatestPill() {
   return (
     <span
       className="mono"
@@ -187,12 +162,12 @@ function Pill({ text, tone }: { text: string; tone: "accent" | "muted" }) {
         fontWeight: 500,
         padding: "2px 7px",
         borderRadius: 99,
-        background: palette.bg,
-        color: palette.fg,
+        background: "var(--rule-soft)",
+        color: "var(--mute)",
         letterSpacing: "0.02em",
       }}
     >
-      {text}
+      latest
     </span>
   );
 }
@@ -223,8 +198,7 @@ function renderInline(text: string): React.ReactNode[] {
 function relativeDate(date: string): string | null {
   const t = Date.parse(`${date}T12:00:00`);
   if (Number.isNaN(t)) return null;
-  const diffMs = Date.now() - t;
-  const days = Math.round(diffMs / 86_400_000);
+  const days = Math.round((Date.now() - t) / 86_400_000);
   if (days < 0) return null;
   if (days === 0) return "today";
   if (days === 1) return "yesterday";

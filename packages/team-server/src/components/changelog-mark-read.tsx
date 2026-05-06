@@ -1,17 +1,12 @@
 "use client";
 
 import { useEffect } from "react";
-
-const STORAGE_KEY = "cclens-team:changelog-last-seen";
+import { STORAGE_KEY } from "../lib/changelog";
 
 export function ChangelogMarkRead({ version }: { version: string | null }) {
   useEffect(() => {
     if (!version) return;
-    try {
-      window.localStorage.setItem(STORAGE_KEY, version);
-    } catch {
-      // ignore
-    }
+    window.localStorage.setItem(STORAGE_KEY, version);
   }, [version]);
   return null;
 }

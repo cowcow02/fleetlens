@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { instanceState } from "../../../lib/server-config";
-import { loadChangelog, latestVersion } from "../../../lib/changelog";
+import { LATEST_VERSION as LATEST_CHANGELOG_VERSION } from "../../../lib/changelog";
 import { ChangelogNavLink } from "../../../components/changelog-nav-link";
 
 export default async function TeamLayout({
@@ -69,7 +69,7 @@ export default async function TeamLayout({
           <a href={`/team/${slug}/me`}>My account · pair CLI</a>
           <a href="/logout">Sign out</a>
           <div className="shell-nav-label">About</div>
-          <ChangelogNavLink latestVersion={latestVersion(loadChangelog())} />
+          <ChangelogNavLink latestVersion={LATEST_CHANGELOG_VERSION} />
         </nav>
         <main className="shell-main">{children}</main>
       </div>

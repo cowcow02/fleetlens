@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-const STORAGE_KEY = "cclens-team:changelog-last-seen";
+import { STORAGE_KEY } from "../lib/changelog";
 
 export function ChangelogNavLink({ latestVersion }: { latestVersion: string | null }) {
   const [unread, setUnread] = useState(false);

@@ -1,8 +1,6 @@
 #!/usr/bin/env node
-// Sync CHANGELOG.md (root + team-server) into committed .generated.ts modules
-// that each Next.js bundle imports at build time. Run after editing either
-// CHANGELOG; release workflows run this before publishing so the bundled
-// content can never be stale.
+// Release workflows run this before publishing so the bundled content can
+// never be stale. Run via `pnpm changelog:sync` after editing either CHANGELOG.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

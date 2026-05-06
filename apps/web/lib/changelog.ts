@@ -12,6 +12,8 @@ export type ChangelogEntry = {
   sections: ChangelogSection[];
 };
 
+export const STORAGE_KEY = "cclens:changelog-last-seen";
+
 const VERSION_HEADING = /^##\s+\[([^\]]+)\](?:\s+[—\-–]\s+(\S+))?\s*$/;
 const SECTION_HEADING = /^###\s+(.+?)\s*$/;
 const BULLET = /^[-*]\s+(.+?)\s*$/;
@@ -53,7 +55,6 @@ export function parseChangelog(raw: string): ChangelogEntry[] {
       bulletBuf = [b[1]];
       continue;
     }
-    // Continuation of a multi-line bullet (indented or wrapped).
     if (bulletBuf.length > 0 && line.trim().length > 0) {
       bulletBuf.push(line.trim());
     }
@@ -62,13 +63,5 @@ export function parseChangelog(raw: string): ChangelogEntry[] {
   return entries;
 }
 
-let _cached: ChangelogEntry[] | null = null;
-export function loadChangelog(): ChangelogEntry[] {
-  if (_cached) return _cached;
-  _cached = parseChangelog(RAW_CHANGELOG);
-  return _cached;
-}
-
-export function latestVersion(entries: ChangelogEntry[]): string | null {
-  return entries[0]?.version ?? null;
-}
+export const ENTRIES: ChangelogEntry[] = parseChangelog(RAW_CHANGELOG);
+export const LATEST_VERSION: string | null = ENTRIES[0]?.version ?? null;

@@ -3,12 +3,11 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Megaphone } from "lucide-react";
-
-const STORAGE_KEY = "cclens:changelog-last-seen";
+import { STORAGE_KEY } from "@/lib/changelog";
 
 export function ChangelogIcon({ latestVersion, active }: { latestVersion: string | null; active: boolean }) {
-  // Render no dot until after mount — server can't read localStorage and we
-  // don't want hydration mismatch flashes.
+  // Server can't read localStorage, so render no dot until after mount to
+  // avoid a hydration mismatch flash.
   const [unread, setUnread] = useState(false);
 
   useEffect(() => {
