@@ -157,14 +157,11 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       }
       continue;
     }
-    // For each Codex event we emit a synthesized Claude-shaped `raw` and
-    // matching `rawType` ("user" / "assistant"). buildEntries (in
-    // @claude-lens/entries) reads first_user, tool counts, model, and
-    // usage off the raw line in Claude's wire format. The mapping is
-    // deliberately lossy for `raw` (the original Codex JSONL line is
-    // discarded once the parser is done with it) but keeps the entries
-    // pipeline agent-agnostic without a parallel buildEntries-codex
-    // implementation.
+    // Each Codex event emits a typed SessionEvent (role + blocks +
+    // model + usage). buildEntries reads from those typed fields
+    // directly via its viewEvent() helper, so adapters no longer need
+    // to synthesize Claude wire-format raw blocks. The original Codex
+    // JSONL line is preserved on `raw` for debug / forensics only.
     if (type === "event_msg" && subtype === "user_message") {
       const text = typeof payload.message === "string" ? payload.message : "";
       const preview = previewOf(text);
@@ -177,10 +174,10 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
         index: idx++,
         timestamp: ts,
         role: "user",
-        rawType: "user",
+        rawType: "event_msg/user_message",
         preview,
         blocks: text ? [{ type: "text", text }] : [],
-        raw: { type: "user", message: { role: "user", content: text }, cwd },
+        raw: obj,
       });
       continue;
     }
@@ -192,19 +189,11 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
         index: idx++,
         timestamp: ts,
         role: "agent",
-        rawType: "assistant",
+        rawType: "event_msg/agent_message",
         preview,
         blocks: text ? [{ type: "text", text }] : [],
         model,
-        raw: {
-          type: "assistant",
-          message: {
-            role: "assistant",
-            content: text ? [{ type: "text", text }] : [],
-            model,
-          },
-          cwd,
-        },
+        raw: obj,
       });
       continue;
     }
@@ -218,19 +207,11 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
         index: idx++,
         timestamp: ts,
         role: "agent-thinking",
-        rawType: "assistant",
+        rawType: "response_item/reasoning",
         preview: previewOf(text),
         blocks: text ? [{ type: "thinking", thinking: text }] : [],
         model,
-        raw: {
-          type: "assistant",
-          message: {
-            role: "assistant",
-            content: text ? [{ type: "thinking", thinking: text }] : [],
-            model,
-          },
-          cwd,
-        },
+        raw: obj,
       });
       continue;
     }
@@ -240,62 +221,33 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       const args = typeof payload.arguments === "string" ? payload.arguments : "";
       const input = safeParse(args);
       toolCallCount += 1;
-      const block: ContentBlock = {
-        type: "tool_use",
-        id: callId ?? `codex-${idx}`,
-        name,
-        input,
-      };
       events.push({
         index: idx++,
         timestamp: ts,
         role: "tool-call",
-        rawType: "assistant",
+        rawType: "response_item/function_call",
         preview: `${name}(${truncate(args, 80)})`,
-        blocks: [block],
+        blocks: [{ type: "tool_use", id: callId ?? `codex-${idx}`, name, input }],
         toolName: name,
         toolUseId: callId,
         model,
-        raw: {
-          type: "assistant",
-          message: {
-            role: "assistant",
-            content: [{ type: "tool_use", id: callId, name, input }],
-            model,
-          },
-          cwd,
-        },
+        raw: obj,
       });
       continue;
     }
     if (type === "response_item" && subtype === "function_call_output") {
       const callId = typeof payload.call_id === "string" ? payload.call_id : undefined;
       const output = typeof payload.output === "string" ? payload.output : "";
-      const block: ContentBlock = {
-        type: "tool_result",
-        tool_use_id: callId ?? "",
-        content: output,
-      };
-      const isError = /process exited with code [1-9]/i.test(output);
       events.push({
         index: idx++,
         timestamp: ts,
         role: "tool-result",
-        rawType: "user",
+        rawType: "response_item/function_call_output",
         preview: previewOf(output),
-        blocks: [block],
+        blocks: [{ type: "tool_result", tool_use_id: callId ?? "", content: output }],
         toolUseId: callId,
         toolResult: output,
-        raw: {
-          type: "user",
-          message: {
-            role: "user",
-            content: [
-              { type: "tool_result", tool_use_id: callId, content: output, is_error: isError },
-            ],
-          },
-          cwd,
-        },
+        raw: obj,
       });
       continue;
     }
@@ -318,31 +270,28 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
   // positioning. Without them the timeline strip on the session detail
   // page collapses to width 0 — the missing minimap users see today.
   // Codex emits cumulative `total_token_usage` on each token_count event.
-  // buildEntries dedupes per-assistant `msg.id` and reads usage off the
-  // raw shape, so we attribute the FINAL cumulative total to the last
-  // assistant event with a synthetic message id. Without this Codex
-  // entries report 0 tokens which torpedoes the digest narrative.
+  // buildEntries dedupes per-assistant message via event.messageId and
+  // reads tokens from event.usage — so we attribute the FINAL cumulative
+  // total to the last agent event by populating its typed fields. Without
+  // this Codex entries report 0 tokens which torpedoes the digest narrative.
   if (totalUsage.input > 0 || totalUsage.output > 0) {
-    let lastAssistantIdx = -1;
+    let lastAgentIdx = -1;
     for (let i = events.length - 1; i >= 0; i--) {
-      if (events[i]!.rawType === "assistant") {
-        lastAssistantIdx = i;
+      const r = events[i]!.role;
+      if (r === "agent" || r === "agent-thinking" || r === "tool-call") {
+        lastAgentIdx = i;
         break;
       }
     }
-    if (lastAssistantIdx >= 0) {
-      const ev = events[lastAssistantIdx]!;
-      const r = (ev.raw ?? {}) as Record<string, unknown>;
-      const m = (r.message ?? {}) as Record<string, unknown>;
-      m.id = `codex-${file.sessionId}-total`;
-      m.usage = {
-        input_tokens: totalUsage.input,
-        output_tokens: totalUsage.output,
-        cache_read_input_tokens: totalUsage.cacheRead,
-        cache_creation_input_tokens: 0,
+    if (lastAgentIdx >= 0) {
+      const ev = events[lastAgentIdx]!;
+      ev.messageId = `codex-${file.sessionId}-total`;
+      ev.usage = {
+        input: totalUsage.input,
+        output: totalUsage.output,
+        cacheRead: totalUsage.cacheRead,
+        cacheWrite: 0,
       };
-      r.message = m;
-      ev.raw = r;
     }
   }
 

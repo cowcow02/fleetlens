@@ -880,7 +880,7 @@ type UsageSnapshot = {
   captured_at?: string;
   /** Source agent. Absent on legacy snapshots written before multi-agent
    *  support — readers MUST treat undefined as "claude-code". */
-  agent?: "claude-code" | "codex";
+  agent?: AgentKind;
   five_hour?: { utilization?: number; resets_at?: string };
   seven_day?: { utilization?: number; resets_at?: string };
   seven_day_sonnet?: { utilization?: number } | null;
@@ -1286,6 +1286,7 @@ import {
   listCodexSessions as _listCodexSessions,
   getCodexSession as _getCodexSession,
   clearCodexCaches,
+  getLatestCodexUsage,
 } from "./codex.js";
 
 export {
@@ -1314,18 +1315,59 @@ export type {
 /* ================================================================= */
 
 import type { AgentKind } from "./types.js";
+import {
+  CLAUDE_CODE_METADATA,
+  CODEX_METADATA,
+} from "./agent-metadata.js";
 
+/**
+ * A coding-agent's pluggable adapter. Adding a new agent (Gemini CLI,
+ * OpenCode, …) means writing one parser module and pushing one source
+ * object to `agentSources` below — every consumer (daemon, UI, prompts,
+ * digest pipeline) iterates the registry instead of switching on kinds.
+ */
 export type AgentSource = {
+  // ── Identity ────────────────────────────────────────────────────
+  /** Stable id, lowercased, hyphenated. Stamped on every SessionMeta /
+   *  Entry / UsageSnapshot the source emits. */
   kind: AgentKind;
+  /** Full human-readable name. Used in headers, settings, sidebar
+   *  tagline, digest prompts. */
   displayName: string;
+  /** Pill-friendly short label. Used in inline badges and chips when
+   *  the full displayName would crowd the row (e.g. "Claude", "Codex"). */
+  shortLabel: string;
+  /** CSS color used everywhere this agent surfaces — badges, chips,
+   *  tab indicators, top-session card accents. */
+  accentColor: string;
+
+  // ── On-disk layout ──────────────────────────────────────────────
+  /** Default root directory the source reads from. Shown in help text
+   *  and in the /sessions subtitle so users see where the data lives. */
   defaultRoot: string;
+
+  // ── Reading sessions ────────────────────────────────────────────
   listSessions(opts?: ListOptions): Promise<SessionMeta[]>;
   getSession(id: string, opts?: { root?: string }): Promise<SessionDetail | null>;
+
+  // ── Optional capabilities ───────────────────────────────────────
+  /** Polled by the daemon every cycle. Return null when there's
+   *  nothing new to report (no sessions yet, agent not installed). */
+  usagePoller?(): Promise<UsageSnapshotLike | null>;
+};
+
+/** Minimal shape the daemon expects from any source's usagePoller. The
+ *  full UsageSnapshot type lives in the cli package; using a structural
+ *  subset here keeps parser → cli direction one-way (no cycle). */
+type UsageSnapshotLike = {
+  captured_at: string;
+  agent?: AgentKind;
+  five_hour: { utilization: number | null; resets_at: string | null };
+  seven_day: { utilization: number | null; resets_at: string | null };
 };
 
 const claudeCodeSource: AgentSource = {
-  kind: "claude-code",
-  displayName: "Claude Code",
+  ...CLAUDE_CODE_METADATA,
   defaultRoot: DEFAULT_ROOT,
   async listSessions(opts) {
     const sessions = await listSessions(opts);
@@ -1337,17 +1379,31 @@ const claudeCodeSource: AgentSource = {
     if (detail && !detail.agent) detail.agent = "claude-code";
     return detail;
   },
+  // Claude's usage poller lives in the cli package (it needs OAuth +
+  // network) — wired up in daemon-worker.ts so the parser stays
+  // dependency-free. Set there via Object.assign at startup.
 };
 
 const codexSource: AgentSource = {
-  kind: "codex",
-  displayName: "Codex (OpenAI)",
+  ...CODEX_METADATA,
   defaultRoot: _DEFAULT_CODEX_ROOT,
   async listSessions(opts) {
     return _listCodexSessions(opts);
   },
   async getSession(id) {
     return _getCodexSession(id);
+  },
+  // Codex's poller is pure — reads from disk, no network — so it can
+  // live right here in the parser package.
+  async usagePoller() {
+    const w = await getLatestCodexUsage();
+    if (!w) return null;
+    return {
+      captured_at: new Date().toISOString(),
+      agent: "codex",
+      five_hour: w.five_hour,
+      seven_day: w.seven_day,
+    };
   },
 };
 

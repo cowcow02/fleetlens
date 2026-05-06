@@ -1,5 +1,63 @@
-import type { SessionDetail, SessionEvent } from "@claude-lens/parser";
+import type { ContentBlock, SessionDetail, SessionEvent } from "@claude-lens/parser";
 import { toLocalDay, canonicalProjectName } from "@claude-lens/parser/analytics";
+
+/** Typed view of a SessionEvent in the shape buildEntries expects.
+ *
+ *  Historically buildEntries cast event.raw to Claude's wire format and
+ *  read msg.content / msg.usage / msg.model directly. That worked for
+ *  the Claude reader but forced every other adapter (Codex, future
+ *  Gemini CLI, etc.) to synthesize a Claude-shape raw block on every
+ *  event — a fragile implicit contract.
+ *
+ *  This builder reads from the structured SessionEvent fields the parser
+ *  already populates (role, blocks, usage, model, messageId, cwd) and
+ *  returns the view buildEntries works against. Adapters now only need
+ *  to emit typed SessionEvents — no raw-shape gymnastics required. */
+type EventView = {
+  rawType: "user" | "assistant" | "summary" | "system";
+  content: ContentBlock[];
+  model?: string;
+  msgId?: string;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+  cwd?: string;
+};
+
+function viewEvent(ev: SessionEvent): EventView {
+  // Map structured roles back to Claude's two-bucket wire types so the
+  // existing buildEntries control flow keeps working unchanged.
+  let rawType: EventView["rawType"];
+  if (ev.role === "user" || ev.role === "tool-result") rawType = "user";
+  else if (ev.role === "agent" || ev.role === "agent-thinking" || ev.role === "tool-call")
+    rawType = "assistant";
+  else if (ev.rawType === "summary") rawType = "summary";
+  else rawType = "system";
+
+  // cwd lives on the raw line in Claude's format; adapters that don't set
+  // it can leave the view's cwd undefined — buildEntries falls back to the
+  // session-level project value.
+  const rawCwd = (ev.raw as { cwd?: string } | undefined)?.cwd;
+
+  return {
+    rawType,
+    content: ev.blocks ?? [],
+    model: ev.model,
+    msgId: ev.messageId,
+    usage: ev.usage
+      ? {
+          input_tokens: ev.usage.input,
+          output_tokens: ev.usage.output,
+          cache_read_input_tokens: ev.usage.cacheRead,
+          cache_creation_input_tokens: ev.usage.cacheWrite,
+        }
+      : undefined,
+    cwd: rawCwd,
+  };
+}
 import {
   type Entry,
   CURRENT_ENTRY_SCHEMA_VERSION,
@@ -236,19 +294,15 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
     const tsMs = parseMs(ev.timestamp);
     if (tsMs !== undefined) allTs.push(tsMs);
 
-    const rawType = ev.rawType;
-    const raw = ev.raw as {
-      message?: {
-        content?: unknown;
-        id?: string;
-        model?: string;
-        usage?: Record<string, number>;
-      };
-      cwd?: string;
-    } | undefined;
-    const msg = raw?.message ?? {};
-    const content = msg.content;
-    const eventCwd = (raw as { cwd?: string } | undefined)?.cwd;
+    // Typed-event view replaces the old `ev.raw as Claude-shape` cast.
+    // Adapters that produce typed SessionEvents (role/blocks/usage/...)
+    // are agent-agnostic from here on — the synthesized Claude raw shape
+    // is no longer required.
+    const view = viewEvent(ev);
+    const rawType = view.rawType;
+    const msg = { content: view.content, id: view.msgId, model: view.model, usage: view.usage };
+    const content: unknown = view.content;
+    const eventCwd = view.cwd;
     if (eventCwd) lastEventCwd = eventCwd;
 
     if (rawType === "user") {
@@ -502,12 +556,11 @@ export function buildEntries(sessionDetail: SessionDetail): Entry[] {
     // satisfaction + input sources (from human user events)
     const humanText = dayEvents
       .filter(ev => {
-        if (ev.rawType !== "user") return false;
-        const raw = ev.raw as { message?: { content?: unknown } } | undefined;
-        const content = raw?.message?.content;
-        const isToolResultOnly = Array.isArray(content) && content.length > 0
-          && content.every((c: unknown) => c && typeof c === "object"
-            && (c as { type?: string }).type === "tool_result");
+        const v = viewEvent(ev);
+        if (v.rawType !== "user") return false;
+        const content = v.content;
+        const isToolResultOnly = content.length > 0
+          && content.every((c) => c.type === "tool_result");
         if (isToolResultOnly) return false;
         const text = blockText(ev.blocks) || ev.preview || "";
         return classifyUserInputSource(text) === "human";
@@ -520,12 +573,11 @@ export function buildEntries(sessionDetail: SessionDetail): Entry[] {
     // user_input_sources: tally across all non-tool-result user events
     const user_input_sources = { human: 0, teammate: 0, skill_load: 0, slash_command: 0 };
     for (const ev of dayEvents) {
-      if (ev.rawType !== "user") continue;
-      const raw = ev.raw as { message?: { content?: unknown } } | undefined;
-      const content = raw?.message?.content;
-      const isToolResultOnly = Array.isArray(content) && content.length > 0
-        && content.every((c: unknown) => c && typeof c === "object"
-          && (c as { type?: string }).type === "tool_result");
+      const v = viewEvent(ev);
+      if (v.rawType !== "user") continue;
+      const content = v.content;
+      const isToolResultOnly = content.length > 0
+        && content.every((c) => c.type === "tool_result");
       if (isToolResultOnly) continue;
       const text = blockText(ev.blocks) || ev.preview || "";
       const src = classifyUserInputSource(text);

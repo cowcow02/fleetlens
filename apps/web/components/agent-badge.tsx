@@ -1,4 +1,5 @@
 import type { AgentKind } from "@claude-lens/parser";
+import { getAgentMetadata } from "@claude-lens/parser";
 
 type AgentBadgeProps = {
   /** Source agent. Undefined is treated as legacy claude-code (no badge). */
@@ -6,33 +7,37 @@ type AgentBadgeProps = {
 };
 
 /**
- * Shown only for non-Claude sources. Claude rows render identically to
- * before so existing screenshots / muscle memory still match.
+ * Inline agent pill. Registry-driven: pulls accentColor + shortLabel
+ * directly off the AgentSource. Adding a new agent makes a new badge
+ * appear automatically with the source's declared color — no edits
+ * needed here.
+ *
+ * Returns null for "claude-code" (legacy default-hide so existing
+ * Claude rows render unchanged) and for unknown kinds.
  */
 export function AgentBadge({ agent }: AgentBadgeProps) {
   if (!agent || agent === "claude-code") return null;
-  if (agent === "codex") {
-    return (
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          borderRadius: 4,
-          padding: "2px 6px",
-          fontSize: 10,
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-          whiteSpace: "nowrap",
-          fontWeight: 600,
-          background: "rgba(16, 163, 127, 0.12)",
-          color: "rgb(16, 163, 127)",
-          border: "1px solid rgba(16, 163, 127, 0.3)",
-        }}
-        title="Source: OpenAI Codex CLI"
-      >
-        Codex
-      </span>
-    );
-  }
-  return null;
+  const meta = getAgentMetadata(agent);
+  if (!meta) return null;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        borderRadius: 4,
+        padding: "2px 6px",
+        fontSize: 10,
+        letterSpacing: "0.04em",
+        textTransform: "uppercase",
+        whiteSpace: "nowrap",
+        fontWeight: 600,
+        color: meta.accentColor,
+        background: `color-mix(in srgb, ${meta.accentColor} 12%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${meta.accentColor} 30%, transparent)`,
+      }}
+      title={`Source: ${meta.displayName}`}
+    >
+      {meta.shortLabel}
+    </span>
+  );
 }

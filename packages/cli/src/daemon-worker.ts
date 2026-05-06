@@ -16,8 +16,8 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
-import { pollCodexUsage } from "./usage/codex.js";
 import { appendSnapshot } from "./usage/storage.js";
+import { agentSources } from "@claude-lens/parser/fs";
 import { isUsable, readOAuthCredentials } from "./usage/token.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
 import { runTeamSync } from "./team/sync.js";
@@ -77,32 +77,45 @@ const perceptionHandle: NodeJS.Timeout = setInterval(async () => {
   }
 }, PERCEPTION_INTERVAL_MS);
 
-async function tickCodex(): Promise<void> {
-  // Best-effort: failures here never affect the Claude poll outcome,
-  // backoff state, or daemon health.
-  try {
-    const result = await pollCodexUsage();
-    if (result.kind === "no_sessions") return;
-    appendSnapshot(USAGE_LOG, result.snapshot);
-    log(
-      "info",
-      `codex snapshot 5h=${result.snapshot.five_hour.utilization}% 7d=${result.snapshot.seven_day.utilization}%`,
-    );
-  } catch (err) {
-    log("warn", `codex poll failed: ${(err as Error).message}`);
-  }
-}
-
 async function tick(): Promise<PollOutcome> {
-  // Always observe Codex first — it's a cheap disk read with no auth path,
-  // so it can't block on a broken Claude OAuth state.
-  await tickCodex();
+  // Iterate every registered agent source. Each declares its own
+  // usagePoller (or omits it). Sources that read from disk (Codex)
+  // can't fail in ways that block Claude's OAuth path; Claude's
+  // poller is wired below as a special-cased one because OAuth
+  // outcomes drive the daemon's backoff state.
+  for (const source of agentSources) {
+    if (source.kind === "claude-code") continue;     // handled below
+    if (!source.usagePoller) continue;
+    try {
+      const partial = await source.usagePoller();
+      if (!partial) continue;
+      // Pad to the full UsageSnapshot shape — Claude-only fields are
+      // null for non-Claude agents and the storage format is shared.
+      const snapshot = {
+        ...partial,
+        seven_day_opus: null,
+        seven_day_sonnet: null,
+        seven_day_oauth_apps: null,
+        seven_day_cowork: null,
+        extra_usage: null,
+      };
+      appendSnapshot(USAGE_LOG, snapshot);
+      log(
+        "info",
+        `${source.kind} snapshot 5h=${snapshot.five_hour.utilization}% 7d=${snapshot.seven_day.utilization}%`,
+      );
+    } catch (err) {
+      log("warn", `${source.kind} poll failed: ${(err as Error).message}`);
+    }
+  }
+  // Claude's poller stays distinct — its return value drives backoff
+  // because OAuth/auth outcomes are the daemon's primary signal.
   try {
     const snapshot = await fetchUsage();
     appendSnapshot(USAGE_LOG, snapshot);
     log(
       "info",
-      `claude snapshot 5h=${snapshot.five_hour.utilization}% 7d=${snapshot.seven_day.utilization}%`,
+      `claude-code snapshot 5h=${snapshot.five_hour.utilization}% 7d=${snapshot.seven_day.utilization}%`,
     );
     return "success";
   } catch (err) {

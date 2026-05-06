@@ -6,6 +6,7 @@ import { Check, Copy } from "lucide-react";
 import type { WeekDigest as WeekDigestType, DayHelpfulness, WeekTopSession, SessionPin } from "@claude-lens/entries";
 import { renderWithFlagChips } from "./flag-chip";
 import { GoalBar } from "./goal-bar";
+import { AgentBadge } from "./agent-badge";
 
 const HELP_COLORS: Record<NonNullable<DayHelpfulness>, string> = {
   essential: "#48bb78",
@@ -1742,21 +1743,7 @@ function TopSessionCard({ session }: { session: WeekTopSession }) {
           >
             {session.project_display}
           </Link>
-          {session.agent === "codex" && (
-            <span
-              style={{
-                display: "inline-flex", alignItems: "center",
-                padding: "2px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
-                letterSpacing: "0.04em", textTransform: "uppercase",
-                background: "rgba(16, 163, 127, 0.12)",
-                color: "rgb(16, 163, 127)",
-                border: "1px solid rgba(16, 163, 127, 0.3)",
-              }}
-              title="Source: OpenAI Codex CLI"
-            >
-              Codex
-            </span>
-          )}
+          <AgentBadge agent={session.agent} />
           <Link
             href={`/digest/${session.date}`}
             style={{

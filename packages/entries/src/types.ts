@@ -1,3 +1,5 @@
+import type { AgentKind } from "@claude-lens/parser";
+
 /** Schema version. Bump to trigger background regeneration. */
 export const CURRENT_ENTRY_SCHEMA_VERSION = 2 as const;
 
@@ -66,7 +68,7 @@ export type Entry = {
    *  written before multi-agent support — readers MUST treat undefined
    *  as "claude-code". Used by digest prompts to surface per-agent
    *  contributions in the synthesized narrative. */
-  agent?: "claude-code" | "codex";
+  agent?: AgentKind;
   session_id: string;
   /** "YYYY-MM-DD" in reader's TZ */
   local_day: string;
@@ -682,7 +684,7 @@ export type WeekTopSession = {
   session_id: string;
   /** Source coding-agent. Lets the per-session card show an agent badge so
    *  a Codex top-session is visibly distinct from a Claude Code one. */
-  agent?: "claude-code" | "codex";
+  agent?: AgentKind;
   /** Local day this session is anchored to (the entry's local_day). */
   date: string;
   project: string;

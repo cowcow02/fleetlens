@@ -26,12 +26,14 @@ export type ExtraUsage = {
   utilization: number | null;
 };
 
+import type { AgentKind } from "@claude-lens/parser";
+
 export type UsageSnapshot = {
   /** When we captured this snapshot (client-side ISO timestamp) */
   captured_at: string;
   /** Source agent. Absent on legacy snapshots written before multi-agent
    *  support — readers MUST treat undefined as "claude-code". */
-  agent?: "claude-code" | "codex";
+  agent?: AgentKind;
   five_hour: UsageWindow;
   seven_day: UsageWindow;
   seven_day_opus: UsageWindow | null;

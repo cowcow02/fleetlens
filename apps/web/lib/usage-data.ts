@@ -9,6 +9,7 @@ import { cache } from "react";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import type { AgentKind } from "@claude-lens/parser";
 
 export type UsageWindow = {
   utilization: number | null;
@@ -19,7 +20,7 @@ export type UsageSnapshot = {
   captured_at: string;
   /** Source agent. Absent on legacy snapshots written before multi-agent
    *  support — readers MUST treat undefined as "claude-code". */
-  agent?: "claude-code" | "codex";
+  agent?: AgentKind;
   five_hour: UsageWindow;
   seven_day: UsageWindow;
   seven_day_opus: UsageWindow | null;
@@ -65,7 +66,7 @@ export const latestUsageSnapshot = cache((): UsageSnapshot | null => {
 });
 
 export const latestUsageSnapshotByAgent = cache(
-  (agent: "claude-code" | "codex"): UsageSnapshot | null => {
+  (agent: AgentKind): UsageSnapshot | null => {
     const all = readUsageSnapshots();
     const filtered = all.filter((s) => (s.agent ?? "claude-code") === agent);
     return filtered.length > 0 ? filtered[filtered.length - 1]! : null;
@@ -73,7 +74,7 @@ export const latestUsageSnapshotByAgent = cache(
 );
 
 export const readUsageSnapshotsByAgent = cache(
-  (agent: "claude-code" | "codex"): UsageSnapshot[] => {
+  (agent: AgentKind): UsageSnapshot[] => {
     return readUsageSnapshots().filter((s) => (s.agent ?? "claude-code") === agent);
   },
 );

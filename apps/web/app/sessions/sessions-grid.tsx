@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AgentKind, SessionMeta } from "@claude-lens/parser";
+import { getAgentMetadata } from "@claude-lens/parser";
 import type { DayOutcome, EntryEnrichmentStatus } from "@claude-lens/entries";
 import {
   formatDuration,
@@ -545,13 +546,8 @@ function Stat({ icon, label }: { icon: React.ReactNode; label: string }) {
   );
 }
 
+// Registry-driven label — reads displayName off the agent metadata so
+// new agents auto-show up with their declared name.
 function agentLabel(kind: AgentKind): string {
-  switch (kind) {
-    case "claude-code":
-      return "Claude Code";
-    case "codex":
-      return "Codex";
-    default:
-      return kind;
-  }
+  return getAgentMetadata(kind)?.displayName ?? kind;
 }

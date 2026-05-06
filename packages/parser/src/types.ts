@@ -95,8 +95,18 @@ export type SessionEvent = {
   };
 };
 
-/** Which coding-agent tool produced this transcript. */
-export type AgentKind = "claude-code" | "codex";
+/**
+ * Which coding-agent tool produced this transcript.
+ *
+ * Plugin-friendly: `string` so an in-tree adapter can declare any kind
+ * without widening a closed union. The two built-in kinds are
+ * "claude-code" and "codex"; future adapters (gemini-cli, opencode, …)
+ * pick their own lowercase-hyphenated id.
+ *
+ * Consumers should look up runtime metadata via getAgentSource(kind)
+ * (in @claude-lens/parser/fs) rather than switching on string values.
+ */
+export type AgentKind = string;
 
 export type SessionMeta = {
   /** Source agent. Defaults to "claude-code" for legacy callers. */

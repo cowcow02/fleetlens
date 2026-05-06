@@ -2,6 +2,14 @@ import { z } from "zod";
 import type {
   DayDigest, DayOutcome, WeekDigest, WorkingShape,
 } from "../types.js";
+import { agentMetadata } from "@claude-lens/parser";
+
+/** Built once at module load from the registry. New agents auto-appear
+ *  here when added to packages/parser/src/agent-metadata.ts; no prompt
+ *  edit required. */
+const AGENT_NAMING_TABLE = agentMetadata
+  .map((m) => `  - agent="${m.kind}" → render as "${m.displayName}"`)
+  .join("\n");
 // flagGlossaryForPrompt + FLAG_GLOSSARY were used by the prior JSON
 // payload's flag_glossary block; the transcript prompt drops that section
 // since the ANCHORING RULES already constrain output and flags rarely
@@ -64,7 +72,9 @@ const SYSTEM_PROMPT = `You are the weekly retrospective writer for Fleetlens, a 
 
 Your unique advantage: you receive both **already-synthesized day digests** AND a **per-week classification of how the user drove agents** — named orchestration shapes, the user's interaction grammar, counts, and a per-source-agent breakdown. Your job is to take that texture and tell a coherent story about WHO this user is as a multi-agent operator THIS WEEK and what they should do next.
 
-When the week's input includes more than one source agent (see "Per-agent week breakdown" in the input AND per-day "Agent breakdown" lines), the narrative MUST name them. Use "Claude Code" for agent="claude-code" and "Codex" for agent="codex". The headline, key_pattern, project_areas and at least one of what_worked / what_stalled / what_surprised should make the multi-agent split visible — readers want to see how Codex was blended into a Claude-Code-dominant week (or vice versa).
+When the week's input includes more than one source agent (see "Per-agent week breakdown" in the input AND per-day "Agent breakdown" lines), the narrative MUST name them. Render each agent kind with its canonical display name:
+${AGENT_NAMING_TABLE}
+The headline, key_pattern, project_areas and at least one of what_worked / what_stalled / what_surprised should make the multi-agent split visible — readers want to see how a secondary agent was blended into the dominant agent's week (or vice versa).
 
 The reader sees, before reading your prose:
   • A "Top sessions" section with 1-3 deep-dive cards (per-session story + timeline + pin annotations).

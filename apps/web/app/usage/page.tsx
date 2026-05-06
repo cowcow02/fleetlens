@@ -25,23 +25,26 @@ import {
 } from "@/lib/calibration-data";
 import { UsageChartsDashboard } from "@/components/usage-charts-dashboard";
 import { PreviousCyclesTrend } from "@/components/previous-cycles-trend";
+import {
+  type AgentKind,
+  agentMetadata,
+  getAgentMetadata,
+} from "@claude-lens/parser";
 
 export const dynamic = "force-dynamic";
 
-type AgentKind = "claude-code" | "codex";
-
-const AGENT_LABEL: Record<AgentKind, string> = {
-  "claude-code": "Claude Code",
-  codex: "Codex",
-};
-
-const AGENT_ACCENT: Record<AgentKind, string> = {
-  "claude-code": "var(--af-accent)",
-  codex: "rgb(16, 163, 127)",
-};
+const KNOWN_AGENT_KINDS = new Set(agentMetadata.map((m) => m.kind));
 
 function isAgentKind(s: string | undefined): s is AgentKind {
-  return s === "claude-code" || s === "codex";
+  return typeof s === "string" && KNOWN_AGENT_KINDS.has(s);
+}
+
+function agentLabel(kind: AgentKind): string {
+  return getAgentMetadata(kind)?.displayName ?? kind;
+}
+
+function agentAccent(kind: AgentKind): string {
+  return getAgentMetadata(kind)?.accentColor ?? "var(--af-text-tertiary)";
 }
 
 export default async function UsagePage({
@@ -172,7 +175,7 @@ export default async function UsagePage({
             }}
             suppressHydrationWarning
           >
-            Last {AGENT_LABEL[selected]} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
+            Last {agentLabel(selected)} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
           </div>
         </>
@@ -230,11 +233,11 @@ function AgentTabs({ agents, selected }: { agents: AgentKind[]; selected: AgentK
                 width: 8,
                 height: 8,
                 borderRadius: 999,
-                background: AGENT_ACCENT[kind],
+                background: agentAccent(kind),
                 opacity: isActive ? 1 : 0.6,
               }}
             />
-            {AGENT_LABEL[kind]}
+            {agentLabel(kind)}
           </Link>
         );
       })}
@@ -260,7 +263,7 @@ function EmptyState({ agent }: { agent: AgentKind }) {
           color: "var(--af-text)",
         }}
       >
-        No {AGENT_LABEL[agent]} usage data yet
+        No {agentLabel(agent)} usage data yet
       </div>
       <p
         style={{

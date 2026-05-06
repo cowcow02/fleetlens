@@ -1,5 +1,13 @@
 import { z } from "zod";
 import type { DayDigest, Entry } from "../types.js";
+import { agentMetadata } from "@claude-lens/parser";
+
+/** Built once at module load from the registry. New agents auto-appear
+ *  here when added to packages/parser/src/agent-metadata.ts; no prompt
+ *  edit required. */
+const AGENT_NAMING_TABLE = agentMetadata
+  .map((m) => `  - agent="${m.kind}" → render as "${m.displayName}"`)
+  .join("\n");
 
 const SuggestionSchema = z.object({
   headline: z.string().min(1).max(80),
@@ -64,7 +72,9 @@ CRITICAL RULES:
 
 - Second-person ("you ..."), not third-person.
 - Copy the user's phrasings where useful; do not invent features or outcomes not in the input.
-- **When DAY FACTS.agent_breakdown has more than one agent, the narrative MUST name them.** Use "Claude Code" for agent="claude-code" and "Codex" for agent="codex". Treat the per-agent split as a load-bearing signal — if the user delegated specific work to Codex versus Claude Code, that distinction belongs in headline / narrative / what_went_well / what_hit_friction.
+- **When DAY FACTS.agent_breakdown has more than one agent, the narrative MUST name them.** Render each agent kind with its canonical display name:
+${AGENT_NAMING_TABLE}
+Treat the per-agent split as a load-bearing signal — if the user delegated specific work to a non-default agent, that distinction belongs in headline / narrative / what_went_well / what_hit_friction.
 - Do not mention a project unless it's in DAY FACTS.projects AND that project has a non-trivial entry (outcome != "trivial") in per_entry.
 - **Attribute every PR to its correct project using the per_entry list** — never join a PR title with a project from a different entry. If a project only has a trivial/warmup entry, do NOT describe any deliverable as happening in it.
 - Do not fabricate PR counts, commits, or timestamps.
