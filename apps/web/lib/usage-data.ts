@@ -9,6 +9,7 @@ import { cache } from "react";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import type { AgentKind } from "@claude-lens/parser";
 
 export type UsageWindow = {
   utilization: number | null;
@@ -17,6 +18,9 @@ export type UsageWindow = {
 
 export type UsageSnapshot = {
   captured_at: string;
+  /** Source agent. Absent on legacy snapshots written before multi-agent
+   *  support — readers MUST treat undefined as "claude-code". */
+  agent?: AgentKind;
   five_hour: UsageWindow;
   seven_day: UsageWindow;
   seven_day_opus: UsageWindow | null;
@@ -29,6 +33,7 @@ export type UsageSnapshot = {
     used_credits: number | null;
     utilization: number | null;
   } | null;
+  plan_type?: string | null;
 };
 
 function usageLogPath(): string {
@@ -53,8 +58,26 @@ export const readUsageSnapshots = cache((): UsageSnapshot[] => {
 
 export const latestUsageSnapshot = cache((): UsageSnapshot | null => {
   const all = readUsageSnapshots();
-  return all.length > 0 ? all[all.length - 1]! : null;
+  // Sidebar's "current usage" widget is Claude-tier specific (extra_usage,
+  // per-model 7d windows). Filter to Claude only so a Codex snapshot doesn't
+  // accidentally end up as the latest source.
+  const claude = all.filter((s) => (s.agent ?? "claude-code") === "claude-code");
+  return claude.length > 0 ? claude[claude.length - 1]! : null;
 });
+
+export const latestUsageSnapshotByAgent = cache(
+  (agent: AgentKind): UsageSnapshot | null => {
+    const all = readUsageSnapshots();
+    const filtered = all.filter((s) => (s.agent ?? "claude-code") === agent);
+    return filtered.length > 0 ? filtered[filtered.length - 1]! : null;
+  },
+);
+
+export const readUsageSnapshotsByAgent = cache(
+  (agent: AgentKind): UsageSnapshot[] => {
+    return readUsageSnapshots().filter((s) => (s.agent ?? "claude-code") === agent);
+  },
+);
 
 // The CLI's profile cache mirrors what we report to a paired team-server.
 // Reading it here keeps personal and team editions consistent — both show

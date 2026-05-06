@@ -1,8 +1,19 @@
+import { homedir } from "node:os";
 import { listSessions } from "@/lib/data";
 import { buildEntriesIndex } from "@/lib/entries-index";
+import { agentSources } from "@claude-lens/parser/fs";
 import { SessionsGrid, type SessionRow } from "./sessions-grid";
 
 export const dynamic = "force-dynamic";
+
+const HOME = homedir();
+const codeStyle = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 11,
+  background: "var(--af-border-subtle)",
+  padding: "1px 6px",
+  borderRadius: 4,
+} as const;
 
 export default async function SessionsPage() {
   const [sessions, index] = await Promise.all([listSessions(), buildEntriesIndex()]);
@@ -29,18 +40,17 @@ export default async function SessionsPage() {
           All sessions
         </h1>
         <p style={{ fontSize: 13, color: "var(--af-text-secondary)", marginTop: 4 }}>
-          {sessions.length} session{sessions.length === 1 ? "" : "s"} in{" "}
-          <code
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 11,
-              background: "var(--af-border-subtle)",
-              padding: "1px 6px",
-              borderRadius: 4,
-            }}
-          >
-            ~/.claude/projects
-          </code>
+          {sessions.length} session{sessions.length === 1 ? "" : "s"} across{" "}
+          {agentSources.map((source, i) => (
+            <span key={source.kind}>
+              {i > 0 && " + "}
+              <code style={codeStyle}>
+                {source.defaultRoot.startsWith(HOME)
+                  ? "~" + source.defaultRoot.slice(HOME.length)
+                  : source.defaultRoot}
+              </code>
+            </span>
+          ))}
         </p>
       </header>
       <SessionsGrid rows={rows} />

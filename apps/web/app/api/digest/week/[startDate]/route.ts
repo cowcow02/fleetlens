@@ -39,7 +39,8 @@ export async function GET(_req: Request, ctx: Params) {
 
   const isCurrent = monday === currentWeekMonday();
   if (isCurrent) {
-    const cached = getCurrentWeekDigestFromCache(monday, Date.now());
+    const cached =
+      getCurrentWeekDigestFromCache(monday, Date.now()) ?? readWeekDigest(monday);
     if (cached) {
       return new Response(JSON.stringify(cached), {
         status: 200, headers: { "content-type": "application/json" },

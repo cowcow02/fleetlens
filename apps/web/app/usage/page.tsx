@@ -1,17 +1,20 @@
 /**
- * Claude Code usage page — historical utilization analytics.
+ * Usage page — historical utilization analytics, per agent.
  *
- * Current utilization lives in the sidebar (always visible). This page
- * is dedicated to historical views, trend analysis, and leadership
- * reporting metrics derived from the daemon's snapshot log.
+ * One tab per agent that has snapshots on disk. Each tab renders the
+ * same dashboard layout (burndown charts + previous-cycles trend) so
+ * Claude Code and Codex are peers, not primary/secondary.
  *
- * Reads from ~/.cclens/usage.jsonl — no API endpoint needed.
+ * Reads from ~/.cclens/usage.jsonl — the daemon writes both agents'
+ * snapshots there, tagged with `agent`. Filtering happens at read time.
  */
 
 import { Activity } from "lucide-react";
+import Link from "next/link";
 import {
   readUsageSnapshots,
-  latestUsageSnapshot,
+  readUsageSnapshotsByAgent,
+  latestUsageSnapshotByAgent,
   readCachedPlanTier,
   PLAN_TIER_LABELS,
 } from "@/lib/usage-data";
@@ -22,16 +25,53 @@ import {
 } from "@/lib/calibration-data";
 import { UsageChartsDashboard } from "@/components/usage-charts-dashboard";
 import { PreviousCyclesTrend } from "@/components/previous-cycles-trend";
+import {
+  type AgentKind,
+  agentMetadata,
+  getAgentMetadata,
+  isAgentKind,
+} from "@claude-lens/parser";
 
 export const dynamic = "force-dynamic";
 
-export default async function UsagePage() {
-  const snapshots = readUsageSnapshots();
-  const latest = latestUsageSnapshot();
-  const tier = readCachedPlanTier();
-  const calibration = await readCalibrationDump();
-  const predicted = predictedSeriesFor(calibration);
-  const cycles7d = previousCyclesTrend(calibration, "7d");
+function agentLabel(kind: AgentKind): string {
+  return getAgentMetadata(kind)?.displayName ?? kind;
+}
+
+function agentAccent(kind: AgentKind): string {
+  return getAgentMetadata(kind)?.accentColor ?? "var(--af-text-tertiary)";
+}
+
+export default async function UsagePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ agent?: string }>;
+}) {
+  const params = await searchParams;
+  const allSnapshots = readUsageSnapshots();
+  const agentsWithData = new Set<AgentKind>();
+  for (const s of allSnapshots) {
+    const k = (s.agent ?? "claude-code") as AgentKind;
+    agentsWithData.add(k);
+  }
+  // Always show Claude in the tab strip even if empty — it's the canonical
+  // source. Codex appears only once it has at least one snapshot.
+  agentsWithData.add("claude-code");
+
+  const requested: AgentKind | undefined = isAgentKind(params.agent) ? params.agent : undefined;
+  const selected: AgentKind =
+    requested && agentsWithData.has(requested)
+      ? requested
+      : agentsWithData.has("claude-code")
+        ? "claude-code"
+        : (Array.from(agentsWithData)[0] as AgentKind);
+
+  const snapshots = readUsageSnapshotsByAgent(selected);
+  const latest = latestUsageSnapshotByAgent(selected);
+  const tier = selected === "claude-code" ? readCachedPlanTier() : null;
+  const calibration = selected === "claude-code" ? await readCalibrationDump() : null;
+  const predicted = calibration ? predictedSeriesFor(calibration) : null;
+  const cycles7d = calibration ? previousCyclesTrend(calibration, "7d") : [];
 
   return (
     <div
@@ -43,7 +83,6 @@ export default async function UsagePage() {
         padding: "20px 32px",
       }}
     >
-      {/* Header */}
       <header
         style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}
       >
@@ -64,7 +103,7 @@ export default async function UsagePage() {
         <span style={{ fontSize: 11, color: "var(--af-text-tertiary)" }}>
           historical plan utilization · current usage in sidebar
         </span>
-        {tier && (
+        {tier && selected === "claude-code" && (
           <span
             style={{
               marginLeft: "auto",
@@ -90,14 +129,39 @@ export default async function UsagePage() {
             )}
           </span>
         )}
+        {selected === "codex" && latest?.plan_type && (
+          <span
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              padding: "4px 10px",
+              border: "1px solid var(--af-border-subtle)",
+              borderRadius: 999,
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            <span style={{ color: "var(--af-text-tertiary)" }}>plan</span>
+            <span style={{ color: "var(--af-text)", fontWeight: 600 }}>
+              Codex {latest.plan_type}
+            </span>
+          </span>
+        )}
       </header>
 
+      {/* Agent tab strip — one Link per agent that has snapshots. */}
+      <AgentTabs agents={Array.from(agentsWithData)} selected={selected} />
+
       {!latest ? (
-        <EmptyState />
+        <EmptyState agent={selected} />
       ) : (
         <>
-          <PreviousCyclesTrend windowLabel="7d" cycles={cycles7d} />
-          <UsageChartsDashboard snapshots={snapshots} predicted={predicted} />
+          {cycles7d.length > 0 && (
+            <PreviousCyclesTrend windowLabel="7d" cycles={cycles7d} />
+          )}
+          <UsageChartsDashboard snapshots={snapshots} predicted={predicted ?? undefined} />
           <div
             style={{
               fontSize: 11,
@@ -106,7 +170,7 @@ export default async function UsagePage() {
             }}
             suppressHydrationWarning
           >
-            Last daemon poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
+            Last {agentLabel(selected)} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
           </div>
         </>
@@ -115,7 +179,68 @@ export default async function UsagePage() {
   );
 }
 
-function EmptyState() {
+function AgentTabs({ agents, selected }: { agents: AgentKind[]; selected: AgentKind }) {
+  // Claude first, then everything else alphabetically.
+  const sorted = [...agents].sort((a, b) => {
+    if (a === "claude-code") return -1;
+    if (b === "claude-code") return 1;
+    return a.localeCompare(b);
+  });
+  return (
+    <div
+      role="tablist"
+      style={{
+        display: "inline-flex",
+        gap: 4,
+        padding: 4,
+        background: "var(--af-border-subtle)",
+        borderRadius: 8,
+        alignSelf: "flex-start",
+      }}
+    >
+      {sorted.map((kind) => {
+        const isActive = kind === selected;
+        return (
+          <Link
+            key={kind}
+            role="tab"
+            aria-selected={isActive}
+            href={`/usage?agent=${kind}`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 14px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: "0.01em",
+              color: isActive ? "var(--af-text)" : "var(--af-text-tertiary)",
+              background: isActive ? "var(--af-surface)" : "transparent",
+              boxShadow: isActive ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
+              textDecoration: "none",
+              transition: "all 0.12s ease",
+            }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: 999,
+                background: agentAccent(kind),
+                opacity: isActive ? 1 : 0.6,
+              }}
+            />
+            {agentLabel(kind)}
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+function EmptyState({ agent }: { agent: AgentKind }) {
   return (
     <div
       className="af-card"
@@ -131,7 +256,7 @@ function EmptyState() {
           color: "var(--af-text)",
         }}
       >
-        No usage data yet
+        No {agentLabel(agent)} usage data yet
       </div>
       <p
         style={{
@@ -140,43 +265,27 @@ function EmptyState() {
           marginTop: 8,
         }}
       >
-        Start the polling daemon to begin collecting metrics every 5 minutes:
+        {agent === "claude-code"
+          ? "Start the polling daemon to begin collecting metrics every 5 minutes:"
+          : "The daemon picks up Codex usage from disk on every poll cycle. Run a Codex session and the data will appear here within minutes."}
       </p>
-      <pre
-        style={{
-          display: "inline-block",
-          marginTop: 14,
-          background: "var(--background)",
-          border: "1px solid var(--af-border-subtle)",
-          padding: "8px 16px",
-          borderRadius: 6,
-          fontSize: 13,
-          fontFamily: "var(--font-mono)",
-          color: "var(--af-text)",
-        }}
-      >
-        cclens daemon start
-      </pre>
-      <p
-        style={{
-          fontSize: 11,
-          color: "var(--af-text-tertiary)",
-          marginTop: 16,
-        }}
-      >
-        For a one-shot snapshot without the daemon, run{" "}
-        <code
+      {agent === "claude-code" && (
+        <pre
           style={{
+            display: "inline-block",
+            marginTop: 14,
             background: "var(--background)",
-            padding: "1px 6px",
-            borderRadius: 4,
+            border: "1px solid var(--af-border-subtle)",
+            padding: "8px 16px",
+            borderRadius: 6,
+            fontSize: 13,
             fontFamily: "var(--font-mono)",
+            color: "var(--af-text)",
           }}
         >
-          cclens usage
-        </code>
-        .
-      </p>
+          fleetlens daemon start
+        </pre>
+      )}
     </div>
   );
 }

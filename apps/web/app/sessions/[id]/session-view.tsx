@@ -39,7 +39,7 @@ import {
 } from "@claude-lens/parser";
 import { estimateCost, formatCost, formatGap, formatOffset, formatRelative, formatTokens, shortId } from "@/lib/format";
 import { LiveBadge } from "@/components/live-badge";
-import { AskClaudeButton, AskClaudeDrawer } from "@/components/ask-claude";
+import { AskButton, AskDrawer } from "@/components/ask";
 import { TailMode } from "@/components/tail-mode";
 import type { TimelineData } from "./team-tab/adapter";
 import { TeamTabClient } from "./team-tab/team-tab-client";
@@ -65,7 +65,9 @@ import {
 /*  Constants + theming                                               */
 /* ------------------------------------------------------------------ */
 
-/** Gap > this (ms) before a user row is shown as a "Session idle" divider. */
+/** Gap > this (ms) before a user row is shown as a "Session idle" divider
+ *  in the transcript body (separate from the minimap, which now derives
+ *  idle from raw event timestamps via rawIdleBands). */
 const IDLE_THRESHOLD_MS = 2000;
 
 /** Sticky header height (session header + tabs + mini-map).
@@ -150,7 +152,7 @@ export function SessionView({
   const [filter, setFilter] = useState<FilterMode>("turns");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
-  const [askClaudeOpen, setAskClaudeOpen] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set());
   /** When a timeline click sets the index we also want to scroll. Track that
    *  intent separately so selection via row-click doesn't auto-scroll. */
@@ -289,6 +291,76 @@ export function SessionView({
 
   /** Detect PR creations in this session. */
   const prMarkers = useMemo(() => detectPrMarkers(session), [session]);
+
+  /** Idle bands derived from raw event timestamps, classified per gap.
+   *
+   *  Two flavors:
+   *    - In-turn idle (gap between agent activities within the same user
+   *      turn) — multiple of these inside one turn collapse into ONE merged
+   *      band whose `start..end` spans the whole period and `durationMs`
+   *      sums the actual idle.
+   *    - Between-turn idle (gap whose terminating anchor IS a user message)
+   *      — emitted standalone. This is "user paused, walked away, came
+   *      back" time and is conceptually distinct from agent thinking.
+   *
+   *  Anchors only count user / agent / tool-call / tool-result events —
+   *  meta + thinking events are skipped so sub-second event-to-event gaps
+   *  don't crowd the strip.
+   *
+   *  Side effect: the leading warm-up gap before the first agent response
+   *  drops out unless it crosses MIN_GAP_MS — which the first 6s in a
+   *  typical Codex session does not. */
+  const rawIdleBands = useMemo(() => {
+    const isAnchor = (role: string) =>
+      role === "user" ||
+      role === "agent" ||
+      role === "tool-call" ||
+      role === "tool-result";
+    const MIN_GAP_MS = 10_000;
+    const anchors: { ms: number; role: string }[] = [];
+    for (const e of events) {
+      if (!isAnchor(e.role)) continue;
+      if (!e.timestamp) continue;
+      const ms = Date.parse(e.timestamp);
+      if (!Number.isFinite(ms)) continue;
+      anchors.push({ ms, role: e.role });
+    }
+    if (anchors.length < 2) return [];
+    anchors.sort((a, b) => a.ms - b.ms);
+    const sessionStartMs = anchors[0]!.ms - (events.find((e) => e.timestamp)?.tOffsetMs ?? 0);
+
+    type Band = { start: number; end: number; durationMs: number };
+    const bands: Band[] = [];
+    let inTurn: Band | null = null;
+
+    const flushInTurn = () => {
+      if (inTurn && inTurn.durationMs > MIN_GAP_MS) bands.push(inTurn);
+      inTurn = null;
+    };
+
+    for (let i = 1; i < anchors.length; i++) {
+      const gap = anchors[i]!.ms - anchors[i - 1]!.ms;
+      if (gap <= MIN_GAP_MS) continue;
+      const gStart = anchors[i - 1]!.ms - sessionStartMs;
+      const gEnd = anchors[i]!.ms - sessionStartMs;
+
+      if (anchors[i]!.role === "user") {
+        // Between-turn idle — close any in-progress in-turn merge first,
+        // then push the between-turn band on its own.
+        flushInTurn();
+        bands.push({ start: gStart, end: gEnd, durationMs: gap });
+      } else {
+        // In-turn idle — accumulate into the running merged band.
+        if (!inTurn) inTurn = { start: gStart, end: gEnd, durationMs: gap };
+        else {
+          inTurn.end = gEnd;
+          inTurn.durationMs += gap;
+        }
+      }
+    }
+    flushInTurn();
+    return bands;
+  }, [events]);
 
   const coldResumeMarkers = useMemo(() => {
     const seen = new Set<string>();
@@ -607,7 +679,7 @@ export function SessionView({
           </span>
         </div>
 
-        {/* Toolbar (filter, copy, ask-claude) */}
+        {/* Toolbar (filter, copy, ask) */}
         <div
           className="flex items-center"
           style={{
@@ -662,9 +734,9 @@ export function SessionView({
           >
             <Copy size={12} /> Copy all
           </button>
-          <AskClaudeButton
+          <AskButton
             onClick={() => {
-              setAskClaudeOpen((p) => !p);
+              setAskOpen((p) => !p);
               setSelectedIndex(null);
               setSelectedSubagentId(null);
             }}
@@ -707,6 +779,7 @@ export function SessionView({
             collapsed={collapsed}
             prMarkers={prMarkers}
             coldResumeMarkers={coldResumeMarkers}
+            rawIdleBands={rawIdleBands}
             model={model}
             selectedSubagentId={selectedSubagentId}
             onSelectSubagent={(id) => {
@@ -788,6 +861,7 @@ export function SessionView({
               isSessionLive={isSessionLive}
               team={team}
               model={model}
+              rawIdleBands={rawIdleBands}
             />
           </>
         ) : (
@@ -868,8 +942,8 @@ export function SessionView({
         );
       })()}
 
-      {/* Ask Claude drawer */}
-      {askClaudeOpen && (
+      {/* Ask drawer */}
+      {askOpen && (
         <aside
           style={{
             position: "fixed",
@@ -885,9 +959,9 @@ export function SessionView({
             flexDirection: "column",
           }}
         >
-          <AskClaudeDrawer
+          <AskDrawer
             sessionId={session.id}
-            onClose={() => setAskClaudeOpen(false)}
+            onClose={() => setAskOpen(false)}
           />
         </aside>
       )}
@@ -1285,6 +1359,7 @@ function Minimap({
   onSelectSubagent,
   prMarkers,
   coldResumeMarkers,
+  rawIdleBands,
   model,
 }: {
   displayRows: DisplayRow[];
@@ -1301,6 +1376,11 @@ function Minimap({
     tOffsetMs: number;
     info: NonNullable<SessionEvent["coldResume"]>;
   }[];
+  /** Idle bands derived directly from raw event timestamps. Used in place
+   *  of the legacy "gap before user row" heuristic so Codex sessions
+   *  (which spend most of their time in agent reasoning, not user input)
+   *  surface their dead-air on the minimap. */
+  rawIdleBands?: { start: number; end: number; durationMs: number }[];
   model?: string;
 }) {
   const WIDTH = 1400;
@@ -1456,51 +1536,65 @@ function Minimap({
       }
     }
 
+    // Build a sorted copy of idle bands so we can clip row/turn ends to
+    // the start of the next idle band (or the next row, whichever comes
+    // first). This stops a row's rectangle from spanning across an idle
+    // gap and visually swallowing it.
+    const idleBands = (rawIdleBands ?? []).slice().sort((a, b) => a.start - b.start);
+    const nextIdleStartFrom = (t: number): number | undefined => {
+      for (const b of idleBands) {
+        if (b.start >= t) return b.start;
+      }
+      return undefined;
+    };
+
     for (let i = 0; i < withTime.length; i++) {
       const item = withTime[i];
       const next = withTime[i + 1];
       const start = item.start;
-
-      // Idle gap before user rows (only in atomic view — turns already
-      // contain their idle time inside their duration).
-      if (
-        item.kind === "row" &&
-        item.row.kind === "user" &&
-        item.gapMs > IDLE_THRESHOLD_MS &&
-        out.length > 0
-      ) {
-        out.push({
-          kind: "idle",
-          start: Math.max(0, start - item.gapMs),
-          end: start,
-          durationMs: item.gapMs,
-        });
-      }
+      const nextRowStart = next?.start;
+      const nextIdleStart = nextIdleStartFrom(start + 1);
+      // Cap end to whichever comes first: next visible row, next idle band.
+      const cap = (raw: number) =>
+        Math.min(
+          raw,
+          nextRowStart ?? Number.POSITIVE_INFINITY,
+          nextIdleStart ?? Number.POSITIVE_INFINITY,
+        );
 
       if (item.kind === "turn") {
-        // Turn's end = start + duration, clamped against the next
-        // segment's start so adjacent turns don't overlap.
         const turnEnd = start + (item.turn.durationMs ?? 0);
-        const nextStart = next?.start;
-        const end = nextStart !== undefined ? Math.min(turnEnd, nextStart) : turnEnd;
         out.push({
           kind: "turn",
           turn: item.turn,
           primaryIndex: item.turn.firstPrimaryIndex,
           start,
-          end: Math.max(end, start + 1),
+          end: Math.max(cap(turnEnd), start + 1),
         });
       } else {
-        const end = next?.start ?? Math.min(start + 800, safeDur);
+        const end = cap(nextRowStart ?? start + 800);
         out.push({
           kind: "row",
           row: item.row,
           primaryIndex: rowPrimaryIndex(item.row),
           start,
-          end,
+          end: Math.max(end, start + 1),
         });
       }
     }
+
+    // Idle bands are computed from raw event timestamps (5s threshold) up
+    // in the parent — append them and let the sort below interleave by
+    // start time so they slot between rows correctly.
+    for (const band of idleBands) {
+      out.push({
+        kind: "idle",
+        start: band.start,
+        end: band.end,
+        durationMs: band.durationMs,
+      });
+    }
+    out.sort((a, b) => a.start - b.start);
 
     // Cap the number of rendered segments. Each <rect> carries two
     // event handlers (onMouseEnter + onClick), so 2000 raw-events in
@@ -1546,7 +1640,7 @@ function Minimap({
       }
     }
     return bucketed;
-  }, [displayRows, safeDur]);
+  }, [displayRows, safeDur, rawIdleBands]);
 
   /* Sequential layout with a minimum displayed width per segment.
      - Raw proportional width = (seg.end - seg.start) / safeDur * WIDTH
@@ -2514,6 +2608,7 @@ function TranscriptList({
   isSessionLive,
   team,
   model,
+  rawIdleBands,
 }: {
   displayRows: DisplayRow[];
   rowRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>;
@@ -2524,6 +2619,10 @@ function TranscriptList({
   isSessionLive?: boolean;
   team?: (TimelineData & { teamName: string }) | null;
   model?: string;
+  /** Anchor-to-anchor idle bands. The body emits IdleDivider before any
+   *  row whose start matches a band's end, so Codex sessions get the same
+   *  "Session idle X minutes" markers Claude has always had. */
+  rawIdleBands?: { start: number; end: number; durationMs: number }[];
 }) {
   // Find the last collapsed turn index so we can mark it as in-progress
   // when the session is live.
@@ -2537,9 +2636,38 @@ function TranscriptList({
     }
   }
 
+  const idleBandList = (rawIdleBands ?? []).slice().sort((a, b) => a.start - b.start);
+  /** Returns the durationMs of the idle band that ends at (or just before)
+   *  the given row's tOffset, or null if no band matches. Tolerance is 1s
+   *  to absorb Date.parse rounding differences between anchor.ms and the
+   *  presentation row's tOffsetMs. */
+  const idleBeforeOffset = (tOff: number | undefined): number | null => {
+    if (tOff === undefined) return null;
+    for (const b of idleBandList) {
+      if (Math.abs(b.end - tOff) < 1000) return b.durationMs;
+    }
+    return null;
+  };
+  /** Pull a t-offset off whichever display-row variant we have. */
+  const rowTOffset = (d: DisplayRow): number | undefined => {
+    if (d.kind === "turn-collapsed" || d.kind === "turn-expanded-header") return d.turn.tOffsetMs;
+    if (d.kind === "turn-expanded-footer") return undefined;
+    return d.row.tOffsetMs;
+  };
+
   const out: React.ReactNode[] = [];
   for (let i = 0; i < displayRows.length; i++) {
     const d = displayRows[i];
+    // Emit a "Session idle" divider before any row that starts right after
+    // an anchor-to-anchor idle band. Skips indented (child) rows so an
+    // expanded turn doesn't render dividers for its inner steps.
+    const indented = d.kind === "presentation" ? d.indented : false;
+    if (!indented) {
+      const idleMs = idleBeforeOffset(rowTOffset(d));
+      if (idleMs !== null && idleMs > IDLE_THRESHOLD_MS) {
+        out.push(<IdleDivider key={`idle-before-${i}`} gapMs={idleMs} />);
+      }
+    }
 
     // Collapsed turn summary row
     if (d.kind === "turn-collapsed") {
@@ -2592,12 +2720,10 @@ function TranscriptList({
       continue;
     }
 
-    // Normal presentation row (possibly indented as a child of an expanded turn)
+    // Normal presentation row (possibly indented as a child of an expanded
+    // turn). Idle dividers are now emitted at the top of the loop from the
+    // shared rawIdleBands list — no separate gap-before-user check needed.
     const r = d.row;
-    const gap = r.gapMs ?? 0;
-    if (r.kind === "user" && gap > IDLE_THRESHOLD_MS && !d.indented) {
-      out.push(<IdleDivider key={`idle-${rowPrimaryIndex(r)}`} gapMs={gap} />);
-    }
     const idx = rowPrimaryIndex(r);
     out.push(
       <TranscriptRow
@@ -4699,7 +4825,7 @@ function EntryDayStrip({ entry }: { entry: Entry }) {
           📅 {fmtDate}
         </span>
         {isTrivial ? (
-          <OutcomePill outcome="trivial" size="md" />
+          <OutcomePill outcome="trivial" size="md" agent={entry.agent} />
         ) : isPending ? (
           <OutcomePill
             outcome={null}
@@ -4707,9 +4833,10 @@ function EntryDayStrip({ entry }: { entry: Entry }) {
             sessionId={entry.session_id}
             localDay={entry.local_day}
             size="md"
+            agent={entry.agent}
           />
         ) : enr.outcome ? (
-          <OutcomePill outcome={enr.outcome} size="md" />
+          <OutcomePill outcome={enr.outcome} size="md" agent={entry.agent} />
         ) : null}
         <span
           style={{

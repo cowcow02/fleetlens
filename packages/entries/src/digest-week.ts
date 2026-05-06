@@ -693,6 +693,11 @@ export type GenerateWeekOptions = {
    *  used for longest_run / hours_distribution / interaction_modes / threads
    *  and for on-the-fly DaySignals fallback on cached pre-refactor day digests. */
   entriesByDay?: Map<string, Entry[]>;
+  /** When true, run the LLM synth even with only one enriched day digest.
+   *  Default behavior requires ≥2 to avoid hallucinated weekly arcs from
+   *  a single data point; force=true is the user explicitly requesting a
+   *  current-week narrative that may have only Monday's data so far. */
+  allowSingleDay?: boolean;
 };
 
 export type GenerateWeekResult = {
@@ -773,8 +778,12 @@ export async function generateWeekDigest(
   // Need at least 2 LLM-enriched day digests (headline populated) to produce a
   // grounded weekly narrative. A deterministic-only day digest has null prose
   // fields, so synth would run on empty `day_summaries` and hallucinate.
+  // Override via allowSingleDay (force=true on the current week) — a single
+  // day with rich enrichment is enough to produce a meaningful Monday-only
+  // narrative that calls out which agents drove which work.
   const enrichedDays = dayDigests.filter(d => d.headline !== null);
-  if (enrichedDays.length < 2) return { digest: base, usage: null };
+  const minDays = opts.allowSingleDay ? 1 : 2;
+  if (enrichedDays.length < minDays) return { digest: base, usage: null };
 
   const model = opts.model ?? DEFAULT_MODEL;
   const callLLM = opts.callLLM ?? defaultCallLLMWeek;

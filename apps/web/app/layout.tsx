@@ -8,7 +8,8 @@ import {
   type LiveEntrySummary,
 } from "@/components/live-sessions-widget";
 import { JobQueueWidget } from "@/components/job-queue-widget";
-import { listProjects, listSessions, walkJsonlFiles } from "@claude-lens/parser/fs";
+import { listProjects, walkJsonlFiles } from "@claude-lens/parser/fs";
+import { listSessions } from "@/lib/data";
 import { latestUsageSnapshot } from "@/lib/usage-data";
 import { buildEntriesIndex } from "@/lib/entries-index";
 import pkg from "../package.json" with { type: "json" };
@@ -16,21 +17,22 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Fleetlens",
-  description: "Claude Code fleet analytics — local-only dashboard for sessions and agent fleets.",
+  description: "Multi-agent fleet analytics — local-only dashboard for Claude Code, Codex, and other coding-agent sessions.",
 };
 
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [projects, allFiles, recentSessions, entriesIndex] = await Promise.all([
+  const [projects, allFiles, allSessions, entriesIndex] = await Promise.all([
     listProjects(),
     walkJsonlFiles(),
-    // Only need the newest-mtime slice — the widget filters to the 45s
-    // live window client-side.
-    listSessions({ limit: 20 }),
+    // Pull from every registered agent source. The widget filters to the
+    // 45s live window client-side, so the slice is on freshness, not count.
+    listSessions(),
     buildEntriesIndex(),
   ]);
-  const totalSessions = allFiles.length;
+  const recentSessions = allSessions.slice(0, 20);
+  const totalSessions = allSessions.length;
   const currentUsage = latestUsageSnapshot();
 
   // Project to the minimal shape the widget needs so we don't ship
@@ -45,6 +47,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     lastTimestamp: s.lastTimestamp,
     teamName: s.teamName,
     agentName: s.agentName,
+    agent: s.agent,
   }));
 
   const liveEntrySummaries: Record<string, LiveEntrySummary> = {};

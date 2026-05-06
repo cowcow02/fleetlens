@@ -103,7 +103,10 @@ export async function* runDayDigestPipeline(
       const pending = freshForEnrich.filter(e => {
         if (e.enrichment.status !== "pending" && e.enrichment.status !== "error") return false;
         if ((e.enrichment.retry_count ?? 0) >= MAX_RETRY_COUNT) return false;
-        if (e.local_day === opts.todayLocalDay) return false;
+        // Today's entries are normally excluded so a fresh sweep doesn't
+        // burn LLM cost on still-evolving sessions. Override on force=true
+        // so the user can deliberately request today's narrative.
+        if (e.local_day === opts.todayLocalDay && !opts.force) return false;
         const endMs = Date.parse(e.end_iso);
         if (!Number.isNaN(endMs) && now() - endMs < THIRTY_MIN_MS) return false;
         return true;

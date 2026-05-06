@@ -23,8 +23,14 @@ export default async function SavedInsightPage({
   const weekMatch = WEEK_KEY.exec(key);
   if (weekMatch) {
     const monday = weekMatch[1]!;
-    const cached = monday === currentWeekMonday()
-      ? getCurrentWeekDigestFromCache(monday, Date.now())
+    // Current-week digests live in an in-memory TTL cache by default. When
+    // the user explicitly forces generation we ALSO persist to disk
+    // (digest-week-pipeline) so the result survives across Next.js route
+    // bundles — fall back to disk here so the page actually reads what
+    // they paid the LLM to produce.
+    const isCurrent = monday === currentWeekMonday();
+    const cached = isCurrent
+      ? (getCurrentWeekDigestFromCache(monday, Date.now()) ?? readWeekDigest(monday))
       : readWeekDigest(monday);
 
     const prev = shiftMonday(monday, -7);

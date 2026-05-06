@@ -1,6 +1,6 @@
 /**
  * Compact text summary of a parsed session, suitable as context for
- * the Ask Claude feature. Target: well under 8k tokens so Haiku has
+ * the Ask feature. Target: well under 8k tokens so Haiku has
  * room for an answer.
  *
  * Shape:

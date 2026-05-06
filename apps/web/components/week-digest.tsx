@@ -6,6 +6,7 @@ import { Check, Copy } from "lucide-react";
 import type { WeekDigest as WeekDigestType, DayHelpfulness, WeekTopSession, SessionPin } from "@claude-lens/entries";
 import { renderWithFlagChips } from "./flag-chip";
 import { GoalBar } from "./goal-bar";
+import { AgentBadge } from "./agent-badge";
 
 const HELP_COLORS: Record<NonNullable<DayHelpfulness>, string> = {
   essential: "#48bb78",
@@ -1742,6 +1743,7 @@ function TopSessionCard({ session }: { session: WeekTopSession }) {
           >
             {session.project_display}
           </Link>
+          <AgentBadge agent={session.agent} />
           <Link
             href={`/digest/${session.date}`}
             style={{

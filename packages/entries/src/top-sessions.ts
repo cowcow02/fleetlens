@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ContentBlock } from "@claude-lens/parser";
 import type {
   Entry, SessionPin, SessionPinKind, WeekTopSession, WorkingShape,
 } from "./types.js";
@@ -74,19 +75,25 @@ function bashVerb(cmd: string): string {
 /** Pick up to 3 sessions worth a deep timeline view. Score by active time
  *  weighted up by subagent dispatches and PRs shipped. Filter to substantial
  *  entries (≥20 min active OR ≥1 PR OR ≥10 turns). Cap to 1 per project so
- *  the three slots showcase distinct work streams. */
+ *  the three slots showcase distinct work streams.
+ *
+ *  Multi-agent guarantee: when the week's entries span more than one source
+ *  agent (Claude Code + Codex, etc.) the picks must show at least one
+ *  non-claude-code session. The default scoring filter is calibrated for
+ *  Claude Code's typical session length (≥20 min) and would silently
+ *  exclude Codex's typically-shorter dispatches; the guarantee keeps the
+ *  fleet view honest by reserving the last slot for the best non-Claude
+ *  session when one exists with any meaningful activity. */
 export function pickTopSessions(entriesByDay: Map<string, Entry[]>): Entry[] {
   const flat: Entry[] = [];
   for (const arr of entriesByDay.values()) flat.push(...arr);
 
+  const scoreEntry = (e: Entry) =>
+    e.numbers.active_min * (1 + 0.5 * e.numbers.subagent_calls + 5 * e.pr_titles.length);
+
   const scored = flat
     .filter(e => e.numbers.active_min >= 20 || e.numbers.turn_count >= 10 || e.pr_titles.length >= 1)
-    .map(e => ({
-      entry: e,
-      score: e.numbers.active_min * (
-        1 + 0.5 * e.numbers.subagent_calls + 5 * e.pr_titles.length
-      ),
-    }))
+    .map(e => ({ entry: e, score: scoreEntry(e) }))
     .sort((a, b) => b.score - a.score);
 
   const seenProjects = new Set<string>();
@@ -97,16 +104,43 @@ export function pickTopSessions(entriesByDay: Map<string, Entry[]>): Entry[] {
     picked.push(entry);
     if (picked.length >= 3) break;
   }
+
+  // Multi-agent guarantee: if the week has non-Claude entries but none made
+  // the cut, swap the LOWEST-scoring pick for the BEST non-Claude entry.
+  // We use a relaxed inclusion threshold here (≥3 min active OR ≥10 tools
+  // OR ≥3 turns) so a meaningful Codex session counts even when shorter
+  // than the Claude-tuned default. Same one-per-project rule still applies.
+  const hasNonClaude = flat.some(e => (e.agent ?? "claude-code") !== "claude-code");
+  const pickedHasNonClaude = picked.some(e => (e.agent ?? "claude-code") !== "claude-code");
+  if (hasNonClaude && !pickedHasNonClaude) {
+    const nonClaudeCandidates = flat
+      .filter(e => (e.agent ?? "claude-code") !== "claude-code")
+      .filter(e =>
+        e.numbers.active_min >= 3 ||
+        e.numbers.tools_total >= 10 ||
+        e.numbers.turn_count >= 3,
+      )
+      .map(e => ({ entry: e, score: scoreEntry(e) + 0.0001 * e.numbers.tools_total }))
+      .sort((a, b) => b.score - a.score);
+    const reserved = nonClaudeCandidates.find(c => !seenProjects.has(c.entry.project));
+    if (reserved) {
+      // Drop the lowest-scoring Claude pick (or just append if we have <3)
+      if (picked.length >= 3) picked.pop();
+      picked.push(reserved.entry);
+    }
+  }
   return picked;
 }
 
 // ─── Slice (per-session payload from raw events) ───────────────────────
 
-/** Subset of SessionDetail.events that this module needs. Caller supplies
- *  events from @claude-lens/parser's SessionDetail. */
+/** Subset of SessionDetail.events that this module reads — bucketing is
+ *  driven by the typed `role`, not raw JSONL shape, so any adapter works. */
 export type RawSessionEvent = {
   timestamp?: string;
   rawType: string;
+  role?: string;
+  blocks?: ContentBlock[];
   raw?: unknown;
 };
 
@@ -124,21 +158,6 @@ type Turn = {
   pr_created: string | null;
   timestamps: number[];
 };
-
-function blockText(blocks: unknown): string {
-  if (!Array.isArray(blocks)) return "";
-  return blocks
-    .filter((b): b is { type: "text"; text: string } =>
-      !!b && typeof b === "object" && (b as { type?: string }).type === "text"
-        && typeof (b as { text?: unknown }).text === "string")
-    .map(b => b.text)
-    .join(" ");
-}
-
-function isToolResultOnly(content: unknown): boolean {
-  return Array.isArray(content) && content.length > 0
-    && content.every(c => c && typeof c === "object" && (c as { type?: string }).type === "tool_result");
-}
 
 const INTERRUPT_RE = /\[request interrupted|interrupted by user/i;
 const PR_TITLE_RE = /--title\s+["']([^"']+)["']/;
@@ -169,12 +188,17 @@ export function eventsToTurns(
   let cur: Turn | null = null;
 
   for (const ev of filtered) {
-    const raw = ev.raw as { message?: { content?: unknown } } | undefined;
-    const content = raw?.message?.content;
-    if (ev.rawType === "user") {
-      const isToolOnly = isToolResultOnly(content);
+    const blocks: ContentBlock[] = ev.blocks ?? [];
+    const isUserBucket = ev.role === "user" || ev.role === "tool-result";
+    const isAssistantBucket =
+      ev.role === "agent" || ev.role === "agent-thinking" || ev.role === "tool-call";
+    if (isUserBucket) {
+      const isToolOnly = blocks.length > 0 && blocks.every((c) => c.type === "tool_result");
       if (!isToolOnly) {
-        const text = blockText(content) || (typeof content === "string" ? content : "");
+        const text = blocks
+          .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
+          .map((b) => b.text)
+          .join(" ");
         const interrupted = INTERRUPT_RE.test(text);
         if (cur && interrupted) cur.interrupts += 1;
         if (cur) turns.push(cur);
@@ -189,42 +213,40 @@ export function eventsToTurns(
         cur.events.push(ev);
         cur.timestamps.push(ev._ts);
       }
-    } else if (ev.rawType === "assistant") {
+    } else if (isAssistantBucket) {
       if (!cur) continue;
       cur.events.push(ev);
       cur.timestamps.push(ev._ts);
-      if (Array.isArray(content)) {
-        for (const c of content) {
-          if (!c || typeof c !== "object") continue;
-          const ct = c as { type?: string; text?: string; name?: string; input?: Record<string, unknown> };
-          if (ct.type === "text" && ct.text) {
-            cur.agent_blocks.push(ct.text);
-          } else if (ct.type === "tool_use") {
-            const name = ct.name ?? "unknown";
-            cur.tools_count.set(name, (cur.tools_count.get(name) ?? 0) + 1);
-            if (name === "Skill") {
-              const sk = String(ct.input?.skill ?? "unknown");
-              cur.skills.set(sk, (cur.skills.get(sk) ?? 0) + 1);
-            } else if (name === "Agent") {
-              const inp = ct.input ?? {};
-              cur.subagents.push({
-                type: String(inp.subagent_type ?? "general-purpose"),
-                description: String(inp.description ?? "").slice(0, 80),
-                prompt_preview: String(inp.prompt ?? "").slice(0, N_SUBAGENT),
-                background: Boolean(inp.run_in_background),
-              });
-            } else if (name === "ExitPlanMode") {
-              cur.exit_plan_calls += 1;
-            } else if (name === "TodoWrite" || name === "TaskCreate" || name === "TaskUpdate") {
-              cur.todo_ops += 1;
-            } else if (name === "Bash") {
-              const cmd = String(ct.input?.command ?? "");
-              const v = bashVerb(cmd);
-              cur.bash_verbs.set(v, (cur.bash_verbs.get(v) ?? 0) + 1);
-              if (/\bgh\s+pr\s+create\b/.test(cmd)) {
-                const m = cmd.match(PR_TITLE_RE);
-                cur.pr_created = m?.[1] ?? cmd.slice(0, 120);
-              }
+      for (const c of blocks) {
+        if (!c || typeof c !== "object") continue;
+        const ct = c as { type?: string; text?: string; name?: string; input?: Record<string, unknown> };
+        if (ct.type === "text" && ct.text) {
+          cur.agent_blocks.push(ct.text);
+        } else if (ct.type === "tool_use") {
+          const name = ct.name ?? "unknown";
+          cur.tools_count.set(name, (cur.tools_count.get(name) ?? 0) + 1);
+          if (name === "Skill") {
+            const sk = String(ct.input?.skill ?? "unknown");
+            cur.skills.set(sk, (cur.skills.get(sk) ?? 0) + 1);
+          } else if (name === "Agent") {
+            const inp = ct.input ?? {};
+            cur.subagents.push({
+              type: String(inp.subagent_type ?? "general-purpose"),
+              description: String(inp.description ?? "").slice(0, 80),
+              prompt_preview: String(inp.prompt ?? "").slice(0, N_SUBAGENT),
+              background: Boolean(inp.run_in_background),
+            });
+          } else if (name === "ExitPlanMode") {
+            cur.exit_plan_calls += 1;
+          } else if (name === "TodoWrite" || name === "TaskCreate" || name === "TaskUpdate") {
+            cur.todo_ops += 1;
+          } else if (name === "Bash") {
+            const cmd = String(ct.input?.command ?? "");
+            const v = bashVerb(cmd);
+            cur.bash_verbs.set(v, (cur.bash_verbs.get(v) ?? 0) + 1);
+            if (/\bgh\s+pr\s+create\b/.test(cmd)) {
+              const m = cmd.match(PR_TITLE_RE);
+              cur.pr_created = m?.[1] ?? cmd.slice(0, 120);
             }
           }
         }

@@ -7,7 +7,7 @@ import { listEntriesForDay } from "./fs.js";
 import { runDayDigestPipeline, type PipelineEvent, type PipelineOptions as DayPipelineOptions } from "./digest-day-pipeline.js";
 import { generateWeekDigest, buildDeterministicWeekDigest, weekDates } from "./digest-week.js";
 import { pickTopSessions, buildSessionSlice, generateTopSession, type RawSessionEvent } from "./top-sessions.js";
-import { getSession } from "@claude-lens/parser/fs";
+import { getAnySession } from "@claude-lens/parser/fs";
 import { appendSpend } from "./budget.js";
 import { computeCostUsd } from "./enrich.js";
 import { writeInteractiveLock, removeInteractiveLock } from "./pipeline-lock.js";
@@ -82,9 +82,12 @@ export async function* runWeekDigestPipeline(
     }
 
     if (isToday) {
-      // Read today via the day pipeline (TTL-cached short-circuit). Never force.
+      // Read today via the day pipeline (TTL-cached short-circuit). Cascade
+      // force=true through so a forced week regen also forces today's
+      // enrichment; otherwise the day comes back deterministic-only and the
+      // week narrative falls back to the empty-headline path.
       const subOpts: DayPipelineOptions = {
-        settings: opts.settings, force: false, callLLM: opts.callLLM, now: opts.now,
+        settings: opts.settings, force: opts.force ?? false, callLLM: opts.callLLM, now: opts.now,
         todayLocalDay: opts.todayLocalDay, caller: opts.caller,
       };
       let captured: DayDigest | null = null;
@@ -157,7 +160,9 @@ export async function* runWeekDigestPipeline(
     const picks = aiOn ? pickTopSessions(entriesByDay) : [];
     const topSlicesPrep = await Promise.all(picks.map(async (entry) => {
       try {
-        const sessionDetail = await getSession(entry.session_id);
+        // getAnySession dispatches across the AgentSource registry so a
+        // Codex pick resolves to its rollout, not just Claude transcripts.
+        const sessionDetail = await getAnySession(entry.session_id);
         if (!sessionDetail) return null;
         const events = sessionDetail.events as unknown as RawSessionEvent[];
         const dd = dayDigestByDate.get(entry.local_day);
@@ -189,6 +194,10 @@ export async function* runWeekDigestPipeline(
       const weekPromise = generateWeekDigest(monday, dayDigests, {
         model: opts.settings.model, callLLM: opts.callLLM,
         entriesByDay,
+        // The current week often has only Monday's data when freshly forced —
+        // unblock the LLM synth in that case so the user gets a usable
+        // narrative on day one of the week.
+        allowSingleDay: opts.force === true && isCurrentWeek,
         onProgress: info => { progressQueue.push({ bytes: info.bytes, elapsed_ms: info.elapsedMs }); },
       });
       const topSessionsPromise = Promise.all(topSlices.map(({ entry, slice }) =>
@@ -228,7 +237,9 @@ export async function* runWeekDigestPipeline(
       const topSessions: WeekTopSession[] = [];
       for (const r of topResults) {
         if (!r) continue;
-        topSessions.push(r.topSession);
+        // Stamp the source agent on the top session so the renderer can
+        // show an agent badge for non-Claude picks.
+        topSessions.push({ ...r.topSession, agent: r.entry.agent });
         if (r.usage) {
           appendSpend({
             ts: new Date().toISOString(), caller: opts.caller ?? "web",
@@ -255,6 +266,19 @@ export async function* runWeekDigestPipeline(
     } else {
       digest.is_live = true;
       setCurrentWeekDigestInCache(monday, digest, now());
+      // Force=true on the current week is an explicit user-driven generation.
+      // The default rule keeps current-week digests in-memory only (so they
+      // recompute as the week progresses), but Next.js bundles each route
+      // with its own module scope — the API route's in-memory cache isn't
+      // visible to the insights page's RSC. Writing to disk on force=true
+      // bridges that gap so the user actually sees the digest they paid to
+      // generate. The deterministic-data view stays correct because every
+      // future page load will refresh from this snapshot until either the
+      // user re-forces or the next day's data triggers a fresh write.
+      if (opts.force === true) {
+        writeWeekDigest(digest);
+        yield { type: "saved", path: `~/.cclens/digests/week/${monday}.json` };
+      }
     }
 
     yield { type: "digest", digest };

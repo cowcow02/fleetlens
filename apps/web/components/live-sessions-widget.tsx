@@ -17,6 +17,7 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { prettyProjectName } from "@/lib/format";
 import { TeamBadge } from "@/components/team-badge";
+import { AgentBadge } from "@/components/agent-badge";
 import { OutcomePill } from "@/components/outcome-pill";
 import type { DayOutcome, EntryEnrichmentStatus } from "@claude-lens/entries";
 
@@ -34,6 +35,7 @@ export type LiveSessionPick = {
   lastTimestamp?: string;
   teamName?: string;
   agentName?: string;
+  agent?: import("@claude-lens/parser").AgentKind;
 };
 
 export type LiveEntrySummary = {
@@ -212,7 +214,7 @@ export function LiveSessionsWidget({
               style={{ marginBottom: 4 }}
             >
               {sum.outcome ? (
-                <OutcomePill outcome={sum.outcome} size="sm" label="text" />
+                <OutcomePill outcome={sum.outcome} size="sm" label="text" agent={s.agent} />
               ) : sum.enrichmentStatus !== "skipped_trivial" ? (
                 <OutcomePill
                   outcome={null}
@@ -220,6 +222,7 @@ export function LiveSessionsWidget({
                   sessionId={s.id}
                   localDay={sum.localDay}
                   size="sm"
+                  agent={s.agent}
                 />
               ) : null}
             </div>
@@ -248,6 +251,7 @@ export function LiveSessionsWidget({
               )}
             </span>
             <TeamBadge session={s} linkable={false} />
+            <AgentBadge agent={s.agent} />
           </div>
           {/* Subtitle: what the agent is saying in response. */}
           <div

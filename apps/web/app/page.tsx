@@ -1,5 +1,5 @@
 /**
- * Dashboard home — high-level metrics across all Claude Code sessions.
+ * Dashboard home — high-level metrics across every observed agent.
  *
  * Everything here is server-rendered from @claude-lens/parser/fs, then
  * passed down to small interactive client components (heatmap, chart).
@@ -7,6 +7,8 @@
 
 import {
   groupByProject,
+  type AgentKind,
+  agentMetadata,
   type SessionMeta,
 } from "@claude-lens/parser";
 import { DashboardView } from "@/components/dashboard-view";
@@ -110,19 +112,21 @@ export default async function DashboardHome({
           </h1>
           <p style={{ fontSize: 13, color: "var(--af-text-secondary)", marginTop: 4 }}>
             {sessions.length} of {allSessions.length} session
-            {allSessions.length === 1 ? "" : "s"}, read from{" "}
-            <code
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                background: "var(--af-border-subtle)",
-                padding: "1px 6px",
-                borderRadius: 4,
-              }}
-            >
-              ~/.claude/projects
-            </code>
-            .
+            {allSessions.length === 1 ? "" : "s"} across{" "}
+            {(() => {
+              const counts = new Map<AgentKind, number>();
+              for (const s of allSessions) {
+                const k = (s.agent ?? "claude-code") as AgentKind;
+                counts.set(k, (counts.get(k) ?? 0) + 1);
+              }
+              const parts = agentMetadata
+                .map((m) => {
+                  const n = counts.get(m.kind) ?? 0;
+                  return n > 0 ? `${n} ${m.displayName}` : null;
+                })
+                .filter((s): s is string => s !== null);
+              return parts.length ? parts.join(" + ") : "no observed agents yet";
+            })()}.
           </p>
         </div>
         <DateRangeFilter current={range} />
@@ -246,7 +250,7 @@ export default async function DashboardHome({
           </div>
           <div>
             {recentSessions.length === 0 ? (
-              <div className="af-empty">No sessions found in ~/.claude/projects</div>
+              <div className="af-empty">No sessions found from any registered agent source.</div>
             ) : (
               recentSessions.map((s) => (
                 <Link

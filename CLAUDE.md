@@ -1,6 +1,6 @@
 # Fleetlens
 
-Local-only, privacy-first dashboard for Claude Code sessions and agent fleets. Reads JSONL transcripts from `~/.claude/projects/` and visualizes agent activity (sessions, parallelism, PR shipping, plan utilization burndown).
+Local-only, privacy-first dashboard for **multi-agent** coding fleets. Reads JSONL transcripts from every registered source (Claude Code at `~/.claude/projects/`, Codex CLI at `~/.codex/sessions/`, …) and visualizes agent activity (sessions, parallelism, PR shipping, plan utilization burndown).
 
 Brand: **Fleetlens** (capitalized, proper noun, displayed in UI). CLI binary and npm package: `fleetlens` (lowercase, convention).
 
@@ -25,7 +25,7 @@ fleetlens/                            ← github.com/cowcow02/fleetlens
 └── .github/workflows/release.yml         Tag-driven release pipeline
 ```
 
-**Parser (`packages/parser`)** — zero-dependency TypeScript. `parser.ts` turns a JSONL line into a `SessionEvent`. `analytics.ts` aggregates sessions into daily buckets, parallelism points, concurrency bursts, project rollups. `fs.ts` is the Node-only filesystem scanner (exposed as `@claude-lens/parser/fs` so pure browser consumers don't accidentally pull in `node:fs`).
+**Parser (`packages/parser`)** — zero-dependency TypeScript. `parser.ts` turns a Claude Code JSONL line into a `SessionEvent`. `codex.ts` does the same for Codex CLI rollouts. `analytics.ts` aggregates sessions into daily buckets, parallelism points, concurrency bursts, project rollups (works on any agent source). `fs.ts` is the Node-only filesystem scanner (exposed as `@claude-lens/parser/fs` so pure browser consumers don't accidentally pull in `node:fs`) and hosts the `AgentSource` registry — adding the next agent (Gemini CLI, OpenCode, …) is a new file plus one push to `agentSources`.
 
 **CLI (`packages/cli`)** — esbuild-bundled. `dist/index.js` is the entry binary; `dist/daemon-worker.js` is the detached usage-polling worker. Both get shipped inside a single npm package along with the Next.js standalone output.
 

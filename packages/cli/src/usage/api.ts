@@ -26,9 +26,14 @@ export type ExtraUsage = {
   utilization: number | null;
 };
 
+import type { AgentKind } from "@claude-lens/parser";
+
 export type UsageSnapshot = {
   /** When we captured this snapshot (client-side ISO timestamp) */
   captured_at: string;
+  /** Source agent. Absent on legacy snapshots written before multi-agent
+   *  support — readers MUST treat undefined as "claude-code". */
+  agent?: AgentKind;
   five_hour: UsageWindow;
   seven_day: UsageWindow;
   seven_day_opus: UsageWindow | null;
@@ -36,6 +41,9 @@ export type UsageSnapshot = {
   seven_day_oauth_apps: UsageWindow | null;
   seven_day_cowork: UsageWindow | null;
   extra_usage: ExtraUsage | null;
+  /** Plan label from the source ("plus", "pro", …). Codex emits this
+   *  on each rate_limits payload; Claude doesn't, so left null there. */
+  plan_type?: string | null;
 };
 
 export class UsageApiError extends Error {
@@ -95,6 +103,7 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
   const b = body as Record<string, unknown>;
   return {
     captured_at: new Date().toISOString(),
+    agent: "claude-code",
     five_hour: normalizeWindow(b.five_hour) ?? { utilization: null, resets_at: null },
     seven_day: normalizeWindow(b.seven_day) ?? { utilization: null, resets_at: null },
     seven_day_opus: normalizeWindow(b.seven_day_opus),
@@ -102,6 +111,7 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
     seven_day_oauth_apps: normalizeWindow(b.seven_day_oauth_apps),
     seven_day_cowork: normalizeWindow(b.seven_day_cowork),
     extra_usage: normalizeExtra(b.extra_usage),
+    plan_type: null,
   };
 }
 

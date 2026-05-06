@@ -156,7 +156,7 @@ export function Sidebar({
               </span>
             </div>
             <div style={{ fontSize: 11, color: "var(--af-text-tertiary)" }}>
-              Claude Code fleet analytics
+              Multi-agent fleet analytics
             </div>
           </div>
         </div>

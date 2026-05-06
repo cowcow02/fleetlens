@@ -10,7 +10,8 @@ import {
 } from "@claude-lens/parser";
 import type { DayOutcome, EntryEnrichmentStatus } from "@claude-lens/entries";
 import { formatDuration, formatTokens, prettyProjectName } from "@/lib/format";
-import { OutcomePill, OUTCOME_STYLES } from "@/components/outcome-pill";
+import { OutcomePill } from "@/components/outcome-pill";
+import { AgentIcon } from "@/components/agent-icon";
 
 export type SessionEntrySummary = {
   outcome: DayOutcome | null;
@@ -643,21 +644,8 @@ export function GanttChart({
                         flexShrink: 0,
                       }}
                     />
-                    {(() => {
-                      const sum = sessionEntries[session.id];
-                      if (sum?.outcome) {
-                        return (
-                          <span
-                            title={OUTCOME_STYLES[sum.outcome]?.label ?? sum.outcome}
-                            style={{ fontSize: 11, lineHeight: 1, flexShrink: 0 }}
-                            aria-hidden
-                          >
-                            {OUTCOME_STYLES[sum.outcome]?.icon ?? ""}
-                          </span>
-                        );
-                      }
-                      return null;
-                    })()}
+                    <AgentIcon agent={session.agent} size={11} />
+
                     <Link
                       href={`/sessions/${session.id}`}
                       style={{
@@ -841,7 +829,7 @@ export function GanttChart({
               if (sum.outcome) {
                 return (
                   <div style={{ marginBottom: 6 }}>
-                    <OutcomePill outcome={sum.outcome} size="sm" />
+                    <OutcomePill outcome={sum.outcome} size="sm" agent={hover.session.agent} />
                   </div>
                 );
               }
@@ -854,6 +842,7 @@ export function GanttChart({
                       sessionId={hover.session.id}
                       localDay={sum.localDay}
                       size="sm"
+                      agent={hover.session.agent}
                     />
                   </div>
                 );
@@ -1761,7 +1750,7 @@ function BurstDetailModal({
                       {(() => {
                         const sum = sessionEntries[s.id];
                         if (sum?.outcome) {
-                          return <OutcomePill outcome={sum.outcome} size="sm" label="text" />;
+                          return <OutcomePill outcome={sum.outcome} size="sm" label="text" agent={s.agent} />;
                         }
                         return null;
                       })()}

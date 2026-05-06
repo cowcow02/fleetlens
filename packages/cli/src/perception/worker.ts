@@ -2,6 +2,7 @@ import { statSync, readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { parseTranscript } from "@claude-lens/parser";
 import type { SessionDetail } from "@claude-lens/parser";
+import { agentSources } from "@claude-lens/parser/fs";
 import { buildEntries } from "@claude-lens/entries";
 import { writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
 import {
@@ -102,12 +103,43 @@ export async function runPerceptionSweep(opts: SweepOptions = {}): Promise<Sweep
         log(`skipped ${f}: ${(err as Error).message}`);
       }
     }
-    // Phase 2.1: daemon no longer auto-enriches entries. Enrichment happens
-    // only when the user explicitly requests a digest — either by opening
-    // the home page (which auto-generates yesterday) or by clicking
-    // Generate / Regenerate on a past day. This keeps LLM spend user-
-    // initiated and predictable; end users don't get a surprise bill from
-    // an unbidden historical backfill on first run.
+    // Daemon no longer auto-enriches: LLM spend is gated on an explicit
+    // user request (home page auto-fires yesterday, or Generate on a past
+    // day) so first-run users don't get a surprise bill from a backfill.
+
+    // Non-Claude sources read from their own default roots, which would
+    // pull in real ~/.codex data when tests pin projectsRoot to a tmp dir.
+    if (opts.projectsRoot === undefined) {
+      for (const source of agentSources) {
+        if (source.kind === "claude-code") continue;
+        try {
+          const metas = await source.listSessions();
+          for (const meta of metas) {
+            try {
+              const detail = await source.getSession(meta.id);
+              if (!detail) continue;
+              const built = buildEntries(detail);
+              for (const e of built) {
+                try {
+                  const stat = statSync(meta.filePath);
+                  e.source_checkpoint.byte_offset = stat.size;
+                } catch {
+                  // file disappeared between list + build — fall through with 0
+                }
+                writeEntryPreservingEnrichment(e);
+                entries++;
+              }
+              sessions++;
+            } catch (err) {
+              errors++;
+              log(`${source.kind} skipped ${meta.id}: ${(err as Error).message}`);
+            }
+          }
+        } catch (err) {
+          log(`${source.kind} pass failed: ${(err as Error).message}`);
+        }
+      }
+    }
   } finally {
     markSweepEnd();
   }

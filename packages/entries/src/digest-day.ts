@@ -242,6 +242,29 @@ export function buildDeterministicDigest(
     end: `${date}T23:59:59`,
   };
 
+  // Per-source-agent breakdown — surfaces fleet shape into the day digest
+  // and propagates up to week/month digests.
+  const agentMap = new Map<string, { sessions: number; active_min: number; tools_total: number }>();
+  for (const e of entries) {
+    const k = e.agent ?? "claude-code";
+    const cur = agentMap.get(k) ?? { sessions: 0, active_min: 0, tools_total: 0 };
+    cur.sessions += 1;
+    cur.active_min += e.numbers.active_min;
+    cur.tools_total += e.numbers.tools_total;
+    agentMap.set(k, cur);
+  }
+  const agent_breakdown =
+    agentMap.size === 0
+      ? undefined
+      : Array.from(agentMap.entries())
+          .map(([agent, v]) => ({
+            agent,
+            sessions: v.sessions,
+            active_min: Math.round(v.active_min * 10) / 10,
+            tools_total: v.tools_total,
+          }))
+          .sort((a, b) => b.active_min - a.active_min);
+
   return {
     version: CURRENT_DAY_DIGEST_SCHEMA_VERSION,
     scope: "day",
@@ -258,6 +281,7 @@ export function buildDeterministicDigest(
     top_goal_categories,
     concurrency_peak: opts.concurrencyPeak ?? 0,
     agent_min,
+    agent_breakdown,
     outcome_day: rollupOutcomeDay(entries),
     helpfulness_day: rollupHelpfulnessDay(entries),
     day_signals: entries.length > 0 ? computeDaySignals(entries) : undefined,

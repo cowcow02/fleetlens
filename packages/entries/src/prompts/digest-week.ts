@@ -2,6 +2,14 @@ import { z } from "zod";
 import type {
   DayDigest, DayOutcome, WeekDigest, WorkingShape,
 } from "../types.js";
+import { agentMetadata } from "@claude-lens/parser";
+
+/** Built once at module load from the registry. New agents auto-appear
+ *  here when added to packages/parser/src/agent-metadata.ts; no prompt
+ *  edit required. */
+const AGENT_NAMING_TABLE = agentMetadata
+  .map((m) => `  - agent="${m.kind}" → render as "${m.displayName}"`)
+  .join("\n");
 // flagGlossaryForPrompt + FLAG_GLOSSARY were used by the prior JSON
 // payload's flag_glossary block; the transcript prompt drops that section
 // since the ANCHORING RULES already constrain output and flags rarely
@@ -60,9 +68,13 @@ export const WeekDigestResponseSchema = z.object({
 
 export type WeekDigestResponse = z.infer<typeof WeekDigestResponseSchema>;
 
-const SYSTEM_PROMPT = `You are the weekly retrospective writer for Fleetlens, a dashboard for Claude Code sessions.
+const SYSTEM_PROMPT = `You are the weekly retrospective writer for Fleetlens, a dashboard for multi-agent coding fleets (Claude Code, OpenAI Codex CLI, and possibly more).
 
-Your unique advantage: you receive both **already-synthesized day digests** AND a **per-week classification of how the user drove agents** — named orchestration shapes, the user's interaction grammar, and counts. Your job is to take that texture and tell a coherent story about WHO this user is as a Claude Code operator THIS WEEK and what they should do next.
+Your unique advantage: you receive both **already-synthesized day digests** AND a **per-week classification of how the user drove agents** — named orchestration shapes, the user's interaction grammar, counts, and a per-source-agent breakdown. Your job is to take that texture and tell a coherent story about WHO this user is as a multi-agent operator THIS WEEK and what they should do next.
+
+When the week's input includes more than one source agent (see "Per-agent week breakdown" in the input AND per-day "Agent breakdown" lines), the narrative MUST name them. Render each agent kind with its canonical display name:
+${AGENT_NAMING_TABLE}
+The headline, key_pattern, project_areas and at least one of what_worked / what_stalled / what_surprised should make the multi-agent split visible — readers want to see how a secondary agent was blended into the dominant agent's week (or vice versa).
 
 The reader sees, before reading your prose:
   • A "Top sessions" section with 1-3 deep-dive cards (per-session story + timeline + pin annotations).
@@ -257,6 +269,30 @@ export function buildWeekDigestUserPrompt(base: WeekDigest, dayDigests: DayDiges
   out(`# Week ${base.key} (${base.window.start} → ${base.window.end})`);
   out();
   out(`Total agent time: ${Math.round(base.agent_min_total)} min across ${dayDigests.length} day(s) with data.`);
+
+  // Per-agent week breakdown — sum across day digests' agent_breakdown.
+  // Surfaces fleet shape directly so the LLM can name Codex vs Claude Code
+  // contributions without inferring from project paths.
+  const weekAgent = new Map<string, { sessions: number; active_min: number; tools_total: number }>();
+  for (const dd of dayDigests) {
+    for (const row of dd.agent_breakdown ?? []) {
+      const cur = weekAgent.get(row.agent) ?? { sessions: 0, active_min: 0, tools_total: 0 };
+      cur.sessions += row.sessions;
+      cur.active_min += row.active_min;
+      cur.tools_total += row.tools_total;
+      weekAgent.set(row.agent, cur);
+    }
+  }
+  if (weekAgent.size > 0) {
+    const rows = Array.from(weekAgent.entries())
+      .sort((a, b) => b[1].active_min - a[1].active_min)
+      .map(([agent, v]) =>
+        `${agent}=${v.sessions} session${v.sessions === 1 ? "" : "s"}/${Math.round(v.active_min)}m active/${v.tools_total} tool calls`,
+      )
+      .join(", ");
+    out(`Per-agent week breakdown: ${rows}.`);
+  }
+
   const outcomeMix: Record<DayOutcome, number> = {
     shipped: 0, partial: 0, blocked: 0, exploratory: 0, trivial: 0, idle: 0,
   };
@@ -368,6 +404,12 @@ export function buildWeekDigestUserPrompt(base: WeekDigest, dayDigests: DayDiges
     const dayShape = d.day_signals?.dominant_shape ?? null;
     const headerExtra = dayShape ? ` · shape: ${dayShape}` : "";
     out(`### ${dayName(d.key)} ${d.key} — ${Math.round(d.agent_min)}m active · outcome: ${d.outcome_day}${headerExtra}`);
+    if (d.agent_breakdown && d.agent_breakdown.length > 1) {
+      const ab = d.agent_breakdown
+        .map((r) => `${r.agent}=${r.sessions}/${Math.round(r.active_min)}m`)
+        .join(", ");
+      out(`Agent breakdown: ${ab}`);
+    }
     if (d.headline) out(`Headline: ${d.headline}`);
     if (d.day_signature) out(`Signature: ${d.day_signature}`);
     if (d.what_went_well) out(`Went well: ${d.what_went_well}`);

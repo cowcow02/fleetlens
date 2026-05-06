@@ -7,11 +7,18 @@
 
 export type RangeKey = "7d" | "30d" | "90d" | "all";
 
-/** Parse a search-param value into a RangeKey (default: "all"). */
+/**
+ * Parse a search-param value into a RangeKey (default: "90d").
+ *
+ * 90d is chosen as a sensible recent window for the heatmap and activity
+ * chart — large enough to show trends, small enough that one stale agent
+ * (Codex sessions back to last September, say) doesn't stretch the x-axis
+ * across months of empty days. Users can still pick "all" explicitly.
+ */
 export function parseRange(value: string | string[] | undefined): RangeKey {
   const v = Array.isArray(value) ? value[0] : value;
   if (v === "7d" || v === "30d" || v === "90d" || v === "all") return v;
-  return "all";
+  return "90d";
 }
 
 /**

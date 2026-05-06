@@ -30,7 +30,13 @@ export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
-  | { type: "tool_result"; tool_use_id: string; content: unknown };
+  | {
+      type: "tool_result";
+      tool_use_id: string;
+      content: unknown;
+      /** True when the tool invocation failed. */
+      is_error?: boolean;
+    };
 
 export type SessionEvent = {
   /** 0-based index in the JSONL file. Stable id for selection / scroll. */
@@ -95,7 +101,22 @@ export type SessionEvent = {
   };
 };
 
+/**
+ * Which coding-agent tool produced this transcript.
+ *
+ * Plugin-friendly: `string` so an in-tree adapter can declare any kind
+ * without widening a closed union. The two built-in kinds are
+ * "claude-code" and "codex"; future adapters (gemini-cli, opencode, …)
+ * pick their own lowercase-hyphenated id.
+ *
+ * Consumers should look up runtime metadata via getAgentSource(kind)
+ * (in @claude-lens/parser/fs) rather than switching on string values.
+ */
+export type AgentKind = string;
+
 export type SessionMeta = {
+  /** Source agent. Defaults to "claude-code" for legacy callers. */
+  agent?: AgentKind;
   /** URL-safe id — the session UUID, derived from the file name */
   id: string;
   /** absolute path to the JSONL file */

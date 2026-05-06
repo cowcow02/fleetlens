@@ -8,6 +8,7 @@ import { formatDuration, formatRelative, formatTokens, prettyProjectName } from 
 import { DataTable, type Column } from "@/components/data-table";
 import { useViewToggle } from "@/components/view-toggle";
 import { OutcomeMixRow } from "@/components/outcome-mix-row";
+import { AgentMixChip } from "@/components/agent-mix-chip";
 
 export type ProjectRow = {
   project: ProjectRollup;
@@ -63,6 +64,7 @@ const projectTableColumns: Column<ProjectRow>[] = [
         >
           {prettyProjectName(r.project.projectName)}
           {r.project.worktreeCount > 0 && <WorktreeBadge count={r.project.worktreeCount} />}
+          <AgentMixChip perAgent={r.project.perAgent} />
         </div>
         <div
           style={{
@@ -203,6 +205,7 @@ function ProjectCard({ row }: { row: ProjectRow }) {
           {prettyProjectName(p.projectName)}
         </span>
         {p.worktreeCount > 0 && <WorktreeBadge count={p.worktreeCount} />}
+        <AgentMixChip perAgent={p.perAgent} />
       </div>
       <div
         style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontFamily: "var(--font-mono)" }}

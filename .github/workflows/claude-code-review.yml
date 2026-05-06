@@ -1,12 +1,34 @@
 name: Claude Code Review
 
+# Trigger model:
+#   - PR opened / ready_for_review / reopened → always review (the moments
+#     that matter: first impression, draft→ready, re-open).
+#   - labeled with `needs-review`             → opt-in trigger; toggle the
+#     label to request a fresh review.
+#   - synchronize (push to PR branch)         → only when `needs-review` is
+#     set, so the back-and-forth iteration phase stays quiet.
+#   - workflow_dispatch                       → manual run from the Actions
+#     tab when nothing else applies.
+#
+# Without this gating, every push during a working session spawns a new
+# review comment — on a 14-commit branch that's a wall of bot review noise.
+
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+    types: [opened, synchronize, ready_for_review, reopened, labeled]
+  workflow_dispatch:
 
 jobs:
   review:
-    if: ${{ !endsWith(github.actor, '[bot]') }}
+    if: |
+      !endsWith(github.actor, '[bot]') && (
+        github.event_name == 'workflow_dispatch' ||
+        github.event.action == 'opened' ||
+        github.event.action == 'ready_for_review' ||
+        github.event.action == 'reopened' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'needs-review') ||
+        (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'needs-review'))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: read
