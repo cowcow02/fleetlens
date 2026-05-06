@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { getPool } from "../../db/pool";
 import { getLatestVersion } from "./version-detector";
 import { getChangelog, getMigrationsManifest, type MigrationInfo } from "./changelog-fetcher";
@@ -56,11 +57,36 @@ export async function checkNow(): Promise<UpdateStatus> {
 export async function getReview(
   version: string,
 ): Promise<{ changelog: string; migrations: MigrationInfo[] }> {
-  const [changelog, manifest] = await Promise.all([
+  const pool = getPool();
+  const [changelog, manifest, applied] = await Promise.all([
     getChangelog(version).catch(() => "*(Failed to fetch release notes.)*"),
     getMigrationsManifest(version).catch(() => ({ version, migrations: [] as MigrationInfo[] })),
+    getAppliedMigrationHashes(pool),
   ]);
-  return { changelog, migrations: manifest.migrations };
+  // Manifests list every SQL file in the target version's migrations dir, not
+  // just the ones added since the running version. Subtract the hashes drizzle
+  // has already applied so the operator sees the actual diff. If we can't read
+  // the tracking table (fresh DB, permission issue), we show every migration
+  // — over-report rather than hide unapplied work.
+  const unapplied = applied.size === 0
+    ? manifest.migrations
+    : manifest.migrations.filter(
+        (m) => !applied.has(createHash("sha256").update(m.sql).digest("hex")),
+      );
+  return { changelog, migrations: unapplied };
+}
+
+async function getAppliedMigrationHashes(
+  pool: ReturnType<typeof getPool>,
+): Promise<Set<string>> {
+  try {
+    const r = await pool.query<{ hash: string }>(
+      "SELECT hash FROM drizzle.__drizzle_migrations",
+    );
+    return new Set(r.rows.map((row) => row.hash));
+  } catch {
+    return new Set();
+  }
 }
 
 export async function applyUpdate(
