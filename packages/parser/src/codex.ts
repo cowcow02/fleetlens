@@ -157,11 +157,6 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       }
       continue;
     }
-    // Each Codex event emits a typed SessionEvent (role + blocks +
-    // model + usage). buildEntries reads from those typed fields
-    // directly via its viewEvent() helper, so adapters no longer need
-    // to synthesize Claude wire-format raw blocks. The original Codex
-    // JSONL line is preserved on `raw` for debug / forensics only.
     if (type === "event_msg" && subtype === "user_message") {
       const text = typeof payload.message === "string" ? payload.message : "";
       const preview = previewOf(text);
@@ -215,12 +210,9 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       });
       continue;
     }
-    // Some Codex rollouts emit assistant prose as `response_item/message`
-    // with role="assistant" instead of `event_msg/agent_message`. Without
-    // this branch, ~90 such events across the local dataset get folded
-    // into opaque meta and the agent's text disappears from the digest.
-    // The other roles (user → duplicates event_msg/user_message;
-    // developer → system instructions) stay as meta.
+    // Codex emits some assistant prose as response_item/message with
+    // role="assistant"; other roles duplicate user_message or carry
+    // developer instructions and stay as meta.
     if (type === "response_item" && subtype === "message" && payload.role === "assistant") {
       const items = (payload.content ?? []) as Array<Record<string, unknown>>;
       const text = items
@@ -264,11 +256,8 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     if (type === "response_item" && subtype === "function_call_output") {
       const callId = typeof payload.call_id === "string" ? payload.call_id : undefined;
       const output = typeof payload.output === "string" ? payload.output : "";
-      // Codex's exec_command tool prints its exit code as plain text in
-      // the output ("Process exited with code 1\n..."). buildEntries's
-      // tool_errors metric reads is_error off the block — without this
-      // flag every Codex tool failure was silently counted as a success
-      // and the high_errors digest signal was dead for Codex sessions.
+      // Codex's exec_command prints its exit status as plain text in the
+      // output ("Process exited with code 1\n..."); no structured field.
       const is_error = /process exited with code [1-9]/i.test(output);
       events.push({
         index: idx++,
@@ -283,8 +272,6 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       });
       continue;
     }
-    // Other event types (task_started, image_generation_call, message/developer, ...)
-    // are folded in as opaque meta events so the count is correct.
     events.push({
       index: idx++,
       timestamp: ts,
@@ -296,16 +283,9 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     });
   }
 
-  // Annotate every event with tOffsetMs (relative to session start) and
-  // gapMs (delta from the previous timestamped event). These are what the
-  // Minimap, presentation layer, and turns view all depend on for x-axis
-  // positioning. Without them the timeline strip on the session detail
-  // page collapses to width 0 — the missing minimap users see today.
-  // Codex emits cumulative `total_token_usage` on each token_count event.
-  // buildEntries dedupes per-assistant message via event.messageId and
-  // reads tokens from event.usage — so we attribute the FINAL cumulative
-  // total to the last agent event by populating its typed fields. Without
-  // this Codex entries report 0 tokens which torpedoes the digest narrative.
+  // Codex emits cumulative `total_token_usage` on every token_count event;
+  // attribute the final cumulative to the last agent event so buildEntries'
+  // per-msgId dedup picks it up once.
   if (totalUsage.input > 0 || totalUsage.output > 0) {
     let lastAgentIdx = -1;
     for (let i = events.length - 1; i >= 0; i--) {

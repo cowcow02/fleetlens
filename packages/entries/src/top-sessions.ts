@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ContentBlock } from "@claude-lens/parser";
 import type {
   Entry, SessionPin, SessionPinKind, WeekTopSession, WorkingShape,
 } from "./types.js";
@@ -133,25 +134,12 @@ export function pickTopSessions(entriesByDay: Map<string, Entry[]>): Entry[] {
 
 // ─── Slice (per-session payload from raw events) ───────────────────────
 
-/** Subset of SessionDetail.events that this module needs. Caller supplies
- *  events from @claude-lens/parser's SessionDetail.
- *
- *  Reads from the structured fields (role + blocks) rather than the
- *  raw JSONL line, so adapters that don't synthesize Claude wire-format
- *  raw blocks (e.g. Codex) work transparently. */
-import type { ContentBlock } from "@claude-lens/parser";
-
+/** Subset of SessionDetail.events that this module reads — bucketing is
+ *  driven by the typed `role`, not raw JSONL shape, so any adapter works. */
 export type RawSessionEvent = {
   timestamp?: string;
-  /** Original JSONL `type` for debug — Claude uses "user"/"assistant",
-   *  Codex uses "event_msg/<subtype>" / "response_item/<subtype>". The
-   *  user-vs-assistant bucketing comes from `role` instead. */
   rawType: string;
-  /** Mapped role: "user", "agent", "agent-thinking", "tool-call",
-   *  "tool-result", "system", "meta". */
   role?: string;
-  /** Typed content blocks. Adapters populate this; we no longer read
-   *  raw.message.content. */
   blocks?: ContentBlock[];
   raw?: unknown;
 };
@@ -170,21 +158,6 @@ type Turn = {
   pr_created: string | null;
   timestamps: number[];
 };
-
-function blockText(blocks: unknown): string {
-  if (!Array.isArray(blocks)) return "";
-  return blocks
-    .filter((b): b is { type: "text"; text: string } =>
-      !!b && typeof b === "object" && (b as { type?: string }).type === "text"
-        && typeof (b as { text?: unknown }).text === "string")
-    .map(b => b.text)
-    .join(" ");
-}
-
-function isToolResultOnly(content: unknown): boolean {
-  return Array.isArray(content) && content.length > 0
-    && content.every(c => c && typeof c === "object" && (c as { type?: string }).type === "tool_result");
-}
 
 const INTERRUPT_RE = /\[request interrupted|interrupted by user/i;
 const PR_TITLE_RE = /--title\s+["']([^"']+)["']/;
@@ -215,10 +188,6 @@ export function eventsToTurns(
   let cur: Turn | null = null;
 
   for (const ev of filtered) {
-    // Map mapped-role → Claude's two-bucket wire types so the existing
-    // turn-construction logic keeps working. Adapters populate ev.role
-    // and ev.blocks; reading from raw.message.content is gone — that
-    // was the implicit "synthesize Claude shape" contract dropped in R4b.
     const blocks: ContentBlock[] = ev.blocks ?? [];
     const isUserBucket = ev.role === "user" || ev.role === "tool-result";
     const isAssistantBucket =
@@ -251,35 +220,33 @@ export function eventsToTurns(
       for (const c of blocks) {
         if (!c || typeof c !== "object") continue;
         const ct = c as { type?: string; text?: string; name?: string; input?: Record<string, unknown> };
-        {
-          if (ct.type === "text" && ct.text) {
-            cur.agent_blocks.push(ct.text);
-          } else if (ct.type === "tool_use") {
-            const name = ct.name ?? "unknown";
-            cur.tools_count.set(name, (cur.tools_count.get(name) ?? 0) + 1);
-            if (name === "Skill") {
-              const sk = String(ct.input?.skill ?? "unknown");
-              cur.skills.set(sk, (cur.skills.get(sk) ?? 0) + 1);
-            } else if (name === "Agent") {
-              const inp = ct.input ?? {};
-              cur.subagents.push({
-                type: String(inp.subagent_type ?? "general-purpose"),
-                description: String(inp.description ?? "").slice(0, 80),
-                prompt_preview: String(inp.prompt ?? "").slice(0, N_SUBAGENT),
-                background: Boolean(inp.run_in_background),
-              });
-            } else if (name === "ExitPlanMode") {
-              cur.exit_plan_calls += 1;
-            } else if (name === "TodoWrite" || name === "TaskCreate" || name === "TaskUpdate") {
-              cur.todo_ops += 1;
-            } else if (name === "Bash") {
-              const cmd = String(ct.input?.command ?? "");
-              const v = bashVerb(cmd);
-              cur.bash_verbs.set(v, (cur.bash_verbs.get(v) ?? 0) + 1);
-              if (/\bgh\s+pr\s+create\b/.test(cmd)) {
-                const m = cmd.match(PR_TITLE_RE);
-                cur.pr_created = m?.[1] ?? cmd.slice(0, 120);
-              }
+        if (ct.type === "text" && ct.text) {
+          cur.agent_blocks.push(ct.text);
+        } else if (ct.type === "tool_use") {
+          const name = ct.name ?? "unknown";
+          cur.tools_count.set(name, (cur.tools_count.get(name) ?? 0) + 1);
+          if (name === "Skill") {
+            const sk = String(ct.input?.skill ?? "unknown");
+            cur.skills.set(sk, (cur.skills.get(sk) ?? 0) + 1);
+          } else if (name === "Agent") {
+            const inp = ct.input ?? {};
+            cur.subagents.push({
+              type: String(inp.subagent_type ?? "general-purpose"),
+              description: String(inp.description ?? "").slice(0, 80),
+              prompt_preview: String(inp.prompt ?? "").slice(0, N_SUBAGENT),
+              background: Boolean(inp.run_in_background),
+            });
+          } else if (name === "ExitPlanMode") {
+            cur.exit_plan_calls += 1;
+          } else if (name === "TodoWrite" || name === "TaskCreate" || name === "TaskUpdate") {
+            cur.todo_ops += 1;
+          } else if (name === "Bash") {
+            const cmd = String(ct.input?.command ?? "");
+            const v = bashVerb(cmd);
+            cur.bash_verbs.set(v, (cur.bash_verbs.get(v) ?? 0) + 1);
+            if (/\bgh\s+pr\s+create\b/.test(cmd)) {
+              const m = cmd.match(PR_TITLE_RE);
+              cur.pr_created = m?.[1] ?? cmd.slice(0, 120);
             }
           }
         }

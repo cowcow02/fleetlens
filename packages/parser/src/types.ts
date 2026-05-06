@@ -34,10 +34,7 @@ export type ContentBlock =
       type: "tool_result";
       tool_use_id: string;
       content: unknown;
-      /** Mirrors Claude's wire-format `is_error` flag on tool_result blocks.
-       *  buildEntries reads this when counting tool_errors / triggering the
-       *  high_errors flag. Codex doesn't emit it natively — adapters set it
-       *  when their JSONL signals a tool failure (e.g. non-zero exit code). */
+      /** True when the tool invocation failed. */
       is_error?: boolean;
     };
 

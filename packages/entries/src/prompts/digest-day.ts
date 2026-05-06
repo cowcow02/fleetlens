@@ -132,10 +132,8 @@ export function buildDigestUserPrompt(base: DayDigest, entries: Entry[]): string
     .map((s, i) => `${i + 1}. ${trunc(s, 240)}`)
     .join("\n");
 
-  // Build per-entry facet so LLM can correlate: agent (for cross-tool
-  // narratives), project, active_min, outcome, pr_titles, flags,
-  // brief_summary. Prevents mis-attribution of PRs to worktrees where
-  // no work actually happened (e.g., trivial warmup entries).
+  // Per-entry facet — without this the LLM mis-attributes PRs to
+  // worktrees where no work happened (e.g. trivial warmup entries).
   const per_entry = entries.map(e => ({
     agent: e.agent ?? "claude-code",
     project: prettyProject(e.project),
@@ -148,10 +146,6 @@ export function buildDigestUserPrompt(base: DayDigest, entries: Entry[]): string
     friction_detail: e.enrichment.status === "done" ? e.enrichment.friction_detail : null,
   }));
 
-  // Per-agent rollup is already computed (and sorted active_min desc) by
-  // buildDeterministicDigest as `base.agent_breakdown`. Reuse it instead
-  // of recomputing here so the LLM and the persisted digest see the same
-  // ordering and counts.
   const facts = {
     date: base.key,
     agent_min: base.agent_min,

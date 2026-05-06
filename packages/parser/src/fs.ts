@@ -1304,14 +1304,12 @@ export type {
 
 
 /* ================================================================= */
-/*  Generic agent-source registry                                    */
+/*  Agent-source registry                                            */
 /*                                                                   */
-/*  Each coding-agent we observe (Claude Code, Codex, ...) is an     */
-/*  AgentSource. Adding a new agent = drop in a new source object.   */
-/*  Inlined here rather than a sibling module because the registry   */
-/*  binds the Claude Code reader (this file) AND the Codex reader —  */
-/*  splitting it creates a fs.ts ↔ agent-source.ts cycle that        */
-/*  Next.js + turbopack reject during page-data collection.          */
+/*  Inlined here, not a sibling module: the registry binds both this */
+/*  file's Claude reader and codex.ts, and a sibling would create a  */
+/*  fs ↔ agent-source cycle that Next.js page-data collection trips  */
+/*  on.                                                              */
 /* ================================================================= */
 
 import type { AgentKind } from "./types.js";
@@ -1321,35 +1319,17 @@ import {
   CODEX_METADATA,
 } from "./agent-metadata.js";
 
-/**
- * A coding-agent's pluggable adapter. Adding a new agent (Gemini CLI,
- * OpenCode, …) means writing one parser module and pushing one source
- * object to `agentSources` below — every consumer (daemon, UI, prompts,
- * digest pipeline) iterates the registry instead of switching on kinds.
- *
- * Structurally extends AgentMetadata so the kind / displayName /
- * shortLabel / accentColor fields stay in sync — change them in
- * agent-metadata.ts and the AgentSource shape follows automatically.
- */
 export type AgentSource = AgentMetadata & {
-  // ── On-disk layout ──────────────────────────────────────────────
-  /** Default root directory the source reads from. Shown in help text
-   *  and in the /sessions subtitle so users see where the data lives. */
+  /** Default root directory the source reads from. Surfaced in help text
+   *  and the /sessions subtitle. */
   defaultRoot: string;
-
-  // ── Reading sessions ────────────────────────────────────────────
   listSessions(opts?: ListOptions): Promise<SessionMeta[]>;
   getSession(id: string, opts?: { root?: string }): Promise<SessionDetail | null>;
-
-  // ── Optional capabilities ───────────────────────────────────────
-  /** Polled by the daemon every cycle. Return null when there's
-   *  nothing new to report (no sessions yet, agent not installed). */
+  /** Daemon polls this every cycle; null = nothing new. */
   usagePoller?(): Promise<UsageSnapshotLike | null>;
 };
 
-/** Minimal shape the daemon expects from any source's usagePoller. The
- *  full UsageSnapshot type lives in the cli package; using a structural
- *  subset here keeps parser → cli direction one-way (no cycle). */
+/** Structural subset of cli's UsageSnapshot — keeps parser → cli one-way. */
 type UsageSnapshotLike = {
   captured_at: string;
   agent?: AgentKind;
@@ -1370,10 +1350,8 @@ const claudeCodeSource: AgentSource = {
     if (detail && !detail.agent) detail.agent = "claude-code";
     return detail;
   },
-  // Claude's usage poller intentionally absent: the OAuth path lives in
-  // the cli package (network + token storage) and the daemon's tick()
-  // loop calls fetchUsage() directly because OAuth outcomes drive the
-  // backoff state. Other sources expose a poller here; Claude doesn't.
+  // No usagePoller: Claude's OAuth path lives in cli, and the daemon's
+  // tick() drives backoff off OAuth outcomes — calls fetchUsage() directly.
 };
 
 const codexSource: AgentSource = {
@@ -1385,8 +1363,6 @@ const codexSource: AgentSource = {
   async getSession(id) {
     return _getCodexSession(id);
   },
-  // Codex's poller is pure — reads from disk, no network — so it can
-  // live right here in the parser package.
   async usagePoller() {
     const w = await getLatestCodexUsage();
     if (!w) return null;

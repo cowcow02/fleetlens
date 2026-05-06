@@ -1,18 +1,8 @@
 import type { ContentBlock, SessionDetail, SessionEvent } from "@claude-lens/parser";
 import { toLocalDay, canonicalProjectName } from "@claude-lens/parser/analytics";
 
-/** Typed view of a SessionEvent in the shape buildEntries expects.
- *
- *  Historically buildEntries cast event.raw to Claude's wire format and
- *  read msg.content / msg.usage / msg.model directly. That worked for
- *  the Claude reader but forced every other adapter (Codex, future
- *  Gemini CLI, etc.) to synthesize a Claude-shape raw block on every
- *  event — a fragile implicit contract.
- *
- *  This builder reads from the structured SessionEvent fields the parser
- *  already populates (role, blocks, usage, model, messageId, cwd) and
- *  returns the view buildEntries works against. Adapters now only need
- *  to emit typed SessionEvents — no raw-shape gymnastics required. */
+/** Reads typed SessionEvent fields rather than the raw JSONL line, so any
+ *  adapter (Claude, Codex, …) feeds the rest of buildEntries unchanged. */
 type EventView = {
   rawType: "user" | "assistant" | "summary" | "system";
   content: ContentBlock[];
@@ -28,8 +18,6 @@ type EventView = {
 };
 
 function viewEvent(ev: SessionEvent): EventView {
-  // Map structured roles back to Claude's two-bucket wire types so the
-  // existing buildEntries control flow keeps working unchanged.
   let rawType: EventView["rawType"];
   if (ev.role === "user" || ev.role === "tool-result") rawType = "user";
   else if (ev.role === "agent" || ev.role === "agent-thinking" || ev.role === "tool-call")
@@ -37,9 +25,6 @@ function viewEvent(ev: SessionEvent): EventView {
   else if (ev.rawType === "summary") rawType = "summary";
   else rawType = "system";
 
-  // cwd lives on the raw line in Claude's format; adapters that don't set
-  // it can leave the view's cwd undefined — buildEntries falls back to the
-  // session-level project value.
   const rawCwd = (ev.raw as { cwd?: string } | undefined)?.cwd;
 
   return {
