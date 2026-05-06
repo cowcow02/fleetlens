@@ -30,7 +30,16 @@ export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
-  | { type: "tool_result"; tool_use_id: string; content: unknown };
+  | {
+      type: "tool_result";
+      tool_use_id: string;
+      content: unknown;
+      /** Mirrors Claude's wire-format `is_error` flag on tool_result blocks.
+       *  buildEntries reads this when counting tool_errors / triggering the
+       *  high_errors flag. Codex doesn't emit it natively — adapters set it
+       *  when their JSONL signals a tool failure (e.g. non-zero exit code). */
+      is_error?: boolean;
+    };
 
 export type SessionEvent = {
   /** 0-based index in the JSONL file. Stable id for selection / scroll. */

@@ -246,8 +246,6 @@ function AgentTabs({ agents, selected }: { agents: AgentKind[]; selected: AgentK
 }
 
 function EmptyState({ agent }: { agent: AgentKind }) {
-  const command =
-    agent === "claude-code" ? "fleetlens daemon start" : "Use Codex once — fleetlens reads its rollouts directly.";
   return (
     <div
       className="af-card"
@@ -290,7 +288,7 @@ function EmptyState({ agent }: { agent: AgentKind }) {
             color: "var(--af-text)",
           }}
         >
-          {command}
+          fleetlens daemon start
         </pre>
       )}
     </div>

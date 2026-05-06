@@ -39,7 +39,12 @@ export async function GET(_req: Request, ctx: Params) {
 
   const isCurrent = monday === currentWeekMonday();
   if (isCurrent) {
-    const cached = getCurrentWeekDigestFromCache(monday, Date.now());
+    // Mirror the page route's lookup: in-memory cache first, then disk
+    // fallback. force=1 generations now persist current-week digests to
+    // disk (digest-week-pipeline) so this surface and /insights/week-*
+    // both see the same result even after TTL expiry or process restart.
+    const cached =
+      getCurrentWeekDigestFromCache(monday, Date.now()) ?? readWeekDigest(monday);
     if (cached) {
       return new Response(JSON.stringify(cached), {
         status: 200, headers: { "content-type": "application/json" },

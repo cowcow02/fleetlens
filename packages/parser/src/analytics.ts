@@ -854,7 +854,6 @@ export function summarizeBursts(bursts: ParallelismBurst[]): ParallelismBurstSta
 export type AgentBreakdown = {
   agent: AgentKind;
   sessions: number;
-  tokens: number;
 };
 
 export type ProjectRollup = {
@@ -923,14 +922,10 @@ export function groupByProject(sessions: SessionMeta[]): ProjectRollup[] {
       const k = (s.agent ?? "claude-code") as AgentKind;
       let row = agentMap.get(k);
       if (!row) {
-        row = { agent: k, sessions: 0, tokens: 0 };
+        row = { agent: k, sessions: 0 };
         agentMap.set(k, row);
       }
       row.sessions += 1;
-      row.tokens +=
-        (s.totalUsage?.input ?? 0) +
-        (s.totalUsage?.output ?? 0) +
-        (s.totalUsage?.cacheRead ?? 0);
     }
     p.perAgent = Array.from(agentMap.values()).sort((a, b) => b.sessions - a.sessions);
   }

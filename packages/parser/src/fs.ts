@@ -1316,6 +1316,7 @@ export type {
 
 import type { AgentKind } from "./types.js";
 import {
+  type AgentMetadata,
   CLAUDE_CODE_METADATA,
   CODEX_METADATA,
 } from "./agent-metadata.js";
@@ -1325,22 +1326,12 @@ import {
  * OpenCode, …) means writing one parser module and pushing one source
  * object to `agentSources` below — every consumer (daemon, UI, prompts,
  * digest pipeline) iterates the registry instead of switching on kinds.
+ *
+ * Structurally extends AgentMetadata so the kind / displayName /
+ * shortLabel / accentColor fields stay in sync — change them in
+ * agent-metadata.ts and the AgentSource shape follows automatically.
  */
-export type AgentSource = {
-  // ── Identity ────────────────────────────────────────────────────
-  /** Stable id, lowercased, hyphenated. Stamped on every SessionMeta /
-   *  Entry / UsageSnapshot the source emits. */
-  kind: AgentKind;
-  /** Full human-readable name. Used in headers, settings, sidebar
-   *  tagline, digest prompts. */
-  displayName: string;
-  /** Pill-friendly short label. Used in inline badges and chips when
-   *  the full displayName would crowd the row (e.g. "Claude", "Codex"). */
-  shortLabel: string;
-  /** CSS color used everywhere this agent surfaces — badges, chips,
-   *  tab indicators, top-session card accents. */
-  accentColor: string;
-
+export type AgentSource = AgentMetadata & {
   // ── On-disk layout ──────────────────────────────────────────────
   /** Default root directory the source reads from. Shown in help text
    *  and in the /sessions subtitle so users see where the data lives. */
@@ -1379,9 +1370,10 @@ const claudeCodeSource: AgentSource = {
     if (detail && !detail.agent) detail.agent = "claude-code";
     return detail;
   },
-  // Claude's usage poller lives in the cli package (it needs OAuth +
-  // network) — wired up in daemon-worker.ts so the parser stays
-  // dependency-free. Set there via Object.assign at startup.
+  // Claude's usage poller intentionally absent: the OAuth path lives in
+  // the cli package (network + token storage) and the daemon's tick()
+  // loop calls fetchUsage() directly because OAuth outcomes drive the
+  // backoff state. Other sources expose a poller here; Claude doesn't.
 };
 
 const codexSource: AgentSource = {

@@ -215,6 +215,32 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       });
       continue;
     }
+    // Some Codex rollouts emit assistant prose as `response_item/message`
+    // with role="assistant" instead of `event_msg/agent_message`. Without
+    // this branch, ~90 such events across the local dataset get folded
+    // into opaque meta and the agent's text disappears from the digest.
+    // The other roles (user → duplicates event_msg/user_message;
+    // developer → system instructions) stay as meta.
+    if (type === "response_item" && subtype === "message" && payload.role === "assistant") {
+      const items = (payload.content ?? []) as Array<Record<string, unknown>>;
+      const text = items
+        .map((c) => (typeof c.text === "string" ? c.text : ""))
+        .join("\n")
+        .trim();
+      const preview = previewOf(text);
+      if (text) lastAgentPreview = preview;
+      events.push({
+        index: idx++,
+        timestamp: ts,
+        role: "agent",
+        rawType: "response_item/message",
+        preview,
+        blocks: text ? [{ type: "text", text }] : [],
+        model,
+        raw: obj,
+      });
+      continue;
+    }
     if (type === "response_item" && subtype === "function_call") {
       const name = typeof payload.name === "string" ? payload.name : "(unknown)";
       const callId = typeof payload.call_id === "string" ? payload.call_id : undefined;
@@ -238,13 +264,19 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     if (type === "response_item" && subtype === "function_call_output") {
       const callId = typeof payload.call_id === "string" ? payload.call_id : undefined;
       const output = typeof payload.output === "string" ? payload.output : "";
+      // Codex's exec_command tool prints its exit code as plain text in
+      // the output ("Process exited with code 1\n..."). buildEntries's
+      // tool_errors metric reads is_error off the block — without this
+      // flag every Codex tool failure was silently counted as a success
+      // and the high_errors digest signal was dead for Codex sessions.
+      const is_error = /process exited with code [1-9]/i.test(output);
       events.push({
         index: idx++,
         timestamp: ts,
         role: "tool-result",
         rawType: "response_item/function_call_output",
         preview: previewOf(output),
-        blocks: [{ type: "tool_result", tool_use_id: callId ?? "", content: output }],
+        blocks: [{ type: "tool_result", tool_use_id: callId ?? "", content: output, is_error }],
         toolUseId: callId,
         toolResult: output,
         raw: obj,

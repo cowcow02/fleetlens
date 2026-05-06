@@ -2,7 +2,7 @@ import { statSync, readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { parseTranscript } from "@claude-lens/parser";
 import type { SessionDetail } from "@claude-lens/parser";
-import { listCodexSessions, getCodexSession } from "@claude-lens/parser/fs";
+import { agentSources } from "@claude-lens/parser/fs";
 import { buildEntries } from "@claude-lens/entries";
 import { writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
 import {
@@ -110,39 +110,51 @@ export async function runPerceptionSweep(opts: SweepOptions = {}): Promise<Sweep
     // initiated and predictable; end users don't get a surprise bill from
     // an unbidden historical backfill on first run.
 
-    // Codex pass: build entries from rollouts under ~/.codex/sessions/.
-    // The Codex parser produces the same SessionDetail shape Claude does,
-    // so buildEntries works without modification. Each Codex session is
-    // small (typically <200 events) and they're sparse (a few dozen vs
-    // thousands of Claude files), so we skip the byte-offset checkpoint
-    // and just rely on the parser's mtime+size cache to make this fast.
-    try {
-      const codexMetas = await listCodexSessions();
-      for (const meta of codexMetas) {
-        try {
-          const detail = await getCodexSession(meta.id);
-          if (!detail) continue;
-          const built = buildEntries(detail);
-          for (const e of built) {
-            // Codex doesn't have a byte_offset analog; size of the rollout
-            // is captured for parity with Claude's checkpoint shape.
-            try {
-              const stat = statSync(meta.filePath);
-              e.source_checkpoint.byte_offset = stat.size;
-            } catch {
-              // file disappeared between list + build — fall through with 0
+    // Non-Claude pass: iterate every registered AgentSource (Codex
+    // today, Gemini CLI / OpenCode tomorrow). The parser produces a
+    // SessionDetail in a shape buildEntries already understands, so
+    // adding a new agent here costs nothing — the loop handles it.
+    //
+    // Each non-Claude source is responsible for caching at the parser
+    // level (mtime+size). Sessions are typically small and sparse
+    // compared to the ~/.claude/projects firehose, so we skip the
+    // byte-offset checkpoint that the Claude pass uses.
+    //
+    // Tests pin projectsRoot to a tmp dir to isolate from the user's
+    // real ~/.claude/projects; in that mode, scanning the non-Claude
+    // sources at their default roots would still pick up live data
+    // and break test isolation. Skip non-Claude when projectsRoot is
+    // explicitly overridden.
+    const isTestRoot = opts.projectsRoot !== undefined;
+    for (const source of agentSources) {
+      if (source.kind === "claude-code") continue;          // handled above
+      if (isTestRoot) continue;
+      try {
+        const metas = await source.listSessions();
+        for (const meta of metas) {
+          try {
+            const detail = await source.getSession(meta.id);
+            if (!detail) continue;
+            const built = buildEntries(detail);
+            for (const e of built) {
+              try {
+                const stat = statSync(meta.filePath);
+                e.source_checkpoint.byte_offset = stat.size;
+              } catch {
+                // file disappeared between list + build — fall through with 0
+              }
+              writeEntryPreservingEnrichment(e);
+              entries++;
             }
-            writeEntryPreservingEnrichment(e);
-            entries++;
+            sessions++;
+          } catch (err) {
+            errors++;
+            log(`${source.kind} skipped ${meta.id}: ${(err as Error).message}`);
           }
-          sessions++;
-        } catch (err) {
-          errors++;
-          log(`codex skipped ${meta.id}: ${(err as Error).message}`);
         }
+      } catch (err) {
+        log(`${source.kind} pass failed: ${(err as Error).message}`);
       }
-    } catch (err) {
-      log(`codex pass failed: ${(err as Error).message}`);
     }
   } finally {
     markSweepEnd();

@@ -134,10 +134,25 @@ export function pickTopSessions(entriesByDay: Map<string, Entry[]>): Entry[] {
 // ─── Slice (per-session payload from raw events) ───────────────────────
 
 /** Subset of SessionDetail.events that this module needs. Caller supplies
- *  events from @claude-lens/parser's SessionDetail. */
+ *  events from @claude-lens/parser's SessionDetail.
+ *
+ *  Reads from the structured fields (role + blocks) rather than the
+ *  raw JSONL line, so adapters that don't synthesize Claude wire-format
+ *  raw blocks (e.g. Codex) work transparently. */
+import type { ContentBlock } from "@claude-lens/parser";
+
 export type RawSessionEvent = {
   timestamp?: string;
+  /** Original JSONL `type` for debug — Claude uses "user"/"assistant",
+   *  Codex uses "event_msg/<subtype>" / "response_item/<subtype>". The
+   *  user-vs-assistant bucketing comes from `role` instead. */
   rawType: string;
+  /** Mapped role: "user", "agent", "agent-thinking", "tool-call",
+   *  "tool-result", "system", "meta". */
+  role?: string;
+  /** Typed content blocks. Adapters populate this; we no longer read
+   *  raw.message.content. */
+  blocks?: ContentBlock[];
   raw?: unknown;
 };
 
@@ -200,12 +215,21 @@ export function eventsToTurns(
   let cur: Turn | null = null;
 
   for (const ev of filtered) {
-    const raw = ev.raw as { message?: { content?: unknown } } | undefined;
-    const content = raw?.message?.content;
-    if (ev.rawType === "user") {
-      const isToolOnly = isToolResultOnly(content);
+    // Map mapped-role → Claude's two-bucket wire types so the existing
+    // turn-construction logic keeps working. Adapters populate ev.role
+    // and ev.blocks; reading from raw.message.content is gone — that
+    // was the implicit "synthesize Claude shape" contract dropped in R4b.
+    const blocks: ContentBlock[] = ev.blocks ?? [];
+    const isUserBucket = ev.role === "user" || ev.role === "tool-result";
+    const isAssistantBucket =
+      ev.role === "agent" || ev.role === "agent-thinking" || ev.role === "tool-call";
+    if (isUserBucket) {
+      const isToolOnly = blocks.length > 0 && blocks.every((c) => c.type === "tool_result");
       if (!isToolOnly) {
-        const text = blockText(content) || (typeof content === "string" ? content : "");
+        const text = blocks
+          .filter((b): b is Extract<ContentBlock, { type: "text" }> => b.type === "text")
+          .map((b) => b.text)
+          .join(" ");
         const interrupted = INTERRUPT_RE.test(text);
         if (cur && interrupted) cur.interrupts += 1;
         if (cur) turns.push(cur);
@@ -220,14 +244,14 @@ export function eventsToTurns(
         cur.events.push(ev);
         cur.timestamps.push(ev._ts);
       }
-    } else if (ev.rawType === "assistant") {
+    } else if (isAssistantBucket) {
       if (!cur) continue;
       cur.events.push(ev);
       cur.timestamps.push(ev._ts);
-      if (Array.isArray(content)) {
-        for (const c of content) {
-          if (!c || typeof c !== "object") continue;
-          const ct = c as { type?: string; text?: string; name?: string; input?: Record<string, unknown> };
+      for (const c of blocks) {
+        if (!c || typeof c !== "object") continue;
+        const ct = c as { type?: string; text?: string; name?: string; input?: Record<string, unknown> };
+        {
           if (ct.type === "text" && ct.text) {
             cur.agent_blocks.push(ct.text);
           } else if (ct.type === "tool_use") {

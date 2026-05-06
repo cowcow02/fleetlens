@@ -148,31 +148,14 @@ export function buildDigestUserPrompt(base: DayDigest, entries: Entry[]): string
     friction_detail: e.enrichment.status === "done" ? e.enrichment.friction_detail : null,
   }));
 
-  // Per-agent rollup so the LLM can call out fleet shape directly. When
-  // the day has only one agent this is uninteresting; when it spans
-  // multiple agents it should surface in the narrative.
-  const agentBreakdown = (() => {
-    const counts = new Map<string, { sessions: number; active_min: number; tools_total: number }>();
-    for (const e of entries) {
-      const k = e.agent ?? "claude-code";
-      const c = counts.get(k) ?? { sessions: 0, active_min: 0, tools_total: 0 };
-      c.sessions += 1;
-      c.active_min += e.numbers.active_min;
-      c.tools_total += e.numbers.tools_total;
-      counts.set(k, c);
-    }
-    return Array.from(counts.entries()).map(([agent, v]) => ({
-      agent,
-      sessions: v.sessions,
-      active_min: Math.round(v.active_min * 10) / 10,
-      tools_total: v.tools_total,
-    }));
-  })();
-
+  // Per-agent rollup is already computed (and sorted active_min desc) by
+  // buildDeterministicDigest as `base.agent_breakdown`. Reuse it instead
+  // of recomputing here so the LLM and the persisted digest see the same
+  // ordering and counts.
   const facts = {
     date: base.key,
     agent_min: base.agent_min,
-    agent_breakdown: agentBreakdown,
+    agent_breakdown: base.agent_breakdown ?? [],
     project_count: base.projects.length,
     projects: base.projects.map(p => ({
       name: p.display_name, share_pct: p.share_pct, entry_count: p.entry_count,
