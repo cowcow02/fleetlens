@@ -17,12 +17,12 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 ## [0.6.2] — 2026-05-04
 
 ### Added
-- Daemon now auto-backfills last week's narrative on boot. First successful perception sweep fires the week-digest pipeline if AI is on, the digest isn't cached, entries exist, and no interactive lock is fresh. Opt-out via `ai_features.auto_backfill_last_week`.
+- Last week's digest auto-generates on launch when AI features are on. Disable in Settings → AI features.
 
 ## [0.6.1] — 2026-05-04
 
-### Fixed
-- Moved `@claude-lens/entries` to devDependencies so the published bundle no longer drags in unused workspace metadata.
+### Changed
+- Smaller install size — published bundle no longer drags in unused workspace metadata.
 
 ## [0.6.0] — 2026-04-30
 
