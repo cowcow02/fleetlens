@@ -68,6 +68,13 @@ export default async function TeamLayout({
           </div>
           <a href={`/team/${slug}/me`}>My account · pair CLI</a>
           <a href="/logout">Sign out</a>
+          {session.user.is_staff && (
+            <>
+              <div className="shell-nav-label">Server admin</div>
+              <a href="/admin/updates">Updates</a>
+              <a href="/admin/staff">Staff</a>
+            </>
+          )}
           <div className="shell-nav-label">About</div>
           <ChangelogNavLink latestVersion={LATEST_CHANGELOG_VERSION} />
         </nav>
