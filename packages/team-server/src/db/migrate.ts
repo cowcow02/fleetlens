@@ -145,21 +145,34 @@ function hashOfMigration(migrationsFolder: string, tag: string): string {
   return createHash("sha256").update(sql).digest("hex");
 }
 
+/** Read drizzle's tracking rows. Returns [] if the schema/table doesn't
+ *  exist yet — common on fresh DBs (CI test Postgres) where `applyPre…`
+ *  bails early and drizzle.migrate hasn't yet bootstrapped the table. */
+async function readAppliedHashes(client: Client): Promise<string[]> {
+  try {
+    const r = await client.query<{ hash: string }>(
+      "SELECT hash FROM drizzle.__drizzle_migrations",
+    );
+    return r.rows.map((row) => row.hash);
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === "42P01") return []; // undefined_table
+    throw err;
+  }
+}
+
 async function logMigrationState(
   client: Client,
   migrationsFolder: string,
   label: string,
 ): Promise<void> {
   const entries = discoverAllMigrations(migrationsFolder);
-  const applied = await client.query<{ hash: string }>(
-    "SELECT hash FROM drizzle.__drizzle_migrations",
-  );
-  const appliedHashes = new Set(applied.rows.map((r) => r.hash));
+  const appliedHashes = new Set(await readAppliedHashes(client));
   const pendingTags = entries
     .filter((e) => !appliedHashes.has(hashOfMigration(migrationsFolder, e.tag)))
     .map((e) => e.tag);
   console.log(
-    `[migrate] ${label} — applied=${applied.rows.length} expected=${entries.length} ` +
+    `[migrate] ${label} — applied=${appliedHashes.size} expected=${entries.length} ` +
     `pending=${pendingTags.length}` +
     (pendingTags.length > 0 ? ` (${pendingTags.join(", ")})` : ""),
   );
@@ -170,10 +183,7 @@ async function applyAnyMissingMigrations(
   migrationsFolder: string,
 ): Promise<void> {
   const entries = discoverAllMigrations(migrationsFolder);
-  const applied = await client.query<{ hash: string }>(
-    "SELECT hash FROM drizzle.__drizzle_migrations",
-  );
-  const appliedHashes = new Set(applied.rows.map((r) => r.hash));
+  const appliedHashes = new Set(await readAppliedHashes(client));
 
   for (const entry of entries) {
     const hash = hashOfMigration(migrationsFolder, entry.tag);
