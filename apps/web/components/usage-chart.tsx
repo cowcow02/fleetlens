@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Maximize2 } from "lucide-react";
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
 import { paceLabel, toneVar } from "@/lib/utilization-tone";
@@ -90,6 +90,14 @@ export function UsageChart({
     ideal: number;
     predicted: number | null;
   } | null>(null);
+
+  // SSR can't agree with the client on `Date.now()` — the server renders
+  // at request time, the client hydrates milliseconds-to-minutes later.
+  // Both depended on `now`, so the "now" cursor + pace label produced
+  // a hydration mismatch warning. Render time-dependent UI only after
+  // mount; the SSR fragment matches the client's pre-mount fragment.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   if (!computed) {
     return (
@@ -222,9 +230,16 @@ export function UsageChart({
             remaining
           </span>
         </div>
-        <div style={{ fontSize: 11, color: toneColor, fontWeight: 500 }}>
-          {toneLabel} ({delta >= 0 ? "+" : ""}
-          {delta.toFixed(1)}%)
+        <div
+          suppressHydrationWarning
+          style={{ fontSize: 11, color: toneColor, fontWeight: 500 }}
+        >
+          {mounted && (
+            <>
+              {toneLabel} ({delta >= 0 ? "+" : ""}
+              {delta.toFixed(1)}%)
+            </>
+          )}
         </div>
         <div
           suppressHydrationWarning
@@ -353,8 +368,9 @@ export function UsageChart({
             strokeDasharray="4 3"
           />
 
-          {/* Current-time vertical marker */}
-          {now >= windowStart && now <= windowEnd && (
+          {/* Current-time vertical marker — only after mount so the SSR
+              and client renders agree (Date.now() differs between them). */}
+          {mounted && now >= windowStart && now <= windowEnd && (
             <g>
               <line
                 x1={xScale(now)}

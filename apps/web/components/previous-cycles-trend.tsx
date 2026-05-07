@@ -1,11 +1,19 @@
 import type { CyclePeak } from "@/lib/calibration-data";
-import { utilizationVar } from "@/lib/utilization-tone";
+import {
+  paceToneForCycle,
+  toneVar,
+  utilizationTone,
+} from "@/lib/utilization-tone";
 
-// Horizontal bar chart of the last few cycles' peak utilization. One bar
-// per cycle, height proportional to peak %. Color flips on utilization:
-// ≥70% = success (full plan use), 40–69% = amber, <40% = danger (paying
-// for unused headroom). Right-most bar is the in-progress cycle, dashed
-// border + slight transparency so it doesn't read as a finished trend point.
+const HOUR = 3_600_000;
+const WINDOW_MS = { "5h": 5 * HOUR, "7d": 7 * 24 * HOUR } as const;
+
+// Horizontal bar chart of recent cycle peaks. Color logic differs by
+// cycle state: completed cycles are colored by their final peak (≥70%
+// green = full plan use, <40% red = wasted headroom), in-progress cycles
+// are colored by PACE (utilization vs elapsed cycle fraction) so a 50%
+// peak halfway through a 7-day cycle reads on-pace green, not amber.
+// Right-most bar is the in-progress cycle, dashed border + transparency.
 export function PreviousCyclesTrend({
   windowLabel,
   cycles,
@@ -52,16 +60,25 @@ export function PreviousCyclesTrend({
         }}
       >
         {cycles.map((c, i) => (
-          <CycleBar key={i} cycle={c} />
+          <CycleBar key={i} cycle={c} windowLabel={windowLabel} />
         ))}
       </div>
     </section>
   );
 }
 
-function CycleBar({ cycle }: { cycle: CyclePeak }) {
+function CycleBar({
+  cycle,
+  windowLabel,
+}: {
+  cycle: CyclePeak;
+  windowLabel: "5h" | "7d";
+}) {
   const pct = Math.max(0, Math.min(100, cycle.peakPct));
-  const color = utilizationVar(pct);
+  const tone = cycle.current
+    ? paceToneForCycle(pct, new Date(cycle.endsAt).getTime(), WINDOW_MS[windowLabel])
+    : utilizationTone(pct);
+  const color = toneVar(tone);
   const date = new Date(cycle.endsAt);
   // Compact "Apr 23" date label; "current" cycle gets "ends Apr 30" instead
   const label = cycle.current

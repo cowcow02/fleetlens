@@ -3,7 +3,11 @@
 import Link from "next/link";
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
 import { usePersistentBoolean } from "@/lib/use-persistent-boolean";
-import { utilizationVar } from "@/lib/utilization-tone";
+import { paceToneForCycle, toneVar } from "@/lib/utilization-tone";
+
+const HOUR = 3_600_000;
+const FIVE_HOURS_MS = 5 * HOUR;
+const SEVEN_DAYS_MS = 7 * 24 * HOUR;
 
 /**
  * Compact current-usage widget for the sidebar. Always visible on every page.
@@ -39,14 +43,14 @@ export function UsageSidebar({ snapshot }: { snapshot: UsageSnapshot | null }) {
     );
   }
 
-  const rows: { label: string; window: UsageWindow | null }[] = [
-    { label: "5h", window: snapshot.five_hour },
-    { label: "7d", window: snapshot.seven_day },
+  const rows: { label: string; window: UsageWindow | null; windowMs: number }[] = [
+    { label: "5h", window: snapshot.five_hour, windowMs: FIVE_HOURS_MS },
+    { label: "7d", window: snapshot.seven_day, windowMs: SEVEN_DAYS_MS },
   ];
   // Only include Sonnet after hydration to avoid a layout flash where
   // the SSR pass renders it, then the client removes it on hydrate.
   if (sonnetHydrated && showSonnet) {
-    rows.push({ label: "Sonnet 7d", window: snapshot.seven_day_sonnet });
+    rows.push({ label: "Sonnet 7d", window: snapshot.seven_day_sonnet, windowMs: SEVEN_DAYS_MS });
   }
 
   return (
@@ -94,11 +98,22 @@ export function UsageSidebar({ snapshot }: { snapshot: UsageSnapshot | null }) {
   );
 }
 
-function UsageRow({ label, window }: { label: string; window: UsageWindow | null }) {
+function UsageRow({
+  label,
+  window,
+  windowMs,
+}: {
+  label: string;
+  window: UsageWindow | null;
+  windowMs: number;
+}) {
   const pct = window?.utilization ?? null;
   const hasData = pct !== null;
   const clamped = hasData ? Math.max(0, Math.min(100, pct!)) : 0;
-  const fillColor = utilizationVar(clamped);
+  const cycleEndMs = window?.resets_at ? new Date(window.resets_at).getTime() : null;
+  const fillColor = hasData && cycleEndMs
+    ? toneVar(paceToneForCycle(clamped, cycleEndMs, windowMs))
+    : "var(--af-border-subtle)";
 
   return (
     <div>

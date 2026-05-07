@@ -9,10 +9,13 @@ import {
 import { tierEntry } from "../../../../lib/plan-tiers";
 import { CyclePeaksStrip } from "../../../../components/cycle-peaks-strip";
 import {
-  utilizationHex,
+  paceToneForCycle,
+  toneHex,
   utilizationTone,
-  UTILIZATION_THRESHOLDS,
+  type Tone,
 } from "../../../../lib/utilization-tone";
+
+const SEVEN_DAYS_MS = 7 * 24 * 3_600_000;
 
 // Plan utilization view — admins see "are members getting plan value"
 // at a glance. One row per member with reported usage, peaks of their
@@ -60,21 +63,29 @@ export default async function PlanPage({
   // who paired but haven't synced yet (or revoked seats) are excluded —
   // showing them as empty rows is noise admins can't act on.
   const rows = inputs
-    .map((i) => ({
-      input: i,
-      tier: tierEntry(i.tierKey),
-      cycles: cyclePeaks.get(i.membershipId) ?? [],
-    }))
+    .map((i) => {
+      const cycles = cyclePeaks.get(i.membershipId) ?? [];
+      const latest = latestCycle(cycles);
+      // Pace-based tone for the in-progress cycle, peak-based for completed.
+      const tone: Tone | null = latest
+        ? latest.isCurrent
+          ? paceToneForCycle(latest.peakPct, latest.endsAt.getTime(), SEVEN_DAYS_MS)
+          : utilizationTone(latest.peakPct)
+        : null;
+      return {
+        input: i,
+        tier: tierEntry(i.tierKey),
+        cycles,
+        latestPct: latest?.peakPct ?? 0,
+        tone,
+      };
+    })
     .filter((r) => r.cycles.length > 0)
-    // Sort lowest peak first — under-utilizers are the actionable rows.
-    .sort((a, b) => latestPeak(a.cycles) - latestPeak(b.cycles));
+    // Sort under-utilizers first — they're the actionable rows.
+    .sort((a, b) => toneRank(a.tone) - toneRank(b.tone) || a.latestPct - b.latestPct);
 
-  const underutilizing = rows.filter(
-    (r) => latestPeak(r.cycles) < UTILIZATION_THRESHOLDS.low,
-  ).length;
-  const fullyUtilized = rows.filter(
-    (r) => latestPeak(r.cycles) >= UTILIZATION_THRESHOLDS.good,
-  ).length;
+  const underutilizing = rows.filter((r) => r.tone === "danger").length;
+  const fullyUtilized = rows.filter((r) => r.tone === "success").length;
 
   return (
     <>
@@ -121,10 +132,8 @@ export default async function PlanPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ input, tier, cycles }) => {
-                const latest = latestPeak(cycles);
-                const tone = utilizationTone(latest);
-                const statusColor = utilizationHex(latest);
+              {rows.map(({ input, tier, cycles, latestPct, tone }) => {
+                const statusColor = tone ? toneHex(tone) : "var(--mute)";
                 const statusLabel =
                   tone === "success"
                     ? "fully utilizing"
@@ -150,7 +159,7 @@ export default async function PlanPage({
                         className="mono"
                         style={{ fontSize: 14, color: statusColor, fontWeight: 600 }}
                       >
-                        {latest.toFixed(0)}%
+                        {latestPct.toFixed(0)}%
                       </span>{" "}
                       <span style={{ fontSize: 11, color: "var(--mute)" }}>· {statusLabel}</span>
                     </td>
@@ -180,10 +189,19 @@ export default async function PlanPage({
   );
 }
 
-// Pick the most relevant peak — current in-flight cycle if it's running,
-// else the most recently completed cycle. Used to color rows + sort.
-function latestPeak(cycles: { peakPct: number; isCurrent: boolean }[]): number {
+// Pick the most relevant cycle — current in-flight if it's running,
+// else the most recently completed. Used to drive tone, sort, label.
+function latestCycle<T extends { isCurrent: boolean }>(cycles: T[]): T | null {
   const inFlight = cycles.find((c) => c.isCurrent);
-  if (inFlight) return inFlight.peakPct;
-  return cycles.length > 0 ? cycles[cycles.length - 1]!.peakPct : 0;
+  if (inFlight) return inFlight;
+  return cycles.length > 0 ? cycles[cycles.length - 1]! : null;
+}
+
+// Sort danger first, then warning, then success — under-utilizers are
+// the actionable rows, fully-utilizing teams want to be celebrated last.
+function toneRank(t: Tone | null): number {
+  if (t === "danger") return 0;
+  if (t === "warning") return 1;
+  if (t === "success") return 2;
+  return 3;
 }

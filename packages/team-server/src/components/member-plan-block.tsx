@@ -7,7 +7,13 @@ import type {
   MembershipCyclePeak,
   CurrentCycleData,
 } from "../lib/plan-queries";
-import { utilizationHex } from "../lib/utilization-tone";
+import {
+  paceToneForCycle,
+  toneHex,
+  utilizationHex,
+} from "../lib/utilization-tone";
+
+const SEVEN_DAYS_MS = 7 * 24 * 3_600_000;
 
 // Plain-language status framed around "is this person getting their
 // money's worth from the plan?" — high utilization is the desired
@@ -162,7 +168,17 @@ export function MemberPlanBlock({
               }}
             >
               <span style={{ color: "var(--mute)" }}>in progress:</span>{" "}
-              <strong style={{ color: peakColor(currentInFlight.peakPct) }}>
+              <strong
+                style={{
+                  color: toneHex(
+                    paceToneForCycle(
+                      currentInFlight.peakPct,
+                      currentInFlight.endsAt.getTime(),
+                      SEVEN_DAYS_MS,
+                    ),
+                  ),
+                }}
+              >
                 {currentInFlight.peakPct.toFixed(0)}%
               </strong>
             </div>

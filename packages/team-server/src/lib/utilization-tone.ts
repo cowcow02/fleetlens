@@ -51,3 +51,22 @@ export function paceLabel(delta: number): { tone: Tone; label: string } {
   if (delta > 5) return { tone: "warning", label: "underutilizing" };
   return { tone: "success", label: "on pace" };
 }
+
+/**
+ * Tone for an in-progress cycle/gauge — derived from pace (utilization vs
+ * elapsed-fraction-of-cycle), not from absolute peak. Mid-cycle 50% on a
+ * 7-day window means you're on pace (green) even though peak-tone would
+ * call it amber. Use this for live cycles, `utilizationTone()` for
+ * completed ones.
+ */
+export function paceToneForCycle(
+  utilizationPct: number,
+  cycleEndsAtMs: number,
+  windowMs: number,
+  nowMs: number = Date.now(),
+): Tone {
+  const cycleStart = cycleEndsAtMs - windowMs;
+  const elapsed = Math.max(0, Math.min(1, (nowMs - cycleStart) / windowMs));
+  const idealUsedPct = elapsed * 100;
+  return paceLabel(idealUsedPct - utilizationPct).tone;
+}
