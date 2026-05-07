@@ -8,13 +8,14 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary", "html"],
       include: ["src/**/*.ts"],
-      // fs.ts and the per-agent adapters (claude-code.ts, codex.ts) are
-      // node:fs wrappers integration-tested via the CLI smoke, not unit
-      // tests. types.ts / index.ts are re-exports only.
+      // fs.ts and the per-agent adapters (claude-code.ts, codex.ts,
+      // gemini.ts) are node:fs wrappers integration-tested via the CLI
+      // smoke, not unit tests. types.ts / index.ts are re-exports only.
       exclude: [
         "src/**/*.d.ts",
         "src/fs.ts",
         "src/claude-code.ts",
+        "src/gemini.ts",
         "src/types.ts",
         "src/index.ts",
       ],

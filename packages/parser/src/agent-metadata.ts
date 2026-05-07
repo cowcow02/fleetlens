@@ -46,11 +46,20 @@ export const CODEX_METADATA: AgentMetadata = {
   iconChar: "◆",
 };
 
+export const GEMINI_METADATA: AgentMetadata = {
+  kind: "gemini",
+  displayName: "Gemini CLI",
+  shortLabel: "Gemini",
+  accentColor: "rgb(124, 92, 246)",
+  iconChar: "✺",
+};
+
 /** Ordered list of registered agent metadata. UI iterates this for
  *  badges, tabs, and prompt-template generation. */
 export const agentMetadata: AgentMetadata[] = [
   CLAUDE_CODE_METADATA,
   CODEX_METADATA,
+  GEMINI_METADATA,
 ];
 
 /** Browser-safe metadata lookup. Returns undefined for unknown kinds. */
