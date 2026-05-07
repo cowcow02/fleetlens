@@ -13,7 +13,6 @@ const targets = [
   "packages/cli/package.json",
   "packages/parser/package.json",
   "packages/entries/package.json",
-  "packages/team-server/package.json",
   "apps/web/package.json",
 ];
 

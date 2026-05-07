@@ -59,12 +59,29 @@ export async function runMigrations(): Promise<void> {
 
     await applyPreDrizzleBaselineIfNeeded(client, migrationsFolder);
 
-    await logMigrationState(client, migrationsFolder, "before drizzle migrate");
+    await logMigrationState(client, migrationsFolder, "before drizzle");
 
     const db = drizzle(client);
-    await migrate(db, { migrationsFolder });
+    try {
+      await migrate(db, { migrationsFolder });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Drizzle's normal path runs each migration's SQL in a transaction;
+      // it has no IF-NOT-EXISTS handling, so a CREATE TABLE for a relation
+      // that already exists (left over from an earlier fallback run, or
+      // from a hand-applied schema) blows up the entire migrate() call. The
+      // fallback applier handles that exact case: it detects "already
+      // exists" and records the hash without re-running DDL. Drop into it.
+      if (/already exists/i.test(msg)) {
+        console.warn(
+          `[migrate] drizzle threw "already exists" — falling through to fallback applier`,
+        );
+      } else {
+        throw err;
+      }
+    }
 
-    await logMigrationState(client, migrationsFolder, "after drizzle migrate");
+    await logMigrationState(client, migrationsFolder, "after drizzle");
 
     // Fallback: drizzle has been observed to silently no-op on production
     // (its own tracking table is in a state where it believes everything
@@ -134,27 +151,18 @@ async function logMigrationState(
   label: string,
 ): Promise<void> {
   const entries = discoverAllMigrations(migrationsFolder);
-  const expected = entries.map((e) => ({
-    idx: e.idx,
-    tag: e.tag,
-    hash: hashOfMigration(migrationsFolder, e.tag),
-  }));
-  const applied = await client.query<{ id: number; hash: string; created_at: string }>(
-    "SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id",
+  const applied = await client.query<{ hash: string }>(
+    "SELECT hash FROM drizzle.__drizzle_migrations",
   );
   const appliedHashes = new Set(applied.rows.map((r) => r.hash));
-  const pending = expected.filter((e) => !appliedHashes.has(e.hash));
+  const pendingTags = entries
+    .filter((e) => !appliedHashes.has(hashOfMigration(migrationsFolder, e.tag)))
+    .map((e) => e.tag);
   console.log(
-    `[migrate-debug] ${label} — applied=${applied.rows.length} ` +
-    `expected=${expected.length} pending=${pending.length}`,
+    `[migrate] ${label} — applied=${applied.rows.length} expected=${entries.length} ` +
+    `pending=${pendingTags.length}` +
+    (pendingTags.length > 0 ? ` (${pendingTags.join(", ")})` : ""),
   );
-  for (const r of applied.rows) {
-    console.log(`[migrate-debug]   applied id=${r.id} hash=${r.hash} created_at=${r.created_at}`);
-  }
-  for (const e of expected) {
-    const status = appliedHashes.has(e.hash) ? "APPLIED" : "PENDING";
-    console.log(`[migrate-debug]   ${status} idx=${e.idx} tag=${e.tag} hash=${e.hash}`);
-  }
 }
 
 async function applyAnyMissingMigrations(

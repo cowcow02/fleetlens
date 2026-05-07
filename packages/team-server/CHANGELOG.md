@@ -4,6 +4,24 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.7.4] — 2026-05-07
+
+### Fixed
+- `_journal.json` now lists `0003_membership_cycle_peaks` (the planned 0.7.3 edit didn't make it into the bundled image, so production kept relying on the dir-scan fallback to apply the migration on every boot). With the journal correctly listing all four entries, drizzle's normal migrator path handles 0003 directly — the fallback stays as a safety net but no longer fires under normal operation.
+- Trimmed the boot-time `[migrate-debug]` per-row hash dump that v0.7.2/0.7.3 emitted on every restart. Replaced with a one-line summary (`[migrate] before/after drizzle — applied=N expected=N pending=N`) plus the existing fallback warnings only when something exceptional happens.
+- `scripts/version-sync.mjs` no longer accidentally bumps `packages/team-server/package.json` from the root `npm version` script. Comment in the file already said this was intentional; the targets array contradicted it. The CLI track and team-server track are now genuinely independent.
+
+### Notes for operators on legacy deployments
+If your team-server image predates the in-app updater (anything before `server-v0.5.0`), bootstrap by manually rolling once:
+
+```sh
+gcloud run services update <SERVICE-NAME> \
+  --region=<REGION> \
+  --image=ghcr.io/cowcow02/fleetlens-team-server:0.7.4
+```
+
+After that, future updates appear in **Server admin → Updates** and ship via the in-app **Apply** button — no shell access needed thereafter.
+
 ## [0.7.3] — 2026-05-07
 
 ### Fixed

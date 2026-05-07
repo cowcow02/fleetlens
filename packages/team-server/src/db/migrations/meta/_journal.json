@@ -22,6 +22,13 @@
       "when": 1777115113385,
       "tag": "0002_plan_utilization",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777468924000,
+      "tag": "0003_membership_cycle_peaks",
+      "breakpoints": true
     }
   ]
 }
