@@ -27,7 +27,6 @@ import os from "node:os";
 import path from "node:path";
 import { canonicalProjectName, toLocalDay } from "./analytics.js";
 import type {
-  ContentBlock,
   SessionDetail,
   SessionEvent,
   SessionMeta,
@@ -97,7 +96,7 @@ async function loadSlugToCwd(): Promise<Map<string, string>> {
     return projectsCache.slugToCwd;
   }
   const raw = await fs.readFile(GEMINI_PROJECTS_FILE, "utf8").catch(() => "");
-  let parsed: ProjectsRegistry = {};
+  let parsed: ProjectsRegistry;
   try {
     parsed = JSON.parse(raw) as ProjectsRegistry;
   } catch {
@@ -198,7 +197,7 @@ async function readAndReplay(file: SessionFile): Promise<ReplayResult> {
   const raw = await fs.readFile(file.filePath, "utf8");
 
   if (file.format === "legacy-json") {
-    let blob: Record<string, unknown> = {};
+    let blob: Record<string, unknown>;
     try {
       blob = JSON.parse(raw) as Record<string, unknown>;
     } catch {
