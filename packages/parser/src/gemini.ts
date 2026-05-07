@@ -296,7 +296,20 @@ function flattenContent(c: GeminiContent | undefined | null): string {
       continue;
     }
     const fr = part.functionResponse as { response?: unknown } | undefined;
-    if (fr && typeof fr.response === "string") out.push(fr.response);
+    if (fr) {
+      // Gemini's tool-result envelope: every native tool wraps its payload
+      // as `functionResponse.response.{output|error}`. The string-typed
+      // direct case happens too for some MCP tools.
+      const resp = fr.response;
+      if (typeof resp === "string") {
+        out.push(resp);
+      } else if (resp && typeof resp === "object") {
+        const r = resp as Record<string, unknown>;
+        if (typeof r.output === "string") out.push(r.output);
+        else if (typeof r.error === "string") out.push(`error: ${r.error}`);
+        else out.push(JSON.stringify(r));
+      }
+    }
     // inlineData (images), functionCall payloads, etc. are non-text — skip.
   }
   return out.join("\n");

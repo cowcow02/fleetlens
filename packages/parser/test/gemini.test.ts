@@ -129,6 +129,59 @@ describe("gemini parser", () => {
     expect(String(toolResults[0]!.toolResult)).toContain("a.txt");
   });
 
+  it("unwraps native tool results from functionResponse.response.output", async () => {
+    // Real Gemini CLI tools (read_file, list_directory, glob, grep,
+    // run_shell_command, …) wrap their payloads as
+    // [{ functionResponse: { response: { output: "..." } } }]
+    // — a layer my flattener missed in the first cut.
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "gemini-toolresult-"));
+    const sessionId = "ctx-toolresult-abcdef12";
+    const file = path.join(
+      root,
+      "demo",
+      "chats",
+      `session-2026-05-07T07-00-${sessionId.slice(0, 8)}.jsonl`,
+    );
+    await writeJsonl(file, [
+      { sessionId, startTime: "2026-05-07T07:00:00.000Z", lastUpdated: "2026-05-07T07:00:30.000Z" },
+      { id: "u1", type: "user", timestamp: "2026-05-07T07:00:01.000Z", content: "what's in /tmp?" },
+      {
+        id: "g1",
+        type: "gemini",
+        timestamp: "2026-05-07T07:00:02.000Z",
+        content: "I'll list it.",
+        model: "gemini-3-flash-preview",
+        toolCalls: [
+          {
+            id: "tc1",
+            name: "list_directory",
+            args: { dir_path: "/tmp" },
+            status: "success",
+            timestamp: "2026-05-07T07:00:03.000Z",
+            result: [
+              {
+                functionResponse: {
+                  id: "tc1",
+                  name: "list_directory",
+                  response: {
+                    output: "Directory listing for /tmp:\n[DIR] subdir\n[FILE] file.txt",
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+    const detail = await getGeminiSession(sessionId, { root });
+    expect(detail).not.toBeNull();
+    const result = detail!.events.find((e) => e.role === "tool-result");
+    expect(result).toBeDefined();
+    expect(String(result!.toolResult)).toContain("Directory listing for /tmp");
+    expect(String(result!.toolResult)).toContain("[DIR] subdir");
+    expect(result!.preview.length).toBeGreaterThan(0);
+  });
+
   it("respects $rewindTo by trimming everything from that id forward", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "gemini-rewind-"));
     const sessionId = "ctx-rewind-12345678";
