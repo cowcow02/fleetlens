@@ -7,30 +7,34 @@ import type {
   MembershipCyclePeak,
   CurrentCycleData,
 } from "../lib/plan-queries";
+import { utilizationHex } from "../lib/utilization-tone";
 
-// Plain-language status framed around "is this person on track with
-// their license consumption?" — the question an admin actually asks.
-// We keep the underlying recommendation engine but rephrase output so
-// the page reads as a utilization signal, not a sales pitch.
+// Plain-language status framed around "is this person getting their
+// money's worth from the plan?" — high utilization is the desired
+// outcome, low utilization is the wasteful one.
 const ACTION_LABEL: Record<Recommendation["action"], string> = {
   insufficient_data: "Collecting data",
   review_manually: "Custom plan — review manually",
   top_up_needed: "At the cap — needs more headroom",
   upgrade_urgent: "At the cap — upgrade urgent",
   upgrade: "Trending toward the cap",
-  downgrade: "Way under the cap",
-  stay: "On track",
+  downgrade: "Way under the cap — paying for unused headroom",
+  stay: "Plan well-matched",
 };
 
 type Tone = "good" | "warn" | "danger" | "info";
 
+// Tone reflects "is this plan well-matched?", not "is utilization low?".
+// `downgrade` flips from good → danger because under-utilization is the
+// wasteful outcome (you're paying for headroom you're not using). `stay`
+// remains good (right-sized). At-cap states stay danger (throttling).
 const ACTION_TONE: Record<Recommendation["action"], Tone> = {
   insufficient_data: "info",
   review_manually: "info",
   top_up_needed: "danger",
   upgrade_urgent: "danger",
   upgrade: "warn",
-  downgrade: "good",
+  downgrade: "danger",
   stay: "good",
 };
 
@@ -223,11 +227,7 @@ export function MemberPlanBlock({
 
 // Same color scale used inside CyclePeaksStrip so the callout numbers
 // match what the bars show.
-function peakColor(pct: number): string {
-  if (pct >= 90) return "#c5283d";
-  if (pct >= 70) return "#b58400";
-  return "#2f8f5a";
-}
+const peakColor = utilizationHex;
 
 // Verdict rationale — focused on the in-progress cycle, not historical
 // averages. Admin glance question is "where are they NOW and how long

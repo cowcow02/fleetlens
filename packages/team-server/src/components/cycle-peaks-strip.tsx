@@ -1,11 +1,11 @@
 import type { MembershipCyclePeak } from "../lib/plan-queries";
+import { utilizationHex } from "../lib/utilization-tone";
 
 // Horizontal bar trend of recent 7d cycle peaks. Mirrors the visual on
-// the personal /usage page so admins see the SAME shape as the member sees
-// for themselves — single source of truth, end-to-end. Each bar height =
-// peak utilization, color = danger threshold, striped fill on cycles whose
-// peak came from JSONL prediction (cold-start, no daemon coverage),
-// dashed border on the in-progress cycle.
+// the personal /usage page. Bar height = peak utilization. Color flips on
+// utilization: ≥70% = green (full plan use), 40–69% = amber, <40% = red
+// (paying for unused headroom). Striped fill on cycles whose peak came
+// from JSONL prediction; dashed border on the in-progress cycle.
 export function CyclePeaksStrip({
   cycles,
   maxBars = 8,
@@ -40,10 +40,7 @@ export function CyclePeaksStrip({
 
 function CycleBar({ cycle }: { cycle: MembershipCyclePeak }) {
   const pct = Math.max(0, Math.min(100, cycle.peakPct));
-  const color =
-    pct >= 90 ? "#c5283d" :     // danger
-    pct >= 70 ? "#b58400" :     // warning
-    "#2f8f5a";                  // success
+  const color = utilizationHex(pct);
   const dateLabel = cycle.endsAt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return (
     <div

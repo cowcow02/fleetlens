@@ -8,16 +8,17 @@ import {
 } from "../../../../lib/plan-queries";
 import { tierEntry } from "../../../../lib/plan-tiers";
 import { CyclePeaksStrip } from "../../../../components/cycle-peaks-strip";
+import {
+  utilizationHex,
+  utilizationTone,
+  UTILIZATION_THRESHOLDS,
+} from "../../../../lib/utilization-tone";
 
-// Plan utilization view — admins see "are members on track with their
-// license consumption" at a glance. One row per member with reported
-// usage, peaks of their last few 7d cycles as bars, plus a one-line
-// status derived from the most recent cycle.
-//
-// Stripped down on purpose: optimizer cards, burndown summary, tuning
-// sliders, and the manual tier-picker have all been removed. The only
-// question this page answers is "how is each member trending against
-// their plan." Anything else belongs on the per-member detail page.
+// Plan utilization view — admins see "are members getting plan value"
+// at a glance. One row per member with reported usage, peaks of their
+// last few 7d cycles as bars, plus a one-line status derived from the
+// most recent cycle. Inverted framing: high use = green (full value),
+// low use = red (paying for unused headroom).
 export default async function PlanPage({
   params,
 }: {
@@ -65,11 +66,14 @@ export default async function PlanPage({
       cycles: cyclePeaks.get(i.membershipId) ?? [],
     }))
     .filter((r) => r.cycles.length > 0)
-    .sort((a, b) => latestPeak(b.cycles) - latestPeak(a.cycles));
+    // Sort lowest peak first — under-utilizers are the actionable rows.
+    .sort((a, b) => latestPeak(a.cycles) - latestPeak(b.cycles));
 
-  const atRisk = rows.filter((r) => latestPeak(r.cycles) >= 90).length;
-  const trendingHot = rows.filter(
-    (r) => latestPeak(r.cycles) >= 70 && latestPeak(r.cycles) < 90,
+  const underutilizing = rows.filter(
+    (r) => latestPeak(r.cycles) < UTILIZATION_THRESHOLDS.low,
+  ).length;
+  const fullyUtilized = rows.filter(
+    (r) => latestPeak(r.cycles) >= UTILIZATION_THRESHOLDS.good,
   ).length;
 
   return (
@@ -78,24 +82,24 @@ export default async function PlanPage({
         <div>
           <h1>Plan <em>utilization</em></h1>
           <div className="kicker" style={{ marginTop: 8 }}>
-            Are members on track with their license consumption · {rows.length}{" "}
+            Are members getting plan value · {rows.length}{" "}
             {rows.length === 1 ? "member" : "members"} reporting
           </div>
         </div>
         <div className="kicker">
-          {atRisk > 0 && (
+          {underutilizing > 0 && (
             <span style={{ color: "#a93b2c", fontWeight: 600 }}>
-              {atRisk} at risk
+              {underutilizing} underutilizing
             </span>
           )}
-          {atRisk > 0 && trendingHot > 0 && " · "}
-          {trendingHot > 0 && (
-            <span style={{ color: "#b58400" }}>
-              {trendingHot} trending hot
+          {underutilizing > 0 && fullyUtilized > 0 && " · "}
+          {fullyUtilized > 0 && (
+            <span style={{ color: "#2c6e49" }}>
+              {fullyUtilized} fully utilizing
             </span>
           )}
-          {atRisk === 0 && trendingHot === 0 && rows.length > 0 && (
-            <span style={{ color: "#2c6e49" }}>everyone on track</span>
+          {underutilizing === 0 && fullyUtilized === rows.length && rows.length > 0 && (
+            <span style={{ color: "#2c6e49" }}>everyone fully utilizing</span>
           )}
         </div>
       </div>
@@ -119,11 +123,14 @@ export default async function PlanPage({
             <tbody>
               {rows.map(({ input, tier, cycles }) => {
                 const latest = latestPeak(cycles);
-                const status = latest >= 90 ? "at-risk" : latest >= 70 ? "hot" : "ok";
-                const statusColor =
-                  status === "at-risk" ? "#a93b2c" : status === "hot" ? "#b58400" : "#2c6e49";
+                const tone = utilizationTone(latest);
+                const statusColor = utilizationHex(latest);
                 const statusLabel =
-                  status === "at-risk" ? "at the cap" : status === "hot" ? "trending hot" : "on track";
+                  tone === "success"
+                    ? "fully utilizing"
+                    : tone === "warning"
+                      ? "moderate use"
+                      : "underutilizing";
                 return (
                   <tr key={input.membershipId}>
                     <td>

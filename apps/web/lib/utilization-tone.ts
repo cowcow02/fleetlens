@@ -1,0 +1,53 @@
+/**
+ * Utilization tone — the "high usage = good" framing.
+ *
+ * Paying for a plan and barely touching it is the wasteful outcome,
+ * not the safe one. ≥70% peaks = getting value (green). <40% = paying
+ * for headroom you don't need (red). Throttling (real wall hits) is
+ * tracked separately and stays red regardless.
+ */
+
+export type Tone = "success" | "warning" | "danger";
+
+export const UTILIZATION_THRESHOLDS = { good: 70, low: 40 } as const;
+
+export function utilizationTone(pct: number): Tone {
+  if (pct >= UTILIZATION_THRESHOLDS.good) return "success";
+  if (pct >= UTILIZATION_THRESHOLDS.low) return "warning";
+  return "danger";
+}
+
+export function toneVar(tone: Tone): string {
+  switch (tone) {
+    case "success":
+      return "var(--af-success)";
+    case "warning":
+      return "#b58400";
+    case "danger":
+      return "var(--af-danger)";
+  }
+}
+
+export function utilizationVar(pct: number): string {
+  return toneVar(utilizationTone(pct));
+}
+
+/**
+ * Pace label for the burndown chart.
+ *
+ * delta = currentRemaining − idealRemaining
+ *   +ve  → under-burning (saving plan = wasting it)
+ *   -ve  → over-burning (using more than ideal — good, up to a point)
+ *
+ * Both extremes warn:
+ *   delta > 20  → "barely used"   (danger — way under-utilized)
+ *   delta > 5   → "underutilizing" (warning — mild under-burn)
+ *   delta < -50 → "outpacing"     (danger — will exhaust before reset)
+ *   else        → "on pace"       (success — sweet spot)
+ */
+export function paceLabel(delta: number): { tone: Tone; label: string } {
+  if (delta < -50) return { tone: "danger", label: "outpacing" };
+  if (delta > 20) return { tone: "danger", label: "barely used" };
+  if (delta > 5) return { tone: "warning", label: "underutilizing" };
+  return { tone: "success", label: "on pace" };
+}

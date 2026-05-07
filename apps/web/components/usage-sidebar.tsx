@@ -3,6 +3,7 @@
 import Link from "next/link";
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
 import { usePersistentBoolean } from "@/lib/use-persistent-boolean";
+import { utilizationVar } from "@/lib/utilization-tone";
 
 /**
  * Compact current-usage widget for the sidebar. Always visible on every page.
@@ -97,12 +98,7 @@ function UsageRow({ label, window }: { label: string; window: UsageWindow | null
   const pct = window?.utilization ?? null;
   const hasData = pct !== null;
   const clamped = hasData ? Math.max(0, Math.min(100, pct!)) : 0;
-  const toneVar =
-    clamped >= 90
-      ? "var(--af-danger)"
-      : clamped >= 70
-        ? "var(--af-warning)"
-        : "var(--af-success)";
+  const fillColor = utilizationVar(clamped);
 
   return (
     <div>
@@ -150,7 +146,7 @@ function UsageRow({ label, window }: { label: string; window: UsageWindow | null
           style={{
             height: "100%",
             width: hasData ? `${clamped}%` : "0%",
-            background: toneVar,
+            background: fillColor,
             borderRadius: 999,
             transition: "width 0.24s ease",
           }}

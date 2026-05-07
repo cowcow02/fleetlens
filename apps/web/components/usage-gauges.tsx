@@ -1,4 +1,5 @@
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
+import { utilizationVar } from "@/lib/utilization-tone";
 
 type Row = { label: string; window: UsageWindow | null };
 
@@ -28,12 +29,7 @@ function Gauge({ label, window }: Row) {
   const pct = window?.utilization ?? null;
   const hasData = pct !== null;
   const clamped = hasData ? Math.max(0, Math.min(100, pct!)) : 0;
-  const toneVar =
-    clamped >= 90
-      ? "var(--af-danger)"
-      : clamped >= 70
-        ? "var(--af-warning)"
-        : "var(--af-success)";
+  const fillColor = utilizationVar(clamped);
 
   return (
     <div className="af-card" style={{ padding: "16px 18px" }}>
@@ -77,7 +73,7 @@ function Gauge({ label, window }: Row) {
           style={{
             height: "100%",
             width: hasData ? `${clamped}%` : "0%",
-            background: toneVar,
+            background: fillColor,
             borderRadius: 999,
             transition: "width 0.24s ease",
           }}

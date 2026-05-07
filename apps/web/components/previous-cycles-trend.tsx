@@ -1,10 +1,11 @@
 import type { CyclePeak } from "@/lib/calibration-data";
+import { utilizationVar } from "@/lib/utilization-tone";
 
 // Horizontal bar chart of the last few cycles' peak utilization. One bar
-// per cycle, height proportional to peak %, color follows the burndown
-// danger thresholds (green / amber / red). The right-most bar is "current"
-// (in-progress) and gets a distinct styling so it isn't read as a finished
-// trend point. Designed for direct reuse on the team-edition member card.
+// per cycle, height proportional to peak %. Color flips on utilization:
+// ≥70% = success (full plan use), 40–69% = amber, <40% = danger (paying
+// for unused headroom). Right-most bar is the in-progress cycle, dashed
+// border + slight transparency so it doesn't read as a finished trend point.
 export function PreviousCyclesTrend({
   windowLabel,
   cycles,
@@ -60,10 +61,7 @@ export function PreviousCyclesTrend({
 
 function CycleBar({ cycle }: { cycle: CyclePeak }) {
   const pct = Math.max(0, Math.min(100, cycle.peakPct));
-  const color =
-    pct >= 90 ? "var(--af-danger)" :
-    pct >= 70 ? "#b58400" :
-    "var(--af-success)";
+  const color = utilizationVar(pct);
   const date = new Date(cycle.endsAt);
   // Compact "Apr 23" date label; "current" cycle gets "ends Apr 30" instead
   const label = cycle.current
