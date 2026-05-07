@@ -318,8 +318,12 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
 
   const events: SessionEvent[] = [];
   const totalUsage = emptyUsage();
-  let firstTimestamp: string | undefined = metaRec.startTime;
-  let lastTimestamp: string | undefined = metaRec.lastUpdated;
+  // Anchor the session window on conversational events only. Gemini CLI
+  // logs login/OAuth as a stream of `info` records *before* the first
+  // user message, and metadata.startTime is the file-creation moment
+  // — neither should widen the session bar or get counted as agent time.
+  let firstTimestamp: string | undefined;
+  let lastTimestamp: string | undefined;
   let model: string | undefined;
   let toolCallCount = 0;
   let turnCount = 0;
@@ -332,7 +336,7 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
 
   function pushEvent(e: SessionEvent): void {
     events.push(e);
-    if (e.timestamp) {
+    if (e.timestamp && e.role !== "meta") {
       if (!firstTimestamp) firstTimestamp = e.timestamp;
       lastTimestamp = e.timestamp;
       const ms = Date.parse(e.timestamp);
@@ -387,9 +391,24 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
         totalUsage.cacheRead += u.cacheRead;
       }
 
-      // Emit the agent text first when present — keeps the user/agent/tool
-      // ordering mirroring Claude where the assistant prose precedes its
-      // tool calls within a turn.
+      // Thinking / scratchpad first — Gemini stamps thoughts with their
+      // own timestamps, which precede the final reply by a few seconds.
+      // Emitting them before the agent text keeps event order monotonic.
+      for (const th of msg.thoughts ?? []) {
+        const thText = [th.subject, th.description].filter(Boolean).join(": ");
+        if (!thText) continue;
+        pushEvent({
+          index: idx++,
+          timestamp: th.timestamp ?? ts,
+          role: "agent-thinking",
+          rawType: "gemini/thought",
+          preview: previewOf(thText),
+          blocks: [{ type: "thinking", thinking: thText }],
+          model,
+          raw: th,
+        });
+      }
+
       if (text) {
         pushEvent({
           index: idx++,
@@ -417,22 +436,6 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
           model,
           usage,
           raw: msg,
-        });
-      }
-
-      // Thinking / scratchpad — flatten to thinking blocks.
-      for (const th of msg.thoughts ?? []) {
-        const thText = [th.subject, th.description].filter(Boolean).join(": ");
-        if (!thText) continue;
-        pushEvent({
-          index: idx++,
-          timestamp: th.timestamp ?? ts,
-          role: "agent-thinking",
-          rawType: "gemini/thought",
-          preview: previewOf(thText),
-          blocks: [{ type: "thinking", thinking: thText }],
-          model,
-          raw: th,
         });
       }
 

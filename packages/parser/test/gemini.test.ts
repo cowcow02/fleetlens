@@ -234,4 +234,65 @@ describe("gemini parser", () => {
     const list = await listGeminiSessions({ root });
     expect(list).toEqual([]);
   });
+
+  it("anchors firstTimestamp on first conversational event, not leading info events", async () => {
+    // Reproduces the OAuth-prefix scenario: Gemini CLI logs ~20 info
+    // records during login before the user can send their first prompt.
+    // The session bar must not stretch back to that pre-conversation
+    // window or every Gemini session looks like 4 minutes of idle time.
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "gemini-oauth-"));
+    const sessionId = "ctx-oauth-77777777";
+    const file = path.join(
+      root,
+      "demo",
+      "chats",
+      `session-2026-05-07T03-54-${sessionId.slice(0, 8)}.jsonl`,
+    );
+    const lines = [
+      {
+        sessionId,
+        startTime: "2026-05-07T03:54:33.000Z",
+        lastUpdated: "2026-05-07T03:58:36.000Z",
+      },
+      {
+        id: "i1",
+        type: "info",
+        timestamp: "2026-05-07T03:54:38.000Z",
+        content: "Attempting to open authentication page in your browser…",
+      },
+      {
+        id: "i2",
+        type: "info",
+        timestamp: "2026-05-07T03:54:50.000Z",
+        content: "OAuth callback received.",
+      },
+      {
+        id: "u1",
+        type: "user",
+        timestamp: "2026-05-07T03:58:02.000Z",
+        content: "hello!",
+      },
+      {
+        id: "g1",
+        type: "gemini",
+        timestamp: "2026-05-07T03:58:36.000Z",
+        content: "hi there",
+        model: "gemini-3-flash-preview",
+      },
+    ];
+    await writeJsonl(file, lines);
+    const list = await listGeminiSessions({ root });
+    expect(list).toHaveLength(1);
+    const meta = list[0]!;
+    expect(meta.firstTimestamp).toBe("2026-05-07T03:58:02.000Z");
+    expect(meta.lastTimestamp).toBe("2026-05-07T03:58:36.000Z");
+    // 34s conversational window, not 4m 3s.
+    expect(meta.durationMs).toBe(34_000);
+    // activeSegments must reflect only the conversational portion.
+    const span = (meta.activeSegments ?? []).reduce(
+      (acc, s) => acc + (s.endMs - s.startMs),
+      0,
+    );
+    expect(span).toBeLessThan(60_000);
+  });
 });
