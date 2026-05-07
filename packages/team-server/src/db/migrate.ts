@@ -2,7 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client } from "pg";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyPreDrizzleBaselineIfNeeded } from "./baseline";
@@ -91,6 +91,38 @@ function readJournal(migrationsFolder: string): JournalEntry[] {
   return journal.entries;
 }
 
+/**
+ * Discover every migration that should be applied by looking at the SQL
+ * files on disk PLUS the journal. The journal is authoritative for ordering
+ * (`when`), but if someone adds an .sql file without running `drizzle-kit
+ * generate`, the file is invisible to drizzle's normal migrator. Returning
+ * orphans alongside journal entries lets the fallback catch those too.
+ */
+function discoverAllMigrations(migrationsFolder: string): JournalEntry[] {
+  const journal = readJournal(migrationsFolder);
+  const journalTags = new Set(journal.map((e) => e.tag));
+  const sqlFiles = readdirSync(migrationsFolder)
+    .filter((f) => f.endsWith(".sql"))
+    .map((f) => f.replace(/\.sql$/, ""))
+    .sort();
+  const orphans = sqlFiles.filter((tag) => !journalTags.has(tag));
+  if (orphans.length > 0) {
+    console.warn(
+      `[migrate] orphan SQL files not in _journal.json: ${orphans.join(", ")}`,
+    );
+  }
+  // Stable ordering: journal entries first (in their declared order), then
+  // orphans appended sorted by filename. Orphan `when` defaults to a value
+  // greater than the latest journal entry so they always come last.
+  const maxWhen = journal.reduce((m, e) => Math.max(m, e.when), 0);
+  const orphanEntries: JournalEntry[] = orphans.map((tag, i) => ({
+    idx: journal.length + i,
+    tag,
+    when: maxWhen + 1 + i,
+  }));
+  return [...journal, ...orphanEntries];
+}
+
 function hashOfMigration(migrationsFolder: string, tag: string): string {
   const sql = readFileSync(join(migrationsFolder, `${tag}.sql`), "utf8");
   return createHash("sha256").update(sql).digest("hex");
@@ -101,7 +133,7 @@ async function logMigrationState(
   migrationsFolder: string,
   label: string,
 ): Promise<void> {
-  const entries = readJournal(migrationsFolder);
+  const entries = discoverAllMigrations(migrationsFolder);
   const expected = entries.map((e) => ({
     idx: e.idx,
     tag: e.tag,
@@ -129,7 +161,7 @@ async function applyAnyMissingMigrations(
   client: Client,
   migrationsFolder: string,
 ): Promise<void> {
-  const entries = readJournal(migrationsFolder);
+  const entries = discoverAllMigrations(migrationsFolder);
   const applied = await client.query<{ hash: string }>(
     "SELECT hash FROM drizzle.__drizzle_migrations",
   );

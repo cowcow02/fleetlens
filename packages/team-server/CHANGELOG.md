@@ -4,6 +4,12 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.7.3] — 2026-05-07
+
+### Fixed
+- `0003_membership_cycle_peaks.sql` now actually applies on production. Diagnostics from v0.7.2 revealed the root cause: when the migration was added (commit `60f92e2`, 2026-04-29), `drizzle-kit generate` was not run, so the SQL file was committed without a corresponding entry in `_journal.json`. Drizzle's migrator reads the journal — only 3 entries, all already applied — and reported "complete" without ever touching 0003. The journal now includes the missing entry with the migration's actual creation timestamp.
+- Hardened the fallback applier to **scan SQL files directly** (not just journal entries) so any future migration committed without `drizzle-kit generate` still gets applied. Logs `[migrate] orphan SQL files not in _journal.json: …` if any are detected.
+
 ## [0.7.2] — 2026-05-07
 
 ### Fixed
