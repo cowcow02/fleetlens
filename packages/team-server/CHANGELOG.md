@@ -4,6 +4,11 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.7.2] — 2026-05-07
+
+### Fixed
+- Self-healing migration runner. v0.7.1 correctly resolved the migrations folder path on production, but drizzle's `migrate()` still returned in 449ms without applying `0003_membership_cycle_peaks` — implying the production `drizzle.__drizzle_migrations` tracking table is in a state where drizzle thinks everything is already applied even though tables are missing. The runner now: (1) logs the full applied-vs-expected hash diff before and after drizzle's own pass for forensic visibility, and (2) **manually applies any expected migration whose hash isn't in the tracking table** after drizzle finishes. Idempotent — if drizzle does its job, the fallback finds nothing to do. If schema already exists (e.g. test-environment tracker resets), it records the hash without re-running the DDL.
+
 ## [0.7.1] — 2026-05-06
 
 ### Fixed

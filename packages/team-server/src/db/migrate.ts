@@ -1,7 +1,8 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Client } from "pg";
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyPreDrizzleBaselineIfNeeded } from "./baseline";
@@ -58,13 +59,119 @@ export async function runMigrations(): Promise<void> {
 
     await applyPreDrizzleBaselineIfNeeded(client, migrationsFolder);
 
+    await logMigrationState(client, migrationsFolder, "before drizzle migrate");
+
     const db = drizzle(client);
     await migrate(db, { migrationsFolder });
+
+    await logMigrationState(client, migrationsFolder, "after drizzle migrate");
+
+    // Fallback: drizzle has been observed to silently no-op on production
+    // (its own tracking table is in a state where it believes everything
+    // is applied even when tables are missing). After its normal pass,
+    // re-derive the pending set from journal hashes vs applied hashes and
+    // run any leftovers directly. Idempotent: if drizzle did its job, this
+    // loop finds nothing to do and exits.
+    await applyAnyMissingMigrations(client, migrationsFolder);
   } finally {
     // Best-effort unlock; the lock is also released automatically on disconnect.
     await client
       .query("SELECT pg_advisory_unlock($1)", [MIGRATION_LOCK_ID.toString()])
       .catch(() => {});
     await client.end();
+  }
+}
+
+type JournalEntry = { idx: number; tag: string; when: number };
+
+function readJournal(migrationsFolder: string): JournalEntry[] {
+  const journal = JSON.parse(
+    readFileSync(join(migrationsFolder, "meta", "_journal.json"), "utf8"),
+  ) as { entries: JournalEntry[] };
+  return journal.entries;
+}
+
+function hashOfMigration(migrationsFolder: string, tag: string): string {
+  const sql = readFileSync(join(migrationsFolder, `${tag}.sql`), "utf8");
+  return createHash("sha256").update(sql).digest("hex");
+}
+
+async function logMigrationState(
+  client: Client,
+  migrationsFolder: string,
+  label: string,
+): Promise<void> {
+  const entries = readJournal(migrationsFolder);
+  const expected = entries.map((e) => ({
+    idx: e.idx,
+    tag: e.tag,
+    hash: hashOfMigration(migrationsFolder, e.tag),
+  }));
+  const applied = await client.query<{ id: number; hash: string; created_at: string }>(
+    "SELECT id, hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id",
+  );
+  const appliedHashes = new Set(applied.rows.map((r) => r.hash));
+  const pending = expected.filter((e) => !appliedHashes.has(e.hash));
+  console.log(
+    `[migrate-debug] ${label} — applied=${applied.rows.length} ` +
+    `expected=${expected.length} pending=${pending.length}`,
+  );
+  for (const r of applied.rows) {
+    console.log(`[migrate-debug]   applied id=${r.id} hash=${r.hash} created_at=${r.created_at}`);
+  }
+  for (const e of expected) {
+    const status = appliedHashes.has(e.hash) ? "APPLIED" : "PENDING";
+    console.log(`[migrate-debug]   ${status} idx=${e.idx} tag=${e.tag} hash=${e.hash}`);
+  }
+}
+
+async function applyAnyMissingMigrations(
+  client: Client,
+  migrationsFolder: string,
+): Promise<void> {
+  const entries = readJournal(migrationsFolder);
+  const applied = await client.query<{ hash: string }>(
+    "SELECT hash FROM drizzle.__drizzle_migrations",
+  );
+  const appliedHashes = new Set(applied.rows.map((r) => r.hash));
+
+  for (const entry of entries) {
+    const hash = hashOfMigration(migrationsFolder, entry.tag);
+    if (appliedHashes.has(hash)) continue;
+
+    console.warn(
+      `[migrate-fallback] drizzle did not apply ${entry.tag}; applying directly`,
+    );
+    const sql = readFileSync(join(migrationsFolder, `${entry.tag}.sql`), "utf8");
+    try {
+      await client.query("BEGIN");
+      await client.query(sql);
+      await client.query(
+        "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+        [hash, entry.when],
+      );
+      await client.query("COMMIT");
+      console.log(`[migrate-fallback] applied ${entry.tag} (hash=${hash})`);
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      const msg = err instanceof Error ? err.message : String(err);
+      // Tables present already means an earlier deploy applied this
+      // migration's DDL but the tracking row is missing — schema-and-tracker
+      // drift, common after test resets or v0.4.2-era buggy baselining.
+      // Record the hash so future runs see it as applied; the schema is
+      // already the right shape.
+      if (/already exists/i.test(msg)) {
+        console.warn(
+          `[migrate-fallback] ${entry.tag}: schema already present; recording hash without re-applying`,
+        );
+        await client.query(
+          "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+          [hash, entry.when],
+        );
+        continue;
+      }
+      console.error(`[migrate-fallback] FAILED to apply ${entry.tag}:`, msg);
+      throw err;
+    }
   }
 }
