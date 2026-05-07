@@ -93,24 +93,21 @@ export default async function PlanPage({
         <div>
           <h1>Plan <em>utilization</em></h1>
           <div className="kicker" style={{ marginTop: 8 }}>
-            Are members getting plan value · {rows.length}{" "}
+            License consumption across team · {rows.length}{" "}
             {rows.length === 1 ? "member" : "members"} reporting
           </div>
         </div>
         <div className="kicker">
           {underutilizing > 0 && (
             <span style={{ color: "#a93b2c", fontWeight: 600 }}>
-              {underutilizing} underutilizing
+              {underutilizing} light use
             </span>
           )}
           {underutilizing > 0 && fullyUtilized > 0 && " · "}
           {fullyUtilized > 0 && (
             <span style={{ color: "#2c6e49" }}>
-              {fullyUtilized} fully utilizing
+              {fullyUtilized} high use
             </span>
-          )}
-          {underutilizing === 0 && fullyUtilized === rows.length && rows.length > 0 && (
-            <span style={{ color: "#2c6e49" }}>everyone fully utilizing</span>
           )}
         </div>
       </div>
@@ -136,10 +133,10 @@ export default async function PlanPage({
                 const statusColor = tone ? toneHex(tone) : "var(--mute)";
                 const statusLabel =
                   tone === "success"
-                    ? "fully utilizing"
+                    ? "high use"
                     : tone === "warning"
                       ? "moderate use"
-                      : "underutilizing";
+                      : "light use";
                 return (
                   <tr key={input.membershipId}>
                     <td>

@@ -15,32 +15,32 @@ import {
 
 const SEVEN_DAYS_MS = 7 * 24 * 3_600_000;
 
-// Plain-language status framed around "is this person getting their
-// money's worth from the plan?" — high utilization is the desired
-// outcome, low utilization is the wasteful one.
+// Plain-language status. Wording is factual and non-evaluative —
+// describes the plan-fit pattern, doesn't judge the member. The page
+// is a financial dashboard for the admin, not a scorecard for the
+// member; pressure on individuals to "use more" isn't the goal.
 const ACTION_LABEL: Record<Recommendation["action"], string> = {
   insufficient_data: "Collecting data",
   review_manually: "Custom plan — review manually",
   top_up_needed: "At the cap — needs more headroom",
-  upgrade_urgent: "At the cap — upgrade urgent",
+  upgrade_urgent: "At the cap — needs upgrade soon",
   upgrade: "Trending toward the cap",
-  downgrade: "Way under the cap — paying for unused headroom",
+  downgrade: "Light use of plan — could downsize",
   stay: "Plan well-matched",
 };
 
 type Tone = "good" | "warn" | "danger" | "info";
 
-// Tone reflects "is this plan well-matched?", not "is utilization low?".
-// `downgrade` flips from good → danger because under-utilization is the
-// wasteful outcome (you're paying for headroom you're not using). `stay`
-// remains good (right-sized). At-cap states stay danger (throttling).
+// `downgrade` is `warn`, not `danger` — light use is an optimization
+// opportunity for the admin, not a problem for the member. Red is
+// reserved for the genuinely-bad states (at-the-cap throttling).
 const ACTION_TONE: Record<Recommendation["action"], Tone> = {
   insufficient_data: "info",
   review_manually: "info",
   top_up_needed: "danger",
   upgrade_urgent: "danger",
   upgrade: "warn",
-  downgrade: "danger",
+  downgrade: "warn",
   stay: "good",
 };
 
@@ -72,7 +72,7 @@ export function MemberPlanBlock({
     <section style={{ marginBottom: 24 }}>
       <div className="subsection-head">
         <h2>Plan utilization</h2>
-        <span className="kicker">are they on track with license consumption?</span>
+        <span className="kicker">license consumption pattern</span>
       </div>
 
       {/* Verdict + burndown — the at-a-glance answer to "is this person

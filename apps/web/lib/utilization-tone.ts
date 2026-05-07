@@ -33,22 +33,22 @@ export function utilizationVar(pct: number): string {
 }
 
 /**
- * Pace label for the burndown chart.
+ * Pace label for the burndown chart. Wording stays factual and
+ * non-evaluative — the dashboard describes the pattern, the operator
+ * decides whether anything needs to change. "Below pace" = lower than
+ * the ideal-use trajectory at this point in the cycle, not a verdict
+ * on the person.
  *
  * delta = currentRemaining − idealRemaining
- *   +ve  → under-burning (saving plan = wasting it)
- *   -ve  → over-burning (using more than ideal — good, up to a point)
- *
- * Both extremes warn:
- *   delta > 20  → "barely used"   (danger — way under-utilized)
- *   delta > 5   → "underutilizing" (warning — mild under-burn)
- *   delta < -50 → "outpacing"     (danger — will exhaust before reset)
- *   else        → "on pace"       (success — sweet spot)
+ *   delta > 20  → "well below pace"    (danger color — admin financial signal)
+ *   delta > 5   → "below pace"         (warning color)
+ *   delta < -50 → "may exhaust early"  (danger color — throttling risk)
+ *   else        → "on pace"            (success color)
  */
 export function paceLabel(delta: number): { tone: Tone; label: string } {
-  if (delta < -50) return { tone: "danger", label: "outpacing" };
-  if (delta > 20) return { tone: "danger", label: "barely used" };
-  if (delta > 5) return { tone: "warning", label: "underutilizing" };
+  if (delta < -50) return { tone: "danger", label: "may exhaust early" };
+  if (delta > 20) return { tone: "danger", label: "well below pace" };
+  if (delta > 5) return { tone: "warning", label: "below pace" };
   return { tone: "success", label: "on pace" };
 }
 

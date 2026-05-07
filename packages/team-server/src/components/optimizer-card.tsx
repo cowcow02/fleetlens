@@ -27,15 +27,16 @@ const ACTION_LABEL: Record<Recommendation["action"], string> = {
   stay: "Plan well-matched",
 };
 
-// `downgrade` is danger, not good — paying for unused headroom is the
-// wasteful outcome under the inverted "high use = good" framing.
+// `downgrade` is `warn`, not `danger` — light use is an optimization
+// opportunity for the admin, not a problem for the member. Red is
+// reserved for the genuinely-bad states (at-the-cap throttling).
 const ACTION_TONE: Record<Recommendation["action"], "warn" | "danger" | "info" | "good"> = {
   insufficient_data: "info",
   review_manually: "info",
   top_up_needed: "danger",
   upgrade_urgent: "danger",
   upgrade: "warn",
-  downgrade: "danger",
+  downgrade: "warn",
   stay: "good",
 };
 
