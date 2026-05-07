@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.7.1] — 2026-05-07
+
+### Fixed
+- Cycle-peaks trend no longer renders two bars labeled the same day. When Anthropic's rolling 7-day window slid its anchor between consecutive polls, the daemon's bucketer (hour-rounded) recorded both reset boundaries as distinct cycles. They're now merged within a 12 h tolerance — same fix in `apps/web/lib/cycle-peaks.ts` (used by `/usage`) and in `packages/cli/src/team/sync.ts` (the daemon's team-server push), so both the personal `/usage` chart and the team-server's plan-utilization view stay consistent. 5-hour cycles keep no merge tolerance (their anchor is stable; merging would collapse legitimate distinct cycles).
+
 ## [0.6.4] — 2026-05-04
 
 ### Fixed

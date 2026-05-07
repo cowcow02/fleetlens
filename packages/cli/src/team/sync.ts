@@ -165,6 +165,13 @@ async function buildCyclePeaksForPush(
     predKey: "pred_5h" | "pred_7d",
     maxCycles: number,
   ): import("./push.js").WireCyclePeak[] => {
+    // Hour-round + window-specific merge tolerance — mirrors
+    // previousCyclesTrend in apps/web/lib/calibration-data.ts. The 7-day
+    // window's anchor can slide a few hours within the same cycle, which
+    // otherwise renders as two bars labeled the same day. 5h cycles have a
+    // stable anchor, so no merging beyond hour-rounding (distinct 5h
+    // cycles are only 5 h apart and would collapse under a wider window).
+    const TOLERANCE_MS = cycleKey === "cycle_end_7d" ? 12 * HOUR : 0;
     const byCycle = new Map<number, typeof dump.curve>();
     for (const p of dump.curve) {
       const k = p[cycleKey];
@@ -176,8 +183,18 @@ async function buildCyclePeaksForPush(
       arr.push(p);
       byCycle.set(bucket, arr);
     }
-    const out: import("./push.js").WireCyclePeak[] = [];
+    const merged: Array<{ endMs: number; points: typeof dump.curve }> = [];
     for (const [endMs, points] of Array.from(byCycle.entries()).sort((a, b) => a[0] - b[0])) {
+      const last = merged[merged.length - 1];
+      if (last && endMs - last.endMs <= TOLERANCE_MS) {
+        last.endMs = endMs;
+        last.points.push(...points);
+      } else {
+        merged.push({ endMs, points: [...points] });
+      }
+    }
+    const out: import("./push.js").WireCyclePeak[] = [];
+    for (const { endMs, points } of merged) {
       // Take the max across BOTH real and predicted — when the daemon goes
       // dark before cycle close, the cycle's true peak is the predicted
       // close, not the last poll. Mirrors previousCyclesTrend in the

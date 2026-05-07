@@ -47,70 +47,10 @@ export type PredictedSeriesByKey = {
   seven_day_sonnet: { capturedAt: number; util: number }[];
 };
 
-// History of recent cycles for trend visuals. Each entry is one full cycle
-// the user lived through — `current: true` flags the live (in-progress)
-// cycle, the rest are completed. `source: "real"` = daemon observed the
-// peak, `source: "predicted"` = cycle predates daemon data and we fall
-// back to the JSONL-derived prediction (cold-start path).
-export type CyclePeak = {
-  endsAt: string;
-  peakPct: number;
-  source: "real" | "predicted";
-  current: boolean;
-};
-
-// Per-cycle peak history for a single window (5h or 7d). Used by the
-// dashboard's "previous cycles" trend strip — humans understand "last 4
-// weeks: 86%, 92%, 44%, 34% (current)" much better than a single number.
-// Limited to the last `maxCycles` (most recent) so the visual stays compact.
-export function previousCyclesTrend(
-  dump: CalibrationDump | null,
-  window: "5h" | "7d",
-  maxCycles = 6,
-): CyclePeak[] {
-  if (!dump || dump.curve.length < 2) return [];
-  const HOUR = 3_600_000;
-  const cycleKey: "cycle_end_5h" | "cycle_end_7d" = window === "5h" ? "cycle_end_5h" : "cycle_end_7d";
-  const predKey: "pred_5h" | "pred_7d" = window === "5h" ? "pred_5h" : "pred_7d";
-  const realKey: "real_5h" | "real_7d" = window === "5h" ? "real_5h" : "real_7d";
-
-  // Hour-round the cycle key so millisecond-jittered resets collapse.
-  const byCycle = new Map<number, typeof dump.curve>();
-  for (const p of dump.curve) {
-    const k = p[cycleKey];
-    if (!k) continue;
-    const ms = Date.parse(k);
-    if (Number.isNaN(ms)) continue;
-    const bucket = Math.round(ms / HOUR) * HOUR;
-    const arr = byCycle.get(bucket) ?? [];
-    arr.push(p);
-    byCycle.set(bucket, arr);
-  }
-
-  const nowMs = Date.now();
-  const cycles: CyclePeak[] = [];
-  for (const [endMs, points] of Array.from(byCycle.entries()).sort((a, b) => a[0] - b[0])) {
-    // Take the max across BOTH real and predicted — when the daemon goes
-    // dark before cycle close, predicted forward-extrapolation often
-    // exceeds the last observed value, and the cycle's true peak is the
-    // predicted close, not the last poll. `source` reflects which side won.
-    let peak = 0;
-    let source: "real" | "predicted" = "predicted";
-    for (const p of points) {
-      const r = p[realKey];
-      if (typeof r === "number" && r > peak) { peak = r; source = "real"; }
-      const v = p[predKey] ?? 0;
-      if (v > peak) { peak = v; source = "predicted"; }
-    }
-    cycles.push({
-      endsAt: new Date(endMs).toISOString(),
-      peakPct: Math.round(peak * 10) / 10,
-      source,
-      current: endMs > nowMs,
-    });
-  }
-  return cycles.slice(-maxCycles);
-}
+// Re-export the pure cycle-peak helpers so existing call sites keep
+// working. New tests import directly from ./cycle-peaks (no server-only).
+export { previousCyclesTrend } from "./cycle-peaks";
+export type { CyclePeak } from "./cycle-peaks";
 
 // Converts the calibration dump into the same shape UsageChart expects to
 // overlay on each burndown plot. seven_day_sonnet has no predictor today
