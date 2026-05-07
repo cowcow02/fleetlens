@@ -20,6 +20,7 @@ import type { AgentKind, SessionDetail, SessionMeta } from "./types.js";
 import {
   type AgentMetadata,
   CODEX_METADATA,
+  GEMINI_METADATA,
 } from "./agent-metadata.js";
 import {
   type CalibrationEvent,
@@ -52,6 +53,13 @@ import {
   getLatestCodexUsage,
 } from "./codex.js";
 
+import {
+  DEFAULT_GEMINI_ROOT as _DEFAULT_GEMINI_ROOT,
+  listGeminiSessions as _listGeminiSessions,
+  getGeminiSession as _getGeminiSession,
+  clearGeminiCaches,
+} from "./gemini.js";
+
 // ─── Re-exports (preserve the public @claude-lens/parser/fs surface) ───
 
 export {
@@ -82,6 +90,17 @@ export type {
   CodexUsageWindows,
 } from "./codex.js";
 
+export {
+  DEFAULT_GEMINI_ROOT,
+  listGeminiSessions,
+  getGeminiSession,
+  geminiSessionLocalDay,
+} from "./gemini.js";
+export type {
+  ListGeminiOptions,
+  GetGeminiOptions,
+} from "./gemini.js";
+
 /* ================================================================= */
 /*  Cross-agent cache dispatch                                       */
 /* ================================================================= */
@@ -99,6 +118,7 @@ export function cacheStats(): CacheStats {
 export function clearCaches(): void {
   clearClaudeCodeCaches();
   clearCodexCaches();
+  clearGeminiCaches();
 }
 
 /** Drop cached entries for a Claude Code file path. Called by the SSE
@@ -150,7 +170,21 @@ const codexSource: AgentSource = {
   },
 };
 
-export const agentSources: AgentSource[] = [claudeCodeSource, codexSource];
+// Gemini CLI's free / paid tiers don't expose structured rate-limit
+// telemetry in transcripts, so no usagePoller — utilization tracking is
+// Claude / Codex only until that surfaces upstream.
+const geminiSource: AgentSource = {
+  ...GEMINI_METADATA,
+  defaultRoot: _DEFAULT_GEMINI_ROOT,
+  async listSessions(opts) {
+    return _listGeminiSessions(opts);
+  },
+  async getSession(id) {
+    return _getGeminiSession(id);
+  },
+};
+
+export const agentSources: AgentSource[] = [claudeCodeSource, codexSource, geminiSource];
 
 export function getAgentSource(kind: AgentKind): AgentSource | undefined {
   return agentSources.find((s) => s.kind === kind);
