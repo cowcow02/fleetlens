@@ -4,6 +4,15 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.9.0] — 2026-05-07
+
+### Added
+- **Gemini CLI** as the third agent source. Sessions written to `~/.gemini/tmp/<slug>/chats/session-*.jsonl` are now read, parsed, and rendered alongside Claude Code and Codex. Tool calls (`read_file`, `list_directory`, `glob`, `run_shell_command`, `update_topic`, …) and their results show in the session timeline; thinking blocks, multi-write status replay, `$set` / `$rewindTo` semantics, and the legacy single-JSON file shape all handled. Slug → cwd inversion via `~/.gemini/projects.json`. `✺` glyph + purple accent in the UI.
+
+### Changed
+- Session detail timeline drops in-turn idle hatching. Within a turn, every wait — model loading, tool execution, network — is the agent's active time. Only between-turn idle (user reading + composing the next message) renders as hatched.
+- Gemini parser anchors `firstTimestamp`, `lastTimestamp`, and `activeSegments` on conversational events only. Login/OAuth `info` records and `metadata.startTime` (file-creation moment) no longer stretch the session bar back to before the first user message.
+
 ## [0.7.1] — 2026-05-07
 
 ### Fixed
