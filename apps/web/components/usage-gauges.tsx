@@ -34,9 +34,8 @@ function Gauge({ label, window, windowMs }: Row) {
   const hasData = pct !== null;
   const clamped = hasData ? Math.max(0, Math.min(100, pct!)) : 0;
   // Live gauges color by pace, not absolute %. Without resets_at we have
-  // no cycle to anchor against — fall back to pace-via-zero so the bar
-  // still renders something sensible (typically gets caught by the data
-  // check below anyway).
+  // no cycle to anchor against — drop to a neutral border tone so the bar
+  // still renders rather than picking a misleading pace color.
   const cycleEndMs = window?.resets_at ? new Date(window.resets_at).getTime() : null;
   const fillColor = hasData && cycleEndMs
     ? toneVar(paceToneForCycle(clamped, cycleEndMs, windowMs))

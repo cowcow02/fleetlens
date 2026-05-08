@@ -176,6 +176,17 @@ function randomInRange([min, max]) {
   const client = new pg.Client({ connectionString: "postgres://localhost:5432/fleetlens_demo" });
   await client.connect();
   try {
+    if (!reset) {
+      const exists = await client.query(
+        "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'teams'",
+      );
+      if (exists.rowCount) {
+        console.error(
+          "fleetlens_demo already initialized. Re-run with --reset to wipe and re-seed.",
+        );
+        process.exit(1);
+      }
+    }
     await runMigrations(client);
     await seed(client);
   } finally {

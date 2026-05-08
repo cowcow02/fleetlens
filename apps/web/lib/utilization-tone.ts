@@ -5,6 +5,8 @@
  * not the safe one. ≥70% peaks = getting value (green). <40% = paying
  * for headroom you don't need (red). Throttling (real wall hits) is
  * tracked separately and stays red regardless.
+ *
+ * SYNC: packages/team-server/src/lib/utilization-tone.ts
  */
 
 export type Tone = "success" | "warning" | "danger";

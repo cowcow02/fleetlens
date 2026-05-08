@@ -1,10 +1,12 @@
 /**
- * Utilization tone — same flip as the personal edition's
- * apps/web/lib/utilization-tone.ts. Kept in sync by hand; if either
- * thresholds drift, both editions will read inconsistently.
+ * Utilization tone — same flip as the personal edition.
+ * Kept in sync by hand; if either thresholds drift, both editions will read
+ * inconsistently.
  *
  * High usage = good (getting plan value).
  * Low usage  = bad (paying for unused headroom).
+ *
+ * SYNC: apps/web/lib/utilization-tone.ts
  */
 
 export type Tone = "success" | "warning" | "danger";

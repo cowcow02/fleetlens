@@ -237,7 +237,7 @@ export function UsageChart({
           {mounted && (
             <>
               {toneLabel} ({delta >= 0 ? "+" : ""}
-              {delta.toFixed(1)}%)
+              {delta.toFixed(1)}pp)
             </>
           )}
         </div>
