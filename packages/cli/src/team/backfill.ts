@@ -91,12 +91,17 @@ export async function runTeamBackfill(
   }
 
   const raw = readSnapshots(filePath);
-  if (raw.length === 0) {
+  // Only push claude-code snapshots: plan_utilization has no agent column,
+  // so mixing agents (codex resets May 15, claude resets May 11) would make
+  // the burndown flip-flop based on whichever agent polled most recently.
+  // Legacy snapshots without an agent field were claude-code by design.
+  const claudeOnly = raw.filter((s) => !s.agent || s.agent === "claude-code");
+  if (claudeOnly.length === 0) {
     log("info", "team backfill: no usage snapshots to send");
     return { paired: true, sentSnapshots: 0, insertedSnapshots: 0, skippedSnapshots: 0, batches: 0 };
   }
 
-  const wire = raw.map(rawToWire);
+  const wire = claudeOnly.map(rawToWire);
   const batches = chunk(wire, BATCH_SIZE);
   const planTier = (await getPlanTier(PROFILE_CACHE).catch(() => null)) ?? undefined;
 

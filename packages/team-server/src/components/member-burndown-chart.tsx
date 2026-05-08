@@ -1,16 +1,18 @@
 import type { CurrentCycleData } from "../lib/plan-queries";
+import { paceLabel, toneHex } from "../lib/utilization-tone";
 
 // Server-rendered burndown chart for the in-progress 7-day cycle.
 // Visual mirrors the personal /usage page's UsageChart:
 //   y-axis: remaining budget % (100 at start, 0 at exhaustion)
 //   x-axis: time from cycle start to next reset
-//   dashed diagonal: ideal "sustainable burn" trajectory
+//   dashed diagonal: full-utilization trajectory
 //   solid line: actual remaining-budget over time
-//   "now" marker so admins instantly see where in the cycle we are
+//   "now" marker so admins see where in the cycle we are
 //
-// Pure SVG, no client JS — fits the team-server pattern of zero-JS
-// pages. Sized as a wide compact band so it sits naturally in the
-// member-plan-block flow above the cycle history bars.
+// Pace label flips with the rest of the dashboard: burning at or above
+// pace is GOOD (getting plan value); under-burning is the warning state.
+//
+// Pure SVG, no client JS.
 export function MemberBurndownChart({ cycle }: { cycle: CurrentCycleData }) {
   const width = 1100;
   const height = 140;
@@ -49,10 +51,9 @@ export function MemberBurndownChart({ cycle }: { cycle: CurrentCycleData }) {
   const latestUtil = 100 - latest.remaining;
   const expectedAtNow = (1 - (nowMs - cycle.startMs) / (cycle.endMs - cycle.startMs)) * 100;
   const burnDelta = latest.remaining - expectedAtNow;
-  const burnLabel =
-    burnDelta < -10 ? "burning fast" : burnDelta < 0 ? "slightly behind" : "on pace";
-  const burnColor =
-    burnDelta < -10 ? "#a93b2c" : burnDelta < 0 ? "#b58400" : "#2c6e49";
+  const pace = paceLabel(burnDelta);
+  const burnLabel = pace.label;
+  const burnColor = toneHex(pace.tone);
 
   return (
     <div className="af-card" style={{ padding: "10px 14px" }}>
@@ -120,23 +121,8 @@ export function MemberBurndownChart({ cycle }: { cycle: CurrentCycleData }) {
             </g>
           );
         })}
-        {/* Warning bands at low remaining-budget */}
-        <rect
-          x={pad.left}
-          y={yScale(10)}
-          width={plotW}
-          height={yScale(0) - yScale(10)}
-          fill="#a93b2c"
-          fillOpacity="0.06"
-        />
-        <rect
-          x={pad.left}
-          y={yScale(30)}
-          width={plotW}
-          height={yScale(10) - yScale(30)}
-          fill="#b58400"
-          fillOpacity="0.04"
-        />
+        {/* No static bands. Low-remaining used to be flagged red, but in
+            the "high use = good" framing that band is the goal zone. */}
         {/* Ideal diagonal — start of cycle (100% remaining) → reset (0%) */}
         <line
           x1={xScale(cycle.startMs)}

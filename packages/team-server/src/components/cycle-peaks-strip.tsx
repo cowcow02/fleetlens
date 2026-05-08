@@ -1,11 +1,18 @@
 import type { MembershipCyclePeak } from "../lib/plan-queries";
+import {
+  paceToneForCycle,
+  toneHex,
+  utilizationTone,
+} from "../lib/utilization-tone";
 
-// Horizontal bar trend of recent 7d cycle peaks. Mirrors the visual on
-// the personal /usage page so admins see the SAME shape as the member sees
-// for themselves — single source of truth, end-to-end. Each bar height =
-// peak utilization, color = danger threshold, striped fill on cycles whose
-// peak came from JSONL prediction (cold-start, no daemon coverage),
-// dashed border on the in-progress cycle.
+const SEVEN_DAYS_MS = 7 * 24 * 3_600_000;
+
+// Horizontal bar trend of recent 7d cycle peaks. Bar height = peak
+// utilization. Color depends on cycle state: completed cycles use the
+// final peak (≥70% green = full plan use, <40% red = wasted headroom);
+// the in-progress cycle uses PACE (utilization vs elapsed cycle
+// fraction) so a 50% peak halfway through reads on-pace green, not
+// amber. Striped fill = predicted from JSONL; dashed border = current.
 export function CyclePeaksStrip({
   cycles,
   maxBars = 8,
@@ -40,10 +47,10 @@ export function CyclePeaksStrip({
 
 function CycleBar({ cycle }: { cycle: MembershipCyclePeak }) {
   const pct = Math.max(0, Math.min(100, cycle.peakPct));
-  const color =
-    pct >= 90 ? "#c5283d" :     // danger
-    pct >= 70 ? "#b58400" :     // warning
-    "#2f8f5a";                  // success
+  const tone = cycle.isCurrent
+    ? paceToneForCycle(pct, cycle.endsAt.getTime(), SEVEN_DAYS_MS)
+    : utilizationTone(pct);
+  const color = toneHex(tone);
   const dateLabel = cycle.endsAt.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   return (
     <div

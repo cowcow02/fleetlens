@@ -7,30 +7,39 @@ import type {
   MembershipCyclePeak,
   CurrentCycleData,
 } from "../lib/plan-queries";
+import {
+  paceToneForCycle,
+  toneHex,
+  utilizationHex,
+} from "../lib/utilization-tone";
+import { advisoryColor, type AdvisoryTone } from "../lib/advisory-tone";
 
-// Plain-language status framed around "is this person on track with
-// their license consumption?" — the question an admin actually asks.
-// We keep the underlying recommendation engine but rephrase output so
-// the page reads as a utilization signal, not a sales pitch.
+const SEVEN_DAYS_MS = 7 * 24 * 3_600_000;
+
+// Plain-language status. Wording is factual and non-evaluative —
+// describes the plan-fit pattern, doesn't judge the member. The page
+// is a financial dashboard for the admin, not a scorecard for the
+// member; pressure on individuals to "use more" isn't the goal.
 const ACTION_LABEL: Record<Recommendation["action"], string> = {
   insufficient_data: "Collecting data",
   review_manually: "Custom plan — review manually",
   top_up_needed: "At the cap — needs more headroom",
-  upgrade_urgent: "At the cap — upgrade urgent",
+  upgrade_urgent: "At the cap — needs upgrade soon",
   upgrade: "Trending toward the cap",
-  downgrade: "Way under the cap",
-  stay: "On track",
+  downgrade: "Light use of plan — could downsize",
+  stay: "Plan well-matched",
 };
 
-type Tone = "good" | "warn" | "danger" | "info";
-
-const ACTION_TONE: Record<Recommendation["action"], Tone> = {
+// `downgrade` is `warn`, not `danger` — light use is an optimization
+// opportunity for the admin, not a problem for the member. Red is
+// reserved for the genuinely-bad states (at-the-cap throttling).
+const ACTION_TONE: Record<Recommendation["action"], AdvisoryTone> = {
   insufficient_data: "info",
   review_manually: "info",
   top_up_needed: "danger",
   upgrade_urgent: "danger",
   upgrade: "warn",
-  downgrade: "good",
+  downgrade: "warn",
   stay: "good",
 };
 
@@ -62,7 +71,7 @@ export function MemberPlanBlock({
     <section style={{ marginBottom: 24 }}>
       <div className="subsection-head">
         <h2>Plan utilization</h2>
-        <span className="kicker">are they on track with license consumption?</span>
+        <span className="kicker">license consumption pattern</span>
       </div>
 
       {/* Verdict + burndown — the at-a-glance answer to "is this person
@@ -75,7 +84,7 @@ export function MemberPlanBlock({
         style={{
           background: "var(--paper)",
           border: "1px solid var(--rule)",
-          borderLeft: `3px solid ${toneColor(tone)}`,
+          borderLeft: `3px solid ${advisoryColor(tone)}`,
           padding: "14px 18px",
           marginBottom: 18,
         }}
@@ -86,7 +95,7 @@ export function MemberPlanBlock({
             fontSize: 11,
             letterSpacing: "0.1em",
             textTransform: "uppercase",
-            color: toneColor(tone),
+            color: advisoryColor(tone),
             fontWeight: 600,
             marginBottom: 12,
           }}
@@ -158,7 +167,17 @@ export function MemberPlanBlock({
               }}
             >
               <span style={{ color: "var(--mute)" }}>in progress:</span>{" "}
-              <strong style={{ color: peakColor(currentInFlight.peakPct) }}>
+              <strong
+                style={{
+                  color: toneHex(
+                    paceToneForCycle(
+                      currentInFlight.peakPct,
+                      currentInFlight.endsAt.getTime(),
+                      SEVEN_DAYS_MS,
+                    ),
+                  ),
+                }}
+              >
                 {currentInFlight.peakPct.toFixed(0)}%
               </strong>
             </div>
@@ -223,11 +242,7 @@ export function MemberPlanBlock({
 
 // Same color scale used inside CyclePeaksStrip so the callout numbers
 // match what the bars show.
-function peakColor(pct: number): string {
-  if (pct >= 90) return "#c5283d";
-  if (pct >= 70) return "#b58400";
-  return "#2f8f5a";
-}
+const peakColor = utilizationHex;
 
 // Verdict rationale — focused on the in-progress cycle, not historical
 // averages. Admin glance question is "where are they NOW and how long
@@ -258,7 +273,7 @@ function buildCurrentCycleStatus(c: MembershipCyclePeak): string {
 }
 
 function WallStat({ label, count, hint }: { label: string; count: number; hint: string }) {
-  const tone: Tone = count === 0 ? "good" : count >= 3 ? "danger" : "warn";
+  const tone: AdvisoryTone = count === 0 ? "good" : count >= 3 ? "danger" : "warn";
   return (
     <div>
       <div
@@ -274,7 +289,7 @@ function WallStat({ label, count, hint }: { label: string; count: number; hint: 
       </div>
       <div
         className="mono"
-        style={{ fontSize: 18, marginTop: 4, color: toneColor(tone), fontWeight: 600 }}
+        style={{ fontSize: 18, marginTop: 4, color: advisoryColor(tone), fontWeight: 600 }}
       >
         {count === 0
           ? "Never · 0 / 30 days"
@@ -285,17 +300,4 @@ function WallStat({ label, count, hint }: { label: string; count: number; hint: 
       </div>
     </div>
   );
-}
-
-function toneColor(tone: Tone): string {
-  switch (tone) {
-    case "danger":
-      return "#a93b2c";
-    case "warn":
-      return "#b58400";
-    case "good":
-      return "#2c6e49";
-    case "info":
-      return "var(--mute)";
-  }
 }

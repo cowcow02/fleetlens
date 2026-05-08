@@ -31,3 +31,12 @@ export function latestSnapshot(filePath: string): UsageSnapshot | null {
   const all = readSnapshots(filePath);
   return all.length > 0 ? all[all.length - 1]! : null;
 }
+
+export function latestClaudeCodeSnapshot(filePath: string): UsageSnapshot | null {
+  const all = readSnapshots(filePath);
+  for (let i = all.length - 1; i >= 0; i--) {
+    const s = all[i]!;
+    if (!s.agent || s.agent === "claude-code") return s;
+  }
+  return null;
+}

@@ -1,23 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Maximize2 } from "lucide-react";
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
+import { paceLabel, toneVar } from "@/lib/utilization-tone";
 
 type SeriesKey = "five_hour" | "seven_day" | "seven_day_sonnet";
 
 /**
- * Sprint-burndown-style chart for a single usage window.
+ * Burndown-style chart for a single usage window.
  *
- * Y-axis: remaining budget (100% at start, 0% when quota is exhausted)
+ * Y-axis: remaining budget (100% at start, 0% when quota exhausts)
  * X-axis: time from window start to reset
  *
  * Ideal line: dashed diagonal from (windowStart, 100%) to (resetsAt, 0%)
- *   — the "sustainable burn" trajectory
- * Actual line: solid, plots (100 - utilization) at each snapshot's captured_at
+ *   — full-utilization trajectory.
  *
- * ABOVE the ideal line = saving budget (on track)
- * BELOW the ideal line = burning faster than sustainable (behind schedule)
+ * BELOW the ideal line = burning at or above pace (getting plan value)
+ * ABOVE the ideal line = under-burning (paying for unused headroom)
+ * Far below ideal      = will exhaust before reset (throttling risk)
  */
 export function UsageChart({
   snapshots,
@@ -90,6 +91,14 @@ export function UsageChart({
     predicted: number | null;
   } | null>(null);
 
+  // SSR can't agree with the client on `Date.now()` — the server renders
+  // at request time, the client hydrates milliseconds-to-minutes later.
+  // Both depended on `now`, so the "now" cursor + pace label produced
+  // a hydration mismatch warning. Render time-dependent UI only after
+  // mount; the SSR fragment matches the client's pre-mount fragment.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   if (!computed) {
     return (
       <div
@@ -121,14 +130,9 @@ export function UsageChart({
 
   const nowIdeal = idealAt(now);
   const delta = currentRemaining - nowIdeal;
-  const toneColor =
-    delta < -10
-      ? "var(--af-danger)"
-      : delta < 0
-        ? "var(--af-warning)"
-        : "var(--af-success)";
-  const toneLabel =
-    delta < -10 ? "behind schedule" : delta < 0 ? "slightly behind" : "on track";
+  const pace = paceLabel(delta);
+  const toneColor = toneVar(pace.tone);
+  const toneLabel = pace.label;
 
   const linePath =
     points.length > 0
@@ -226,9 +230,16 @@ export function UsageChart({
             remaining
           </span>
         </div>
-        <div style={{ fontSize: 11, color: toneColor, fontWeight: 500 }}>
-          {toneLabel} ({delta >= 0 ? "+" : ""}
-          {delta.toFixed(1)}%)
+        <div
+          suppressHydrationWarning
+          style={{ fontSize: 11, color: toneColor, fontWeight: 500 }}
+        >
+          {mounted && (
+            <>
+              {toneLabel} ({delta >= 0 ? "+" : ""}
+              {delta.toFixed(1)}pp)
+            </>
+          )}
         </div>
         <div
           suppressHydrationWarning
@@ -338,23 +349,9 @@ export function UsageChart({
             {formatAxisDatetime(windowEnd)}
           </text>
 
-          {/* Danger (<10% remaining) and caution (10–30%) bands at the bottom */}
-          <rect
-            x={padding.left}
-            y={yScale(10)}
-            width={plotW}
-            height={yScale(0) - yScale(10)}
-            fill="var(--af-danger)"
-            fillOpacity="0.07"
-          />
-          <rect
-            x={padding.left}
-            y={yScale(30)}
-            width={plotW}
-            height={yScale(10) - yScale(30)}
-            fill="var(--af-warning)"
-            fillOpacity="0.05"
-          />
+          {/* No static danger bands. Low-remaining used to be flagged red,
+              but in the "high use = good" framing that band is the goal
+              zone. Pace label + ideal line carry the signal. */}
 
           {/* Area fill under actual line */}
           <path d={areaPath} fill={colorVar} fillOpacity="0.1" />
@@ -371,8 +368,9 @@ export function UsageChart({
             strokeDasharray="4 3"
           />
 
-          {/* Current-time vertical marker */}
-          {now >= windowStart && now <= windowEnd && (
+          {/* Current-time vertical marker — only after mount so the SSR
+              and client renders agree (Date.now() differs between them). */}
+          {mounted && now >= windowStart && now <= windowEnd && (
             <g>
               <line
                 x1={xScale(now)}

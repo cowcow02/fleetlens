@@ -8,16 +8,20 @@ import {
 } from "../../../../lib/plan-queries";
 import { tierEntry } from "../../../../lib/plan-tiers";
 import { CyclePeaksStrip } from "../../../../components/cycle-peaks-strip";
+import {
+  paceToneForCycle,
+  toneHex,
+  utilizationTone,
+  type Tone,
+} from "../../../../lib/utilization-tone";
 
-// Plan utilization view — admins see "are members on track with their
-// license consumption" at a glance. One row per member with reported
-// usage, peaks of their last few 7d cycles as bars, plus a one-line
-// status derived from the most recent cycle.
-//
-// Stripped down on purpose: optimizer cards, burndown summary, tuning
-// sliders, and the manual tier-picker have all been removed. The only
-// question this page answers is "how is each member trending against
-// their plan." Anything else belongs on the per-member detail page.
+const SEVEN_DAYS_MS = 7 * 24 * 3_600_000;
+
+// Plan utilization view — admins see "are members getting plan value"
+// at a glance. One row per member with reported usage, peaks of their
+// last few 7d cycles as bars, plus a one-line status derived from the
+// most recent cycle. Inverted framing: high use = green (full value),
+// low use = red (paying for unused headroom).
 export default async function PlanPage({
   params,
 }: {
@@ -59,18 +63,29 @@ export default async function PlanPage({
   // who paired but haven't synced yet (or revoked seats) are excluded —
   // showing them as empty rows is noise admins can't act on.
   const rows = inputs
-    .map((i) => ({
-      input: i,
-      tier: tierEntry(i.tierKey),
-      cycles: cyclePeaks.get(i.membershipId) ?? [],
-    }))
+    .map((i) => {
+      const cycles = cyclePeaks.get(i.membershipId) ?? [];
+      const latest = latestCycle(cycles);
+      // Pace-based tone for the in-progress cycle, peak-based for completed.
+      const tone: Tone | null = latest
+        ? latest.isCurrent
+          ? paceToneForCycle(latest.peakPct, latest.endsAt.getTime(), SEVEN_DAYS_MS)
+          : utilizationTone(latest.peakPct)
+        : null;
+      return {
+        input: i,
+        tier: tierEntry(i.tierKey),
+        cycles,
+        latestPct: latest?.peakPct ?? 0,
+        tone,
+      };
+    })
     .filter((r) => r.cycles.length > 0)
-    .sort((a, b) => latestPeak(b.cycles) - latestPeak(a.cycles));
+    // Sort under-utilizers first — they're the actionable rows.
+    .sort((a, b) => toneRank(a.tone) - toneRank(b.tone) || a.latestPct - b.latestPct);
 
-  const atRisk = rows.filter((r) => latestPeak(r.cycles) >= 90).length;
-  const trendingHot = rows.filter(
-    (r) => latestPeak(r.cycles) >= 70 && latestPeak(r.cycles) < 90,
-  ).length;
+  const underutilizing = rows.filter((r) => r.tone === "danger").length;
+  const fullyUtilized = rows.filter((r) => r.tone === "success").length;
 
   return (
     <>
@@ -78,24 +93,21 @@ export default async function PlanPage({
         <div>
           <h1>Plan <em>utilization</em></h1>
           <div className="kicker" style={{ marginTop: 8 }}>
-            Are members on track with their license consumption · {rows.length}{" "}
+            License consumption across team · {rows.length}{" "}
             {rows.length === 1 ? "member" : "members"} reporting
           </div>
         </div>
         <div className="kicker">
-          {atRisk > 0 && (
+          {underutilizing > 0 && (
             <span style={{ color: "#a93b2c", fontWeight: 600 }}>
-              {atRisk} at risk
+              {underutilizing} light use
             </span>
           )}
-          {atRisk > 0 && trendingHot > 0 && " · "}
-          {trendingHot > 0 && (
-            <span style={{ color: "#b58400" }}>
-              {trendingHot} trending hot
+          {underutilizing > 0 && fullyUtilized > 0 && " · "}
+          {fullyUtilized > 0 && (
+            <span style={{ color: "#2c6e49" }}>
+              {fullyUtilized} high use
             </span>
-          )}
-          {atRisk === 0 && trendingHot === 0 && rows.length > 0 && (
-            <span style={{ color: "#2c6e49" }}>everyone on track</span>
           )}
         </div>
       </div>
@@ -117,13 +129,14 @@ export default async function PlanPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ input, tier, cycles }) => {
-                const latest = latestPeak(cycles);
-                const status = latest >= 90 ? "at-risk" : latest >= 70 ? "hot" : "ok";
-                const statusColor =
-                  status === "at-risk" ? "#a93b2c" : status === "hot" ? "#b58400" : "#2c6e49";
+              {rows.map(({ input, tier, cycles, latestPct, tone }) => {
+                const statusColor = tone ? toneHex(tone) : "var(--mute)";
                 const statusLabel =
-                  status === "at-risk" ? "at the cap" : status === "hot" ? "trending hot" : "on track";
+                  tone === "success"
+                    ? "high use"
+                    : tone === "warning"
+                      ? "moderate use"
+                      : "light use";
                 return (
                   <tr key={input.membershipId}>
                     <td>
@@ -143,7 +156,7 @@ export default async function PlanPage({
                         className="mono"
                         style={{ fontSize: 14, color: statusColor, fontWeight: 600 }}
                       >
-                        {latest.toFixed(0)}%
+                        {latestPct.toFixed(0)}%
                       </span>{" "}
                       <span style={{ fontSize: 11, color: "var(--mute)" }}>· {statusLabel}</span>
                     </td>
@@ -173,10 +186,19 @@ export default async function PlanPage({
   );
 }
 
-// Pick the most relevant peak — current in-flight cycle if it's running,
-// else the most recently completed cycle. Used to color rows + sort.
-function latestPeak(cycles: { peakPct: number; isCurrent: boolean }[]): number {
+// Pick the most relevant cycle — current in-flight if it's running,
+// else the most recently completed. Used to drive tone, sort, label.
+function latestCycle<T extends { isCurrent: boolean }>(cycles: T[]): T | null {
   const inFlight = cycles.find((c) => c.isCurrent);
-  if (inFlight) return inFlight.peakPct;
-  return cycles.length > 0 ? cycles[cycles.length - 1]!.peakPct : 0;
+  if (inFlight) return inFlight;
+  return cycles.length > 0 ? cycles[cycles.length - 1]! : null;
+}
+
+// Sort danger first, then warning, then success — under-utilizers are
+// the actionable rows, fully-utilizing teams want to be celebrated last.
+function toneRank(t: Tone | null): number {
+  if (t === "danger") return 0;
+  if (t === "warning") return 1;
+  if (t === "success") return 2;
+  return 3;
 }

@@ -1,5 +1,6 @@
 import type { Recommendation } from "../lib/plan-optimizer";
 import { PLAN_TIERS, type PlanTierKey } from "../lib/plan-tiers";
+import { advisoryColor, type AdvisoryTone } from "../lib/advisory-tone";
 
 type Props = {
   membershipId: string;
@@ -27,13 +28,16 @@ const ACTION_LABEL: Record<Recommendation["action"], string> = {
   stay: "Plan well-matched",
 };
 
-const ACTION_TONE: Record<Recommendation["action"], "warn" | "danger" | "info" | "good"> = {
+// `downgrade` is `warn`, not `danger` — light use is an optimization
+// opportunity for the admin, not a problem for the member. Red is
+// reserved for the genuinely-bad states (at-the-cap throttling).
+const ACTION_TONE: Record<Recommendation["action"], AdvisoryTone> = {
   insufficient_data: "info",
   review_manually: "info",
   top_up_needed: "danger",
   upgrade_urgent: "danger",
   upgrade: "warn",
-  downgrade: "good",
+  downgrade: "warn",
   stay: "good",
 };
 
@@ -112,11 +116,11 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function cardStyle(tone: "warn" | "danger" | "info" | "good"): React.CSSProperties {
+function cardStyle(tone: AdvisoryTone): React.CSSProperties {
   return {
     background: "var(--paper)",
     border: "1px solid var(--rule)",
-    borderLeft: `3px solid ${toneColor(tone)}`,
+    borderLeft: `3px solid ${advisoryColor(tone)}`,
     padding: "16px 18px",
     display: "flex",
     flexDirection: "column",
@@ -124,24 +128,11 @@ function cardStyle(tone: "warn" | "danger" | "info" | "good"): React.CSSProperti
   };
 }
 
-function recBadge(tone: "warn" | "danger" | "info" | "good"): React.CSSProperties {
+function recBadge(tone: AdvisoryTone): React.CSSProperties {
   return {
     display: "inline-flex",
     alignItems: "center",
-    color: toneColor(tone),
+    color: advisoryColor(tone),
     fontWeight: 600,
   };
-}
-
-function toneColor(tone: "warn" | "danger" | "info" | "good"): string {
-  switch (tone) {
-    case "danger":
-      return "#a93b2c";
-    case "warn":
-      return "#b58400";
-    case "good":
-      return "#2c6e49";
-    case "info":
-      return "var(--mute)";
-  }
 }

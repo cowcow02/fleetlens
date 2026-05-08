@@ -1,12 +1,17 @@
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
+import { paceToneForCycle, toneVar } from "@/lib/utilization-tone";
 
-type Row = { label: string; window: UsageWindow | null };
+const HOUR = 3_600_000;
+const FIVE_HOURS_MS = 5 * HOUR;
+const SEVEN_DAYS_MS = 7 * 24 * HOUR;
+
+type Row = { label: string; window: UsageWindow | null; windowMs: number };
 
 export function UsageGauges({ snapshot }: { snapshot: UsageSnapshot }) {
   const rows: Row[] = [
-    { label: "5 hour", window: snapshot.five_hour },
-    { label: "7 day (all)", window: snapshot.seven_day },
-    { label: "7 day Sonnet", window: snapshot.seven_day_sonnet },
+    { label: "5 hour", window: snapshot.five_hour, windowMs: FIVE_HOURS_MS },
+    { label: "7 day (all)", window: snapshot.seven_day, windowMs: SEVEN_DAYS_MS },
+    { label: "7 day Sonnet", window: snapshot.seven_day_sonnet, windowMs: SEVEN_DAYS_MS },
   ];
 
   return (
@@ -24,16 +29,17 @@ export function UsageGauges({ snapshot }: { snapshot: UsageSnapshot }) {
   );
 }
 
-function Gauge({ label, window }: Row) {
+function Gauge({ label, window, windowMs }: Row) {
   const pct = window?.utilization ?? null;
   const hasData = pct !== null;
   const clamped = hasData ? Math.max(0, Math.min(100, pct!)) : 0;
-  const toneVar =
-    clamped >= 90
-      ? "var(--af-danger)"
-      : clamped >= 70
-        ? "var(--af-warning)"
-        : "var(--af-success)";
+  // Live gauges color by pace, not absolute %. Without resets_at we have
+  // no cycle to anchor against — drop to a neutral border tone so the bar
+  // still renders rather than picking a misleading pace color.
+  const cycleEndMs = window?.resets_at ? new Date(window.resets_at).getTime() : null;
+  const fillColor = hasData && cycleEndMs
+    ? toneVar(paceToneForCycle(clamped, cycleEndMs, windowMs))
+    : "var(--af-border-subtle)";
 
   return (
     <div className="af-card" style={{ padding: "16px 18px" }}>
@@ -77,7 +83,7 @@ function Gauge({ label, window }: Row) {
           style={{
             height: "100%",
             width: hasData ? `${clamped}%` : "0%",
-            background: toneVar,
+            background: fillColor,
             borderRadius: 999,
             transition: "width 0.24s ease",
           }}
