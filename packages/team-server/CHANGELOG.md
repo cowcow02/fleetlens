@@ -4,6 +4,21 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.8.0] — 2026-05-08
+
+### Changed
+- **Plan utilization reframed across the team views.** High utilization now reads as "getting plan value" (green); low utilization is "paying for unused headroom" (red). Same flip as the personal edition. Member detail page, plan view, and member-burndown chart all updated.
+- **In-progress cycles colored by pace, not peak.** A 50% peak halfway through a 7-day cycle reads on-pace green, not amber. Completed cycles still use peak tone.
+- **Pace label ±15pp band.** "On pace" covers a ±15pp window around ideal. Outside the band: "below pace" (under-burning) or "may exhaust early" (over-burning). The previous +5/-50 thresholds flipped amber every time the user took a night off.
+- **Pace label collapses to three states.** "May exhaust early" / "below pace" / "on pace" — same color tones, one fewer qualifier to read.
+- Wording softened across the utilization views to describe the pattern rather than judge the user.
+
+### Internal
+- `advisory-tone.ts` extracted so `member-plan-block.tsx` and `optimizer-card.tsx` share one `AdvisoryTone` + `advisoryColor()` lookup. Distinct from `utilization-tone.ts`: utilization tone is "% used" (3 states); advisory tone is "what the operator should do about this" (4 states, including non-actionable info).
+
+### Compatibility note
+The CLI now ships only Claude Code usage snapshots to the team-server (Codex stays local). Existing `plan_utilization` rows from older CLI versions remain; nothing to do server-side. Once `plan_utilization` gets a per-agent partition, the CLI filter can lift.
+
 ## [0.7.4] — 2026-05-07
 
 ### Fixed
