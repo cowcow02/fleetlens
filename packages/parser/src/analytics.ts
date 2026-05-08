@@ -74,7 +74,12 @@ function findConductorWorkspace(projectName: string): { canonicalEndIdx: number;
   const m = CONDUCTOR_RE.exec(projectName);
   if (!m) return null;
   const workspaceName = m[1]!;
-  const canonicalEndIdx = m.index + m[0].indexOf("/" + workspaceName);
+  // Compute from the END of the regex match instead of indexOf — when the
+  // repo name starts with the workspace name (e.g. repo "yangon-api",
+  // workspace "yangon"), indexOf("/yangon") would land inside "/yangon-api/"
+  // and the canonical would be wrongly truncated.
+  const trailingSlash = m[0].endsWith("/") ? 1 : 0;
+  const canonicalEndIdx = m.index + m[0].length - workspaceName.length - 1 - trailingSlash;
   return { canonicalEndIdx, workspaceName };
 }
 

@@ -266,6 +266,24 @@ describe("canonicalProjectName + worktreeName", () => {
       ),
     ).toBe("/Users/me/conductor/workspaces/claude-lens");
   });
+
+  it("handles repos whose name starts with the workspace name (offset bug regression)", () => {
+    // Repo "yangon-api" + workspace "yangon": indexOf("/yangon") would
+    // land inside "/yangon-api/" and produce a wrong canonical.
+    expect(
+      canonicalProjectName("/Users/me/conductor/workspaces/yangon-api/yangon"),
+    ).toBe("/Users/me/conductor/workspaces/yangon-api");
+    expect(
+      worktreeName("/Users/me/conductor/workspaces/yangon-api/yangon"),
+    ).toBe("yangon");
+    // And vice-versa: workspace name that ends with the repo name.
+    expect(
+      canonicalProjectName("/Users/me/conductor/workspaces/api/api-server"),
+    ).toBe("/Users/me/conductor/workspaces/api");
+    expect(
+      worktreeName("/Users/me/conductor/workspaces/api/api-server"),
+    ).toBe("api-server");
+  });
 });
 
 describe("groupByProject — Conductor workspaces", () => {
