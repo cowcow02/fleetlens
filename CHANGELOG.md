@@ -4,6 +4,24 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.0] — 2026-05-08
+
+### Changed
+- **Plan utilization reframed.** High utilization is now "getting plan value" (green); low utilization is "paying for unused headroom" (red). Mirrors how an operator actually looks at the dashboard: the wasteful outcome is paying for a plan and barely touching it, not running near the cap. Applied across `/usage` burndown, gauges, sidebar, and previous-cycles strip.
+- **In-progress cycles colored by pace, not peak.** A 50% peak halfway through a 7-day cycle reads on-pace green, not amber — the chart no longer cries wolf on a fresh cycle that just hasn't burnt yet. Completed cycles still use peak tone.
+- **Pace label ±15pp band.** "On pace" now covers a ±15pp window around ideal; outside that, label is "below pace" (under-burning) or "may exhaust early" (over-burning). The previous +5/-50 thresholds flipped amber every time the user took a night off.
+- **Pace label collapses to three states.** "May exhaust early" / "below pace" / "on pace" — same color tones, one fewer qualifier to read.
+- **Wording softened across the utilization views** to describe the pattern rather than judge the user. "Behind schedule" → "below pace"; "on track (+x%)" → "on pace (+xpp vs ideal)".
+
+### Added
+- **Conductor multi-agent workspace support.** Sessions inside Conductor's worktree-style agent workspaces (`~/conductor/workspaces/<repo>/<agent>/...`) now group correctly under their parent project, with each agent shown as a separate worktree. Mirrors the existing `.worktrees/` handling.
+
+### Fixed
+- Hydration mismatch on `/usage` when pace labels rendered before client mount.
+
+### Notes for operators
+- The CLI's team push now ships **only Claude Code usage snapshots** to the team server. Codex snapshots stay local until `plan_utilization` gets a per-agent partition — without one, the team-server's "latest snapshot" pick flips between agents and miscolors the in-progress cycle. Existing rows in `plan_utilization` stay; new pushes are claude-code only.
+
 ## [0.9.0] — 2026-05-07
 
 ### Added
