@@ -56,10 +56,15 @@ describe("classifyUserInputSource", () => {
   it("handles empty string as human (degenerate)", () => {
     expect(classifyUserInputSource("")).toBe("human");
   });
-  it("flags Conductor's <system_instruction> block as system_instruction", () => {
-    const conductorBoilerplate =
-      "<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\n";
-    expect(classifyUserInputSource(conductorBoilerplate)).toBe("system_instruction");
+  it("classifies a pure <system_instruction> wrapper (nothing after) as system_instruction", () => {
+    const pureWrapper =
+      "<system_instruction>\nYou are working inside Conductor, a Mac app.\n</system_instruction>";
+    expect(classifyUserInputSource(pureWrapper)).toBe("system_instruction");
+  });
+  it("classifies wrapper + trailing user prose as human (wrapper stripped)", () => {
+    const wrapped =
+      "<system_instruction>\nYou are working inside Conductor.\n</system_instruction>\n\nfix the broken test in foo.ts";
+    expect(classifyUserInputSource(wrapped)).toBe("human");
   });
 });
 

@@ -6,7 +6,7 @@
  */
 
 import type { ContentBlock, EventRole, SessionEvent, SessionMeta, Usage } from "./types.js";
-import { isFrameworkInjectedUserInput } from "./user-input.js";
+import { isFrameworkInjectedUserInput, stripFrameworkBoilerplate } from "./user-input.js";
 
 const BLANK_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
@@ -146,7 +146,10 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
     const c = msg.content;
 
     if (typeof c === "string") {
-      const tm = classifyTeammateMessage(c);
+      // Excise harness wrapper blocks (Conductor's <system_instruction>)
+      // so downstream consumers see the user's real prompt only.
+      const cleaned = stripFrameworkBoilerplate(c);
+      const tm = classifyTeammateMessage(cleaned);
       return {
         index,
         uuid,
@@ -154,8 +157,8 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
         timestamp,
         role: "user",
         rawType,
-        preview: truncate(c, 200),
-        blocks: [{ type: "text", text: c }],
+        preview: truncate(cleaned, 200),
+        blocks: cleaned ? [{ type: "text", text: cleaned }] : [],
         raw,
         teammateMessage: tm,
       };
@@ -183,7 +186,13 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
       const textBlock = (c as ContentBlock[]).find(
         (b): b is { type: "text"; text: string } => b?.type === "text",
       );
-      const tm = textBlock ? classifyTeammateMessage(textBlock.text) : undefined;
+      const cleanedText = textBlock ? stripFrameworkBoilerplate(textBlock.text) : "";
+      const cleanedBlocks: ContentBlock[] = textBlock
+        ? (c as ContentBlock[]).map((b) =>
+            b === textBlock ? { type: "text", text: cleanedText } : b,
+          )
+        : (c as ContentBlock[]);
+      const tm = cleanedText ? classifyTeammateMessage(cleanedText) : undefined;
       return {
         index,
         uuid,
@@ -191,8 +200,10 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
         timestamp,
         role: "user",
         rawType,
-        preview: textBlock ? truncate(textBlock.text, 200) : truncate(JSON.stringify(c), 200),
-        blocks: c as ContentBlock[],
+        preview: cleanedText
+          ? truncate(cleanedText, 200)
+          : truncate(JSON.stringify(c), 200),
+        blocks: cleanedBlocks,
         raw,
         teammateMessage: tm,
       };

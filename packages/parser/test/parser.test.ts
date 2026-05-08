@@ -145,18 +145,39 @@ describe("parseTranscript", () => {
     expect(meta.turnCount).toBe(1);
   });
 
-  it("skips Conductor's <system_instruction> block when picking firstUserPreview", () => {
-    const conductorBlock =
-      "<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\nYour work should take place in the /Users/me/conductor/workspaces/claude-lens/yangon directory.\n</system_instruction>";
+  it("strips Conductor's <system_instruction> wrapper but keeps the trailing user prompt (real shape: one combined message)", () => {
+    const combined =
+      "<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\nYour work should take place in /Users/me/conductor/workspaces/claude-lens/yangon.\n</system_instruction>\n\ncan you check the latest sessions and see how we can adjust";
     const lines = [
-      makeUser(conductorBlock, "2026-05-08T14:00:00.000Z"),
-      makeUser("can you check the latest sessions and see how we can adjust", "2026-05-08T14:01:00.000Z"),
-      makeAssistantText("Looking into it now.", "2026-05-08T14:02:00.000Z"),
+      makeUser(combined, "2026-05-08T14:00:00.000Z"),
+      makeAssistantText("Looking into it now.", "2026-05-08T14:01:00.000Z"),
     ];
-    const { meta } = parseTranscript(lines);
+    const { meta, events } = parseTranscript(lines);
     expect(meta.firstUserPreview).toBe(
       "can you check the latest sessions and see how we can adjust",
     );
+    expect(meta.turnCount).toBe(1);
+    // The first user event's blocks now carry the cleaned text — every
+    // downstream consumer (timeline rendering, perception entries) sees
+    // the trailing prompt only.
+    const userEvent = events.find((e) => e.role === "user")!;
+    const firstBlock = userEvent.blocks[0] as { type: "text"; text: string };
+    expect(firstBlock.text).not.toContain("<system_instruction");
+    expect(firstBlock.text).not.toContain("working inside Conductor");
+    expect(firstBlock.text).toContain("check the latest sessions");
+  });
+
+  it("drops a user message that is ONLY a <system_instruction> wrapper", () => {
+    const lines = [
+      makeUser(
+        "<system_instruction>\nyou are inside something\n</system_instruction>",
+        "2026-05-08T14:00:00.000Z",
+      ),
+      makeUser("the real first prompt", "2026-05-08T14:01:00.000Z"),
+      makeAssistantText("ok", "2026-05-08T14:02:00.000Z"),
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.firstUserPreview).toBe("the real first prompt");
     expect(meta.turnCount).toBe(1);
   });
 
@@ -422,24 +443,41 @@ describe("buildPresentation", () => {
     }
   });
 
-  it("hides Conductor's <system_instruction> from the timeline", () => {
-    const conductorBlock =
-      "<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\n</system_instruction>";
+  it("renders a Conductor-wrapped user message as the trailing prompt only (wrapper excised)", () => {
+    const combined =
+      "<system_instruction>\nYou are working inside Conductor.\n</system_instruction>\n\ncan you check the latest sessions";
     const lines = [
-      makeUser(conductorBlock, "2026-05-08T14:00:00.000Z"),
-      makeUser("can you check the latest sessions", "2026-05-08T14:01:00.000Z"),
-      makeAssistantText("Looking into it", "2026-05-08T14:02:00.000Z"),
+      makeUser(combined, "2026-05-08T14:00:00.000Z"),
+      makeAssistantText("Looking into it", "2026-05-08T14:01:00.000Z"),
     ];
     const { events } = parseTranscript(lines);
     const rows = buildPresentation(events);
-    // Only the real user message + the agent reply should remain.
     expect(rows).toHaveLength(2);
     expect(rows[0]!.kind).toBe("user");
     if (rows[0]!.kind === "user") {
-      expect(rows[0]!.event.preview).toContain("check the latest sessions");
+      expect(rows[0]!.event.preview).toBe("can you check the latest sessions");
       expect(rows[0]!.event.preview).not.toContain("Conductor");
     }
     expect(rows[1]!.kind).toBe("agent");
+  });
+
+  it("hides a user row whose content was entirely a stripped wrapper", () => {
+    const lines = [
+      makeUser(
+        "<system_instruction>\nharness boilerplate\n</system_instruction>",
+        "2026-05-08T14:00:00.000Z",
+      ),
+      makeUser("the real prompt", "2026-05-08T14:01:00.000Z"),
+      makeAssistantText("ok", "2026-05-08T14:02:00.000Z"),
+    ];
+    const { events } = parseTranscript(lines);
+    const rows = buildPresentation(events);
+    // Empty-after-strip user event is hidden; only the real prompt + agent remain.
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.kind).toBe("user");
+    if (rows[0]!.kind === "user") {
+      expect(rows[0]!.event.preview).toBe("the real prompt");
+    }
   });
 
   it("detects task-notifications", () => {

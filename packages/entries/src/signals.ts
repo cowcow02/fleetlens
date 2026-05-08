@@ -1,3 +1,4 @@
+import { stripFrameworkBoilerplate } from "@claude-lens/parser";
 import type {
   Entry, EntrySignals, EntrySubagent, ExternalRefKind,
   PromptFrame, SkillOrigin, SubagentRole, WorkingShape,
@@ -13,19 +14,18 @@ export type UserInputSource =
 const TEAMMATE_RE = /^<teammate-message\b/;
 const SKILL_LOAD_RE = /^Base directory for this skill:/;
 const SLASH_COMMAND_RE = /^<command-name>|^<local-command-stdout>/;
-// Conductor (Mac multi-agent app) injects a <system_instruction>...</system_instruction>
-// block as the first user message of every Claude Code session. It's
-// environment boilerplate, not a user instruction — without this filter
-// the perception layer captures it as `first_user` and the LLM enricher
-// parrots it back as the work summary.
-const SYSTEM_INSTRUCTION_RE = /^<system_instruction\b/;
 
+/** Classify a user-message turn after first stripping wrapper boilerplate
+ *  (Conductor's `<system_instruction>` block). Messages whose remainder
+ *  is real user prose classify as "human"; messages that are PURE wrapper
+ *  classify as "system_instruction" and aren't counted as human turns. */
 export function classifyUserInputSource(text: string): UserInputSource {
   if (!text) return "human";
-  if (TEAMMATE_RE.test(text)) return "teammate";
-  if (SKILL_LOAD_RE.test(text)) return "skill_load";
-  if (SLASH_COMMAND_RE.test(text)) return "slash_command";
-  if (SYSTEM_INSTRUCTION_RE.test(text)) return "system_instruction";
+  const stripped = stripFrameworkBoilerplate(text);
+  if (!stripped) return "system_instruction";
+  if (TEAMMATE_RE.test(stripped)) return "teammate";
+  if (SKILL_LOAD_RE.test(stripped)) return "skill_load";
+  if (SLASH_COMMAND_RE.test(stripped)) return "slash_command";
   return "human";
 }
 

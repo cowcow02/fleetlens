@@ -206,13 +206,15 @@ describe("buildEntries text + model + project fields", () => {
     expect(entry!.first_user.length).toBeLessThanOrEqual(400);
   });
 
-  it("first_user skips Conductor's <system_instruction> boilerplate and picks the next human turn", () => {
+  it("strips Conductor's <system_instruction> wrapper but keeps the user prompt that follows", () => {
     const sd = load("conductor-session.jsonl");
     const [entry] = buildEntries(sd);
+    // Conductor sends ONE user message: "<system_instruction>…</system_instruction>\n\n{real prompt}".
+    // The wrapper must be excised; the trailing prompt becomes first_user.
     expect(entry!.first_user).not.toContain("system_instruction");
     expect(entry!.first_user).not.toContain("working inside Conductor");
     expect(entry!.first_user).toContain("check the latest sessions");
-    expect(entry!.user_input_sources.system_instruction).toBe(1);
+    // Post-strip, the message classifies as "human" (real user prose remained).
     expect(entry!.user_input_sources.human).toBe(1);
   });
 
