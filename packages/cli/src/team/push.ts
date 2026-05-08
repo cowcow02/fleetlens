@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { dailyActivity, sessionDay, type DailyBucket, type SessionMeta } from "@claude-lens/parser";
-import { latestSnapshot } from "../usage/storage.js";
+import { latestClaudeCodeSnapshot } from "../usage/storage.js";
 import type { TeamConfig } from "./config.js";
 
 export type DailyRollup = {
@@ -80,7 +80,10 @@ export function readLatestUsageSnapshotForWire(
   filePath: string,
   nowMs: number = Date.now(),
 ): WireUsageSnapshot | null {
-  const raw = latestSnapshot(filePath);
+  // Only push claude-code snapshots — see comment in backfill.ts. Walk
+  // backwards through the JSONL so a recent codex snapshot doesn't shadow
+  // the latest claude-code one.
+  const raw = latestClaudeCodeSnapshot(filePath);
   if (!raw) return null;
   const capturedMs = Date.parse(raw.captured_at);
   if (Number.isNaN(capturedMs)) return null;
