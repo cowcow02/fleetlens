@@ -36,17 +36,21 @@ export function utilizationVar(pct: number): string {
 
 /**
  * Pace label for the burndown chart. Three states only — describing
- * the pattern, not judging it. The "may exhaust early" label is the
- * one place we still flag actionable risk (throttling before reset).
+ * the pattern, not judging it. ±15pp band around ideal is "on pace";
+ * outside that, we name what's happening.
  *
  * delta = currentRemaining − idealRemaining
- *   delta < -50 → "may exhaust early" (danger — throttling risk)
- *   delta > 5   → "below pace"        (warning — under-burn)
- *   else        → "on pace"           (success — at or above the line)
+ *   delta < -15 → "may exhaust early" (danger — over-burning)
+ *   delta > 15  → "below pace"        (warning — under-burn)
+ *   else        → "on pace"           (success)
+ *
+ * The band is wider than feels intuitive on purpose: a 7d cycle has
+ * ~14pp/day of ideal burn, so anything tighter flips amber every time
+ * the user takes a night off.
  */
 export function paceLabel(delta: number): { tone: Tone; label: string } {
-  if (delta < -50) return { tone: "danger", label: "may exhaust early" };
-  if (delta > 5) return { tone: "warning", label: "below pace" };
+  if (delta < -15) return { tone: "danger", label: "may exhaust early" };
+  if (delta > 15) return { tone: "warning", label: "below pace" };
   return { tone: "success", label: "on pace" };
 }
 
