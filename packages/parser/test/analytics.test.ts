@@ -240,4 +240,73 @@ describe("canonicalProjectName + worktreeName", () => {
     expect(canonicalProjectName("/Users/me/Repo/foo")).toBe("/Users/me/Repo/foo");
     expect(worktreeName("/Users/me/Repo/foo")).toBe(null);
   });
+
+  it("folds Conductor workspaces under their repo", () => {
+    expect(
+      canonicalProjectName("/Users/me/conductor/workspaces/claude-lens/yangon"),
+    ).toBe("/Users/me/conductor/workspaces/claude-lens");
+    expect(worktreeName("/Users/me/conductor/workspaces/claude-lens/yangon")).toBe(
+      "yangon",
+    );
+  });
+
+  it("handles trailing slash on a Conductor workspace path", () => {
+    expect(
+      canonicalProjectName("/Users/me/conductor/workspaces/claude-lens/yangon/"),
+    ).toBe("/Users/me/conductor/workspaces/claude-lens");
+    expect(
+      worktreeName("/Users/me/conductor/workspaces/claude-lens/yangon/"),
+    ).toBe("yangon");
+  });
+
+  it("handles deeper paths inside a Conductor workspace", () => {
+    expect(
+      canonicalProjectName(
+        "/Users/me/conductor/workspaces/claude-lens/yangon/packages/parser",
+      ),
+    ).toBe("/Users/me/conductor/workspaces/claude-lens");
+  });
+
+  it("handles repos whose name starts with the workspace name (offset bug regression)", () => {
+    // Repo "yangon-api" + workspace "yangon": indexOf("/yangon") would
+    // land inside "/yangon-api/" and produce a wrong canonical.
+    expect(
+      canonicalProjectName("/Users/me/conductor/workspaces/yangon-api/yangon"),
+    ).toBe("/Users/me/conductor/workspaces/yangon-api");
+    expect(
+      worktreeName("/Users/me/conductor/workspaces/yangon-api/yangon"),
+    ).toBe("yangon");
+    // And vice-versa: workspace name that ends with the repo name.
+    expect(
+      canonicalProjectName("/Users/me/conductor/workspaces/api/api-server"),
+    ).toBe("/Users/me/conductor/workspaces/api");
+    expect(
+      worktreeName("/Users/me/conductor/workspaces/api/api-server"),
+    ).toBe("api-server");
+  });
+});
+
+describe("groupByProject — Conductor workspaces", () => {
+  it("rolls up parallel Conductor workspaces of one repo as worktrees", () => {
+    const sessions = [
+      mkMeta("a", "claude-lens", "2026-04-10T10:00:00Z", "2026-04-10T11:00:00Z", {
+        projectName: "/Users/me/conductor/workspaces/claude-lens/yangon",
+        projectDir: "-Users-me-conductor-workspaces-claude-lens-yangon",
+      }),
+      mkMeta("b", "claude-lens", "2026-04-10T12:00:00Z", "2026-04-10T13:00:00Z", {
+        projectName: "/Users/me/conductor/workspaces/claude-lens/buffalo",
+        projectDir: "-Users-me-conductor-workspaces-claude-lens-buffalo",
+      }),
+      mkMeta("c", "claude-lens", "2026-04-10T14:00:00Z", "2026-04-10T15:00:00Z", {
+        projectName: "/Users/me/conductor/workspaces/claude-lens/cayenne",
+        projectDir: "-Users-me-conductor-workspaces-claude-lens-cayenne",
+      }),
+    ];
+    const groups = groupByProject(sessions);
+    expect(groups).toHaveLength(1);
+    const lens = groups[0]!;
+    expect(lens.projectDir).toBe("/Users/me/conductor/workspaces/claude-lens");
+    expect(lens.sessions).toHaveLength(3);
+    expect(lens.worktreeCount).toBe(3);
+  });
 });

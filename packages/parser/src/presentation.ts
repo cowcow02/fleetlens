@@ -20,6 +20,7 @@
  */
 
 import type { ContentBlock, SessionEvent, Usage } from "./types.js";
+import { isFrameworkInjectedUserInput } from "./user-input.js";
 
 export type PresentationRow =
   | {
@@ -225,7 +226,6 @@ export function buildMegaRows(rows: PresentationRow[]): MegaRow[] {
 
 const INTERRUPT_RE = /\[request interrupted|interrupted by user/i;
 const RATE_LIMIT_RE = /rate.?limit|overloaded_error|api error|Error sending message/i;
-const SKILL_CONTENT_RE = /^Base directory for this skill:/;
 const SLASH_COMMAND_RE =
   /<command-name>(\/[^<\s]+)<\/command-name>(?:[\s\S]*?<command-args>([\s\S]*?)<\/command-args>)?/;
 const TASK_NOTIFICATION_RE = /<task-notification>/;
@@ -297,7 +297,16 @@ export function buildPresentation(events: SessionEvent[]): PresentationRow[] {
     if (e.role === "agent-thinking") return false;
     if (e.role === "user") {
       const txt = firstTextOfBlocks(e.blocks) ?? "";
-      if (SKILL_CONTENT_RE.test(txt)) return false;
+      // Empty user events occur when a wrapper-only message (e.g. a
+      // system_instruction block with no trailing prose) was excised at
+      // parse time, leaving no blocks. Hide those rows.
+      if (e.blocks.length === 0 || !txt.trim()) return false;
+      // Slash commands and task notifications have custom renderers
+      // downstream — let them through here so the for-loop can decorate.
+      if (SLASH_COMMAND_RE.test(txt)) return true;
+      if (TASK_NOTIFICATION_RE.test(txt)) return true;
+      // Anything else that's harness boilerplate has no useful rendering.
+      if (isFrameworkInjectedUserInput(txt)) return false;
     }
     return true;
   });

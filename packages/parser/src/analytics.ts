@@ -53,6 +53,15 @@ const WORKTREE_MARKERS = [
   "/claude/worktrees/",
 ] as const;
 
+// Conductor (Mac app for parallel coding agents) stores each parallel
+// workspace of one logical repo at `<root>/conductor/workspaces/<repo>/<workspace>/`.
+// Each workspace is a git worktree under the hood (.git is a file pointing
+// back at the primary repo), so conceptually they're worktrees with a
+// different path shape. Treat the per-workspace name as a sibling of
+// .worktrees/<name> so all Conductor workspaces of one repo roll up
+// together and the workspace name surfaces as the badge.
+const CONDUCTOR_RE = /\/conductor\/workspaces\/[^/]+\/([^/]+)(?:\/|$)/;
+
 function findWorktreeMarker(projectName: string): { idx: number; marker: string } | null {
   for (const marker of WORKTREE_MARKERS) {
     const idx = projectName.lastIndexOf(marker);
@@ -61,23 +70,43 @@ function findWorktreeMarker(projectName: string): { idx: number; marker: string 
   return null;
 }
 
+function findConductorWorkspace(projectName: string): { canonicalEndIdx: number; workspaceName: string } | null {
+  const m = CONDUCTOR_RE.exec(projectName);
+  if (!m) return null;
+  const workspaceName = m[1]!;
+  // Compute from the END of the regex match instead of indexOf — when the
+  // repo name starts with the workspace name (e.g. repo "yangon-api",
+  // workspace "yangon"), indexOf("/yangon") would land inside "/yangon-api/"
+  // and the canonical would be wrongly truncated.
+  const trailingSlash = m[0].endsWith("/") ? 1 : 0;
+  const canonicalEndIdx = m.index + m[0].length - workspaceName.length - 1 - trailingSlash;
+  return { canonicalEndIdx, workspaceName };
+}
+
 export function canonicalProjectName(projectName: string): string {
   // Some upstream sources produce anomalous repeated slashes
   // (e.g. //claude/worktrees/...). Collapse before pattern-matching.
   const normalized = projectName.replace(/\/{2,}/g, "/");
-  const hit = findWorktreeMarker(normalized);
-  if (hit) return normalized.slice(0, hit.idx);
+  const wt = findWorktreeMarker(normalized);
+  if (wt) return normalized.slice(0, wt.idx);
+  const cd = findConductorWorkspace(normalized);
+  if (cd) return normalized.slice(0, cd.canonicalEndIdx);
   return normalized;
 }
 
-/** Extract the worktree branch name from a worktree path, or null. */
+/** Extract the sibling-working-copy name (worktree branch or Conductor
+ *  workspace) from a path, or null if the path is a plain repo cwd. */
 export function worktreeName(projectName: string): string | null {
   const normalized = projectName.replace(/\/{2,}/g, "/");
-  const hit = findWorktreeMarker(normalized);
-  if (!hit) return null;
-  const tail = normalized.slice(hit.idx + hit.marker.length);
-  const slash = tail.indexOf("/");
-  return slash >= 0 ? tail.slice(0, slash) : tail;
+  const wt = findWorktreeMarker(normalized);
+  if (wt) {
+    const tail = normalized.slice(wt.idx + wt.marker.length);
+    const slash = tail.indexOf("/");
+    return slash >= 0 ? tail.slice(0, slash) : tail;
+  }
+  const cd = findConductorWorkspace(normalized);
+  if (cd) return cd.workspaceName;
+  return null;
 }
 
 /* ================================================================= */

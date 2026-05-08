@@ -6,12 +6,31 @@
  */
 
 import type { ContentBlock, EventRole, SessionEvent, SessionMeta, Usage } from "./types.js";
+import { isFrameworkInjectedUserInput, stripFrameworkBoilerplate } from "./user-input.js";
 
 const BLANK_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /** Strip XML tags and collapse whitespace for clean preview text. */
 function cleanText(s: string): string {
   return s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+}
+
+/** Extract the raw text of a user message regardless of whether the JSONL
+ *  stored it as `content: "string"` or `content: [{type:"text", text:"…"}]`.
+ *  Used for prefix-matching framework-injected boilerplate before any
+ *  XML/whitespace cleanup happens. */
+function extractRawUserText(rawMsg: { content?: unknown } | undefined): string {
+  const c = rawMsg?.content;
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) {
+    for (const block of c) {
+      if (block && typeof block === "object") {
+        const b = block as { type?: string; text?: unknown };
+        if (b.type === "text" && typeof b.text === "string") return b.text;
+      }
+    }
+  }
+  return "";
 }
 
 function truncate(s: string, n = 200): string {
@@ -127,7 +146,10 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
     const c = msg.content;
 
     if (typeof c === "string") {
-      const tm = classifyTeammateMessage(c);
+      // Excise harness wrapper blocks (Conductor's <system_instruction>)
+      // so downstream consumers see the user's real prompt only.
+      const cleaned = stripFrameworkBoilerplate(c);
+      const tm = classifyTeammateMessage(cleaned);
       return {
         index,
         uuid,
@@ -135,8 +157,8 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
         timestamp,
         role: "user",
         rawType,
-        preview: truncate(c, 200),
-        blocks: [{ type: "text", text: c }],
+        preview: truncate(cleaned, 200),
+        blocks: cleaned ? [{ type: "text", text: cleaned }] : [],
         raw,
         teammateMessage: tm,
       };
@@ -164,7 +186,13 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
       const textBlock = (c as ContentBlock[]).find(
         (b): b is { type: "text"; text: string } => b?.type === "text",
       );
-      const tm = textBlock ? classifyTeammateMessage(textBlock.text) : undefined;
+      const cleanedText = textBlock ? stripFrameworkBoilerplate(textBlock.text) : "";
+      const cleanedBlocks: ContentBlock[] = textBlock
+        ? (c as ContentBlock[]).map((b) =>
+            b === textBlock ? { type: "text", text: cleanedText } : b,
+          )
+        : (c as ContentBlock[]);
+      const tm = cleanedText ? classifyTeammateMessage(cleanedText) : undefined;
       return {
         index,
         uuid,
@@ -172,8 +200,10 @@ function toEvent(raw: unknown, index: number): SessionEvent | null {
         timestamp,
         role: "user",
         rawType,
-        preview: textBlock ? truncate(textBlock.text, 200) : truncate(JSON.stringify(c), 200),
-        blocks: c as ContentBlock[],
+        preview: cleanedText
+          ? truncate(cleanedText, 200)
+          : truncate(JSON.stringify(c), 200),
+        blocks: cleanedBlocks,
         raw,
         teammateMessage: tm,
       };
@@ -473,15 +503,13 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       // Detect hidden system messages from the RAW content (before XML
       // tags got stripped by cleanText). `e.preview` is already cleaned,
       // so a startsWith("<command-name>") check on it never matches.
+      // Content arrives as either a plain string OR an array of blocks
+      // (e.g. [{type:"text", text:"Base directory…"}]) — both shapes can
+      // carry framework boilerplate, so check both.
       const rawMsg = (e.raw as { message?: { content?: unknown } } | undefined)
         ?.message;
-      const rawContent =
-        typeof rawMsg?.content === "string" ? rawMsg.content : "";
-      const isHidden =
-        rawContent.startsWith("<command-name>") ||
-        rawContent.startsWith("<local-command-caveat>") ||
-        rawContent.startsWith("Base directory for this skill:") ||
-        rawContent.startsWith("<task-notification>");
+      const rawContent = extractRawUserText(rawMsg);
+      const isHidden = isFrameworkInjectedUserInput(rawContent);
       // Teammate messages on LEAD sessions are protocol noise (idle
       // notifications, task assignments) — skip them for preview/turn
       // counting. On MEMBER sessions the teammate message IS the task

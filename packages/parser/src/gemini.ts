@@ -26,6 +26,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { canonicalProjectName, toLocalDay } from "./analytics.js";
+import { isFrameworkInjectedUserInput } from "./user-input.js";
 import type {
   SessionDetail,
   SessionEvent,
@@ -362,7 +363,8 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
     if (msg.type === "user") {
       const text = flattenContent(msg.displayContent ?? msg.content);
       const preview = previewOf(text);
-      if (text) {
+      const isHidden = isFrameworkInjectedUserInput(text);
+      if (text && !isHidden) {
         if (!firstUserPreview) firstUserPreview = preview;
         lastUserPreview = preview;
         turnCount += 1;

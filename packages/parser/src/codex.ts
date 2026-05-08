@@ -21,6 +21,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { canonicalProjectName, toLocalDay } from "./analytics.js";
+import { isFrameworkInjectedUserInput } from "./user-input.js";
 import type {
   ContentBlock,
   SessionDetail,
@@ -160,7 +161,8 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     if (type === "event_msg" && subtype === "user_message") {
       const text = typeof payload.message === "string" ? payload.message : "";
       const preview = previewOf(text);
-      if (text) {
+      const isHidden = isFrameworkInjectedUserInput(text);
+      if (text && !isHidden) {
         if (!firstUserPreview) firstUserPreview = preview;
         lastUserPreview = preview;
         turnCount += 1;

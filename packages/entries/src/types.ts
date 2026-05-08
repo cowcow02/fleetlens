@@ -112,6 +112,8 @@ export type Entry = {
     teammate: number;
     skill_load: number;
     slash_command: number;
+    /** Optional for backward compat with cached pre-fix entries. */
+    system_instruction?: number;
   };
   /** Always an object, never null. */
   enrichment: EntryEnrichment;

@@ -118,6 +118,69 @@ describe("parseTranscript", () => {
     expect(meta.turnCount).toBe(1); // slash command doesn't count
   });
 
+  it("skips framework boilerplate delivered as a block array (skill load)", () => {
+    // Real-world case: skill loads arrive as content: [{type:"text", text:"Base directory…"}]
+    // The original isHidden check only inspected string content and missed this shape.
+    const skillLoad = {
+      type: "user",
+      uuid: "u-skill",
+      parentUuid: null,
+      timestamp: "2026-05-08T14:00:00.000Z",
+      sessionId: "sess-1",
+      cwd: "/Users/me/Repo/test",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "Base directory for this skill: /path\n# Skill body" },
+        ],
+      },
+    };
+    const lines = [
+      skillLoad,
+      makeUser("the actual user request", "2026-05-08T14:01:00.000Z"),
+      makeAssistantText("ok", "2026-05-08T14:02:00.000Z"),
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.firstUserPreview).toBe("the actual user request");
+    expect(meta.turnCount).toBe(1);
+  });
+
+  it("strips Conductor's <system_instruction> wrapper but keeps the trailing user prompt (real shape: one combined message)", () => {
+    const combined =
+      "<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\nYour work should take place in /Users/me/conductor/workspaces/claude-lens/yangon.\n</system_instruction>\n\ncan you check the latest sessions and see how we can adjust";
+    const lines = [
+      makeUser(combined, "2026-05-08T14:00:00.000Z"),
+      makeAssistantText("Looking into it now.", "2026-05-08T14:01:00.000Z"),
+    ];
+    const { meta, events } = parseTranscript(lines);
+    expect(meta.firstUserPreview).toBe(
+      "can you check the latest sessions and see how we can adjust",
+    );
+    expect(meta.turnCount).toBe(1);
+    // The first user event's blocks now carry the cleaned text — every
+    // downstream consumer (timeline rendering, perception entries) sees
+    // the trailing prompt only.
+    const userEvent = events.find((e) => e.role === "user")!;
+    const firstBlock = userEvent.blocks[0] as { type: "text"; text: string };
+    expect(firstBlock.text).not.toContain("<system_instruction");
+    expect(firstBlock.text).not.toContain("working inside Conductor");
+    expect(firstBlock.text).toContain("check the latest sessions");
+  });
+
+  it("drops a user message that is ONLY a <system_instruction> wrapper", () => {
+    const lines = [
+      makeUser(
+        "<system_instruction>\nyou are inside something\n</system_instruction>",
+        "2026-05-08T14:00:00.000Z",
+      ),
+      makeUser("the real first prompt", "2026-05-08T14:01:00.000Z"),
+      makeAssistantText("ok", "2026-05-08T14:02:00.000Z"),
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.firstUserPreview).toBe("the real first prompt");
+    expect(meta.turnCount).toBe(1);
+  });
+
   it("skips the /clear caveat wrapper so the title is the next real message", () => {
     const lines = [
       makeUser(
@@ -377,6 +440,43 @@ describe("buildPresentation", () => {
     expect(userRow.kind).toBe("user");
     if (userRow.kind === "user") {
       expect(userRow.displayPreview).toBe("/implement AGE-9");
+    }
+  });
+
+  it("renders a Conductor-wrapped user message as the trailing prompt only (wrapper excised)", () => {
+    const combined =
+      "<system_instruction>\nYou are working inside Conductor.\n</system_instruction>\n\ncan you check the latest sessions";
+    const lines = [
+      makeUser(combined, "2026-05-08T14:00:00.000Z"),
+      makeAssistantText("Looking into it", "2026-05-08T14:01:00.000Z"),
+    ];
+    const { events } = parseTranscript(lines);
+    const rows = buildPresentation(events);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.kind).toBe("user");
+    if (rows[0]!.kind === "user") {
+      expect(rows[0]!.event.preview).toBe("can you check the latest sessions");
+      expect(rows[0]!.event.preview).not.toContain("Conductor");
+    }
+    expect(rows[1]!.kind).toBe("agent");
+  });
+
+  it("hides a user row whose content was entirely a stripped wrapper", () => {
+    const lines = [
+      makeUser(
+        "<system_instruction>\nharness boilerplate\n</system_instruction>",
+        "2026-05-08T14:00:00.000Z",
+      ),
+      makeUser("the real prompt", "2026-05-08T14:01:00.000Z"),
+      makeAssistantText("ok", "2026-05-08T14:02:00.000Z"),
+    ];
+    const { events } = parseTranscript(lines);
+    const rows = buildPresentation(events);
+    // Empty-after-strip user event is hidden; only the real prompt + agent remain.
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.kind).toBe("user");
+    if (rows[0]!.kind === "user") {
+      expect(rows[0]!.event.preview).toBe("the real prompt");
     }
   });
 

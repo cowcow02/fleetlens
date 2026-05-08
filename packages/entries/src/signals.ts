@@ -1,19 +1,31 @@
+import { stripFrameworkBoilerplate } from "@claude-lens/parser";
 import type {
   Entry, EntrySignals, EntrySubagent, ExternalRefKind,
   PromptFrame, SkillOrigin, SubagentRole, WorkingShape,
 } from "./types.js";
 
-export type UserInputSource = "human" | "teammate" | "skill_load" | "slash_command";
+export type UserInputSource =
+  | "human"
+  | "teammate"
+  | "skill_load"
+  | "slash_command"
+  | "system_instruction";
 
 const TEAMMATE_RE = /^<teammate-message\b/;
 const SKILL_LOAD_RE = /^Base directory for this skill:/;
 const SLASH_COMMAND_RE = /^<command-name>|^<local-command-stdout>/;
 
+/** Classify a user-message turn after first stripping wrapper boilerplate
+ *  (Conductor's `<system_instruction>` block). Messages whose remainder
+ *  is real user prose classify as "human"; messages that are PURE wrapper
+ *  classify as "system_instruction" and aren't counted as human turns. */
 export function classifyUserInputSource(text: string): UserInputSource {
   if (!text) return "human";
-  if (TEAMMATE_RE.test(text)) return "teammate";
-  if (SKILL_LOAD_RE.test(text)) return "skill_load";
-  if (SLASH_COMMAND_RE.test(text)) return "slash_command";
+  const stripped = stripFrameworkBoilerplate(text);
+  if (!stripped) return "system_instruction";
+  if (TEAMMATE_RE.test(stripped)) return "teammate";
+  if (SKILL_LOAD_RE.test(stripped)) return "skill_load";
+  if (SLASH_COMMAND_RE.test(stripped)) return "slash_command";
   return "human";
 }
 
