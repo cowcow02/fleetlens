@@ -226,6 +226,9 @@ export function buildMegaRows(rows: PresentationRow[]): MegaRow[] {
 const INTERRUPT_RE = /\[request interrupted|interrupted by user/i;
 const RATE_LIMIT_RE = /rate.?limit|overloaded_error|api error|Error sending message/i;
 const SKILL_CONTENT_RE = /^Base directory for this skill:/;
+// Conductor (Mac multi-agent app) injects this on every session start.
+// It's environment scaffolding, not a user message — strip from the timeline.
+const SYSTEM_INSTRUCTION_RE = /^<system_instruction\b/;
 const SLASH_COMMAND_RE =
   /<command-name>(\/[^<\s]+)<\/command-name>(?:[\s\S]*?<command-args>([\s\S]*?)<\/command-args>)?/;
 const TASK_NOTIFICATION_RE = /<task-notification>/;
@@ -298,6 +301,7 @@ export function buildPresentation(events: SessionEvent[]): PresentationRow[] {
     if (e.role === "user") {
       const txt = firstTextOfBlocks(e.blocks) ?? "";
       if (SKILL_CONTENT_RE.test(txt)) return false;
+      if (SYSTEM_INSTRUCTION_RE.test(txt)) return false;
     }
     return true;
   });

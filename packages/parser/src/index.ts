@@ -7,6 +7,7 @@
 
 export * from "./types.js";
 export * from "./parser.js";
+export * from "./user-input.js";
 export * from "./presentation.js";
 export * from "./analytics.js";
 export * from "./aggregate.js";

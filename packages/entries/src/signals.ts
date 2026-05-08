@@ -3,17 +3,29 @@ import type {
   PromptFrame, SkillOrigin, SubagentRole, WorkingShape,
 } from "./types.js";
 
-export type UserInputSource = "human" | "teammate" | "skill_load" | "slash_command";
+export type UserInputSource =
+  | "human"
+  | "teammate"
+  | "skill_load"
+  | "slash_command"
+  | "system_instruction";
 
 const TEAMMATE_RE = /^<teammate-message\b/;
 const SKILL_LOAD_RE = /^Base directory for this skill:/;
 const SLASH_COMMAND_RE = /^<command-name>|^<local-command-stdout>/;
+// Conductor (Mac multi-agent app) injects a <system_instruction>...</system_instruction>
+// block as the first user message of every Claude Code session. It's
+// environment boilerplate, not a user instruction — without this filter
+// the perception layer captures it as `first_user` and the LLM enricher
+// parrots it back as the work summary.
+const SYSTEM_INSTRUCTION_RE = /^<system_instruction\b/;
 
 export function classifyUserInputSource(text: string): UserInputSource {
   if (!text) return "human";
   if (TEAMMATE_RE.test(text)) return "teammate";
   if (SKILL_LOAD_RE.test(text)) return "skill_load";
   if (SLASH_COMMAND_RE.test(text)) return "slash_command";
+  if (SYSTEM_INSTRUCTION_RE.test(text)) return "system_instruction";
   return "human";
 }
 

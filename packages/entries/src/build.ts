@@ -305,7 +305,7 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
           closeTurn(cur, closed, eventCwd);
         }
         cur = newTurn(tsMs, text);
-        if (!firstUser && text && !text.startsWith("<command-name>")) {
+        if (!firstUser && text && classifyUserInputSource(text) === "human") {
           firstUser = text;
         }
       } else {
@@ -556,7 +556,13 @@ export function buildEntries(sessionDetail: SessionDetail): Entry[] {
     const satisfaction_signals = countSatisfactionSignals(humanText);
 
     // user_input_sources: tally across all non-tool-result user events
-    const user_input_sources = { human: 0, teammate: 0, skill_load: 0, slash_command: 0 };
+    const user_input_sources = {
+      human: 0,
+      teammate: 0,
+      skill_load: 0,
+      slash_command: 0,
+      system_instruction: 0,
+    };
     for (const ev of dayEvents) {
       const v = viewEvent(ev);
       if (v.rawType !== "user") continue;

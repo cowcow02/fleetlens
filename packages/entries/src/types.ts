@@ -112,6 +112,9 @@ export type Entry = {
     teammate: number;
     skill_load: number;
     slash_command: number;
+    /** Environment-injected boilerplate (e.g. Conductor's <system_instruction> block).
+     *  Optional for backward compat with cached pre-fix entries. */
+    system_instruction?: number;
   };
   /** Always an object, never null. */
   enrichment: EntryEnrichment;

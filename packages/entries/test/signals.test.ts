@@ -56,6 +56,11 @@ describe("classifyUserInputSource", () => {
   it("handles empty string as human (degenerate)", () => {
     expect(classifyUserInputSource("")).toBe("human");
   });
+  it("flags Conductor's <system_instruction> block as system_instruction", () => {
+    const conductorBoilerplate =
+      "<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\n";
+    expect(classifyUserInputSource(conductorBoilerplate)).toBe("system_instruction");
+  });
 });
 
 describe("countSatisfactionSignals", () => {

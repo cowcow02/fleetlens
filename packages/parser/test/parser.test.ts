@@ -118,6 +118,48 @@ describe("parseTranscript", () => {
     expect(meta.turnCount).toBe(1); // slash command doesn't count
   });
 
+  it("skips framework boilerplate delivered as a block array (skill load)", () => {
+    // Real-world case: skill loads arrive as content: [{type:"text", text:"Base directory…"}]
+    // The original isHidden check only inspected string content and missed this shape.
+    const skillLoad = {
+      type: "user",
+      uuid: "u-skill",
+      parentUuid: null,
+      timestamp: "2026-05-08T14:00:00.000Z",
+      sessionId: "sess-1",
+      cwd: "/Users/me/Repo/test",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "Base directory for this skill: /path\n# Skill body" },
+        ],
+      },
+    };
+    const lines = [
+      skillLoad,
+      makeUser("the actual user request", "2026-05-08T14:01:00.000Z"),
+      makeAssistantText("ok", "2026-05-08T14:02:00.000Z"),
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.firstUserPreview).toBe("the actual user request");
+    expect(meta.turnCount).toBe(1);
+  });
+
+  it("skips Conductor's <system_instruction> block when picking firstUserPreview", () => {
+    const conductorBlock =
+      "<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\nYour work should take place in the /Users/me/conductor/workspaces/claude-lens/yangon directory.\n</system_instruction>";
+    const lines = [
+      makeUser(conductorBlock, "2026-05-08T14:00:00.000Z"),
+      makeUser("can you check the latest sessions and see how we can adjust", "2026-05-08T14:01:00.000Z"),
+      makeAssistantText("Looking into it now.", "2026-05-08T14:02:00.000Z"),
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.firstUserPreview).toBe(
+      "can you check the latest sessions and see how we can adjust",
+    );
+    expect(meta.turnCount).toBe(1);
+  });
+
   it("skips the /clear caveat wrapper so the title is the next real message", () => {
     const lines = [
       makeUser(
@@ -378,6 +420,26 @@ describe("buildPresentation", () => {
     if (userRow.kind === "user") {
       expect(userRow.displayPreview).toBe("/implement AGE-9");
     }
+  });
+
+  it("hides Conductor's <system_instruction> from the timeline", () => {
+    const conductorBlock =
+      "<system_instruction>\nYou are working inside Conductor, a Mac app that lets the user run many coding agents in parallel.\n</system_instruction>";
+    const lines = [
+      makeUser(conductorBlock, "2026-05-08T14:00:00.000Z"),
+      makeUser("can you check the latest sessions", "2026-05-08T14:01:00.000Z"),
+      makeAssistantText("Looking into it", "2026-05-08T14:02:00.000Z"),
+    ];
+    const { events } = parseTranscript(lines);
+    const rows = buildPresentation(events);
+    // Only the real user message + the agent reply should remain.
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.kind).toBe("user");
+    if (rows[0]!.kind === "user") {
+      expect(rows[0]!.event.preview).toContain("check the latest sessions");
+      expect(rows[0]!.event.preview).not.toContain("Conductor");
+    }
+    expect(rows[1]!.kind).toBe("agent");
   });
 
   it("detects task-notifications", () => {

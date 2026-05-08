@@ -206,6 +206,16 @@ describe("buildEntries text + model + project fields", () => {
     expect(entry!.first_user.length).toBeLessThanOrEqual(400);
   });
 
+  it("first_user skips Conductor's <system_instruction> boilerplate and picks the next human turn", () => {
+    const sd = load("conductor-session.jsonl");
+    const [entry] = buildEntries(sd);
+    expect(entry!.first_user).not.toContain("system_instruction");
+    expect(entry!.first_user).not.toContain("working inside Conductor");
+    expect(entry!.first_user).toContain("check the latest sessions");
+    expect(entry!.user_input_sources.system_instruction).toBe(1);
+    expect(entry!.user_input_sources.human).toBe(1);
+  });
+
   it("pr_titles is empty array when no gh pr create in fixture", () => {
     const sd = load("one-day-session.jsonl");
     const [entry] = buildEntries(sd);
