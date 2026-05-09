@@ -12,7 +12,9 @@ services:
       POSTGRES_PASSWORD: fleetlens
       POSTGRES_DB: fleetlens_team
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Loopback only — fixed dev creds (fleetlens/fleetlens) shouldn't
+      # be reachable from the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

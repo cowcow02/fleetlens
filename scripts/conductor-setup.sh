@@ -44,13 +44,16 @@ else
   TEAM_PORT=$(next_free $((WEB_PORT + 1)))
   PG_PORT=$(next_free $((TEAM_PORT + 1)))
   CCLENS_HOME="$ROOT/.harness/cclens-state"
-  cat > "$ENV_OUT" <<EOF
-WEB_PORT=$WEB_PORT
-TEAM_PORT=$TEAM_PORT
-PG_PORT=$PG_PORT
-COMPOSE_PROJECT=$PROJECT
-CCLENS_HOME=$CCLENS_HOME
-EOF
+  # printf %q produces shell-safe quoting so workspace names / paths
+  # with spaces or shell metacharacters survive the round-trip through
+  # `source` in conductor-run.sh / conductor-archive.sh.
+  {
+    printf 'WEB_PORT=%q\n' "$WEB_PORT"
+    printf 'TEAM_PORT=%q\n' "$TEAM_PORT"
+    printf 'PG_PORT=%q\n' "$PG_PORT"
+    printf 'COMPOSE_PROJECT=%q\n' "$PROJECT"
+    printf 'CCLENS_HOME=%q\n' "$CCLENS_HOME"
+  } > "$ENV_OUT"
   echo "✓ Allocated ports: web=$WEB_PORT team=$TEAM_PORT pg=$PG_PORT"
 fi
 
