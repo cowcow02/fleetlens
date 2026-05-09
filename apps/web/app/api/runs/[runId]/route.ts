@@ -1,11 +1,11 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const RUNS_DIR = join(homedir(), ".cclens", "llm-runs");
+const RUNS_DIR = cclensPath("llm-runs");
 
 /**
  * GET /api/runs/<runId>           dump the full event trace

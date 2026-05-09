@@ -1,10 +1,9 @@
 import { fetchUsage, UsageApiError } from "../usage/api.js";
 import { formatUsage } from "../usage/format.js";
 import { appendSnapshot } from "../usage/storage.js";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { cclensPath } from "@claude-lens/parser/fs";
 
-const USAGE_LOG = join(homedir(), ".cclens", "usage.jsonl");
+const USAGE_LOG = cclensPath("usage.jsonl");
 
 export async function usage(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {

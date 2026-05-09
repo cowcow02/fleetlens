@@ -2,14 +2,13 @@ import { spawn } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, statSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { writePid, readPid, isProcessAlive, cleanStalePid, removePid } from "../pid.js";
 import { latestSnapshot } from "../usage/storage.js";
+import { cclensPath } from "@claude-lens/parser/fs";
 
-const STATE_DIR = join(homedir(), ".cclens");
-const DAEMON_PID = join(STATE_DIR, "daemon.pid");
-const USAGE_LOG = join(STATE_DIR, "usage.jsonl");
-const DAEMON_LOG = join(STATE_DIR, "daemon.log");
+const DAEMON_PID = cclensPath("daemon.pid");
+const USAGE_LOG = cclensPath("usage.jsonl");
+const DAEMON_LOG = cclensPath("daemon.log");
 
 export type DaemonLifecycleResult =
   | { started: true; pid: number; alreadyRunning: false }

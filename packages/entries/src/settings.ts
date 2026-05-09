@@ -1,8 +1,8 @@
 import {
   readFileSync, writeFileSync, renameSync, chmodSync, mkdirSync, existsSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 export type AiFeaturesSettings = {
   enabled: boolean;
@@ -30,7 +30,7 @@ let settingsPathCached: string | null = null;
 
 function settingsPath(): string {
   if (settingsPathCached) return settingsPathCached;
-  settingsPathCached = join(homedir(), ".cclens", "settings.json");
+  settingsPathCached = cclensPath("settings.json");
   return settingsPathCached;
 }
 

@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { writePid, readPid, isProcessAlive, cleanStalePid, removePid } from "./pid.js";
 import { homedir } from "node:os";
+import { cclensHome, cclensPath } from "@claude-lens/parser/fs";
 
-const STATE_DIR = join(homedir(), ".cclens");
-const PID_FILE = join(STATE_DIR, "pid");
+const PID_FILE = cclensPath("pid");
 const DEFAULT_PORT = 3321;
 
 /** Resolve path to the bundled Next.js standalone server.js */

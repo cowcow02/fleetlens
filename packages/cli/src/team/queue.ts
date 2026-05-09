@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync, appendFileSync, statSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
+import { cclensPath } from "@claude-lens/parser/fs";
 
-const QUEUE_PATH = join(homedir(), ".cclens", "ingest-queue.jsonl");
+const QUEUE_PATH = cclensPath("ingest-queue.jsonl");
 const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 

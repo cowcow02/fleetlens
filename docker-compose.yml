@@ -1,0 +1,25 @@
+# Per-workspace Postgres for the team-server. Conductor's setup script
+# allocates POSTGRES_PORT per workspace and isolates the stack via
+# `docker compose -p fleetlens-<workspace>` so volumes + containers don't
+# collide. team-server itself runs as a native `pnpm dev` process for
+# fast iteration; only Postgres needs the container.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: fleetlens
+      POSTGRES_PASSWORD: fleetlens
+      POSTGRES_DB: fleetlens_team
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "fleetlens"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+volumes:
+  pgdata:

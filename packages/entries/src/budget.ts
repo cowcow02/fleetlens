@@ -1,6 +1,6 @@
 import { appendFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 export type SpendRecord = {
   ts: string;
@@ -17,7 +17,7 @@ let spendPathCached: string | null = null;
 
 function spendPath(): string {
   if (spendPathCached) return spendPathCached;
-  spendPathCached = join(homedir(), ".cclens", "llm-spend.jsonl");
+  spendPathCached = cclensPath("llm-spend.jsonl");
   return spendPathCached;
 }
 

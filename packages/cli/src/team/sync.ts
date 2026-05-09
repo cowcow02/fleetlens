@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { readTeamConfig, writeTeamConfig, type TeamConfig } from "./config.js";
 import {
   buildIngestPayload,
@@ -10,9 +8,10 @@ import {
 } from "./push.js";
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
 import { getPlanTier } from "../usage/profile.js";
+import { cclensPath } from "@claude-lens/parser/fs";
 
-const USAGE_LOG = join(homedir(), ".cclens", "usage.jsonl");
-const PROFILE_CACHE = join(homedir(), ".cclens", "profile.json");
+const USAGE_LOG = cclensPath("usage.jsonl");
+const PROFILE_CACHE = cclensPath("profile.json");
 
 type LogFn = (level: "info" | "warn" | "error", message: string) => void;
 

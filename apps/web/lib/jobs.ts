@@ -6,8 +6,7 @@ import {
   readFileSync,
   statSync,
 } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { cclensHome, cclensPath } from "@claude-lens/parser/fs";
 
 export type JobKind =
   | "digest.day"
@@ -41,12 +40,11 @@ export type Job = {
 };
 
 function jobsFile(): string {
-  return process.env.CCLENS_JOBS_FILE
-    ?? join(homedir(), ".cclens", "jobs.jsonl");
+  return process.env.CCLENS_JOBS_FILE ?? cclensPath("jobs.jsonl");
 }
 
 function ensureDir(): void {
-  const dir = join(homedir(), ".cclens");
+  const dir = cclensHome();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 

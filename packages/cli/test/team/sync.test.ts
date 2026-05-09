@@ -32,10 +32,14 @@ function makeSession(dayISO: string, overrides: Partial<SessionMeta> = {}): Sess
 // Mock parser/fs so listSessions returns our fixture. loadCalibrationCurve
 // returns null in tests — sync is meant to handle missing JSONL gracefully
 // (cold-start, no daemon data) so this also exercises that branch.
-vi.mock("@claude-lens/parser/fs", () => ({
-  listSessions: vi.fn(),
-  loadCalibrationCurve: async () => null,
-}));
+vi.mock("@claude-lens/parser/fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@claude-lens/parser/fs")>();
+  return {
+    ...actual,
+    listSessions: vi.fn(),
+    loadCalibrationCurve: async () => null,
+  };
+});
 
 // Stub the daemon's local-state readers to null so "no daily activity"
 // tests exercise the truly-empty path (no rollups + no live data → no

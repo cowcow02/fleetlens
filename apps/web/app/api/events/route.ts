@@ -14,17 +14,16 @@
  * changed file so the next RSC render re-parses fresh data.
  */
 
-import { invalidateFile, DEFAULT_ROOT } from "@claude-lens/parser/fs";
+import { invalidateFile, DEFAULT_ROOT, cclensHome } from "@claude-lens/parser/fs";
 import { watch, promises as fs, existsSync } from "node:fs";
 import path from "node:path";
-import { homedir } from "node:os";
 
 export const dynamic = "force-dynamic";
 // Edge runtime can't do fs.watch
 export const runtime = "nodejs";
 
-/** ~/.cclens/usage.jsonl — written by the cclens daemon every 5 minutes. */
-const USAGE_LOG_DIR = path.join(homedir(), ".cclens");
+/** cclensHome()/usage.jsonl — written by the cclens daemon every 5 minutes. */
+const USAGE_LOG_DIR = cclensHome();
 const USAGE_LOG_FILE = "usage.jsonl";
 
 type LiveEvent =
