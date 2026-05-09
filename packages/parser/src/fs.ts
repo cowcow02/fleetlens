@@ -102,6 +102,22 @@ export type {
 } from "./gemini.js";
 
 /* ================================================================= */
+/*  State directory                                                  */
+/* ================================================================= */
+
+/** Absolute path of the per-machine fleetlens state dir. Defaults to
+ *  `~/.cclens`; override with `CCLENS_HOME` so multiple workspaces (e.g.
+ *  Conductor) can run isolated state side-by-side. */
+export function cclensHome(): string {
+  return process.env.CCLENS_HOME || path.join(os.homedir(), ".cclens");
+}
+
+/** Join one or more segments under the state dir. */
+export function cclensPath(...parts: string[]): string {
+  return path.join(cclensHome(), ...parts);
+}
+
+/* ================================================================= */
 /*  Cross-agent cache dispatch                                       */
 /* ================================================================= */
 
@@ -208,11 +224,13 @@ export async function getAnySession(id: string): Promise<SessionDetail | null> {
 }
 
 /* ================================================================= */
-/*  Usage daemon snapshots (~/.cclens/usage.jsonl)                   */
+/*  Usage daemon snapshots (cclensHome()/usage.jsonl)                */
 /*  Multi-agent storage: each line carries an `agent` field.         */
 /* ================================================================= */
 
-const USAGE_LOG = path.join(os.homedir(), ".cclens", "usage.jsonl");
+function usageLogPath(): string {
+  return cclensPath("usage.jsonl");
+}
 
 type UsageSnapshot = {
   captured_at?: string;
@@ -233,7 +251,7 @@ export async function loadUsageByDay(
 ): Promise<{ by_day: { date: string; peak_util_pct: number }[] }> {
   let raw: string;
   try {
-    raw = await fs.readFile(USAGE_LOG, "utf8");
+    raw = await fs.readFile(usageLogPath(), "utf8");
   } catch {
     return { by_day: [] };
   }
@@ -285,7 +303,7 @@ export async function loadUsageByDay(
 export async function loadCalibrationSnapshots(): Promise<UsageSnapshot[]> {
   let raw: string;
   try {
-    raw = await fs.readFile(USAGE_LOG, "utf8");
+    raw = await fs.readFile(usageLogPath(), "utf8");
   } catch {
     return [];
   }

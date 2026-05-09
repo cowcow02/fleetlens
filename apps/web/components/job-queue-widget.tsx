@@ -40,34 +40,37 @@ export function JobQueueWidget() {
     });
   };
 
-  // Poll /api/jobs. Faster cadence when there's anything active.
+  // Poll /api/jobs. Faster cadence when there's anything active. Empty
+  // deps + closure-local `hasActive` — listing `jobs` here would re-run
+  // the effect on every successful tick (because setJobs changes the
+  // ref), collapsing the throttle into a tight 1–4 ms refetch loop.
   useEffect(() => {
     let mounted = true;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let hasActive = false;
 
     const tick = async () => {
       try {
         const res = await fetch("/api/jobs", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json() as { jobs: Job[] };
-        if (mounted) setJobs(data.jobs);
+        if (!mounted) return;
+        setJobs(data.jobs);
+        hasActive = data.jobs.some(j => j.status === "running" || j.status === "queued");
       } catch { /* ignore */ }
     };
 
     const schedule = () => {
       if (!mounted) return;
-      const hasActive = jobs.some(j => j.status === "running" || j.status === "queued");
-      const delay = hasActive ? 1500 : 6000;
-      timeoutId = setTimeout(async () => { await tick(); schedule(); }, delay);
+      timeoutId = setTimeout(async () => { await tick(); schedule(); }, hasActive ? 1500 : 6000);
     };
 
-    void tick();
-    schedule();
+    void tick().then(schedule);
     return () => {
       mounted = false;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [jobs]);
+  }, []);
 
   const active = jobs.filter(j => j.status === "running" || j.status === "queued");
   const recent = jobs.filter(j => j.status === "done" || j.status === "error" || j.status === "cancelled").slice(0, 8);

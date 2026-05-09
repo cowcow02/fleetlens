@@ -1,7 +1,6 @@
 import "server-only";
 import { statSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import {
   entriesDir,
   listEntryKeys,
@@ -10,6 +9,7 @@ import {
 } from "@claude-lens/entries/fs";
 import type { Entry, DayOutcome, DayHelpfulness, DayDigest } from "@claude-lens/entries";
 import { canonicalProjectName } from "@claude-lens/parser";
+import { cclensPath } from "@claude-lens/parser/fs";
 import { outcomePriority } from "@/components/outcome-pill";
 
 export type EntriesIndex = {
@@ -132,7 +132,7 @@ export type DayDigestSummary = {
 let digestCache: { mtimeMs: number; map: Map<string, DayDigestSummary> } | null = null;
 
 function digestsDir(): string {
-  return process.env.CCLENS_DIGESTS_DIR ?? join(homedir(), ".cclens", "digests", "day");
+  return process.env.CCLENS_DIGESTS_DIR ?? cclensPath("digests", "day");
 }
 
 function digestsDirMtime(): number {

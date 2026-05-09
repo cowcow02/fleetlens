@@ -1,7 +1,7 @@
 /**
  * Usage-poller daemon worker. Runs detached. Polls /api/oauth/usage and
- * appends each snapshot to `~/.cclens/usage.jsonl`. Logs errors to
- * `~/.cclens/daemon.log` but never crashes on transient failures.
+ * appends each snapshot to `cclensHome()/usage.jsonl`. Logs errors to
+ * `cclensHome()/daemon.log` but never crashes on transient failures.
  *
  * Expiry handling is local: we read `expiresAt` from the Keychain entry
  * and simply don't call the API when the token is dead. The watchdog
@@ -13,20 +13,18 @@
  */
 
 import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { appendSnapshot } from "./usage/storage.js";
-import { agentSources } from "@claude-lens/parser/fs";
+import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { isUsable, readOAuthCredentials } from "./usage/token.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
 import { runTeamSync } from "./team/sync.js";
 import { runPerceptionSweep } from "./perception/worker.js";
 import { backfillLastWeekDigest, backfillYesterdayDigest } from "./perception/backfill.js";
 
-const STATE_DIR = join(homedir(), ".cclens");
-const USAGE_LOG = join(STATE_DIR, "usage.jsonl");
-const DAEMON_LOG = join(STATE_DIR, "daemon.log");
+const USAGE_LOG = cclensPath("usage.jsonl");
+const DAEMON_LOG = cclensPath("daemon.log");
 // Watchdog cadence. Short so we notice wake-from-sleep and token refresh
 // within a few seconds instead of waiting out a 5-minute interval.
 const WATCHDOG_INTERVAL_MS = 5 * 1000;

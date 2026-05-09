@@ -1,9 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
-import { loadCalibrationCurve } from "@claude-lens/parser/fs";
+import { loadCalibrationCurve, cclensPath } from "@claude-lens/parser/fs";
 import type { PlanTier, RateSource } from "@claude-lens/parser";
 
 // One point on the calibration overlay — pairs the daemon's measured
@@ -71,7 +69,7 @@ export function predictedSeriesFor(dump: CalibrationDump | null): PredictedSerie
 // start we fall back to the heaviest tier so cold-start back-fill predicts
 // the longest possible windows. The profile cache lives next to the JSON
 // dump and is read below if available.
-const PROFILE_CACHE = join(homedir(), ".cclens", "profile.json");
+const PROFILE_CACHE = cclensPath("profile.json");
 const DEFAULT_TIER: PlanTier = "pro-max-20x";
 
 function readTier(): PlanTier {

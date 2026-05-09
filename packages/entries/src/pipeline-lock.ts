@@ -1,6 +1,5 @@
 import { writeFileSync, unlinkSync, existsSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 // Lock is "fresh" if mtime is within STALE_MS AND owning pid is alive. The
 // pipeline keeps mtime fresh via a HEARTBEAT_MS interval; without that, any
@@ -13,7 +12,7 @@ let heartbeat: NodeJS.Timeout | null = null;
 
 function lockPath(): string {
   if (lockPathCached) return lockPathCached;
-  lockPathCached = join(homedir(), ".cclens", "llm-interactive.lock");
+  lockPathCached = cclensPath("llm-interactive.lock");
   return lockPathCached;
 }
 

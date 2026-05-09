@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, appendFileSync, writeFileSync, existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import type { LLMResponse } from "./enrich.js";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 export type RunSubprocessArgs = {
   systemPrompt: string;
@@ -16,11 +16,11 @@ export type RunSubprocessArgs = {
 
 // ── Trace file plumbing ──────────────────────────────────────────────────
 // Every claude -p invocation gets a run_id and a per-run JSONL trace under
-// ~/.cclens/llm-runs/<run_id>.jsonl. First line is a _meta start record;
+// cclensHome()/llm-runs/<run_id>.jsonl. First line is a _meta start record;
 // subsequent lines are the raw stream-json events from claude verbatim;
 // final line is a _meta end record with totals + exit code.
 
-const RUNS_DIR = join(homedir(), ".cclens", "llm-runs");
+const RUNS_DIR = cclensPath("llm-runs");
 
 function ensureRunsDir(): void {
   if (!existsSync(RUNS_DIR)) {

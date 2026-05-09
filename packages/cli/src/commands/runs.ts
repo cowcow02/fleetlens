@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 /**
  * `fleetlens runs` — inspect live LLM call activity + recent token spend.
@@ -164,7 +164,7 @@ function listActiveRuns(): ActiveRun[] {
 
 // ── Spend log reader ─────────────────────────────────────────────────────
 
-const SPEND_PATH = join(homedir(), ".cclens", "llm-spend.jsonl");
+const SPEND_PATH = cclensPath("llm-spend.jsonl");
 
 function readSpend(sinceMs: number): CompletedRun[] {
   if (!existsSync(SPEND_PATH)) return [];
@@ -313,7 +313,7 @@ function ageLabel(ms: number): string {
 
 // ── Trace-file readers + inspect command ─────────────────────────────────
 
-const RUNS_DIR = join(homedir(), ".cclens", "llm-runs");
+const RUNS_DIR = cclensPath("llm-runs");
 
 function listTraceFiles(): { runId: string; path: string; mtimeMs: number }[] {
   if (!existsSync(RUNS_DIR)) return [];

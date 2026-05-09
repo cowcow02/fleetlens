@@ -1,13 +1,12 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { readSnapshots } from "../usage/storage.js";
 import type { UsageSnapshot } from "../usage/api.js";
 import { readTeamConfig, type TeamConfig } from "./config.js";
 import type { WireUsageSnapshot, WireUsageWindow } from "./push.js";
 import { getPlanTier } from "../usage/profile.js";
+import { cclensPath } from "@claude-lens/parser/fs";
 
-const USAGE_LOG = join(homedir(), ".cclens", "usage.jsonl");
-const PROFILE_CACHE = join(homedir(), ".cclens", "profile.json");
+const USAGE_LOG = cclensPath("usage.jsonl");
+const PROFILE_CACHE = cclensPath("profile.json");
 
 // Server caps each batch (zod schema). Stay safely under so a few extra
 // header bytes don't tip a payload over.

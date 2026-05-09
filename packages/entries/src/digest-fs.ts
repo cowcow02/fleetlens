@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, writeFileSync, renameSync, chmodSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { cclensPath } from "@claude-lens/parser/fs";
 import type { DayDigest, WeekDigest, MonthDigest } from "./types.js";
 
 let digestsDirCached: string | null = null;
@@ -8,7 +8,7 @@ let digestsDirCached: string | null = null;
 function digestsDir(): string {
   if (digestsDirCached) return digestsDirCached;
   const envOverride = process.env.CCLENS_DIGESTS_DIR;
-  digestsDirCached = envOverride ?? join(homedir(), ".cclens", "digests");
+  digestsDirCached = envOverride ?? cclensPath("digests");
   return digestsDirCached;
 }
 

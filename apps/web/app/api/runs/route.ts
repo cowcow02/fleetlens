@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,7 +74,7 @@ function listActiveRuns(): ActiveRun[] {
   return runs.sort((a, b) => a.elapsed_s - b.elapsed_s);
 }
 
-const SPEND_PATH = join(homedir(), ".cclens", "llm-spend.jsonl");
+const SPEND_PATH = cclensPath("llm-spend.jsonl");
 
 type CompletedRun = {
   ts: string;
@@ -123,7 +123,7 @@ function parseSince(s: string | null): number {
   return Date.now() - 24 * 3_600_000;
 }
 
-const RUNS_DIR = join(homedir(), ".cclens", "llm-runs");
+const RUNS_DIR = cclensPath("llm-runs");
 
 type TraceSummary = {
   run_id: string;

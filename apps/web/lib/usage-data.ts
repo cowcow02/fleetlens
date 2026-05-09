@@ -7,9 +7,8 @@
 import "server-only";
 import { cache } from "react";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import type { AgentKind } from "@claude-lens/parser";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 export type UsageWindow = {
   utilization: number | null;
@@ -37,7 +36,7 @@ export type UsageSnapshot = {
 };
 
 function usageLogPath(): string {
-  return process.env.CCLENS_USAGE_LOG || join(homedir(), ".cclens", "usage.jsonl");
+  return process.env.CCLENS_USAGE_LOG || cclensPath("usage.jsonl");
 }
 
 export const readUsageSnapshots = cache((): UsageSnapshot[] => {
@@ -90,7 +89,7 @@ export type CachedPlanTier = {
 };
 
 export const readCachedPlanTier = cache((): CachedPlanTier | null => {
-  const path = process.env.CCLENS_PROFILE_CACHE || join(homedir(), ".cclens", "profile.json");
+  const path = process.env.CCLENS_PROFILE_CACHE || cclensPath("profile.json");
   if (!existsSync(path)) return null;
   try {
     const raw = JSON.parse(readFileSync(path, "utf8")) as {

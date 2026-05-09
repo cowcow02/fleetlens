@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, renameSync, existsSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { homedir } from "node:os";
+import { cclensPath } from "@claude-lens/parser/fs";
 import { entryKey, parseEntryKey, type Entry, type EntryEnrichmentStatus } from "./types.js";
 
 let entriesDirCached: string | null = null;
@@ -9,7 +9,7 @@ let entriesDirCached: string | null = null;
 export function entriesDir(): string {
   if (entriesDirCached) return entriesDirCached;
   const envOverride = process.env.CCLENS_ENTRIES_DIR;
-  entriesDirCached = envOverride ?? join(homedir(), ".cclens", "entries");
+  entriesDirCached = envOverride ?? cclensPath("entries");
   return entriesDirCached;
 }
 

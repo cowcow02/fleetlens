@@ -36,7 +36,8 @@ const SNAPSHOT_INTERVAL = 5 * MIN;
 const daysArg = process.argv.indexOf("--days");
 const DAYS = daysArg !== -1 ? parseInt(process.argv[daysArg + 1] ?? "30", 10) : 30;
 
-const OUTPUT = process.env.CCLENS_USAGE_LOG ?? join(homedir(), ".cclens", "usage.jsonl");
+const CCLENS_HOME = process.env.CCLENS_HOME ?? join(homedir(), ".cclens");
+const OUTPUT = process.env.CCLENS_USAGE_LOG ?? join(CCLENS_HOME, "usage.jsonl");
 const BACKUP = `${OUTPUT}.bak`;
 
 mkdirSync(dirname(OUTPUT), { recursive: true });

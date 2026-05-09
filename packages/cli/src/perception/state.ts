@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
+import { cclensPath } from "@claude-lens/parser/fs";
 
 const STALE_MS = 15 * 60 * 1000;
 
@@ -21,7 +21,7 @@ let pathCached: string | null = null;
 
 function statePath(): string {
   if (pathCached) return pathCached;
-  pathCached = join(homedir(), ".cclens", "perception-state.json");
+  pathCached = cclensPath("perception-state.json");
   return pathCached;
 }
 
