@@ -4,6 +4,19 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.1] — 2026-05-14
+
+### Added
+- **Alternative claude runtime via tmux.** When `tmux` is on PATH, both the LLM pipeline (digest synth, entry enrichment, top-session perception) and the `/ask` feature now drive `claude` through a detached tmux session instead of `claude -p`. Sessions produced this way carry `entrypoint: cli` in their JSONL, which is also extracted by the parser and surfaced as a small badge on `/sessions/<id>` next to the model chip — green for `cli` / `claude-desktop`, amber for `sdk-*`. The path falls back to `claude -p` whenever tmux is unavailable or the run errors; set `FLEETLENS_FORCE_PRINT_MODE=1` to disable the tmux path entirely.
+- **`CCLENS_HOME` env override.** All `~/.cclens/` state (pid file, daemon log, perception state, usage snapshot log, llm-runs traces) is now reached through a shared `cclensHome()` helper that honors `CCLENS_HOME`. Lets multiple installs / workspaces run side-by-side without stomping on each other's state.
+
+### Fixed
+- `/api/runs` rendered every successful tmux-driven run as `status=error`. Tmux runs have no subprocess exit code (the session is killed by cleanup), and the runs viewer was treating a missing code as failure. End records now stamp `exit_code: 0` on success and the active-process filter no longer requires the literal `claude -p` flag, so tmux-driven processes also show up in the "active" panel while they're running.
+- `JobQueueWidget`'s `/api/jobs` polling effect listed `jobs` in its deps, so each tick re-armed the effect on the freshly-set state ref — effective cadence collapsed to a 1–4 ms refetch loop. Now tracks `hasActive` in a closure-local var and runs the effect once on mount.
+
+### Conductor
+- New `conductor.json` + `scripts/conductor-{setup,run,archive}.sh` so each Conductor workspace allocates its own 3-port band (web / team-server / postgres) and boots its own `fleetlens-<workspace>` Compose stack against `.harness/cclens-state`. Replaces ~30 hard-coded `join(homedir(), ".cclens", …)` call sites with the shared `cclensHome()/cclensPath()` helper so a second workspace can boot without colliding with the user's primary install.
+
 ## [0.10.0] — 2026-05-08
 
 ### Changed
