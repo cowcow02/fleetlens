@@ -29,6 +29,10 @@ export type TmuxRunArgs = {
   /** Optional streaming-text callback, fires once per newly-appended slice
    *  of assistant text. Use this when the caller wants SSE-style deltas. */
   onDelta?: (chunk: string) => void;
+  /** Optional abort signal. When fired, the tmux session is killed and the
+   *  call rejects with TmuxRunError. Used by /api/ask to drop tmux on
+   *  client disconnect so we don't keep burning tokens. */
+  signal?: AbortSignal;
 };
 
 export class TmuxUnavailableError extends Error {
@@ -97,15 +101,31 @@ function ensureRuntimeCwdTrusted(cwd: string): void {
   }
 }
 
+// Per-process mutex chain. Concurrent callers serialize through this
+// promise so they don't race for the same transcript inside the shared
+// runtime cwd. Realistic concurrency profile is low (digest pipelines
+// already serialize via pipeline-lock; /api/ask is user-driven), so a
+// simple FIFO chain is enough.
+let mutex: Promise<unknown> = Promise.resolve();
+
 /** Drive `claude` under a detached tmux session so the resulting JSONL
  *  carries `entrypoint: cli`. Returns the assistant text + token usage
- *  by tailing the transcript Claude Code writes to
- *  `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`. */
-export async function runClaudeUnderTmux(args: TmuxRunArgs): Promise<LLMResponse> {
+ *  by tailing the transcript Claude Code writes under
+ *  `~/.claude/projects/`. Serializes concurrent callers in-process. */
+export function runClaudeUnderTmux(args: TmuxRunArgs): Promise<LLMResponse> {
+  const next = mutex.then(() => runClaudeUnderTmuxImpl(args));
+  // Keep the chain alive across rejections so a single thrown error doesn't
+  // block subsequent callers behind a rejected promise.
+  mutex = next.catch(() => undefined);
+  return next;
+}
+
+async function runClaudeUnderTmuxImpl(args: TmuxRunArgs): Promise<LLMResponse> {
   const tmuxBin = args.tmuxBin ?? which("tmux");
   if (!tmuxBin) throw new TmuxUnavailableError("tmux not on PATH");
   const claudeBin = args.claudeBin ?? which("claude");
   if (!claudeBin) throw new TmuxUnavailableError("claude not on PATH");
+  if (args.signal?.aborted) throw new TmuxRunError("aborted before spawn");
 
   const cwd = runtimeCwd();
   ensureRuntimeCwdTrusted(cwd);
@@ -133,15 +153,17 @@ export async function runClaudeUnderTmux(args: TmuxRunArgs): Promise<LLMResponse
       `  --model ${shellEscape(args.model)} \\\n` +
       `  --strict-mcp-config --mcp-config '{"mcpServers":{}}' \\\n` +
       `  --disable-slash-commands \\\n` +
+      `  --effort medium \\\n` +
       `  --append-system-prompt "$SYS" \\\n` +
       `  "$USR"\n`,
     { mode: 0o755 },
   );
 
-  // Snapshot existing transcripts so we can identify the new one this run
-  // will produce.
-  const projectDir = projectDirForCwd(cwd);
-  const existingBefore = listJsonlFiles(projectDir);
+  // Snapshot every existing transcript across all project dirs. After
+  // spawn we look for a *new* file whose first line records our `cwd`
+  // — that's robust to whatever encoding Claude Code uses for its
+  // directory names.
+  const existingBefore = snapshotAllTranscripts();
 
   const spawn = spawnSync(
     tmuxBin,
@@ -152,57 +174,24 @@ export async function runClaudeUnderTmux(args: TmuxRunArgs): Promise<LLMResponse
     cleanup(cwd, runId, tmuxBin, sessionName);
     throw new TmuxRunError(`tmux new-session failed: ${spawn.stderr.trim()}`);
   }
-  if (process.env.FLEETLENS_TMUX_DEBUG === "1") {
-    console.error(`[tmux-runner] spawned session=${sessionName} cwd=${cwd} projectDir=${projectDir}`);
-    console.error(`[tmux-runner] existing JSONLs before run: ${existingBefore.size}`);
-  }
+
+  // Honour caller abort by killing the tmux session immediately.
+  const onAbort = () => {
+    try { spawnSync(tmuxBin, ["kill-session", "-t", sessionName], { stdio: "ignore" }); } catch {}
+  };
+  args.signal?.addEventListener("abort", onAbort, { once: true });
 
   const startMs = Date.now();
   const timeoutMs = args.timeoutMs ?? 120_000;
   let lastReportedKb = -1;
   let lastEmittedLength = 0;
-  let assembled = "";
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let modelUsed = args.model;
 
   try {
-    const transcriptPath = await pollForNewJsonl(projectDir, existingBefore, startMs, timeoutMs);
+    const transcriptPath = await discoverTranscript(cwd, existingBefore, startMs, timeoutMs, args.signal);
 
     while (Date.now() - startMs < timeoutMs) {
-      const lines = safeReadLines(transcriptPath);
-      let assistantDone = false;
-      assembled = "";
-      inputTokens = 0;
-      outputTokens = 0;
-      for (const raw of lines) {
-        let o: Record<string, unknown>;
-        try { o = JSON.parse(raw) as Record<string, unknown>; } catch { continue; }
-        if (o.type !== "assistant") continue;
-        const m = o.message as Record<string, unknown> | undefined;
-        if (!m) continue;
-        const mm = (m as { model?: string }).model;
-        if (mm) modelUsed = mm;
-        const content = m.content as Array<Record<string, unknown>> | undefined;
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === "text" && typeof block.text === "string") {
-              assembled += block.text;
-            }
-          }
-        }
-        const usage = m.usage as Record<string, unknown> | undefined;
-        if (usage) {
-          inputTokens =
-            num(usage.input_tokens) +
-            num(usage.cache_creation_input_tokens) +
-            num(usage.cache_read_input_tokens);
-          outputTokens = num(usage.output_tokens);
-        }
-        if ((m as { stop_reason?: string }).stop_reason === "end_turn") {
-          assistantDone = true;
-        }
-      }
+      if (args.signal?.aborted) throw new TmuxRunError("aborted");
+      const { assembled, inputTokens, outputTokens, modelUsed, done } = parseTranscript(transcriptPath, args.model);
 
       if (args.onProgress) {
         const kb = Math.floor(assembled.length / 1024);
@@ -216,7 +205,7 @@ export async function runClaudeUnderTmux(args: TmuxRunArgs): Promise<LLMResponse
         lastEmittedLength = assembled.length;
         try { args.onDelta(chunk); } catch { /* never block on consumer */ }
       }
-      if (assistantDone && assembled.length > 0) {
+      if (done && assembled.length > 0) {
         return {
           content: assembled,
           input_tokens: inputTokens,
@@ -228,6 +217,7 @@ export async function runClaudeUnderTmux(args: TmuxRunArgs): Promise<LLMResponse
     }
     throw new TmuxRunError(`timeout after ${timeoutMs}ms waiting for assistant turn`);
   } finally {
+    args.signal?.removeEventListener("abort", onAbort);
     cleanup(cwd, runId, tmuxBin, sessionName);
   }
 }
@@ -240,51 +230,122 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-/** Claude Code encodes cwd by replacing every `/` and `.` with `-`. */
-function encodeCwd(cwd: string): string {
-  return cwd.replace(/[\/.]/g, "-");
-}
+const PROJECTS_ROOT = () => join(homedir(), ".claude", "projects");
 
-function projectDirForCwd(cwd: string): string {
-  return join(homedir(), ".claude", "projects", encodeCwd(cwd));
-}
-
-function listJsonlFiles(dir: string): Set<string> {
-  if (!existsSync(dir)) return new Set();
-  try {
-    return new Set(readdirSync(dir).filter((f) => f.endsWith(".jsonl")));
-  } catch {
-    return new Set();
+/** Set of full paths of every `.jsonl` file under ~/.claude/projects/. */
+function snapshotAllTranscripts(): Set<string> {
+  const out = new Set<string>();
+  const root = PROJECTS_ROOT();
+  let subs: string[];
+  try { subs = readdirSync(root); } catch { return out; }
+  for (const sub of subs) {
+    const dir = join(root, sub);
+    let files: string[];
+    try { files = readdirSync(dir); } catch { continue; }
+    for (const f of files) {
+      if (f.endsWith(".jsonl")) out.add(join(dir, f));
+    }
   }
+  return out;
 }
 
-async function pollForNewJsonl(
-  dir: string,
+/** Read the first few non-empty lines of a JSONL and return its `cwd`
+ *  field (Claude Code writes it on every meta line). */
+export function readJsonlCwd(path: string, maxLines = 8): string | undefined {
+  let raw: string;
+  try { raw = readFileSync(path, "utf8"); } catch { return undefined; }
+  let count = 0;
+  for (const line of raw.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    count++;
+    try {
+      const o = JSON.parse(t) as Record<string, unknown>;
+      if (typeof o.cwd === "string") return o.cwd;
+    } catch { /* skip malformed */ }
+    if (count >= maxLines) break;
+  }
+  return undefined;
+}
+
+/** Scan ~/.claude/projects/* for a transcript that (a) wasn't in the
+ *  pre-spawn snapshot and (b) records the same `cwd` we spawned in. */
+async function discoverTranscript(
+  targetCwd: string,
   existingBefore: Set<string>,
   startMs: number,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<string> {
-  let attempts = 0;
   while (Date.now() - startMs < timeoutMs) {
-    const now = listJsonlFiles(dir);
-    for (const f of now) {
-      if (!existingBefore.has(f)) return join(dir, f);
-    }
-    attempts++;
-    if (process.env.FLEETLENS_TMUX_DEBUG === "1" && attempts % 10 === 0) {
-      console.error(`[tmux-runner] poll attempt ${attempts}: ${now.size} jsonls in ${dir}`);
+    if (signal?.aborted) throw new TmuxRunError("aborted");
+    const root = PROJECTS_ROOT();
+    let subs: string[];
+    try { subs = readdirSync(root); } catch { subs = []; }
+    for (const sub of subs) {
+      const dir = join(root, sub);
+      let files: string[];
+      try { files = readdirSync(dir); } catch { continue; }
+      for (const f of files) {
+        if (!f.endsWith(".jsonl")) continue;
+        const full = join(dir, f);
+        if (existingBefore.has(full)) continue;
+        if (readJsonlCwd(full) === targetCwd) return full;
+      }
     }
     await sleep(300);
   }
-  throw new TmuxRunError(`timeout waiting for claude to create the session transcript (poll dir: ${dir})`);
+  throw new TmuxRunError(`timeout waiting for claude to create the session transcript (cwd: ${targetCwd})`);
 }
 
-function safeReadLines(path: string): string[] {
-  try {
-    return readFileSync(path, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
-  } catch {
-    return [];
+type ParsedTurn = {
+  assembled: string;
+  inputTokens: number;
+  outputTokens: number;
+  modelUsed: string;
+  done: boolean;
+};
+
+/** Reassemble the latest assistant turn from a transcript file. */
+function parseTranscript(path: string, defaultModel: string): ParsedTurn {
+  let raw: string;
+  try { raw = readFileSync(path, "utf8"); } catch { return { assembled: "", inputTokens: 0, outputTokens: 0, modelUsed: defaultModel, done: false }; }
+  let assembled = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let modelUsed = defaultModel;
+  let done = false;
+  for (const line of raw.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    let o: Record<string, unknown>;
+    try { o = JSON.parse(t) as Record<string, unknown>; } catch { continue; }
+    if (o.type !== "assistant") continue;
+    const m = o.message as Record<string, unknown> | undefined;
+    if (!m) continue;
+    const mm = (m as { model?: string }).model;
+    if (mm) modelUsed = mm;
+    const content = m.content as Array<Record<string, unknown>> | undefined;
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block.type === "text" && typeof block.text === "string") {
+          assembled += block.text;
+        }
+      }
+    }
+    const usage = m.usage as Record<string, unknown> | undefined;
+    if (usage) {
+      inputTokens =
+        num(usage.input_tokens) +
+        num(usage.cache_creation_input_tokens) +
+        num(usage.cache_read_input_tokens);
+      outputTokens = num(usage.output_tokens);
+    }
+    if ((m as { stop_reason?: string }).stop_reason === "end_turn") {
+      done = true;
+    }
   }
+  return { assembled, inputTokens, outputTokens, modelUsed, done };
 }
 
 function cleanup(cwd: string, runId: string, tmuxBin: string, sessionName: string): void {
@@ -296,8 +357,8 @@ function cleanup(cwd: string, runId: string, tmuxBin: string, sessionName: strin
   }
 }
 
-/** POSIX-safe single-quote escape. */
-function shellEscape(s: string): string {
+/** POSIX-safe single-quote escape. Exported for unit tests. */
+export function shellEscape(s: string): string {
   if (/^[A-Za-z0-9_./-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'"'"'`)}'`;
 }
