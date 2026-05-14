@@ -621,6 +621,12 @@ export function SessionView({
           </span>
           <InlineStatDivider />
           {model && <InlineStat icon={<Cpu size={12} />} value={model} mono />}
+          {session.entrypoint && (
+            <>
+              <InlineStatDivider />
+              <EntrypointBadge entrypoint={session.entrypoint} />
+            </>
+          )}
           <InlineStatDivider />
           <InlineStat icon={<Folder size={12} />} value={projectName} truncate />
           <InlineStatDivider />
@@ -1139,6 +1145,31 @@ function InlineStatDivider() {
       }}
     >
       ·
+    </span>
+  );
+}
+
+function EntrypointBadge({ entrypoint }: { entrypoint: string }) {
+  // cli + claude-desktop are human-driven; sdk-* are programmatic.
+  const isSdk = entrypoint.startsWith("sdk-");
+  const tone = isSdk
+    ? { bg: "rgba(245, 158, 11, 0.16)", fg: "#b45309" }
+    : { bg: "rgba(16, 185, 129, 0.16)", fg: "#047857" };
+  return (
+    <span
+      title={`entrypoint: ${entrypoint}`}
+      style={{
+        fontSize: 10.5,
+        padding: "2px 7px",
+        borderRadius: 4,
+        background: tone.bg,
+        color: tone.fg,
+        fontWeight: 600,
+        fontFamily: "var(--font-mono)",
+        letterSpacing: 0.2,
+      }}
+    >
+      {entrypoint}
     </span>
   );
 }
