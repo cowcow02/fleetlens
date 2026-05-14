@@ -5,6 +5,12 @@ import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import type { LLMResponse } from "./enrich.js";
 import { cclensPath } from "@claude-lens/parser/fs";
+import {
+  runClaudeUnderTmux,
+  tmuxRunnerAvailable,
+  TmuxRunError,
+  TmuxUnavailableError,
+} from "./tmux-runner.js";
 
 export type RunSubprocessArgs = {
   systemPrompt: string;
@@ -60,11 +66,82 @@ function safeWrite(path: string, line: string): void {
   try { writeFileSync(path, line); } catch { /* same */ }
 }
 
+/** Front door for every LLM call in the entries pipeline. Tries the
+ *  tmux-driven runner first (sessions written by tmux carry
+ *  `entrypoint: cli`), falls back to `claude -p` when tmux/claude isn't
+ *  on PATH or the tmux run errors. The `-p` path remains the safety net
+ *  so callers always get a response. */
+export async function runClaudeSubprocess(args: RunSubprocessArgs): Promise<LLMResponse> {
+  if (process.env.FLEETLENS_FORCE_PRINT_MODE !== "1") {
+    const avail = tmuxRunnerAvailable();
+    if (avail.ok) {
+      const startedAt = new Date().toISOString();
+      const kind = detectKindFromSystemPrompt(args.systemPrompt);
+      const runId = newRunId(kind);
+      const trace = tracePath(runId);
+      ensureRunsDir();
+      safeWrite(trace, JSON.stringify({
+        _meta: {
+          type: "start", run_id: runId, kind, model: args.model, ts: startedAt,
+          runtime: "tmux",
+          user_prompt_chars: args.userPrompt.length,
+          reminder_chars: args.reminder?.length ?? 0,
+        },
+      }) + "\n");
+      safeAppend(trace, JSON.stringify({
+        _meta: {
+          type: "payload", run_id: runId,
+          system_prompt: args.systemPrompt,
+          user_prompt: args.userPrompt,
+          reminder: args.reminder ?? null,
+        },
+      }) + "\n");
+      try {
+        const startMs = Date.now();
+        const res = await runClaudeUnderTmux({
+          systemPrompt: args.systemPrompt,
+          model: args.model,
+          userPrompt: args.userPrompt,
+          reminder: args.reminder,
+          onProgress: args.onProgress,
+        });
+        safeAppend(trace, JSON.stringify({
+          _meta: {
+            type: "end", run_id: runId, runtime: "tmux",
+            ts: new Date().toISOString(),
+            elapsed_ms: Date.now() - startMs,
+            content_chars: res.content.length,
+            input_tokens: res.input_tokens,
+            output_tokens: res.output_tokens,
+            model_used: res.model,
+          },
+        }) + "\n");
+        return res;
+      } catch (err) {
+        // Either tmux disappeared after the boot probe (unlikely) or the
+        // session timed out / fell over. Either way we'd rather degrade
+        // to print mode than fail the caller.
+        const isExpected = err instanceof TmuxUnavailableError || err instanceof TmuxRunError;
+        safeAppend(trace, JSON.stringify({
+          _meta: {
+            type: "tmux_fallback", run_id: runId,
+            ts: new Date().toISOString(),
+            error: (err as Error).message,
+            expected: isExpected,
+          },
+        }) + "\n");
+        // fall through to print mode
+      }
+    }
+  }
+  return runClaudePrintMode(args);
+}
+
 /** Spawn `claude -p` with the given system prompt; resolve with the assembled
  *  text + token usage. Tees every stream-json event to a per-run trace file
  *  under ~/.cclens/llm-runs/<run_id>.jsonl so the call can be inspected live
  *  or post-mortem via `fleetlens runs --inspect <run_id>`. */
-export function runClaudeSubprocess(args: RunSubprocessArgs): Promise<LLMResponse> {
+export function runClaudePrintMode(args: RunSubprocessArgs): Promise<LLMResponse> {
   return new Promise((resolve, reject) => {
     ensureRunsDir();
     const kind = detectKindFromSystemPrompt(args.systemPrompt);

@@ -133,6 +133,11 @@ export type SessionMeta = {
   model?: string;
   cwd?: string;
   gitBranch?: string;
+  /** Top-level `entrypoint` field Claude Code stamps on its meta lines.
+   *  Known values: "cli" (interactive REPL), "sdk-cli" (`claude -p`),
+   *  "sdk-ts" (TS Agent SDK), "claude-desktop". Surfaced on the session
+   *  page so the cli/sdk distinction is visible without re-parsing. */
+  entrypoint?: string;
   totalUsage: Usage;
   status: "idle" | "running";
   /** derived: first user message preview — used in list cards */

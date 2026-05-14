@@ -18,6 +18,12 @@
 import { getSession } from "@claude-lens/parser/fs";
 import { summarizeSessionForAI } from "@/lib/ai/session-summary";
 import { spawn } from "node:child_process";
+import {
+  runClaudeUnderTmux,
+  tmuxRunnerAvailable,
+  TmuxRunError,
+  TmuxUnavailableError,
+} from "@claude-lens/entries/node";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,6 +62,11 @@ export async function POST(request: Request) {
   const fullPrompt = `Here is the session transcript summary:\n\n${context}\n\n---\n\nUser's question: ${question}`;
 
   const encoder = new TextEncoder();
+  // Resolve at request time so an admin toggling tmux on/off doesn't
+  // require a server restart.
+  const useTmux =
+    process.env.FLEETLENS_FORCE_PRINT_MODE !== "1" && tmuxRunnerAvailable().ok;
+
   const stream = new ReadableStream({
     start(controller) {
       let closed = false;
@@ -69,31 +80,61 @@ export async function POST(request: Request) {
         }
       }
 
-      // Resolve the claude binary — prefer the well-known location if it
-      // exists, otherwise fall back to PATH resolution. The user must have
-      // Claude Code installed and logged in.
-      const claudeBin = "claude";
+      function finish() {
+        if (!closed) {
+          try { controller.close(); } catch {}
+          closed = true;
+        }
+      }
+
+      // Kick off the LLM work without awaiting — Next.js waits for start()
+      // to return before opening the response, so any blocking here would
+      // stall the SSE headers.
+      void (async () => {
+        if (useTmux) {
+          try {
+            const res = await runClaudeUnderTmux({
+              systemPrompt: SYSTEM_PROMPT,
+              model,
+              userPrompt: fullPrompt,
+              onDelta: (chunk) => send({ type: "delta", text: chunk }),
+            });
+            send({ type: "done", totalTokens: res.input_tokens + res.output_tokens });
+            finish();
+            return;
+          } catch (err) {
+            const isExpected = err instanceof TmuxUnavailableError || err instanceof TmuxRunError;
+            if (!isExpected) {
+              console.warn("[ask] tmux runner failed, falling back to -p:", err);
+            }
+            // fall through to print mode
+          }
+        }
+        runPrintModeFallback();
+      })();
+
+      function runPrintModeFallback() {
+        const claudeBin = "claude";
 
       const args = [
-        "-p", // print mode (non-interactive)
+        "-p",
         "--output-format",
         "stream-json",
         "--verbose",
         "--model",
         model,
         "--tools",
-        "", // no tools — pure analysis
+        "",
         "--disable-slash-commands",
         "--no-session-persistence",
         "--setting-sources",
-        "", // skip user settings for speed
+        "",
         "--append-system-prompt",
         SYSTEM_PROMPT,
       ];
 
       const proc = spawn(claudeBin, args, {
         stdio: ["pipe", "pipe", "pipe"],
-        // Inherit PATH so the claude binary is found.
         env: { ...process.env },
       });
 
@@ -190,6 +231,7 @@ export async function POST(request: Request) {
           closed = true;
         }
       });
+      } // end runPrintModeFallback
     },
   });
 

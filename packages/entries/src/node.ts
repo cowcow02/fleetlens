@@ -16,6 +16,13 @@ export * from "./prompts/digest-month.js";
 export * from "./digest-week-pipeline.js";
 export * from "./digest-month-pipeline.js";
 export {
+  runClaudeUnderTmux,
+  tmuxRunnerAvailable,
+  TmuxRunError,
+  TmuxUnavailableError,
+  type TmuxRunArgs,
+} from "./tmux-runner.js";
+export {
   readDayDigest, writeDayDigest, getTodayDigestFromCache, setTodayDigestInCache,
   readWeekDigest, writeWeekDigest, listWeekDigestKeys,
   getCurrentWeekDigestFromCache, setCurrentWeekDigestInCache,
