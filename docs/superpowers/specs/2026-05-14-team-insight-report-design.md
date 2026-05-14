@@ -1,7 +1,7 @@
 # Team Insight Report — Design Spec
 
 **Date:** 2026-05-14
-**Status:** Approved for Phase-1 (static prototype) implementation. Phase-2 (synthesis + data flow + opt-in UX) deferred to a follow-up spec.
+**Status:** Phase-1 static prototype shipped. Iteration after first browser review refined the report shape: dropped working-shape distribution and outcome/helpfulness stacked bars (too noisy as team metrics); reframed the spotlight unit from "opt-in week-digest sections" to "opt-in specific sessions" with team-side synthesis composing a per-session walkthrough. Spotlight flavors collapsed from three to two. Phase 2 (synthesis + data flow + opt-in UX) deferred to a follow-up spec.
 **Audience:** Engineers building the team edition of Fleetlens.
 
 ---
@@ -21,9 +21,9 @@ This spec resolves the tension with a two-tier privacy model and a static-first 
 ## 2. Nomenclature (locked, used everywhere)
 
 - **Team insight report** — the new weekly artifact at `/team/[slug]/insights`. Mirrors the personal **week digest** at `/insights`.
-- **Spotlight** — a single opt-in card on the team insight report. Each spotlight has a *type* (cross-team pattern, individual case study, strength surfacing, narrative summary, shipped work, top session deep-dive, …) and an *author* (a member, or "the team" for synthesized cross-member cards).
+- **Spotlight** — a single card on the team insight report, anchored to **one opted-in session** chosen by the member. The team-side synthesizer turns each shared session into a concrete walkthrough — what skills, agents, and tools were used, how the work played out, what shipped. Each spotlight has a *flavor* (case study or strength surfacing) and an *author* (the member whose session it is).
 - **Tier 1** — data that flows automatically: numbers, durations, taxonomy labels, and the *names* of projects + user-authored skills/subagents. No paraphrase or quote of user/agent text.
-- **Tier 2** — data that requires explicit per-section consent: any "words" — LLM-generated prose, quoted user prompts, agent responses, PR titles, prompt previews, sample subagent descriptions, friction quotes.
+- **Tier 2** — data that requires explicit per-session consent: an opted-in session is the unit. Once a session is shared, its full content is available to the team-side synthesizer for spotlight composition. The member previews the synthesized spotlight before publishing.
 
 ## 3. Privacy model (final)
 
@@ -125,16 +125,13 @@ History
   …
 ```
 
-### 5.2 Four opt-in section groups (UX-coarsened)
+### 5.2 Opt-in unit: sessions (refined after first review)
 
-The personal `WeekDigest` has ~15 narrative fields; presenting them as 15 toggles would overwhelm. Four coarse groups, each with its own preview pane:
+The unit of consent is a **specific session**, not a coarse week-digest section. The personal `/team-share` page lists this week's sessions with their metadata (project, date, duration, outcome) and lets the member opt-in any subset. For each shared session, the team-side synthesizer composes the spotlight card the team report will render. The member sees that synthesized card in the preview pane before publishing — preview-before-consent remains the single non-negotiable UX detail.
 
-1. **Narrative summary** — `headline`, `key_pattern`, `trajectory`, `standout_days`, `day_signature`
-2. **What worked / stalled / surprised** — `what_worked`, `what_stalled`, `what_surprised`, `where_to_lean`
-3. **Shipped work** — `shipped[].title` and the associated project context
-4. **Top session deep-dives** — entire `top_sessions[]` array (highest sensitivity)
+This is a meaningful simplification from the original four-section-group model. The model is now: members curate by *which sessions to share*, and the team-side synthesizer determines *what each shared session becomes* on the team report. Tier-2 consent is granted at the session level, not the field level.
 
-If Phase 2 settles on the raw-transcript submission model instead of pre-rendered sections, these four groups remain the unit of consent but the preview pane shows the synthesized output that *would result* from a team-side LLM run over the raw data — preview-before-consent still applies.
+Past sessions remain in the personal edition's read-only history view; once shared, a session stays on the team report's published past weeks indefinitely (unless the member retracts it). Retraction semantics are Phase-2 detail.
 
 ## 6. Team-edition weekly report — `/team/[slug]/insights` (Phase 1, this spec)
 
@@ -150,16 +147,15 @@ If Phase 2 settles on the raw-transcript submission model instead of pre-rendere
 1. **Team Pulse** (Tier 1)
    - Combined agent-hours + WoW delta
    - Shipping count + WoW delta
-   - Members-active count (e.g., 4 of 5)
-   - Outcome mix stacked bar (shipped / partial / exploratory / blocked / trivial)
-   - Helpfulness mix stacked bar (essential / helpful / neutral / unhelpful)
-   - Concurrency peak day
+   - Members-active count (e.g., 4 of 5) + concurrency peak day
+   - ~~Outcome mix stacked bar~~ — dropped after first review (too noisy at team level).
+   - ~~Helpfulness mix stacked bar~~ — dropped after first review (same reason).
 
-2. **How the team worked** (Tier 1)
-   - Working-shape distribution across the team, as horizontal bars: `spec-review-loop ×4 across 3 members` style.
+2. **How time was spent** (Tier 1)
    - Goal-category minute mix (`build 42% · debug 18% · refactor 14% · plan 12% · …`).
    - Plan-mode adoption count (members who used Plan Mode at least once).
-   - Brainstorm-warmup adoption count.
+   - Brainstorm-warmup adoption count (members who opened a session with a brainstorming skill).
+   - ~~Working-shape distribution~~ — dropped after first review. The shape taxonomy (spec-review-loop / solo-build / research-then-build / …) is too inside-baseball as a team-level metric; the "what the team reaches for" story is told instead through Section 3's skills + agents view.
 
 3. **Tools, skills, and harness** (Tier 1, names included)
    - Top tool families across the team (`Bash ×321 · Edit ×184 · Write ×72 · …`).
@@ -169,13 +165,14 @@ If Phase 2 settles on the raw-transcript submission model instead of pre-rendere
 4. **Projects** (Tier 1)
    - Per-project rows: project name, agent-min, members involved, shipped count. Cross-team — a project worked on by two members shows both. Useful for managers tracking which projects are absorbing the most agent time.
 
-5. **Spotlights** (Tier 2, opt-in content)
-   - Stack of cards, one per submitted spotlight this week. Card header: `From {member display name} · {section type}`. For team-synthesized cross-member cards: `From the team`.
-   - Three flavors the prototype must demonstrate:
-     - **Cross-team pattern.** A narrative card that ties together multiple members' work around a single working-shape, skill, or harness move. E.g., *"Three teammates independently reached for `spec-review-loop` this week. Charlie's variant pinned a reviewer-triad on the spec; Alice's compressed it into a single pass before merge; Bob added a follow-up sweep. Same shape, three textures."*
-     - **Individual case study.** A 2-3 paragraph deep-read of one member's week, written second-person about that member but addressed to the team-as-audience. Designed to generate "I want to ask Bob about this" reactions.
-     - **Strength surfacing.** A card that points at a specific move by a specific member worth elevating: *"Alice's `harness-orchestrate` skill bears watching — it's the only place in the team where parallel subagent dispatches consistently shipped without rework. Worth a Friday demo."*
-   - Empty state when no spotlights this week: a clear explainer pointing to `/team-share` in the personal edition with a copyable instruction.
+5. **Spotlights** (Tier 2, opt-in content — refined after first review)
+   - The unit is an **opted-in session**, not a week-digest section. A member opens `/team-share`, picks specific sessions to share, previews the team-side synthesis, and publishes. The team-side synthesizer composes a per-session walkthrough card from the shared session's transcript + perception data.
+   - Each card carries a session anchor (date · project · duration · shipped count) directly under the title, then the synthesized narrative, then a `harness_signature` line naming the concrete skills, subagents, and top tools the session used.
+   - Two flavors the prototype demonstrates (collapsed from three after first review):
+     - **Case study.** A 2-3 paragraph walkthrough of a specific session — what the member did, what skills/agents got dispatched, how the work played out. Anchored to a specific date, project, and harness signature.
+     - **Strength surfacing.** A walkthrough that elevates a specific session as a pattern worth copying. Same shape as a case study, with the framing pushed toward "here's why this is worth a Friday demo."
+   - ~~Cross-team pattern flavor~~ — dropped after first review. The submission unit is a single session, which doesn't naturally support a cross-member pattern card. Cross-team patterns may return in a later phase as a separate deterministic section composed only from Tier-1 counts.
+   - Empty state when no spotlights this week: an explainer pointing to `/team-share` framing the unit of sharing as *sessions*.
 
 6. **Roster snapshot** (Tier 1, navigational)
    - Slim per-member rows: display name, agent-hours, shipped count, link to existing `/team/[slug]/members/[id]` page for the 1:1-prep drill-in.

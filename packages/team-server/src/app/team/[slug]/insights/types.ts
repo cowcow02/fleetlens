@@ -1,18 +1,9 @@
 // Phase-1 local aliases. Phase 2 will revisit importing from @claude-lens/entries.
-export type WorkingShape =
-  | "spec-review-loop"
-  | "chunk-implementation"
-  | "research-then-build"
-  | "reviewer-triad"
-  | "background-coordinated"
-  | "solo-continuation"
-  | "solo-design"
-  | "solo-build";
+// Outcome / helpfulness / working-shape signals exist on the underlying digest
+// but are intentionally NOT surfaced in the team report — they're too noisy as
+// team metrics. We aggregate via skills/agents/tools/goal-mix instead.
 
-export type DayOutcome = "shipped" | "partial" | "blocked" | "exploratory" | "trivial";
-export type DayHelpfulness = "essential" | "helpful" | "neutral" | "unhelpful";
-
-export type SpotlightFlavor = "cross-team-pattern" | "case-study" | "strength-surfacing";
+export type SpotlightFlavor = "case-study" | "strength-surfacing";
 
 export type TeamPulse = {
   agent_hours: number;
@@ -21,16 +12,7 @@ export type TeamPulse = {
   shipped_wow_delta: number;
   members_active: number;
   members_total: number;
-  outcome_mix: Record<DayOutcome, number>;
-  helpfulness_mix: Record<DayHelpfulness, number>;
   concurrency_peak: { date: string; peak: number };
-};
-
-export type WorkingShapeRow = {
-  shape: WorkingShape;
-  occurrences: number;
-  members_using: number;
-  outcome_distribution: Partial<Record<DayOutcome, number>>;
 };
 
 export type GoalCategoryRow = {
@@ -40,7 +22,6 @@ export type GoalCategoryRow = {
 };
 
 export type HowTheyWorked = {
-  shapes: WorkingShapeRow[];
   goal_categories: GoalCategoryRow[];
   plan_mode_adopters: number;
   brainstorm_warmup_adopters: number;
@@ -71,13 +52,26 @@ export type ProjectRow = {
   shipped_count: number;
 };
 
+export type SpotlightSessionMeta = {
+  date: string; // YYYY-MM-DD
+  project: string;
+  duration_hours: number;
+  shipped: number;
+};
+
 export type Spotlight = {
   id: string;
   flavor: SpotlightFlavor;
   author: string;
+  // Each spotlight anchors to a specific opted-in session — that's the unit
+  // the member chose to share, and it's what the team-side synthesizer reads
+  // to compose the narrative.
+  session_meta: SpotlightSessionMeta;
   title: string;
   body: string;
-  evidence: string;
+  // Concrete harness/agent signature for the session (top skills, subagents,
+  // tools, etc.) — rendered as a mono-spaced footer under the prose.
+  harness_signature: string;
 };
 
 export type RosterRow = {

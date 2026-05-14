@@ -10,37 +10,14 @@ const GOAL_COLORS = [
 ];
 
 export function WorkingShapeDistributionSection({ data }: { data: HowTheyWorked }) {
-  const maxOccurrences = Math.max(...data.shapes.map((s) => s.occurrences), 1);
-
   return (
     <section className="insights-section">
       <div className="subsection-head">
-        <h2>How the team <em>worked</em></h2>
-        <div className="kicker">Working shapes · goal mix · adoption signals</div>
+        <h2>How time was <em>spent</em></h2>
+        <div className="kicker">Goal-category mix · structured-thinking adoption</div>
       </div>
 
       <div>
-        {data.shapes.map((s) => {
-          const widthPct = (s.occurrences / maxOccurrences) * 100;
-          const dist = Object.entries(s.outcome_distribution)
-            .map(([k, v]) => `${k}: ${v}`)
-            .join(" · ");
-          return (
-            <div key={s.shape} className="shape-row">
-              <div className="shape-row-label">{s.shape}</div>
-              <div className="shape-row-bar-track">
-                <div className="shape-row-bar-fill" style={{ width: `${widthPct}%` }} />
-              </div>
-              <div className="shape-row-meta">
-                ×{s.occurrences} · {s.members_using} member{s.members_using === 1 ? "" : "s"}
-                {dist ? ` · ${dist}` : ""}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div style={{ marginTop: 28 }}>
         <div className="harness-block-title">Goal-category minute mix</div>
         <div className="goal-mix-strip">
           {data.goal_categories.map((g, i) => (

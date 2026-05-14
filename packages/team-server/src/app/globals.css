@@ -976,7 +976,6 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   border-radius: 2px;
   position: relative;
 }
-.spotlight-card.flavor-cross-team-pattern { border-left: 3px solid var(--accent); }
 .spotlight-card.flavor-case-study         { border-left: 3px solid var(--positive); }
 .spotlight-card.flavor-strength-surfacing { border-left: 3px solid var(--warning); }
 
@@ -993,9 +992,18 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
 .spotlight-flavor-badge {
   font-weight: 600;
 }
-.spotlight-flavor-badge.flavor-cross-team-pattern { color: var(--accent); }
 .spotlight-flavor-badge.flavor-case-study         { color: var(--positive); }
 .spotlight-flavor-badge.flavor-strength-surfacing { color: var(--warning); }
+
+.spotlight-session-meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px dotted var(--rule);
+}
 
 .spotlight-title {
   font-family: "Instrument Serif", serif;
