@@ -110,6 +110,10 @@ export async function runClaudeSubprocess(args: RunSubprocessArgs): Promise<LLMR
             type: "end", run_id: runId, runtime: "tmux",
             ts: new Date().toISOString(),
             elapsed_ms: Date.now() - startMs,
+            // tmux runs have no subprocess exit code (the session is killed
+            // by cleanup). Stamp 0 on success so /api/runs renders them
+            // as `ok` rather than `error`.
+            exit_code: 0,
             content_chars: res.content.length,
             input_tokens: res.input_tokens,
             output_tokens: res.output_tokens,
