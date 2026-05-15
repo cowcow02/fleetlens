@@ -292,13 +292,11 @@ export function SessionView({
   /** Detect PR creations in this session. */
   const prMarkers = useMemo(() => detectPrMarkers(session), [session]);
 
-  /** Idle bands derived from raw event timestamps. Each band's
-   *  `start..end` is a literal time range so the minimap's visual stripe
-   *  width tracks actual idle duration — no across-gap merging.
-   *
-   *  Anchors only count user / agent / tool-call / tool-result events —
-   *  meta + thinking events are skipped so sub-second event-to-event gaps
-   *  don't crowd the strip.
+  /** Idle bands derived from raw event timestamps. Anchors include every
+   *  timestamped event (agent-thinking and meta are activity too), and
+   *  each emitted band's `start..end` is a literal time range so the
+   *  minimap stripe width tracks actual idle duration — no across-gap
+   *  merging.
    *
    *  Two exclusions keep "delegated work" and "response latency" out of
    *  idle:
@@ -309,10 +307,12 @@ export function SessionView({
    *      only the genuinely-unwatched portion remains. The carve can
    *      produce multiple surviving slices per gap; each becomes its own
    *      band so the visual extent matches reality.
-   *    - The first anchor after a user message is the model's response;
-   *      the user→agent/tool gap is "thinking" / first-token latency, not
-   *      idle. Drop it. (User→user gaps still register as between-turn
-   *      idle because there's no agent activity in between.)
+   *    - "Awaiting first response" — the period between a user message
+   *      and the first agent/tool-call anchor — is dropped wholesale,
+   *      even if intermediate thinking/meta anchors split it into
+   *      multiple sub-gaps. Long model reasoning before the first reply
+   *      is composing, not idle. (User→user gaps still register as
+   *      between-turn idle because no agent activity occurred between.)
    *
    *  Side effect: the leading warm-up gap before the first agent response
    *  drops out unless it crosses MIN_GAP_MS — which the first 6s in a
@@ -372,6 +372,8 @@ export function SessionView({
     const overlapsSubagent = (start: number, end: number): boolean => {
       for (const span of subagentSpans) {
         if (span.end <= start) continue;
+        // subagentSpans is sorted by start, so once span.start >= end no
+        // later span can overlap [start, end] either — bail out cleanly.
         if (span.start >= end) return false;
         return true;
       }
@@ -381,19 +383,32 @@ export function SessionView({
     type Band = { start: number; end: number; durationMs: number };
     const bands: Band[] = [];
 
+    // "Awaiting first response" — true after a user message, false once an
+    // agent or tool-call anchor proves the model started replying.
+    // Thinking and meta events don't clear it, so a user→thinking→agent
+    // sequence where thinking→agent crosses MIN_GAP_MS still reads as
+    // response latency rather than idle.
+    let awaitingFirstResponse = false;
+    if (anchors[0]) {
+      if (isUserRole(anchors[0].role)) awaitingFirstResponse = true;
+    }
+
     for (let i = 1; i < anchors.length; i++) {
       const rawGap = anchors[i]!.ms - anchors[i - 1]!.ms;
-      if (rawGap <= MIN_GAP_MS) continue;
+      const curRole = anchors[i]!.role;
+      // Snapshot the phase BEFORE updating, so the gap is classified by
+      // the state at its start (anchors[i-1]).
+      const skipAsLatency = awaitingFirstResponse && !isUserRole(curRole);
 
-      // Response latency: user → first non-user anchor isn't idle, it's
-      // the model composing its first reply. Drop the gap entirely.
-      if (isUserRole(anchors[i - 1]!.role) && !isUserRole(anchors[i]!.role)) {
-        continue;
-      }
+      if (isUserRole(curRole)) awaitingFirstResponse = true;
+      else if (curRole === "agent" || curRole === "tool-call") awaitingFirstResponse = false;
+
+      if (rawGap <= MIN_GAP_MS) continue;
+      if (skipAsLatency) continue;
 
       const gStart = anchors[i - 1]!.ms - sessionStartMs;
       const gEnd = anchors[i]!.ms - sessionStartMs;
-      const betweenTurn = isUserRole(anchors[i]!.role);
+      const betweenTurn = isUserRole(curRole);
 
       if (!betweenTurn) {
         // In-turn gap: the parent is mid-turn. If any subagent run overlaps,
