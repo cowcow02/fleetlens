@@ -29,7 +29,7 @@ export function ManagerInviteForm({
       const r = await fetch(`/api/team/${teamSlug}/groups/${groupSlug}/invite`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: email || undefined, groupIds: selected }),
+        body: JSON.stringify({ email: email.trim() || undefined, groupIds: selected }),
       });
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
@@ -43,41 +43,89 @@ export function ManagerInviteForm({
     }
   }
 
+  function toggle(id: string) {
+    setSelected((cur) =>
+      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
+    );
+  }
+
   return (
-    <div>
-      <p style={{ opacity: 0.7 }}>
-        Generates an invite link. The new member will join as a regular team member and be added to the groups you select below.
+    <section className="settings-section">
+      <p className="kicker" style={{ marginBottom: 16 }}>
+        Generates a share link. The invitee joins as a regular team member and is added to the groups you select.
       </p>
-      <label>
-        Email (optional, for the invite record):{" "}
-        <input value={email} onChange={(e) => setEmail(e.target.value)} />
-      </label>
-      <fieldset>
-        <legend>Groups to add the new member to</legend>
-        {availableGroups.map((g) => (
-          <label key={g.id} style={{ display: "block" }}>
-            <input
-              type="checkbox"
-              checked={selected.includes(g.id)}
-              disabled={g.id === preselectedGroupId}
-              onChange={(e) =>
-                setSelected((cur) =>
-                  e.target.checked ? [...cur, g.id] : cur.filter((x) => x !== g.id),
-                )
-              }
-            />{" "}
-            {g.name}
-          </label>
-        ))}
+
+      <div className="form-group" style={{ maxWidth: 520, marginBottom: 16 }}>
+        <label htmlFor="invite-email">Email · optional</label>
+        <input
+          id="invite-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="newhire@example.com"
+        />
+      </div>
+
+      <fieldset
+        style={{
+          border: "1px solid var(--rule)",
+          padding: "10px 12px",
+          margin: "0 0 16px 0",
+          maxWidth: 520,
+        }}
+      >
+        <legend
+          className="mono"
+          style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--mute)", padding: "0 6px" }}
+        >
+          PLACE IN GROUPS
+        </legend>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          {availableGroups.map((g) => (
+            <label
+              key={g.id}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 13,
+                opacity: g.id === preselectedGroupId ? 0.7 : 1,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(g.id)}
+                disabled={g.id === preselectedGroupId}
+                onChange={() => toggle(g.id)}
+              />
+              {g.name}
+              {g.id === preselectedGroupId && (
+                <span className="mono" style={{ fontSize: 9, letterSpacing: "0.14em", color: "var(--mute)" }}>
+                  · LOCKED
+                </span>
+              )}
+            </label>
+          ))}
+        </div>
       </fieldset>
-      <button onClick={submit} disabled={busy}>Generate invite link</button>
-      {error && <div style={{ color: "tomato", marginTop: 8 }}>{error}</div>}
-      {link && (
-        <div style={{ marginTop: 12 }}>
-          <strong>Share this link:</strong>
-          <input readOnly value={link} style={{ width: "100%" }} onClick={(e) => e.currentTarget.select()} />
+
+      <button onClick={submit} disabled={busy} className="btn">
+        {busy ? "Generating…" : "+ Generate invite link"}
+      </button>
+
+      {error && (
+        <div className="form-error" style={{ marginTop: 16, maxWidth: 520 }}>
+          {error}
         </div>
       )}
-    </div>
+
+      {link && (
+        <div className="help-box" style={{ marginTop: 16, maxWidth: 520 }}>
+          <p>Invite link created. Copy it and share out-of-band:</p>
+          <code className="help-example">{link}</code>
+          <p className="help-note">Expires in 7 days. The invitee creates their password on first click.</p>
+        </div>
+      )}
+    </section>
   );
 }
