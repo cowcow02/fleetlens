@@ -1,15 +1,9 @@
 import type { TeamInsightReport } from "../../app/team/[slug]/insights/types";
 import { TextSparkline } from "../insights-primitives";
 
-export function VariantFingerprints({ r }: { r: TeamInsightReport }) {
+export function FingerprintsSection({ r }: { r: TeamInsightReport }) {
   return (
-    <div className="variant-frame">
-      <div className="variant-intro">
-        <strong>v1 · Member fingerprints.</strong> One per active member. Each is a synthesized portrait
-        of how that person collaborates with the agent, anchored to this week's signals and a 4-week growth arc.
-        The aim: a reader gets each member in 30 seconds.
-      </div>
-
+    <>
       {r.variants.fingerprints.map((f) => (
         <article key={f.member} className="fingerprint-card">
           <header className="fingerprint-head">
@@ -61,7 +55,7 @@ export function VariantFingerprints({ r }: { r: TeamInsightReport }) {
           </section>
         </article>
       ))}
-    </div>
+    </>
   );
 }
 

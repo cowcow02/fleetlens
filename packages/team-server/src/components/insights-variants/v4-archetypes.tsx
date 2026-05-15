@@ -7,21 +7,14 @@ const TURN_CLASS: Record<string, string> = {
   subagent: "turn-subagent",
 };
 
-export function VariantArchetypes({ r }: { r: TeamInsightReport }) {
+export function ArchetypesSection({ r }: { r: TeamInsightReport }) {
   const archetypes = r.variants.session_archetypes;
   const distribution = r.variants.archetype_distribution;
   const timelines = r.variants.illustrative_session_timelines;
 
   return (
-    <div className="variant-frame">
-      <div className="variant-intro">
-        <strong>v4 · Session archetypes.</strong> Six named session shapes that recur in the team's transcripts.
-        Each member's sessions distribute across the archetypes — the mix is a fingerprint of how they
-        collaborate. Aggregates like "31% long briefs" flatten the story; this view restores the
-        session-as-unit framing.
-      </div>
-
-      <section style={{ marginTop: 20 }}>
+    <>
+      <section style={{ marginTop: 0 }}>
         <h3 className="variant-subhead">The six archetypes</h3>
         <div className="archetype-card-grid">
           {archetypes.map((a) => (
@@ -106,6 +99,6 @@ export function VariantArchetypes({ r }: { r: TeamInsightReport }) {
           );
         })}
       </section>
-    </div>
+    </>
   );
 }

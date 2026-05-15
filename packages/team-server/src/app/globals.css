@@ -1895,3 +1895,67 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   line-height: 1.75;
   color: var(--ink-soft);
 }
+
+/* ─── v1 combined report · section framing ─────────────────────────────── */
+
+.story-hero {
+  max-width: 760px;
+  margin: 8px auto 36px;
+  padding: 28px 32px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+  border-left: 4px solid var(--accent);
+  border-radius: 2px;
+}
+.story-hero-heading {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 28px;
+  line-height: 1.2;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.story-hero-body {
+  font-size: 17px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+
+.combined-section {
+  margin: 56px 0;
+  padding-top: 32px;
+  border-top: 2px solid var(--rule);
+}
+.combined-section:first-of-type {
+  margin-top: 36px;
+  padding-top: 36px;
+}
+.combined-section-head {
+  margin-bottom: 22px;
+}
+.combined-section-head h2 {
+  font-family: "Instrument Serif", serif;
+  font-size: 32px;
+  line-height: 1.1;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.combined-section-head h2 em {
+  font-style: italic;
+  color: var(--accent);
+}
+.combined-section-head .kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.combined-closing {
+  background: color-mix(in srgb, var(--accent) 3%, var(--paper));
+  margin-left: -32px;
+  margin-right: -32px;
+  padding: 36px 32px;
+  border-radius: 2px;
+  border-top: 2px solid var(--rule);
+}

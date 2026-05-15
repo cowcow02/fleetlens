@@ -14,19 +14,12 @@ const STATUS_FULL: Record<DiffusionStatus, string> = {
   not_yet: "Not yet",
 };
 
-export function VariantDiffusion({ r }: { r: TeamInsightReport }) {
+export function DiffusionSection({ r }: { r: TeamInsightReport }) {
   const practices = r.variants.diffusion_practices;
   const grid = r.variants.diffusion_grid;
 
   return (
-    <div className="variant-frame">
-      <div className="variant-intro">
-        <strong>v3 · Practice diffusion grid.</strong> Twelve agent-collaboration practices ×
-        each active member. Cell shows whether the member originated, regularly uses, has tried once,
-        or hasn't picked up yet. Below the grid: diffusion events this week (who picked up whose move,
-        days from origin to first pickup).
-      </div>
-
+    <>
       <div className="diffusion-legend">
         <span><span className="diffusion-chip status-originator">O</span> Originated</span>
         <span><span className="diffusion-chip status-regular">R</span> Regular</span>
@@ -120,6 +113,6 @@ export function VariantDiffusion({ r }: { r: TeamInsightReport }) {
           })}
         </div>
       </section>
-    </div>
+    </>
   );
 }

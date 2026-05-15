@@ -1,18 +1,11 @@
 import type { TeamInsightReport } from "../../app/team/[slug]/insights/types";
 import { TextSparkline } from "../insights-primitives";
 
-export function VariantTrajectories({ r }: { r: TeamInsightReport }) {
+export function TrajectoriesSection({ r }: { r: TeamInsightReport }) {
   const memberOrder = r.variants.fingerprints.map((f) => f.member);
 
   return (
-    <div className="variant-frame">
-      <div className="variant-intro">
-        <strong>v2 · Growth trajectories.</strong> Each row is one practice; each column is a member.
-        The sparkline is four weeks oldest → newest, with the current value to the right. Direction tags
-        (higher better / lower better) drive color cues. The view's question: how has each member's
-        relationship with the agent changed over the month?
-      </div>
-
+    <>
       <div className="trajectory-grid">
         <div className="trajectory-grid-head">
           <div className="trajectory-col-practice">Practice</div>
@@ -72,6 +65,6 @@ export function VariantTrajectories({ r }: { r: TeamInsightReport }) {
           </div>
         ))}
       </section>
-    </div>
+    </>
   );
 }

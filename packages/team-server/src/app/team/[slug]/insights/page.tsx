@@ -3,28 +3,20 @@ import { redirect } from "next/navigation";
 import { getPool } from "../../../../db/pool";
 import { validateSession } from "../../../../lib/auth";
 import { VariantMaximal } from "../../../../components/insights-variants/v0-maximal";
-import { VariantFingerprints } from "../../../../components/insights-variants/v1-fingerprints";
-import { VariantTrajectories } from "../../../../components/insights-variants/v2-trajectories";
-import { VariantDiffusion } from "../../../../components/insights-variants/v3-diffusion";
-import { VariantArchetypes } from "../../../../components/insights-variants/v4-archetypes";
-import { VariantStory } from "../../../../components/insights-variants/v5-story";
+import { VariantCombined } from "../../../../components/insights-variants/v1-combined";
 import { mockTeamInsightReport } from "./mock-data";
 
 export const dynamic = "force-dynamic";
 
-type VariantId = "0" | "1" | "2" | "3" | "4" | "5";
+type VariantId = "0" | "1";
 
 const VARIANTS: { id: VariantId; label: string; tagline: string }[] = [
-  { id: "1", label: "v1 · Fingerprints", tagline: "One synthesized portrait per member" },
-  { id: "2", label: "v2 · Trajectories", tagline: "Practice × member, 4-week sparklines" },
-  { id: "3", label: "v3 · Diffusion grid", tagline: "Who's adopted what · who's ahead" },
-  { id: "4", label: "v4 · Archetypes", tagline: "Six session shapes · per-member mix" },
-  { id: "5", label: "v5 · Story", tagline: "Eight prose paragraphs · zero charts" },
-  { id: "0", label: "v0 · Maximal", tagline: "Original 30-section enumeration · reference" },
+  { id: "0", label: "v0 · Maximal", tagline: "30-section enumeration · everything possible · reference" },
+  { id: "1", label: "v1 · Combined", tagline: "Agent-collaboration narrative · per-member growth · five lenses in one report" },
 ];
 
 function isVariantId(v: string): v is VariantId {
-  return v === "0" || v === "1" || v === "2" || v === "3" || v === "4" || v === "5";
+  return v === "0" || v === "1";
 }
 
 export default async function TeamInsightsPage({
@@ -70,7 +62,7 @@ export default async function TeamInsightsPage({
             {r.volume.agent_hours_total.toFixed(1)}h combined agent time
           </div>
         </div>
-        <div className="kicker">Variant comparison · pick any tab</div>
+        <div className="kicker">Iterations · pick a tab</div>
       </div>
 
       <nav className="variant-tabstrip">
@@ -87,14 +79,10 @@ export default async function TeamInsightsPage({
       </nav>
 
       {v === "0" && <VariantMaximal r={r} slug={slug} />}
-      {v === "1" && <VariantFingerprints r={r} />}
-      {v === "2" && <VariantTrajectories r={r} />}
-      {v === "3" && <VariantDiffusion r={r} />}
-      {v === "4" && <VariantArchetypes r={r} />}
-      {v === "5" && <VariantStory r={r} />}
+      {v === "1" && <VariantCombined r={r} />}
 
       <footer className="page-footer">
-        <span>Fleetlens · Team Edition · variant {v}</span>
+        <span>Fleetlens · Team Edition · iteration {v}</span>
         <span>Generated {r.generated_at}</span>
       </footer>
     </>
