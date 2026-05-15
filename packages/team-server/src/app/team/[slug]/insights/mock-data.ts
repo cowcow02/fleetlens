@@ -2242,6 +2242,139 @@ export const mockTeamInsightReport: TeamInsightReport = {
       ],
     },
 
+    // ─── v5: All 4 integrations connected (hypothetical) ─────────────────
+    v5_extras: {
+      banner_text:
+        "All four external integrations connected: GitHub PR + merge attribution, Linear ticket linkage, CI/CD + incident pipeline, and code-conformance lint signal. The sections below are what becomes possible once those are wired — the same opt-in privacy model still applies to session content; only outcome and timing data flows from external systems.",
+      pipeline: {
+        total_lead_time_min: 142,
+        headline:
+          "Median end-to-end from ticket-opened to deployed: 142 minutes this week, down 18% week-over-week. The biggest reduction is in review (-32%) thanks to harness-orchestrate's brief-as-contract sessions producing tighter first-pass PRs.",
+        phases: [
+          { name: "ticket-opened", label: "Linear ticket → session start", median_min: 11, delta_pct_wow: -8, attribution_note: "Linear timestamp → first JSONL event" },
+          { name: "session-start", label: "Session start → first commit", median_min: 38, delta_pct_wow: -14, attribution_note: "JSONL session start → git commit hash" },
+          { name: "commit", label: "Commit → PR opened", median_min: 14, delta_pct_wow: -3, attribution_note: "Git commit → GitHub PR creation" },
+          { name: "pr-opened", label: "PR opened → first review", median_min: 22, delta_pct_wow: 4, attribution_note: "GitHub PR API" },
+          { name: "review", label: "Review → merge approved", median_min: 28, delta_pct_wow: -32, attribution_note: "GitHub review timestamps" },
+          { name: "merge", label: "Merge → CI green", median_min: 19, delta_pct_wow: 0, attribution_note: "GitHub merge → CI webhook" },
+          { name: "ci-passing", label: "CI green → deployed", median_min: 10, delta_pct_wow: -5, attribution_note: "CI → deployment webhook" },
+        ],
+      },
+      dora_actual: {
+        deployment_frequency: { current: 1.7, delta_pct_wow: 22, ai_assisted_share_pct: 86 },
+        lead_time_min: { current: 142, ai_assisted_median: 132, human_authored_median: 218 },
+        change_failure_rate_pct: { current: 6, ai_assisted: 5, human_authored: 8 },
+        mttr_min: { current: 38, ai_assisted_median: 32, human_authored_median: 54 },
+        classification: "elite",
+      },
+      quality_actual: {
+        conformity_rate_pct: { current: 84, delta_pp_wow: 6 },
+        rework_rate_pct: { current: 11, delta_pp_wow: -3 },
+        code_churn_14d_pct: { current: 7, delta_pp_wow: -2 },
+        review_depth_per_pr: { current: 3.4, delta_pct_wow: 18 },
+        conformity_failures_this_week: [
+          { check: "test:must-cover-error-path", sessions: 2 },
+          { check: "lint:no-any-type", sessions: 1 },
+          { check: "convention:component-naming", sessions: 1 },
+        ],
+      },
+      ticket_lifecycle: [
+        { id: "KIP-148", title: "kipwise-v1 audit-log NOT NULL backfill", status: "deployed", cycle_min: 264, ai_assisted_pct: 92, linked_sessions: ["case-bob-wed-migration"], linked_pr: "kipwise/web#412" },
+        { id: "KIP-152", title: "Fix staging backfill regression", status: "merged", cycle_min: 142, ai_assisted_pct: 71, linked_sessions: ["case-bob-thu-rapid-fire"], linked_pr: "kipwise/web#418" },
+        { id: "KIP-144", title: "topeka — team insight report design", status: "shipped", cycle_min: 186, ai_assisted_pct: 100, linked_sessions: ["case-charlie-mon-reviewer-triad"], linked_pr: "topeka/web#41" },
+        { id: "KIP-156", title: "harness-orchestrate · parallel-dispatch demo", status: "merged", cycle_min: 47, ai_assisted_pct: 100, linked_sessions: ["case-alice-tue-parallel", "case-alice-thu-rescue"], linked_pr: "topeka/web#43" },
+        { id: "KIP-159", title: "spec-frame-loader skill (meta)", status: "in-flight", cycle_min: 144, ai_assisted_pct: 100, linked_sessions: ["case-charlie-tue-meta-skill"] },
+      ],
+      case_study_attribution: [
+        {
+          case_study_id: "case-alice-tue-parallel",
+          ticket_ids: ["KIP-156"],
+          pr_links: [{ label: "topeka/web#43", status: "merged", review_comments: 2 }],
+          ci_result: "green",
+          deployed: true,
+        },
+        {
+          case_study_id: "case-bob-wed-migration",
+          ticket_ids: ["KIP-148"],
+          pr_links: [{ label: "kipwise/web#412", status: "merged", review_comments: 4 }],
+          ci_result: "green",
+          deployed: true,
+        },
+        {
+          case_study_id: "case-bob-thu-rapid-fire",
+          ticket_ids: ["KIP-152"],
+          pr_links: [{ label: "kipwise/web#418", status: "merged", review_comments: 7 }],
+          ci_result: "yellow",
+          deployed: false,
+        },
+        {
+          case_study_id: "case-charlie-mon-reviewer-triad",
+          ticket_ids: ["KIP-144"],
+          pr_links: [{ label: "topeka/web#41", status: "merged", review_comments: 0 }],
+          ci_result: "green",
+          deployed: true,
+        },
+        {
+          case_study_id: "case-charlie-tue-meta-skill",
+          ticket_ids: ["KIP-159"],
+          pr_links: [],
+          ci_result: "n/a",
+          deployed: false,
+        },
+      ],
+      cost_per_resolved: [
+        { project: "topeka", usd_total_week: 62.45, tickets_resolved: 3, usd_per_ticket: 20.82, prs_merged: 3, usd_per_pr: 20.82 },
+        { project: "kipwise-v1", usd_total_week: 38.84, tickets_resolved: 2, usd_per_ticket: 19.42, prs_merged: 2, usd_per_pr: 19.42 },
+        { project: "ops-runbooks", usd_total_week: 27.91, tickets_resolved: 1, usd_per_ticket: 27.91, prs_merged: 1, usd_per_pr: 27.91 },
+        { project: "infra-bootstrap", usd_total_week: 13.16, tickets_resolved: 0, usd_per_ticket: 0, prs_merged: 0, usd_per_pr: 0 },
+      ],
+      newly_answerable_questions: [
+        {
+          question: "How long does a typical Linear ticket take, end to end?",
+          answer: "142 min median this week. The biggest phase is session-start → first commit (38 min); the second-biggest is review (28 min, down 32% WoW thanks to harness-orchestrate sessions producing tighter first-pass PRs).",
+        },
+        {
+          question: "Are agent-assisted PRs higher or lower quality than human-authored?",
+          answer: "Lower change-failure rate (5% AI vs 8% human), faster MTTR (32min AI vs 54min human). Both metrics suggest the harness + reviewer-triad pattern actually catches more issues than the human-only baseline.",
+        },
+        {
+          question: "Which sessions actually shipped to production?",
+          answer: "4 of 5 case studies this week are deployed. Bob's Thursday rapid-fire debug merged but didn't deploy (yellow CI). Charlie's meta-skill session has no PR by design — it produced a skill, not a shipped change.",
+        },
+        {
+          question: "What does each ticket cost in agent spend?",
+          answer: "Average $22 per merged ticket this week, with a range from $19 (kipwise-v1) to $28 (ops-runbooks). The two parallel-dispatch sessions on topeka (KIP-156) shipped for $21 — one ticket, two related PRs.",
+        },
+        {
+          question: "Is our team performing at DORA Elite, High, Medium, or Low?",
+          answer: "Elite, by all four metrics this week — 1.7 deploys/day, 142min lead time, 6% CFR, 38min MTTR. AI-assisted sessions specifically drove the CFR below the team-wide average.",
+        },
+        {
+          question: "Which team standards is the agent failing to conform to?",
+          answer: "Three repeat patterns this week: test-must-cover-error-path (2 sessions), no-any-type lint (1 session), component-naming convention (1 session). All caught at PR review; none reached prod. Candidate for a new conformance skill in the harness.",
+        },
+      ],
+      v5_closing: [
+        {
+          heading: "The whole picture",
+          body: "With all four integrations enabled, the report can finally close the loop: ticket → session → commit → PR → merge → CI → deployed. Every step has a timestamp and an attribution. The team can answer not just 'how is the agent being used' but 'what did the agent's use actually produce, and at what quality, and how does that compare to the human-authored baseline'.",
+        },
+        {
+          heading: "What flips from aspirational to real",
+          body: "The DORA metrics, the quality watch (conformity / rework / churn), the cost-per-ticket, and the end-to-end pipeline view all become real numbers — not placeholders. The 'AI-assisted vs human-authored' attribution split is the single most-requested 2026 metric per DORA's 'Balancing AI tensions' framing, and it's only available once GitHub + CI/CD are wired.",
+          cites: [{ label: "DORA · Balancing AI tensions (2026)", href: "https://dora.dev/insights/balancing-ai-tensions/" }],
+        },
+        {
+          heading: "What the privacy model still protects",
+          body: "External integrations bring in outcome and timing data — PR merges, CI passes, ticket lifecycles, conformity-check results. None of that is session-content. The opt-in-per-session model for transcript content still applies. A team can connect GitHub and Linear without weakening the keylogger guarantee on what each member typed.",
+        },
+        {
+          heading: "What integrations don't fix",
+          body: "Task complexity and skill-level-required are still LLM-enriched primitives — no integration unlocks them. They live in the perception layer alongside narrative, friction, and outcome. The integrations expand the deterministic surface, but the qualitative spine still needs opt-in.",
+        },
+      ],
+    },
+
     // ─── v2: Closing reflections ─────────────────────────────────────────
     v2_closing: [
       {

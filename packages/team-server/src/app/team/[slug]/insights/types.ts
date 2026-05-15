@@ -569,6 +569,8 @@ export type VariantsPayload = {
   v3_extras: V3Extras;
   // v4 — finalized, capturability-tagged combination of v1-v3 best bits
   v4_extras: V4Extras;
+  // v5 — hypothetical with all 4 external integrations enabled
+  v5_extras: V5Extras;
 };
 
 // v3 reference set (all Q1/Q2 2026):
@@ -727,6 +729,70 @@ export type V4Extras = {
     capturability: CapturabilityTier;
     citation?: { label: string; href: string };
   }[];
+};
+
+// v5 — hypothetical "all 4 external integrations connected"
+export type V5PipelinePhase = {
+  name: "ticket-opened" | "session-start" | "commit" | "pr-opened" | "review" | "merge" | "ci-passing" | "deployed";
+  label: string;
+  median_min: number;
+  delta_pct_wow: number;
+  attribution_note?: string;
+};
+
+export type V5TicketLifecycle = {
+  id: string; // KIP-148
+  title: string;
+  status: "in-flight" | "merged" | "deployed" | "shipped" | "blocked";
+  cycle_min: number;
+  ai_assisted_pct: number;
+  linked_sessions: string[]; // case_study ids
+  linked_pr?: string;
+};
+
+export type V5DoraActual = {
+  deployment_frequency: { current: number; delta_pct_wow: number; ai_assisted_share_pct: number };
+  lead_time_min: { current: number; ai_assisted_median: number; human_authored_median: number };
+  change_failure_rate_pct: { current: number; ai_assisted: number; human_authored: number };
+  mttr_min: { current: number; ai_assisted_median: number; human_authored_median: number };
+  classification: "elite" | "high" | "medium" | "low";
+};
+
+export type V5QualityActual = {
+  conformity_rate_pct: { current: number; delta_pp_wow: number };
+  rework_rate_pct: { current: number; delta_pp_wow: number };
+  code_churn_14d_pct: { current: number; delta_pp_wow: number };
+  review_depth_per_pr: { current: number; delta_pct_wow: number };
+  conformity_failures_this_week: { check: string; sessions: number }[];
+};
+
+export type V5CostPerResolved = {
+  project: string;
+  usd_total_week: number;
+  tickets_resolved: number;
+  usd_per_ticket: number;
+  prs_merged: number;
+  usd_per_pr: number;
+};
+
+export type V5CaseStudyAttribution = {
+  case_study_id: string;
+  ticket_ids: string[];
+  pr_links: { label: string; status: "merged" | "open" | "abandoned"; review_comments: number }[];
+  ci_result: "green" | "yellow" | "red" | "n/a";
+  deployed: boolean;
+};
+
+export type V5Extras = {
+  banner_text: string;
+  pipeline: { phases: V5PipelinePhase[]; total_lead_time_min: number; headline: string };
+  dora_actual: V5DoraActual;
+  quality_actual: V5QualityActual;
+  ticket_lifecycle: V5TicketLifecycle[];
+  case_study_attribution: V5CaseStudyAttribution[];
+  cost_per_resolved: V5CostPerResolved[];
+  newly_answerable_questions: { question: string; answer: string }[];
+  v5_closing: { heading?: string; body: string; cites?: { label: string; href: string }[] }[];
 };
 
 export type V3Extras = {

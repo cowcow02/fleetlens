@@ -270,157 +270,221 @@ export function VariantFinalized({ r }: { r: TeamInsightReport }) {
         </div>
       </section>
 
-      {/* ─── Purpose mix + per-project time ────────────────────────────── */}
+      {/* ─── Purpose mix + per-project time (bar charts) ───────────────── */}
       <section className="combined-section">
         <header className="combined-section-head">
-          <h2>Purpose · per-project <em>time</em> <Cap tier="deterministic" /></h2>
+          <h2>Purpose · per-project <em>time</em> <Cap tier="llm-enriched" /></h2>
           <div className="kicker">
-            Goal-category mix from perception layer · per-project hours from JSONL cwd
+            Goal-category from perception-layer enrichment · per-project hours deterministic from JSONL cwd
           </div>
         </header>
 
         <div className="wow-block">
           <div className="wow-block-label">Purpose mix · % of agent time</div>
-          <table className="wow-table">
-            <thead>
-              <tr>
-                <th>Purpose</th>
-                <th>Share this wk</th>
-                <th>Δ pp</th>
-              </tr>
-            </thead>
-            <tbody>
-              {p.goal_mix.map((g) => (
-                <tr key={g.category}>
-                  <td>{g.category}</td>
-                  <td>{g.share_pct}%</td>
-                  <td className={`delta ${g.delta_pp > 0 ? "positive" : g.delta_pp < 0 ? "negative" : ""}`}>
-                    {g.delta_pp > 0 ? "+" : ""}{g.delta_pp}pp
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="bar-chart">
+            {p.goal_mix.map((g, i) => (
+              <div key={g.category} className="bar-chart-row">
+                <div className="bar-chart-label">{g.category}</div>
+                <div className="bar-chart-track">
+                  <div
+                    className={`bar-chart-fill purpose-color-${i % 6}`}
+                    style={{ width: `${(g.share_pct / Math.max(...p.goal_mix.map((x) => x.share_pct), 1)) * 100}%` }}
+                  >
+                    <span className="bar-chart-fill-value">{g.share_pct}%</span>
+                  </div>
+                </div>
+                <div className={`bar-chart-delta ${g.delta_pp > 0 ? "positive" : g.delta_pp < 0 ? "negative" : ""}`}>
+                  {g.delta_pp > 0 ? "+" : ""}{g.delta_pp}pp
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="wow-block">
-          <div className="wow-block-label">Per-project time · WoW</div>
-          <table className="wow-table">
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>This week</th>
-                <th>Last week</th>
-                <th>Δ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {p.project_time.map((pr) => (
-                <tr key={pr.project}>
-                  <td className="proj-name"><code>{pr.project}</code></td>
-                  <td>{pr.hours_this_week.toFixed(1)}h</td>
-                  <td className="muted">{pr.hours_last_week.toFixed(1)}h</td>
-                  <td className={`delta ${pr.delta_pct > 0 ? "positive" : pr.delta_pct < 0 ? "negative" : ""}`}>
+          <div className="wow-block-label">Per-project time · this week vs last week</div>
+          <div className="bar-chart paired-bar-chart">
+            {p.project_time.map((pr) => {
+              const max = Math.max(
+                ...p.project_time.flatMap((x) => [x.hours_this_week, x.hours_last_week]),
+                1,
+              );
+              return (
+                <div key={pr.project} className="paired-bar-row">
+                  <div className="bar-chart-label"><code>{pr.project}</code></div>
+                  <div className="paired-bar-tracks">
+                    <div className="paired-bar-track">
+                      <div
+                        className="paired-bar-fill this-week"
+                        style={{ width: `${(pr.hours_this_week / max) * 100}%` }}
+                      >
+                        <span className="paired-bar-fill-value">{pr.hours_this_week.toFixed(1)}h</span>
+                      </div>
+                    </div>
+                    <div className="paired-bar-track">
+                      <div
+                        className="paired-bar-fill last-week"
+                        style={{ width: `${(pr.hours_last_week / max) * 100}%` }}
+                      >
+                        <span className="paired-bar-fill-value">{pr.hours_last_week.toFixed(1)}h</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={`bar-chart-delta ${pr.delta_pct > 0 ? "positive" : pr.delta_pct < 0 ? "negative" : ""}`}>
                     {pr.delta_pct > 0 ? "+" : ""}{pr.delta_pct}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="paired-bar-legend">
+              <span><span className="paired-bar-swatch this-week" /> This week</span>
+              <span><span className="paired-bar-swatch last-week" /> Last week</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ─── Skill & harness diffusion ─────────────────────────────────── */}
+      {/* ─── Skill & harness diffusion (visual) ──────────────────────── */}
       <section className="combined-section">
         <header className="combined-section-head">
           <h2>Skill &amp; harness <em>diffusion</em> <Cap tier="deterministic" /></h2>
           <div className="kicker">
-            User-authored skills · cross-member pickups · the strongest signal that's only visible at team scale
+            User-authored skills · cross-member pickups · the strongest signal only visible at team scale
           </div>
         </header>
 
         <div className="wow-block">
-          <div className="wow-block-label">User-authored skills · who built it, who picked it up</div>
-          <table className="wow-table">
-            <thead>
-              <tr>
-                <th>Skill</th>
-                <th>Origin</th>
-                <th>Adopters</th>
-                <th>Uses</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.skills_harness.user_authored_skills.map((s) => (
-                <tr key={s.name}>
-                  <td><code>{s.name}</code></td>
-                  <td><strong>{s.originated_by}</strong></td>
-                  <td>{s.adopters}</td>
-                  <td>×{s.uses}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="wow-block-label">User-authored skills · adoption shape</div>
+          <div className="skill-adoption-list">
+            {r.skills_harness.user_authored_skills.map((s) => {
+              const maxUses = Math.max(...r.skills_harness.user_authored_skills.map((x) => x.uses), 1);
+              const adoptionPct = (s.adopters / r.members_total) * 100;
+              return (
+                <div key={s.name} className="skill-adoption-row">
+                  <div className="skill-adoption-meta">
+                    <code className="skill-adoption-name">{s.name}</code>
+                    <span className="skill-adoption-origin">
+                      by <strong>{s.originated_by}</strong>
+                    </span>
+                  </div>
+                  <div className="skill-adoption-bars">
+                    <div className="skill-adoption-bar-label">Adoption</div>
+                    <div className="skill-adoption-bar-track">
+                      <div className="skill-adoption-bar-fill adopters" style={{ width: `${adoptionPct}%` }}>
+                        <span className="skill-adoption-bar-value">
+                          {s.adopters} of {r.members_total} members
+                        </span>
+                      </div>
+                    </div>
+                    <div className="skill-adoption-bar-label">Uses</div>
+                    <div className="skill-adoption-bar-track">
+                      <div className="skill-adoption-bar-fill uses" style={{ width: `${(s.uses / maxUses) * 100}%` }}>
+                        <span className="skill-adoption-bar-value">×{s.uses}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         <div className="wow-block">
-          <div className="wow-block-label">Skill pickups this week</div>
-          {r.skills_harness.skill_diffusion_events.map((e, i) => (
-            <div key={i} className="narrative-line">
-              <code>{e.skill}</code> · <strong>{e.from_member}</strong> → <strong>{e.to_member}</strong> on {e.date}
-            </div>
-          ))}
+          <div className="wow-block-label">Skill pickups this week · diffusion arrows</div>
+          <div className="diffusion-arrows">
+            {r.skills_harness.skill_diffusion_events.map((e, i) => (
+              <div key={i} className="diffusion-arrow-row">
+                <div className="diffusion-arrow-member origin">{e.from_member}</div>
+                <div className="diffusion-arrow-line">
+                  <div className="diffusion-arrow-shaft" />
+                  <div className="diffusion-arrow-head" />
+                  <div className="diffusion-arrow-skill">
+                    <code>{e.skill}</code>
+                  </div>
+                  <div className="diffusion-arrow-date">{e.date}</div>
+                </div>
+                <div className="diffusion-arrow-member target">{e.to_member}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="wow-block">
-          <div className="wow-block-label">Skill usage · WoW</div>
-          <table className="wow-table">
-            <thead>
-              <tr>
-                <th>Skill</th>
-                <th>This wk</th>
-                <th>Last wk</th>
-                <th>Δ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {p.skill_usage.map((s) => (
-                <tr key={s.skill}>
-                  <td><code>{s.skill}</code></td>
-                  <td>×{s.uses_this_week}</td>
-                  <td className="muted">×{s.uses_last_week}</td>
-                  <td className={`delta ${s.delta > 0 ? "positive" : s.delta < 0 ? "negative" : ""}`}>
+          <div className="wow-block-label">Skill usage · this week vs last week</div>
+          <div className="bar-chart paired-bar-chart">
+            {p.skill_usage.map((s) => {
+              const max = Math.max(...p.skill_usage.flatMap((x) => [x.uses_this_week, x.uses_last_week]), 1);
+              return (
+                <div key={s.skill} className="paired-bar-row">
+                  <div className="bar-chart-label"><code>{s.skill}</code></div>
+                  <div className="paired-bar-tracks">
+                    <div className="paired-bar-track">
+                      <div
+                        className="paired-bar-fill this-week"
+                        style={{ width: `${(s.uses_this_week / max) * 100}%` }}
+                      >
+                        <span className="paired-bar-fill-value">×{s.uses_this_week}</span>
+                      </div>
+                    </div>
+                    <div className="paired-bar-track">
+                      <div
+                        className="paired-bar-fill last-week"
+                        style={{ width: `${(s.uses_last_week / max) * 100}%` }}
+                      >
+                        <span className="paired-bar-fill-value">×{s.uses_last_week}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className={`bar-chart-delta ${s.delta > 0 ? "positive" : s.delta < 0 ? "negative" : ""}`}>
                     {s.delta > 0 ? "+" : ""}{s.delta}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="paired-bar-legend">
+              <span><span className="paired-bar-swatch this-week" /> This week</span>
+              <span><span className="paired-bar-swatch last-week" /> Last week</span>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ─── Economic Index primitives mix · capturability tagged ──────── */}
+      {/* ─── Economic Index primitives · honest capturability split ────── */}
       <section className="combined-section">
         <header className="combined-section-head">
           <h2>Economic Index <em>primitives</em> · per session</h2>
           <div className="kicker">
-            Anthropic Jan 2026 taxonomy · three primitives deterministic, two LLM-enriched
+            Anthropic Jan 2026 taxonomy · one truly deterministic primitive, four LLM-enriched
           </div>
         </header>
+
+        <div className="primitives-honesty-note">
+          <strong>Honest capturability:</strong> only AI autonomy can be computed from raw JSONL with no
+          model in the loop. Three of the other four primitives (purpose, task success, task complexity)
+          come from the perception layer's existing LLM enrichment — buildable today, but they require
+          the member to have opted that session into enrichment. Skill level required would need a
+          small prompt-extension on top of existing enrichment. The earlier framing in this report
+          claimed three primitives as deterministic; that over-claimed.
+        </div>
 
         <div className="primitives-cap-row">
           <div className="primitives-cap-tile">
             <Cap tier="deterministic" />
-            <div className="primitives-cap-list">Purpose · AI autonomy · Task success</div>
+            <div className="primitives-cap-list">AI autonomy</div>
             <div className="primitives-cap-note">
-              Purpose from existing goal-category enrichment. AI autonomy from post-brief turn count. Task success from the outcome enum.
+              Counted from post-brief human turns. Pure JSONL arithmetic — no model in the loop, no
+              opt-in needed.
             </div>
           </div>
           <div className="primitives-cap-tile">
             <Cap tier="llm-enriched" />
-            <div className="primitives-cap-list">Task complexity · Skill level required</div>
+            <div className="primitives-cap-list">
+              Purpose · Task success · Task complexity · Skill level required
+            </div>
             <div className="primitives-cap-note">
-              Both come from the perception layer's enrichment LLM. The prompt extension is small — buildable today, not blocked.
+              Purpose and task success exist today in the perception-layer enrichment (`goal_categories`
+              and `outcome`). Complexity and skill-level need a small prompt-extension on top. All four
+              live behind opt-in — they're real, not aspirational, just not free.
             </div>
           </div>
         </div>

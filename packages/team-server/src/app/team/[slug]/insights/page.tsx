@@ -7,11 +7,12 @@ import { VariantCombined } from "../../../../components/insights-variants/v1-com
 import { VariantCaseStudies } from "../../../../components/insights-variants/v2-case-studies";
 import { VariantGrounded } from "../../../../components/insights-variants/v3-grounded";
 import { VariantFinalized } from "../../../../components/insights-variants/v4-finalized";
+import { VariantConnected } from "../../../../components/insights-variants/v5-connected";
 import { mockTeamInsightReport } from "./mock-data";
 
 export const dynamic = "force-dynamic";
 
-type VariantId = "0" | "1" | "2" | "3" | "4";
+type VariantId = "0" | "1" | "2" | "3" | "4" | "5";
 
 const VARIANTS: { id: VariantId; label: string; tagline: string }[] = [
   { id: "0", label: "v0 · Maximal", tagline: "30-section enumeration · everything possible · reference" },
@@ -19,10 +20,11 @@ const VARIANTS: { id: VariantId; label: string; tagline: string }[] = [
   { id: "2", label: "v2 · Case studies", tagline: "WoW aggregates on top · deep session walkthroughs as the spine" },
   { id: "3", label: "v3 · Grounded", tagline: "Q1–Q2 2026 references · DX AI Measurement Framework backbone" },
   { id: "4", label: "v4 · Finalized", tagline: "Best of v1–v3 · capturability-tagged · honest placeholders for integrations" },
+  { id: "5", label: "v5 · Connected", tagline: "Hypothetical · all 4 external integrations enabled · the whole-picture view" },
 ];
 
 function isVariantId(v: string): v is VariantId {
-  return v === "0" || v === "1" || v === "2" || v === "3" || v === "4";
+  return v === "0" || v === "1" || v === "2" || v === "3" || v === "4" || v === "5";
 }
 
 export default async function TeamInsightsPage({
@@ -34,7 +36,7 @@ export default async function TeamInsightsPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const raw = sp?.v ?? "4";
+  const raw = sp?.v ?? "5";
   const v: VariantId = isVariantId(raw) ? raw : "1";
 
   const pool = getPool();
@@ -89,6 +91,7 @@ export default async function TeamInsightsPage({
       {v === "2" && <VariantCaseStudies r={r} />}
       {v === "3" && <VariantGrounded r={r} />}
       {v === "4" && <VariantFinalized r={r} />}
+      {v === "5" && <VariantConnected r={r} />}
 
       <footer className="page-footer">
         <span>Fleetlens · Team Edition · iteration {v}</span>
