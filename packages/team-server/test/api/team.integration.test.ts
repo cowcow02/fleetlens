@@ -158,6 +158,90 @@ describe("POST /api/team/invites", () => {
     const res = await invitesPOST(req);
     expect(res.status).toBe(403);
   });
+
+  it("admin invite with groupIds places redeemed member into those groups", async () => {
+    const g1 = await pool.query<{ id: string }>(
+      "INSERT INTO groups (team_id, slug, name) VALUES ($1, 'invite-g1', 'Invite G1') RETURNING id",
+      [teamId],
+    );
+    const g2 = await pool.query<{ id: string }>(
+      "INSERT INTO groups (team_id, slug, name) VALUES ($1, 'invite-g2', 'Invite G2') RETURNING id",
+      [teamId],
+    );
+    const groupIds = [g1.rows[0].id, g2.rows[0].id];
+
+    const req = makeAuthedReq(
+      `http://localhost/api/team/invites?team=${teamSlug}`,
+      adminCookieToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "member", expiresInDays: 7, groupIds }),
+      },
+    );
+    const res = await invitesPOST(req);
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.tokenPlaintext).toMatch(/^iv_/);
+
+    const stored = await pool.query<{ group_ids: string[] }>(
+      "SELECT group_ids FROM invites WHERE id = $1",
+      [body.inviteId],
+    );
+    expect(stored.rows[0].group_ids.sort()).toEqual([...groupIds].sort());
+
+    const newUser = await createUserAccount("invite-groups-redeemer@example.com", "pass1234", null, {}, pool);
+    const redeemed = await redeemInvite(body.tokenPlaintext, newUser.id, pool);
+    expect(redeemed).toBeTruthy();
+
+    const gm = await pool.query<{ group_id: string }>(
+      "SELECT group_id FROM group_members WHERE membership_id = $1",
+      [redeemed!.membershipId],
+    );
+    expect(gm.rows.map((r) => r.group_id).sort()).toEqual([...groupIds].sort());
+
+    // Cleanup.
+    await pool.query("DELETE FROM groups WHERE id = ANY($1::uuid[])", [groupIds]);
+  });
+
+  it("admin invite with non-array groupIds returns 400", async () => {
+    const req = makeAuthedReq(
+      `http://localhost/api/team/invites?team=${teamSlug}`,
+      adminCookieToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupIds: "not-an-array" }),
+      },
+    );
+    const res = await invitesPOST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/groupIds/);
+  });
+
+  it("admin invite with groupIds from another team returns 400", async () => {
+    const otherAdmin = await createUserAccount("invite-cross-admin@example.com", "pass1234", null, {}, pool);
+    const { team: otherTeam } = await createTeamWithAdmin("Other Team Invites", otherAdmin.id, pool);
+    const og = await pool.query<{ id: string }>(
+      "INSERT INTO groups (team_id, slug, name) VALUES ($1, 'foreign', 'Foreign') RETURNING id",
+      [otherTeam.id],
+    );
+
+    const req = makeAuthedReq(
+      `http://localhost/api/team/invites?team=${teamSlug}`,
+      adminCookieToken,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groupIds: [og.rows[0].id] }),
+      },
+    );
+    const res = await invitesPOST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/not in this team/);
+  });
 });
 
 describe("POST /api/team/join", () => {
