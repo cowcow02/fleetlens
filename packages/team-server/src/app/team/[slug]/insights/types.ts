@@ -564,6 +564,66 @@ export type VariantsPayload = {
   wow_pulse: WowPulseStats;
   case_studies: CaseStudy[];
   v2_closing: StoryParagraph[];
+
+  // v3 — grounded in industry precedent (Anthropic Economic Index, Faros, DORA, SPACE)
+  v3_extras: V3Extras;
+};
+
+export type V3Extras = {
+  // Universal-vendor metric (Anthropic / Copilot / Cursor / Cody all expose it).
+  // Approximated as: agent-suggested edits that survived to commit / total agent edits.
+  acceptance_rate: {
+    pct_this_week: number;
+    pct_last_week: number;
+    delta_pp: number;
+  };
+
+  // Economic Index automation vs augmentation axis.
+  // "augmentation" = sessions with steady human steering (interactive).
+  // "automation" = sessions with long autonomous turns (handoff).
+  automation_share: {
+    automation_pct_this_week: number;
+    automation_pct_last_week: number;
+    automation_pct_trend: number[]; // 4 weeks
+    delta_pp: number;
+  };
+
+  // Economic Index interaction-type mix (population view, anchored in shared sessions).
+  interaction_type_mix: { type: InteractionType; share_pct: number; delta_pp: number }[];
+
+  // Economic Index complexity distribution (1–5).
+  complexity_distribution: { score: ComplexityScore; sessions: number }[];
+  complexity_median_this_week: number;
+  complexity_median_last_week: number;
+
+  // Faros AI Productivity Paradox — where the bottleneck moved.
+  bottleneck_shift: {
+    phase: "coding" | "reviewing" | "merging" | "deploying";
+    minutes_this_week: number;
+    minutes_last_week: number;
+    delta_pct: number;
+  }[];
+  bottleneck_headline: string; // LLM one-liner summarizing the shift
+
+  // DORA-style instability watch — honest reporting of regressions.
+  quality_watch: {
+    reverts_this_week: number;
+    reverts_last_week: number;
+    rework_prs_this_week: number; // PRs needing follow-up fixes <24h
+    rework_prs_last_week: number;
+    incident_tagged_sessions: number;
+    headline: string; // LLM line characterizing the quality picture
+  };
+
+  // Methodology / honesty footer. Each entry is a single declarative line.
+  methodology_notes: {
+    title: string;
+    body: string;
+    citation?: { label: string; href: string };
+  }[];
+
+  // Closing paragraphs that explicitly tie observations back to precedent.
+  v3_closing: { heading?: string; body: string; cites?: { label: string; href: string }[] }[];
 };
 
 // ─── v2 types ─────────────────────────────────────────────────────────────
@@ -646,6 +706,14 @@ export type CaseStudyPin = {
   label: string;
 };
 
+// Per the Anthropic Economic Index (March 2026):
+//   anthropic.com/research/economic-index-march-2026-report
+export type InteractionType = "directive" | "feedback-loop" | "task-iteration" | "validation" | "learning";
+
+// Complexity rubric (1 = trivial; 5 = expert-only). Economic Index moved from
+// 3.2 → 3.8 across the H1 2025 window in Anthropic's internal Claude Code report.
+export type ComplexityScore = 1 | 2 | 3 | 4 | 5;
+
 export type CaseStudy = {
   id: string;
   author: string;
@@ -656,6 +724,10 @@ export type CaseStudy = {
   outcome: string; // "shipped 1 PR" | "partial · 1 commit" | "no PR · meta"
   working_shape: string;
   day_signature: string;
+
+  // v3 additions — optional so v2 mock data still typechecks.
+  interaction_type?: InteractionType;
+  complexity?: ComplexityScore;
 
   harness_signature: {
     user_skills: { name: string; uses: number }[];

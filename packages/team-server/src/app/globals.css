@@ -2326,3 +2326,272 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   color: var(--ink);
   font-family: "JetBrains Mono", monospace;
 }
+
+/* ─── v3 · classification pills (Economic Index taxonomy) ─────────────── */
+
+.cs-classification {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.cs-interaction-pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid;
+}
+.cs-interaction-pill.type-directive {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--rule));
+}
+.cs-interaction-pill.type-feedback-loop {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--rule));
+}
+.cs-interaction-pill.type-task-iteration {
+  color: #2a6f97;
+  background: color-mix(in srgb, #2a6f97 12%, var(--paper));
+  border-color: color-mix(in srgb, #2a6f97 35%, var(--rule));
+}
+.cs-interaction-pill.type-validation {
+  color: var(--positive);
+  background: color-mix(in srgb, var(--positive) 12%, var(--paper));
+  border-color: color-mix(in srgb, var(--positive) 35%, var(--rule));
+}
+.cs-interaction-pill.type-learning {
+  color: #6b3aa3;
+  background: color-mix(in srgb, #6b3aa3 12%, var(--paper));
+  border-color: color-mix(in srgb, #6b3aa3 35%, var(--rule));
+}
+
+.cs-complexity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.cs-complexity-dots {
+  display: inline-flex;
+  gap: 2px;
+}
+.cs-complexity-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rule);
+}
+.cs-complexity-dot.filled { background: var(--accent); }
+
+/* Source-tag on WoW tile labels */
+.cs-source-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  text-transform: none;
+}
+.cs-spark {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--accent);
+  letter-spacing: 1px;
+}
+
+/* Interaction-type mix bar */
+
+.interaction-mix-bar {
+  display: flex;
+  height: 30px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.interaction-mix-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+}
+.interaction-mix-seg.type-directive { background: var(--accent); }
+.interaction-mix-seg.type-feedback-loop { background: var(--warning); }
+.interaction-mix-seg.type-task-iteration { background: #2a6f97; }
+.interaction-mix-seg.type-validation { background: var(--positive); }
+.interaction-mix-seg.type-learning { background: #6b3aa3; }
+
+.interaction-mix-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.interaction-mix-row {
+  display: grid;
+  grid-template-columns: 14px 140px 1fr 110px;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 12px;
+}
+.interaction-mix-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  align-self: center;
+}
+.interaction-mix-swatch.type-directive { background: var(--accent); }
+.interaction-mix-swatch.type-feedback-loop { background: var(--warning); }
+.interaction-mix-swatch.type-task-iteration { background: #2a6f97; }
+.interaction-mix-swatch.type-validation { background: var(--positive); }
+.interaction-mix-swatch.type-learning { background: #6b3aa3; }
+.interaction-mix-row strong { color: var(--ink); }
+.interaction-mix-desc { color: var(--ink-soft); font-size: 12px; line-height: 1.45; }
+.interaction-mix-stats {
+  text-align: right;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.interaction-mix-stats .delta.positive { color: var(--positive); }
+.interaction-mix-stats .delta.negative { color: var(--danger); }
+
+/* Bottleneck headline + flagged row */
+
+.bottleneck-headline,
+.quality-watch-headline {
+  font-family: "Instrument Serif", serif;
+  font-size: 18px;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--ink);
+  padding: 12px 16px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+  border-left: 3px solid var(--accent);
+  border-radius: 2px;
+}
+.wow-table tr.row-flagged td {
+  background: color-mix(in srgb, var(--warning) 8%, var(--paper));
+}
+.bottleneck-flag-marker { color: var(--warning); margin-left: 4px; }
+
+.cite-line {
+  margin-top: 12px;
+  font-size: 12px;
+}
+.cite-line a {
+  color: var(--accent);
+  text-decoration: none;
+  font-family: "JetBrains Mono", monospace;
+}
+.cite-line a:hover { text-decoration: underline; }
+
+/* Quality watch */
+
+.quality-tile-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+}
+@media (max-width: 720px) { .quality-tile-row { grid-template-columns: 1fr; } }
+.quality-tile {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  border-left: 3px solid var(--positive);
+  padding: 14px 18px;
+  border-radius: 2px;
+}
+.quality-tile-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+.quality-tile-value {
+  font-family: "Instrument Serif", serif;
+  font-size: 28px;
+  color: var(--ink);
+}
+.quality-tile-sub {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--mute);
+  font-family: "JetBrains Mono", monospace;
+}
+.quality-tile-sub .delta.negative { color: var(--danger); }
+.quality-tile-sub .delta.positive { color: var(--positive); }
+
+/* Closing citations + Methodology footer */
+
+.cite-row {
+  margin-top: 6px;
+  font-size: 11px;
+  font-family: "JetBrains Mono", monospace;
+}
+.cite-row a {
+  color: var(--accent);
+  text-decoration: none;
+  margin-right: 14px;
+}
+.cite-row a:hover { text-decoration: underline; }
+
+.methodology-footer {
+  margin-top: 36px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--mute);
+  border-radius: 2px;
+  padding: 28px 32px;
+}
+.methodology-note {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.methodology-note:last-child { border-bottom: none; }
+.methodology-note-title {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.methodology-note-body {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+.methodology-cite {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 11px;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--accent);
+  text-decoration: none;
+}
+.methodology-cite:hover { text-decoration: underline; }

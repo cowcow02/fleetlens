@@ -142,18 +142,48 @@ function CasePinList({ pins }: { pins: CaseStudyPin[] }) {
   );
 }
 
-function CaseStudyCard({ cs }: { cs: CaseStudy }) {
+const INTERACTION_TYPE_LABEL: Record<string, string> = {
+  directive: "Directive",
+  "feedback-loop": "Feedback loop",
+  "task-iteration": "Task iteration",
+  validation: "Validation",
+  learning: "Learning",
+};
+
+export function CaseStudyCard({ cs }: { cs: CaseStudy }) {
   const d = cs.drill_observations;
   return (
     <article className="case-study-card">
       <header className="cs-head">
-        <div>
+        <div style={{ flex: 1 }}>
           <div className="cs-author">{cs.author}</div>
           <h3 className="cs-title">{cs.day_signature}</h3>
           <div className="cs-meta">
             {cs.date} · {cs.project} · {fmtMin(cs.duration.wall_min)} wall · {fmtMin(cs.duration.active_min)} active ·{" "}
             {cs.turn_count} turns · {cs.outcome}
           </div>
+          {(cs.interaction_type || cs.complexity) && (
+            <div className="cs-classification">
+              {cs.interaction_type && (
+                <span className={`cs-interaction-pill type-${cs.interaction_type}`}>
+                  {INTERACTION_TYPE_LABEL[cs.interaction_type] ?? cs.interaction_type}
+                </span>
+              )}
+              {cs.complexity && (
+                <span className="cs-complexity-pill" title={`Complexity ${cs.complexity}/5`}>
+                  <span className="cs-complexity-dots">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <span
+                        key={n}
+                        className={`cs-complexity-dot ${n <= cs.complexity! ? "filled" : ""}`}
+                      />
+                    ))}
+                  </span>
+                  Complexity {cs.complexity}/5
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="cs-shape-tag">{cs.working_shape}</div>
       </header>

@@ -1616,6 +1616,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
         outcome: "shipped 1 PR",
         working_shape: "parallel-orchestration",
         day_signature: "Brief-as-contract · four workers in parallel · merge → ship",
+        interaction_type: "directive",
+        complexity: 3,
         harness_signature: {
           user_skills: [{ name: "harness-orchestrate", uses: 1 }],
           user_subagents: [{ type: "implement-teammate", count: 4 }],
@@ -1668,6 +1670,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
         outcome: "shipped 1 PR",
         working_shape: "long-autonomous",
         day_signature: "4.2h autonomous migration · guard caught 2 unsafe ops · zero-rework ship",
+        interaction_type: "task-iteration",
+        complexity: 5,
         harness_signature: {
           user_skills: [{ name: "kipwise-migration-guard", uses: 5 }],
           user_subagents: [],
@@ -1732,6 +1736,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
         outcome: "partial · 1 commit, no PR",
         working_shape: "conversational-debug",
         day_signature: "Initial work autonomous · then rapid-fire debug cascade · last-mile human hand-holding",
+        interaction_type: "feedback-loop",
+        complexity: 4,
         harness_signature: {
           user_skills: [{ name: "kipwise-migration-guard", uses: 1 }],
           user_subagents: [{ type: "implement-teammate", count: 1 }],
@@ -1799,6 +1805,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
         outcome: "shipped 1 PR",
         working_shape: "reviewer-triad",
         day_signature: "Three reviewer subagents BEFORE any code · zero-rework first PR",
+        interaction_type: "validation",
+        complexity: 4,
         harness_signature: {
           user_skills: [{ name: "spec-frame-loader", uses: 1 }],
           user_subagents: [{ type: "spec-reviewer", count: 3 }],
@@ -1865,6 +1873,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
         outcome: "no PR · meta · new skill committed",
         working_shape: "solo-design",
         day_signature: "Authoring a skill that loads other skills — team's first metasynthesized skill",
+        interaction_type: "learning",
+        complexity: 4,
         harness_signature: {
           user_skills: [],
           user_subagents: [],
@@ -1913,6 +1923,97 @@ export const mockTeamInsightReport: TeamInsightReport = {
         },
       },
     ],
+
+    // ─── v3: extras grounded in precedent (Economic Index, Faros, DORA, SPACE) ───
+    v3_extras: {
+      acceptance_rate: {
+        pct_this_week: 87,
+        pct_last_week: 82,
+        delta_pp: 5,
+      },
+      automation_share: {
+        automation_pct_this_week: 58,
+        automation_pct_last_week: 49,
+        automation_pct_trend: [38, 44, 49, 58],
+        delta_pp: 9,
+      },
+      interaction_type_mix: [
+        { type: "directive", share_pct: 32, delta_pp: 7 },
+        { type: "feedback-loop", share_pct: 22, delta_pp: -4 },
+        { type: "task-iteration", share_pct: 28, delta_pp: 2 },
+        { type: "validation", share_pct: 11, delta_pp: 1 },
+        { type: "learning", share_pct: 7, delta_pp: -6 },
+      ],
+      complexity_distribution: [
+        { score: 1, sessions: 4 },
+        { score: 2, sessions: 8 },
+        { score: 3, sessions: 14 },
+        { score: 4, sessions: 11 },
+        { score: 5, sessions: 4 },
+      ],
+      complexity_median_this_week: 3.4,
+      complexity_median_last_week: 3.0,
+      bottleneck_shift: [
+        { phase: "coding", minutes_this_week: 1108, minutes_last_week: 982, delta_pct: 13 },
+        { phase: "reviewing", minutes_this_week: 484, minutes_last_week: 254, delta_pct: 91 },
+        { phase: "merging", minutes_this_week: 88, minutes_last_week: 76, delta_pct: 16 },
+        { phase: "deploying", minutes_this_week: 42, minutes_last_week: 38, delta_pct: 11 },
+      ],
+      bottleneck_headline:
+        "Coding time grew 13% — but review time grew 91%. The team's bottleneck moved from writing code to reviewing it, the same pattern Faros documented across 10,000 developers.",
+      quality_watch: {
+        reverts_this_week: 1,
+        reverts_last_week: 0,
+        rework_prs_this_week: 2,
+        rework_prs_last_week: 1,
+        incident_tagged_sessions: 0,
+        headline:
+          "One revert + two rework PRs this week (vs zero + one last week). Quality picture is stable but slightly elevated — typical when output volume rises. Worth a check, not a flag.",
+      },
+      methodology_notes: [
+        {
+          title: "Acceptance rate is a proxy, not ground truth.",
+          body: "We measure 'agent-suggested edits that survived to commit' as a proxy for acceptance. Edits that the agent revised before commit are counted as accepted (the revision was the human's accept signal). Different from GitHub Copilot's inline-completion acceptance, which counts ghost-text acceptances.",
+        },
+        {
+          title: "These metrics are deliberately conservative.",
+          body: "Sessions that haven't been opted into the team report contribute to numeric aggregates (Tier 1) but not to the case-study spine. Private projects don't contribute at any tier. Numbers here represent an underestimate of total agent activity.",
+          citation: { label: "Claude Code analytics docs", href: "https://code.claude.com/docs/en/analytics" },
+        },
+        {
+          title: "No per-member productivity ranking by design.",
+          body: "We follow SPACE's framing: activity data should identify bottlenecks, not rank people. Per-member rates and counts appear only inside their own case studies; the dashboard does not produce a sorted leaderboard.",
+          citation: { label: "SPACE framework — ACM Queue", href: "https://queue.acm.org/detail.cfm?id=3454124" },
+        },
+        {
+          title: "Quality is reported alongside speed.",
+          body: "Per DORA 2025: 'AI doesn't fix a team; it amplifies what's already there.' The Quality Watch section reports reverts, rework PRs, and incident-tagged sessions next to the speed metrics — not in a separate dashboard a reader might skip.",
+          citation: { label: "DORA 2025 AI report", href: "https://cloud.google.com/resources/content/2025-dora-ai-assisted-software-development-report" },
+        },
+        {
+          title: "Interaction types follow Anthropic's Economic Index taxonomy.",
+          body: "Each shared session is classified as directive / feedback-loop / task-iteration / validation / learning. The taxonomy is from Anthropic's March 2026 Economic Index, applied here to a single team rather than population-scale Claude.ai data.",
+          citation: { label: "Anthropic Economic Index March 2026", href: "https://www.anthropic.com/research/economic-index-march-2026-report" },
+        },
+      ],
+      v3_closing: [
+        {
+          heading: "The bottleneck moved",
+          body: "Coding time grew 13%; review time grew 91%. The pattern matches Faros's 10,000-developer study: 'AI Productivity Paradox' — individual speed wins don't aggregate to org-level delivery improvements when the bottleneck silently relocates to PR review. The team's next compounding investment is probably review tooling, not faster agents.",
+          cites: [{ label: "Faros AI Productivity Paradox", href: "https://www.faros.ai/blog/ai-software-engineering" }],
+        },
+        {
+          heading: "Automation share is climbing — augmentation isn't dying",
+          body: "The team's automation share rose from 38% to 58% over four weeks (sessions with long autonomous turns, vs sessions with steady human steering). But Bob's Thursday debug session is the visible reminder that augmentation still carries the highest-complexity work — where the agent can't infer domain knowledge from the codebase. The two modes coexist; the share rebalances.",
+          cites: [{ label: "Anthropic Economic Index", href: "https://www.anthropic.com/research/economic-index-march-2026-report" }],
+        },
+        {
+          heading: "Complexity rose, acceptance rose",
+          body: "Median session complexity moved from 3.0 to 3.4 over the week, and agent-edit acceptance rate moved from 82% to 87%. This is the team-scale version of the trajectory Anthropic published for its own Claude Code use (3.2 → 3.8 across H1 2025). Worth tracking month over month — a sustained climb here would be the strongest evidence the harness is genuinely getting better, not just busier.",
+          cites: [{ label: "How Anthropic teams use Claude Code (PDF)", href: "https://www-cdn.anthropic.com/58284b19e702b49db9302d5b6f135ad8871e7658.pdf" }],
+        },
+      ],
+    },
 
     // ─── v2: Closing reflections ─────────────────────────────────────────
     v2_closing: [
