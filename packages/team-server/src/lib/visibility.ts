@@ -18,9 +18,9 @@ export function canSeeMember(
 }
 
 /**
- * Returns the set of OTHER active membership ids that `viewerMembershipId`
- * can see by virtue of managing one or more groups. The viewer's own id is
- * NOT included — callers union it in if they want a full visibility set.
+ * Returns the set of active membership ids visible to the viewer via group
+ * co-membership — i.e., every member (including the viewer themselves) of any
+ * group where the viewer has is_manager=true. Excludes revoked memberships.
  */
 export async function loadManagedMemberIds(
   viewerMembershipId: string,
