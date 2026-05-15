@@ -567,6 +567,8 @@ export type VariantsPayload = {
 
   // v3 — grounded in industry precedent (Anthropic Economic Index, Faros, DORA, SPACE)
   v3_extras: V3Extras;
+  // v4 — finalized, capturability-tagged combination of v1-v3 best bits
+  v4_extras: V4Extras;
 };
 
 // v3 reference set (all Q1/Q2 2026):
@@ -692,6 +694,39 @@ export type DoraAttribution = {
   change_failure_rate_pct: { current: number; ai_assisted: number; human_authored: number };
   mttr_min: { current: number; ai_assisted_delta_pct: number };
   note: string;
+};
+
+// v4 — finalized version, every section tagged with capturability.
+export type CapturabilityTier = "deterministic" | "llm-enriched" | "external-plug-in";
+
+export type DelegationDepth = {
+  fully_delegated_pct: number; // ≤1 human turn after the initial brief
+  mid_delegation_pct: number; // 2–9 human turns after the brief
+  heavy_steering_pct: number; // ≥10 short user turns
+  trend_fully_delegated_4w: number[];
+  trend_heavy_steering_4w: number[];
+  headline: string;
+};
+
+export type ExternalIntegrationStatus = "not-connected" | "available-via-plug-in" | "connected";
+
+export type ExternalIntegrationPlaceholder = {
+  name: string;
+  status: ExternalIntegrationStatus;
+  would_capture: string[];
+  integration_note: string;
+};
+
+export type V4Extras = {
+  delegation_depth: DelegationDepth;
+  external_integrations: ExternalIntegrationPlaceholder[];
+  v4_closing: { heading?: string; body: string; cites?: { label: string; href: string }[] }[];
+  methodology_notes: {
+    title: string;
+    body: string;
+    capturability: CapturabilityTier;
+    citation?: { label: string; href: string };
+  }[];
 };
 
 export type V3Extras = {

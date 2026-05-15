@@ -2112,6 +2112,136 @@ export const mockTeamInsightReport: TeamInsightReport = {
       ],
     },
 
+    // ─── v4: finalized, capturability-tagged ─────────────────────────────
+    v4_extras: {
+      delegation_depth: {
+        fully_delegated_pct: 24,
+        mid_delegation_pct: 52,
+        heavy_steering_pct: 24,
+        trend_fully_delegated_4w: [11, 14, 19, 24],
+        trend_heavy_steering_4w: [38, 31, 28, 24],
+        headline:
+          "24% of sessions are fully delegated (≤1 human turn after the initial brief), up from 11% four weeks ago. 24% remain heavy-steering — Bob's Thursday debug is in that bucket. The shape of the team's collaboration with the agent is moving toward more delegation, with a stubborn tail of high-touch sessions.",
+      },
+      external_integrations: [
+        {
+          name: "GitHub PR + merge attribution",
+          status: "available-via-plug-in",
+          would_capture: [
+            "Median first-user → PR merge time",
+            "PRs merged with vs without agent assistance",
+            "Rework PR rate (follow-up commits < 24h after merge)",
+            "14-day code churn (lines reverted within 14 days)",
+            "Per-file review depth (human comments per agent-authored PR)",
+          ],
+          integration_note:
+            "Claude Code's public-beta GitHub app surfaces PR-merge attribution. Wiring it would unlock the DX 'Impact' pillar fully and answer the 'where did the bottleneck shift' question with merge-time data.",
+        },
+        {
+          name: "Linear / Jira ticket linkage",
+          status: "available-via-plug-in",
+          would_capture: [
+            "Tickets resolved per week per project",
+            "Median cycle time per ticket type",
+            "Agent-assisted ticket resolution share",
+          ],
+          integration_note:
+            "Sessions already reference Linear KIPs and GitHub issues in prompts (we extract these). A direct API link would let us close the loop on ticket-level outcomes rather than self-reported.",
+        },
+        {
+          name: "CI/CD + incident data",
+          status: "not-connected",
+          would_capture: [
+            "Change failure rate per session",
+            "Deployment frequency",
+            "MTTR after agent-shipped changes",
+            "Incident-tagged sessions",
+          ],
+          integration_note:
+            "DORA-with-attribution (per DORA 2026 'Balancing AI tensions') needs CI/CD success/failure signal plus an incident pipeline. Likely the most impactful next integration if quality watch is a priority.",
+        },
+        {
+          name: "Code-conformance / lint signal",
+          status: "not-connected",
+          would_capture: [
+            "Conformity rate (agent output matches team standards)",
+            "Linter pass rate on agent-generated diffs before commit",
+          ],
+          integration_note:
+            "Per Fowler / Anthropic 2026 context-engineering framing, this is the 'quality at the edge' signal — but it requires running the team's linter/standards check on every agent-generated diff. Not in scope today; flagged as a future investment.",
+        },
+      ],
+      v4_closing: [
+        {
+          heading: "What's deterministic carries the report",
+          body: "The most useful sections — team pulse, delegation depth, augmentation/automation, purpose mix, harness aggregates, skill diffusion, case-study timelines and pins — all run on deterministic JSONL signals. They work today, on this team, with no new infrastructure. That's the version of the report we can ship.",
+        },
+        {
+          heading: "LLM-enriched signals carry the narrative",
+          body: "Case study narratives, drill observations, complexity/skill primitives, the closing reflections themselves — these come from the perception layer's enrichment, opt-in per session. The harness for that exists; the trust model exists. The report's qualitative spine is therefore real, not aspirational.",
+        },
+        {
+          heading: "Three integrations would close the gap",
+          body: "GitHub PR + merge attribution (Claude Code's public-beta plug-in), Linear/Jira ticket linkage, and CI/CD + incident data. Together they unlock the full DX Impact pillar, the DORA-with-attribution view (per DORA 2026 'Balancing AI tensions'), and the conformity/rework metrics from context engineering. Each is a known integration with a clear data shape — not aspirational research.",
+          cites: [
+            { label: "DORA · Balancing AI tensions (2026)", href: "https://dora.dev/insights/balancing-ai-tensions/" },
+            { label: "Claude Code analytics docs · GitHub app", href: "https://code.claude.com/docs/en/analytics" },
+          ],
+        },
+        {
+          heading: "What stays explicitly aspirational",
+          body: "Conformity rate against team standards, automated incident attribution, and any per-session 'AI vs human' code-line split don't have a clean capture path yet. We surface them as placeholders in the integrations section rather than fake the numbers.",
+        },
+      ],
+      methodology_notes: [
+        {
+          title: "Capturability is shown inline.",
+          body: "Every section in v4 carries a small tag — Deterministic, LLM-enriched, or External plug-in — so a reader can tell at a glance which numbers come from raw JSONL today, which come from the perception layer's opt-in enrichment, and which would need an integration we haven't wired yet.",
+          capturability: "deterministic",
+        },
+        {
+          title: "Deterministic = no model in the loop, no opt-in needed.",
+          body: "Sessions count, agent-hours, concurrency, long-autonomous turn texture, cache hit rate, tool-call success, working-memory budget, delegation depth, purpose mix, skill diffusion — all flow from raw JSONL counts and timestamps. These work the moment a member is in the team, regardless of what they've opted into.",
+          capturability: "deterministic",
+        },
+        {
+          title: "LLM-enriched = opt-in per session, perception-layer synthesis.",
+          body: "Case study narrative, drill observations, complexity / skill primitives, day signature, closing reflections — these come from the existing perception-layer enrichment pipeline applied per opted-in session. Members preview before publishing. No transcript content surfaces without explicit consent.",
+          capturability: "llm-enriched",
+        },
+        {
+          title: "External plug-in = honest placeholder.",
+          body: "Anything requiring GitHub merge attribution, CI/CD failure signal, Linear/Jira ticket linkage, or linter conformance is flagged as 'available via plug-in' (when the API exists today) or 'not-connected' (when it'd need a fresh integration). We don't fake those numbers in the rendered report — they appear in the External Integrations section with the data shape they'd produce.",
+          capturability: "external-plug-in",
+          citation: { label: "Claude Code analytics docs", href: "https://code.claude.com/docs/en/analytics" },
+        },
+        {
+          title: "No per-member productivity ranking.",
+          body: "Per-member rates appear inside that member's case studies. There is no sorted leaderboard in v4 by design — a holdover from the SPACE framework's anti-Hawthorne stance, and consistent with the 2026 DX AI Measurement Framework's team-level focus.",
+          capturability: "deterministic",
+          citation: { label: "DX AI Measurement Framework (April 2026)", href: "https://getdx.com/whitepaper/ai-measurement-framework/" },
+        },
+        {
+          title: "Five Economic Index primitives per session.",
+          body: "Purpose / AI autonomy / task success are deterministic from existing perception fields. Complexity and skill-level-required are LLM-enriched — the perception layer's enrichment-prompt extension is small, so this is buildable today, not blocked.",
+          capturability: "llm-enriched",
+          citation: { label: "Anthropic Economic Index January 2026", href: "https://www.anthropic.com/research/anthropic-economic-index-january-2026-report" },
+        },
+        {
+          title: "Augmentation/automation classification.",
+          body: "Each session is classified as automation (long-autonomous turns, low post-brief steering) or augmentation (steady human-agent back-and-forth). The classification runs on deterministic turn-count and timing signals — no LLM judgment required. We compare against Anthropic's industry baseline (Jan 2026: 52% augmentation / 45% automation).",
+          capturability: "deterministic",
+          citation: { label: "Anthropic Economic Index January 2026", href: "https://www.anthropic.com/research/anthropic-economic-index-january-2026-report" },
+        },
+        {
+          title: "Opt-in-per-session is the Shadow-AI counter-pattern.",
+          body: "Per DX's Q1 2026 AI Impact Report, 'Shadow AI' (devs using personal AI outside team telemetry) is the leading enterprise risk. Our model is the explicit counter-pattern — nothing transcript-level leaves a member's machine without per-session consent, even at the cost of report completeness.",
+          capturability: "deterministic",
+          citation: { label: "DX AI Impact Report Q1 2026", href: "https://getdx.com/blog/ai-impact-report-q1-2026/" },
+        },
+      ],
+    },
+
     // ─── v2: Closing reflections ─────────────────────────────────────────
     v2_closing: [
       {
