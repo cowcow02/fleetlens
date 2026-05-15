@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { chunk, runTeamBackfill } from "./backfill.js";
+import { chunk, runTeamBackfill } from "../../src/team/backfill.js";
 
-vi.mock("../usage/profile.js", () => ({
+vi.mock("../../src/usage/profile.js", () => ({
   getPlanTier: vi.fn(async () => null),
 }));
 

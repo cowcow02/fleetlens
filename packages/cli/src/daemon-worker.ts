@@ -32,7 +32,6 @@ const UPDATE_STATE = cclensPath("daemon-update.json");
 // Watchdog cadence. Short so we notice wake-from-sleep and token refresh
 // within a few seconds instead of waiting out a 5-minute interval.
 const WATCHDOG_INTERVAL_MS = 5 * 1000;
-const TEAM_SYNC_INTERVAL_MS = BASE_INTERVAL_MS;
 const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 mkdirSync(dirname(USAGE_LOG), { recursive: true });
@@ -138,10 +137,7 @@ async function runDaemonUpdateCheck(): Promise<void> {
   const checkedAt = new Date().toISOString();
   try {
     const availability = await getUpdateAvailability();
-    if (!availability) {
-      nextUpdateCheckAtMs = Date.now() + AUTO_UPDATE_INTERVAL_MS;
-      return;
-    }
+    if (!availability) return;
 
     const state: DaemonUpdateState = {
       lastCheckedAt: checkedAt,
@@ -314,7 +310,7 @@ async function runLoop(): Promise<void> {
       // and a different server. Keep it on its own cadence so an expired Claude
       // token cannot turn the team sync loop into a 5-second retry storm.
       await runTeamSync(log);
-      nextTeamSyncAtMs = Date.now() + TEAM_SYNC_INTERVAL_MS;
+      nextTeamSyncAtMs = Date.now() + BASE_INTERVAL_MS;
     }
     if (Date.now() >= nextUpdateCheckAtMs) {
       await runDaemonUpdateCheck();

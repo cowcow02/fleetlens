@@ -86,6 +86,12 @@ async function postBatch(
   };
 }
 
+// On full backfill (no high-water mark) a malformed captured_at falls through
+// to the server; on incremental sync we skip it instead, because we can't
+// order it against the HWM and including it would either re-send the same
+// row each tick (if it sorts first) or stall the HWM. Skipping is the
+// defensive choice — a malformed snapshot would be a JSONL corruption bug,
+// not normal operation.
 function isAfterSince(snapshot: UsageSnapshot, sinceCapturedAt: string | undefined): boolean {
   if (!sinceCapturedAt) return true;
   const sinceMs = Date.parse(sinceCapturedAt);

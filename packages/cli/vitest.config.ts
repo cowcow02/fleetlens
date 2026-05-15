@@ -6,6 +6,9 @@ export default defineConfig({
     // prevent client-side usage. The CLI is always Node — mock it away.
     alias: { "server-only": new URL("./test/__mocks__/server-only.ts", import.meta.url).pathname },
   },
+  // Mirror esbuild's build-time define so updater.ts can be unit-tested
+  // without going through the bundler.
+  define: { CLI_VERSION: JSON.stringify("0.0.0-test") },
   test: {
     include: ["src/**/*.test.ts", "test/**/*.test.ts"],
     coverage: {

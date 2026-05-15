@@ -28,7 +28,12 @@ export async function team(args: string[]) {
         console.error("Not paired. Run 'fleetlens team join <url> <device-token>' first.");
         process.exit(1);
       }
-      if (outcome.error || outcome.usageBackfill?.error) process.exit(1);
+      // Top-level error always fails; backfill-only error fails only when nothing
+      // else made progress, so a transient history hiccup doesn't mask a successful
+      // daily-activity push for scripted callers.
+      const inserted = outcome.usageBackfill?.insertedSnapshots ?? 0;
+      const madeProgress = outcome.pushed > 0 || outcome.queuedDrained > 0 || inserted > 0;
+      if (outcome.error || (outcome.usageBackfill?.error && !madeProgress)) process.exit(1);
       const sent = outcome.usageBackfill?.sentSnapshots ?? 0;
       const usageChecked = sent > 0
         ? `, ${sent} usage snapshot${sent === 1 ? "" : "s"} checked`
