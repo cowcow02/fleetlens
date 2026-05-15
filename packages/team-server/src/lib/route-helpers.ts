@@ -56,3 +56,27 @@ export async function requireStaff(
   if (!base.user.is_staff) return NextResponse.json({ error: "Staff only" }, { status: 403 });
   return base;
 }
+
+/**
+ * Asserts that the team context represents a member who manages `groupSlug`,
+ * OR is an admin/staff. Returns the resolved group on success, or a 404
+ * NextResponse on failure. We return 404 (not 403) so a member can't probe
+ * which groups exist.
+ */
+export async function requireGroupManager(
+  ctx: TeamContext,
+  groupSlug: string,
+): Promise<{ id: string; slug: string; name: string } | NextResponse> {
+  const g = await ctx.pool.query<{ id: string; slug: string; name: string }>(
+    "SELECT id, slug, name FROM groups WHERE team_id = $1 AND slug = $2",
+    [ctx.membership.team_id, groupSlug],
+  );
+  if (!g.rowCount) return NextResponse.json({ error: "Group not found" }, { status: 404 });
+  if (ctx.user.is_staff || ctx.membership.role === "admin") return g.rows[0];
+  const isMgr = await ctx.pool.query(
+    "SELECT 1 FROM group_members WHERE group_id = $1 AND membership_id = $2 AND is_manager = true",
+    [g.rows[0].id, ctx.membership.id],
+  );
+  if (!isMgr.rowCount) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return g.rows[0];
+}
