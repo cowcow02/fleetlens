@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { listGroupsManagedBy } from "../../../lib/groups";
-import { loadRoster } from "../../../lib/queries";
+import { loadRoster, loadMemberGroupAffiliations } from "../../../lib/queries";
 import { RosterCard } from "../../../components/roster-card";
 import { LiveRefresher } from "../../../components/live-refresher";
 
@@ -35,6 +35,7 @@ export default async function RosterPage({ params }: { params: Promise<{ slug: s
   }
 
   const roster = await loadRoster(teamId, pool);
+  const affiliations = await loadMemberGroupAffiliations(teamId, pool);
   const totalAgentMs = roster.reduce((sum, m) => sum + Number(m.week_agent_time_ms), 0);
   const totalHours = (totalAgentMs / 3600000).toFixed(1);
 
@@ -57,7 +58,14 @@ export default async function RosterPage({ params }: { params: Promise<{ slug: s
         <div className="kicker">Live · updates via SSE</div>
       </div>
       <div className="roster-grid">
-        {roster.map((m) => <RosterCard key={m.id} member={m} teamSlug={slug} />)}
+        {roster.map((m) => (
+          <RosterCard
+            key={m.id}
+            member={m}
+            teamSlug={slug}
+            groups={affiliations.get(m.id) ?? []}
+          />
+        ))}
       </div>
       <footer className="page-footer">
         <span>Fleetlens · Team Edition</span>
