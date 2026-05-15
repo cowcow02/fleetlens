@@ -17,11 +17,6 @@ export function canSeeMember(
   return managedMemberIds.has(targetMembershipId);
 }
 
-/**
- * Returns the set of active membership ids visible to the viewer via group
- * co-membership — i.e., every member (including the viewer themselves) of any
- * group where the viewer has is_manager=true. Excludes revoked memberships.
- */
 export async function loadManagedMemberIds(
   viewerMembershipId: string,
   pool: pg.Pool,
@@ -39,10 +34,7 @@ export async function loadManagedMemberIds(
   return new Set(res.rows.map((r) => r.membership_id));
 }
 
-/**
- * Full visibility set for a viewer, suitable for `WHERE membership_id = ANY($1)`.
- * Returns null for staff/admin (= no filter, see everything in scope).
- */
+// null = no filter (staff/admin sees everything in scope).
 export async function loadVisibilitySet(
   viewer: ViewerContext,
   pool: pg.Pool,

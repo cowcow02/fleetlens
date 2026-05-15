@@ -45,5 +45,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     { role: "member", email: typeof body.email === "string" ? body.email : undefined, groupIds: allGroupIds },
     ctx.pool,
   );
-  return NextResponse.json(result);
+
+  const host = req.headers.get("host") || "";
+  const proto = req.headers.get("x-forwarded-proto") || "https";
+  const serverBaseUrl = process.env.BASE_URL || `${proto}://${host}`;
+  return NextResponse.json({
+    inviteId: result.inviteId,
+    joinUrl: `${serverBaseUrl}/signup?invite=${result.token}`,
+    tokenPlaintext: result.token,
+    expiresAt: result.expiresAt,
+  }, { status: 201 });
 }

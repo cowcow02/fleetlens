@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import type pg from "pg";
 import { getPool } from "../db/pool";
 import { validateSession, type SessionContext } from "./auth";
+import { loadGroupBySlug } from "./groups";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type TeamContext = SessionContext & {
   pool: pg.Pool;
@@ -44,8 +47,8 @@ export async function requireTeamMembership(
 }
 
 export function requireAdmin(ctx: TeamContext): NextResponse | null {
-  if (ctx.membership.role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
-  return null;
+  if (ctx.user.is_staff || ctx.membership.role === "admin") return null;
+  return NextResponse.json({ error: "Admin only" }, { status: 403 });
 }
 
 export async function requireStaff(
@@ -57,12 +60,30 @@ export async function requireStaff(
   return base;
 }
 
-/**
- * Asserts that the team context represents a member who manages `groupSlug`,
- * OR is an admin/staff. Returns the resolved group on success, or a 404
- * NextResponse on failure. We return 404 (not 403) so a member can't probe
- * which groups exist.
- */
+export async function resolveGroupId(
+  ctx: { pool: pg.Pool; membership: { team_id: string } },
+  groupParam: string,
+): Promise<string | null> {
+  if (UUID_RE.test(groupParam)) return groupParam;
+  const g = await loadGroupBySlug(ctx.membership.team_id, groupParam, ctx.pool);
+  return g?.id ?? null;
+}
+
+// Returns false on malformed UUID too, so callers don't need a separate format check
+// to avoid Postgres throwing on a non-UUID string.
+export async function assertMembershipBelongsToTeam(
+  ctx: { pool: pg.Pool; membership: { team_id: string } },
+  membershipId: string,
+): Promise<boolean> {
+  if (!UUID_RE.test(membershipId)) return false;
+  const r = await ctx.pool.query(
+    "SELECT 1 FROM memberships WHERE id = $1 AND team_id = $2",
+    [membershipId, ctx.membership.team_id],
+  );
+  return r.rowCount === 1;
+}
+
+// 404 not 403 so members can't probe which groups exist.
 export async function requireGroupManager(
   ctx: TeamContext,
   groupSlug: string,

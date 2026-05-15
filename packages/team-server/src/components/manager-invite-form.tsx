@@ -36,8 +36,8 @@ export function ManagerInviteForm({
         setError(body.error ?? `HTTP ${r.status}`);
         return;
       }
-      const { token } = await r.json();
-      setLink(`${window.location.origin}/signup?invite=${token}`);
+      const { joinUrl, tokenPlaintext } = await r.json();
+      setLink(joinUrl ?? `${window.location.origin}/signup?invite=${tokenPlaintext}`);
     } finally {
       setBusy(false);
     }

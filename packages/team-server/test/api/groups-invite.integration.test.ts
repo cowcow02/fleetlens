@@ -64,7 +64,7 @@ beforeAll(async () => {
   const managed = await createGroup(teamId, "managed-grp", "Managed Group", adminUserId, pool);
   managedGroupId = managed.id;
   managedGroupSlug = managed.slug;
-  await addGroupMember(managed.id, managerMembershipId, adminUserId, pool, { isManager: false });
+  await addGroupMember(managed.id, managerMembershipId, adminUserId, pool);
   await setGroupMemberManager(managed.id, managerMembershipId, true, adminUserId, pool);
 
   const other = await createGroup(teamId, "other-grp", "Other Group", adminUserId, pool);
@@ -85,10 +85,11 @@ describe("manager invite API (POST /api/team/[slug]/groups/[group]/invite)", () 
     const res = await inviteGroupPOST(req, {
       params: Promise.resolve({ slug: teamSlug, group: managedGroupSlug }),
     });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(201);
     const json = await res.json();
-    expect(json.token).toMatch(/^iv_/);
+    expect(json.tokenPlaintext).toMatch(/^iv_/);
     expect(json.inviteId).toBeTruthy();
+    expect(json.joinUrl).toContain(`/signup?invite=${json.tokenPlaintext}`);
 
     const row = await pool.query<{ role: string; group_ids: string[] }>(
       "SELECT role, group_ids FROM invites WHERE id = $1",

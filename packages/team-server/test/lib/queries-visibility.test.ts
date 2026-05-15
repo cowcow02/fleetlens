@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { resetDb } from "../helpers/db.js";
 import { createUserAccount } from "../../src/lib/auth.js";
-import { createGroup, addGroupMember } from "../../src/lib/groups.js";
+import { createGroup, addGroupMember, setGroupMemberManager } from "../../src/lib/groups.js";
 import { loadRoster, loadGroupRoster, loadMemberGroupAffiliations } from "../../src/lib/queries.js";
 
 describe("loadRoster", () => {
@@ -83,7 +83,8 @@ describe("loadGroupRoster", () => {
       [u3.id, teamId],
     )).rows[0].id;
     const g = await createGroup(teamId, "g", "G", u1.id, pool);
-    await addGroupMember(g.id, m1, u1.id, pool, { isManager: true });
+    await addGroupMember(g.id, m1, u1.id, pool);
+    await setGroupMemberManager(g.id, m1, true, u1.id, pool);
     await addGroupMember(g.id, m2, u1.id, pool);
     await addGroupMember(g.id, m3, u1.id, pool);
     const rows = await loadGroupRoster(g.id, pool);
@@ -110,7 +111,8 @@ describe("loadMemberGroupAffiliations", () => {
     )).rows[0].id;
     const g1 = await createGroup(teamId, "platform", "Platform", u.id, pool);
     const g2 = await createGroup(teamId, "growth", "Growth", u.id, pool);
-    await addGroupMember(g1.id, m, u.id, pool, { isManager: true });
+    await addGroupMember(g1.id, m, u.id, pool);
+    await setGroupMemberManager(g1.id, m, true, u.id, pool);
     await addGroupMember(g2.id, m, u.id, pool);
     const map = await loadMemberGroupAffiliations(teamId, pool);
     const affs = map.get(m);

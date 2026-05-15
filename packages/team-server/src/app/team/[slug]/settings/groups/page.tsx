@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "../../../../../db/pool";
 import { validateSession } from "../../../../../lib/auth";
-import { listGroupsForTeam, listGroupMembers } from "../../../../../lib/groups";
+import { listGroupsForTeam, listGroupMembersByGroupForTeam } from "../../../../../lib/groups";
 import { GroupsSettingsPanel } from "../../../../../components/groups-settings-panel";
 
 export default async function GroupsSettingsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -24,9 +24,8 @@ export default async function GroupsSettingsPage({ params }: { params: Promise<{
   }
 
   const groups = await listGroupsForTeam(team.id, pool);
-  const membersByGroup = await Promise.all(
-    groups.map(async (g) => ({ group: g, members: await listGroupMembers(g.id, pool) })),
-  );
+  const grouped = await listGroupMembersByGroupForTeam(team.id, pool);
+  const membersByGroup = groups.map((g) => ({ group: g, members: grouped.get(g.id) ?? [] }));
 
   const allMembers = await pool.query(
     `SELECT m.id, u.email, u.display_name

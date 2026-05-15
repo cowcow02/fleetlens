@@ -451,4 +451,44 @@ describe("groups API: members add / remove / promote", () => {
     const body = await promoteRes.json();
     expect(body.error.toLowerCase()).toContain("revoked");
   });
+
+  it("DELETE rejects a malformed UUID with 400 (no Postgres exception)", async () => {
+    const cReq = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups`,
+      adminCookieToken,
+      { method: "POST", body: { slug: "delbadid", name: "Del Bad Id" } },
+    );
+    const cRes = await groupsPOST(cReq, { params: Promise.resolve({ slug: teamSlug }) });
+    const { group } = await cRes.json();
+
+    const req = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${group.id}/members?membershipId=not-a-uuid`,
+      adminCookieToken,
+      { method: "DELETE" },
+    );
+    const res = await membersDELETE(req, {
+      params: Promise.resolve({ slug: teamSlug, group: group.id }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH rejects a malformed UUID with 400", async () => {
+    const cReq = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups`,
+      adminCookieToken,
+      { method: "POST", body: { slug: "patchbadid", name: "Patch Bad Id" } },
+    );
+    const cRes = await groupsPOST(cReq, { params: Promise.resolve({ slug: teamSlug }) });
+    const { group } = await cRes.json();
+
+    const req = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${group.id}/members`,
+      adminCookieToken,
+      { method: "PATCH", body: { membershipId: "not-a-uuid", isManager: true } },
+    );
+    const res = await membersPATCH(req, {
+      params: Promise.resolve({ slug: teamSlug, group: group.id }),
+    });
+    expect(res.status).toBe(400);
+  });
 });

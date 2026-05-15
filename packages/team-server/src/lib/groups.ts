@@ -140,7 +140,6 @@ export async function addGroupMember(
   membershipId: string,
   actorUserId: string,
   pool: pg.Pool,
-  opts: { isManager?: boolean } = {},
 ): Promise<void> {
   const client = await pool.connect();
   try {
@@ -149,15 +148,15 @@ export async function addGroupMember(
     if (!g.rowCount) throw new Error("group not found");
     const inserted = await client.query(
       `INSERT INTO group_members (group_id, membership_id, is_manager, added_by)
-       VALUES ($1, $2, $3, $4)
+       VALUES ($1, $2, false, $3)
        ON CONFLICT (group_id, membership_id) DO NOTHING
        RETURNING group_id`,
-      [groupId, membershipId, !!opts.isManager, actorUserId],
+      [groupId, membershipId, actorUserId],
     );
     if (inserted.rowCount === 1) {
       await client.query(
         "INSERT INTO events (team_id, actor_id, action, payload) VALUES ($1, $2, 'group.member.added', $3)",
-        [g.rows[0].team_id, actorUserId, JSON.stringify({ group_id: groupId, membership_id: membershipId, is_manager: !!opts.isManager })],
+        [g.rows[0].team_id, actorUserId, JSON.stringify({ group_id: groupId, membership_id: membershipId })],
       );
     }
     await client.query("COMMIT");
@@ -251,4 +250,24 @@ export async function listGroupMembers(
     [groupId],
   );
   return res.rows;
+}
+
+export async function listGroupMembersByGroupForTeam(
+  teamId: string,
+  pool: pg.Pool,
+): Promise<Map<string, GroupMembershipRow[]>> {
+  const res = await pool.query<GroupMembershipRow>(
+    `SELECT gm.group_id, gm.membership_id, gm.is_manager, gm.added_at
+     FROM group_members gm
+     JOIN groups g ON g.id = gm.group_id
+     WHERE g.team_id = $1`,
+    [teamId],
+  );
+  const byGroup = new Map<string, GroupMembershipRow[]>();
+  for (const row of res.rows) {
+    const list = byGroup.get(row.group_id) ?? [];
+    list.push(row);
+    byGroup.set(row.group_id, list);
+  }
+  return byGroup;
 }

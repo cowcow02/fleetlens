@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireTeamMembership, requireAdmin } from "../../../../../../lib/route-helpers";
-import { renameGroup, deleteGroup, loadGroupBySlug } from "../../../../../../lib/groups";
-
-async function resolveGroupId(
-  ctx: { pool: import("pg").Pool; membership: { team_id: string } },
-  groupParam: string,
-): Promise<string | null> {
-  // Accept either a UUID id or a slug.
-  if (/^[0-9a-f-]{36}$/i.test(groupParam)) return groupParam;
-  const g = await loadGroupBySlug(ctx.membership.team_id, groupParam, ctx.pool);
-  return g?.id ?? null;
-}
+import { requireTeamMembership, requireAdmin, resolveGroupId } from "../../../../../../lib/route-helpers";
+import { renameGroup, deleteGroup } from "../../../../../../lib/groups";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ slug: string; group: string }> }) {
   const { slug, group } = await params;
