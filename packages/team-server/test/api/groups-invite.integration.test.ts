@@ -12,6 +12,7 @@ let pool: ReturnType<typeof getPool>;
 let teamSlug: string;
 let teamId: string;
 let adminUserId: string;
+let adminCookieToken: string;
 let managerCookieToken: string;
 let managerMembershipId: string;
 let plainMemberCookieToken: string;
@@ -41,6 +42,8 @@ beforeAll(async () => {
   const { team } = await createTeamWithAdmin("Invite Team", admin.id, pool);
   teamSlug = team.slug;
   teamId = team.id;
+  const aSess = await createSession(admin.id, pool);
+  adminCookieToken = aSess.cookieToken;
 
   // Manager: a regular member promoted to manager of `managed` group.
   const manager = await createUserAccount("invite-manager@example.com", "pass1234", "Mgr", {}, pool);
@@ -117,5 +120,37 @@ describe("manager invite API (POST /api/team/[slug]/groups/[group]/invite)", () 
       params: Promise.resolve({ slug: teamSlug, group: managedGroupSlug }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("rejects non-string groupIds element with 400", async () => {
+    const req = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${managedGroupSlug}/invite`,
+      managerCookieToken,
+      { method: "POST", body: { email: "x@example.com", groupIds: [123] } },
+    );
+    const res = await inviteGroupPOST(req, {
+      params: Promise.resolve({ slug: teamSlug, group: managedGroupSlug }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/groupIds/);
+  });
+
+  it("admin cannot supply a foreign-team group id (400 'not in this team')", async () => {
+    const otherAdmin = await createUserAccount("invite-other-admin@example.com", "pass1234", null, {}, pool);
+    const { team: otherTeam } = await createTeamWithAdmin("Other Invite Team", otherAdmin.id, pool);
+    const foreignGroup = await createGroup(otherTeam.id, "foreign-grp", "Foreign Group", otherAdmin.id, pool);
+
+    const req = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${managedGroupSlug}/invite`,
+      adminCookieToken,
+      { method: "POST", body: { email: "y@example.com", groupIds: [foreignGroup.id] } },
+    );
+    const res = await inviteGroupPOST(req, {
+      params: Promise.resolve({ slug: teamSlug, group: managedGroupSlug }),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/not in this team/);
   });
 });

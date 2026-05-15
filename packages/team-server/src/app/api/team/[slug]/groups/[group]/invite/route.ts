@@ -11,10 +11,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   if (gr instanceof NextResponse) return gr;
 
   const body = await req.json().catch(() => ({}));
-  // Manager can choose additional groups, but only ones they also manage.
+  if (body.groupIds !== undefined) {
+    if (!Array.isArray(body.groupIds) || !body.groupIds.every((g: unknown) => typeof g === "string")) {
+      return NextResponse.json({ error: "groupIds must be string[]" }, { status: 400 });
+    }
+  }
   const extras: string[] = Array.isArray(body.groupIds) ? body.groupIds : [];
   const allGroupIds = Array.from(new Set([gr.id, ...extras]));
-  if (!(ctx.user.is_staff || ctx.membership.role === "admin")) {
+
+  if (ctx.user.is_staff || ctx.membership.role === "admin") {
+    // Admin/staff: bypass the manager check, but still confirm all groups belong to this team.
+    if (extras.length > 0) {
+      const r = await ctx.pool.query(
+        "SELECT id FROM groups WHERE id = ANY($1::uuid[]) AND team_id = $2",
+        [allGroupIds, ctx.membership.team_id],
+      );
+      if (r.rowCount !== allGroupIds.length) {
+        return NextResponse.json({ error: "one or more groups not in this team" }, { status: 400 });
+      }
+    }
+  } else {
+    // Manager: every requested group must be one they manage.
     const managed = await listGroupsManagedBy(ctx.membership.id, ctx.pool);
     const managedSet = new Set(managed.map((m) => m.id));
     if (!allGroupIds.every((g) => managedSet.has(g))) {
