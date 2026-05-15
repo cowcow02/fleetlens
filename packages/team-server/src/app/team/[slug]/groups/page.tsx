@@ -49,9 +49,27 @@ export default async function GroupsListPage({ params }: { params: Promise<{ slu
       ) : (
         <ul style={{ listStyle: "none", padding: 0 }}>
           {groups.map((g) => (
-            <li key={g.id} style={{ padding: "12px 0", borderBottom: "1px solid #2a2a2a" }}>
+            <li
+              key={g.id}
+              style={{
+                padding: "12px 0",
+                borderBottom: "1px solid var(--rule)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
               <a href={`/team/${slug}/groups/${g.slug}`}>
-                <strong>{g.name}</strong> <small style={{ opacity: 0.6 }}>/{g.slug}</small>
+                <strong>{g.name}</strong>{" "}
+                <small style={{ opacity: 0.6 }}>/{g.slug}</small>
+              </a>
+              <a
+                href={`/team/${slug}/groups/${g.slug}/invite`}
+                className="btn secondary"
+                style={{ fontSize: 11 }}
+              >
+                + Invite
               </a>
             </li>
           ))}

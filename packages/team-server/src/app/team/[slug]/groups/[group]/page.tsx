@@ -51,10 +51,9 @@ export default async function GroupDetailPage({
             {managerCount} {managerCount === 1 ? "manager" : "managers"}
             {" · "}
             {(totalAgentMs / 3600000).toFixed(1)}h combined agent time
-            {" · "}
-            <a href={`/team/${slug}/groups/${group.slug}/invite`}>Invite to this group</a>
           </div>
         </div>
+        <a href={`/team/${slug}/groups/${group.slug}/invite`} className="btn">+ Invite member</a>
       </div>
       <div className="roster-grid">
         {roster.map((r) => <RosterCard key={r.id} member={r} teamSlug={slug} />)}
