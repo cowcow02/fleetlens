@@ -74,6 +74,7 @@ export const invites = pgTable(
     email: text("email"),
     tokenHash: text("token_hash").notNull().unique(),
     role: text("role").notNull().default("member"),
+    groupIds: uuid("group_ids").array().notNull().default(sql`'{}'::uuid[]`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     usedAt: timestamp("used_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -234,5 +235,35 @@ export const planUtilization = pgTable(
       t.membershipId,
       sql`${t.capturedAt} DESC`,
     ),
+  }),
+);
+
+export const groups = pgTable(
+  "groups",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    teamSlug: uniqueIndex("groups_team_slug_key").on(t.teamId, t.slug),
+  }),
+);
+
+export const groupMembers = pgTable(
+  "group_members",
+  {
+    groupId: uuid("group_id").notNull().references(() => groups.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id").notNull().references(() => memberships.id, { onDelete: "cascade" }),
+    isManager: boolean("is_manager").notNull().default(false),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+    addedBy: uuid("added_by").references(() => userAccounts.id, { onDelete: "set null" }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.groupId, t.membershipId] }),
+    byMembership: index("idx_group_members_membership").on(t.membershipId),
+    managers: index("idx_group_members_managers").on(t.groupId).where(sql`${t.isManager} = true`),
   }),
 );
