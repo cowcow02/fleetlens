@@ -114,6 +114,11 @@ export function rowPrimaryIndex(r: PresentationRow): number {
 export function buildMegaRows(rows: PresentationRow[]): MegaRow[] {
   const out: MegaRow[] = [];
   let buffer: PresentationRow[] = [];
+  // Most recent user/interrupt row that opens the current turn. Used as
+  // the turn's start anchor so user→agent response latency counts toward
+  // the turn duration (without it, a turn with a single agent row reads
+  // as 0ms).
+  let turnAnchor: PresentationRow | null = null;
 
   const flush = () => {
     if (buffer.length === 0) return;
@@ -186,9 +191,11 @@ export function buildMegaRows(rows: PresentationRow[]): MegaRow[] {
 
     const first = buffer[0]!;
     const last = buffer[buffer.length - 1]!;
-    const start = first.tOffsetMs;
+    const anchorOffset = turnAnchor?.tOffsetMs;
+    const start = anchorOffset ?? first.tOffsetMs;
     const end = last.tOffsetMs;
-    const durationMs = start !== undefined && end !== undefined ? end - start : undefined;
+    const durationMs =
+      start !== undefined && end !== undefined && end >= start ? end - start : undefined;
 
     out.push({
       kind: "turn",
@@ -215,6 +222,7 @@ export function buildMegaRows(rows: PresentationRow[]): MegaRow[] {
     if (r.kind === "user" || r.kind === "interrupt") {
       flush();
       out.push(r);
+      turnAnchor = r;
     } else {
       buffer.push(r);
     }
