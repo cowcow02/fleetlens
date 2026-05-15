@@ -1560,7 +1560,377 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
     ],
 
-    // ─── v5: Story-only ───────────────────────────────────────────────────
+    // ─── v2: WoW pulse ────────────────────────────────────────────────────
+    wow_pulse: {
+      agent_hours: { current: 18.4, last_week: 16.4, delta_pct: 12 },
+      sessions: { current: 41, last_week: 36, delta_abs: 5 },
+      tickets_resolved: {
+        source: "Linear",
+        current: 7,
+        last_week: 5,
+        delta: 2,
+        sample_refs: ["KIP-148", "KIP-152", "KIP-144", "KIP-156"],
+      },
+      parallel_execution: { total_min: 87, peak_concurrent: 4, total_min_wow_delta_pct: 67 },
+      long_autonomous: {
+        count: 4,
+        total_min: 412,
+        max_single_min: 252,
+        count_wow_delta: 2,
+        total_min_wow_delta_pct: 88,
+      },
+      project_time: [
+        { project: "topeka", hours_this_week: 8.2, hours_last_week: 6.4, delta_pct: 28 },
+        { project: "kipwise-v1", hours_this_week: 5.1, hours_last_week: 4.9, delta_pct: 4 },
+        { project: "ops-runbooks", hours_this_week: 3.4, hours_last_week: 4.2, delta_pct: -19 },
+        { project: "infra-bootstrap", hours_this_week: 1.7, hours_last_week: 0.9, delta_pct: 89 },
+      ],
+      goal_mix: [
+        { category: "build", share_pct: 42, delta_pp: 5 },
+        { category: "debug", share_pct: 18, delta_pp: -2 },
+        { category: "refactor", share_pct: 14, delta_pp: 1 },
+        { category: "plan", share_pct: 12, delta_pp: 4 },
+        { category: "review", share_pct: 8, delta_pp: -3 },
+        { category: "research", share_pct: 6, delta_pp: -5 },
+      ],
+      skill_usage: [
+        { skill: "superpowers:writing-plans", uses_this_week: 14, uses_last_week: 9, delta: 5 },
+        { skill: "harness-orchestrate", uses_this_week: 11, uses_last_week: 7, delta: 4 },
+        { skill: "superpowers:brainstorming", uses_this_week: 9, uses_last_week: 8, delta: 1 },
+        { skill: "kipwise-migration-guard", uses_this_week: 5, uses_last_week: 5, delta: 0 },
+        { skill: "release-ship-check", uses_this_week: 4, uses_last_week: 2, delta: 2 },
+        { skill: "superpowers:systematic-debugging", uses_this_week: 3, uses_last_week: 1, delta: 2 },
+        { skill: "spec-frame-loader", uses_this_week: 3, uses_last_week: 0, delta: 3 },
+      ],
+    },
+
+    // ─── v2: Case studies (the spine of v2) ──────────────────────────────
+    case_studies: [
+      {
+        id: "case-alice-tue-parallel",
+        author: "Alice",
+        date: "2026-05-05",
+        project: "topeka",
+        duration: { wall_min: 47, active_min: 45, idle_min: 2 },
+        turn_count: 12,
+        outcome: "shipped 1 PR",
+        working_shape: "parallel-orchestration",
+        day_signature: "Brief-as-contract · four workers in parallel · merge → ship",
+        harness_signature: {
+          user_skills: [{ name: "harness-orchestrate", uses: 1 }],
+          user_subagents: [{ type: "implement-teammate", count: 4 }],
+          stock_skills: [],
+          top_tools: ["Task×4 (parallel dispatch)", "Edit×12", "Bash×31 (pnpm×18, git×9)"],
+        },
+        steering: { user_msg_count: 5, long_user_msg_count: 0, median_user_msg_chars: 80, interrupts: 0 },
+        timeline: {
+          duration_min: 47,
+          active_intervals: [{ start_min: 0, end_min: 12 }, { start_min: 14, end_min: 42 }, { start_min: 44, end_min: 47 }],
+          pins: [
+            { start_min: 0, kind: "user-steering", label: "Opens with 80-char brief — 'split this layout into 4 chunks'" },
+            { start_min: 1, kind: "skill-load", label: "harness-orchestrate loaded" },
+            { start_min: 3, end_min: 6, kind: "subagent-burst", label: "Orchestration brief subagent compiles the contract" },
+            { start_min: 7, end_min: 14, kind: "subagent-burst", label: "4 worker subagents dispatched in parallel — each takes one chunk" },
+            { start_min: 14, kind: "harness-chain", label: "Workers return diffs; agent merges into one branch" },
+            { start_min: 26, kind: "user-steering", label: "Short refine — 'good, also strip the unused css'" },
+            { start_min: 41, kind: "pr-ship", label: "PR opened, merged in CI" },
+          ],
+        },
+        narrative: {
+          why_picked: "Week's invention. The brief-as-contract pattern produced the fastest first-pass ship of the week. The orchestration shape itself is the story — short brief, contract, parallel workers, single merge.",
+          session_summary:
+            "Alice opened with an 80-character brief, loaded harness-orchestrate, and the skill expanded the brief into a structured orchestration contract that four worker subagents read independently. Workers returned diffs in about 7 minutes; the agent merged them into one branch; Alice made one short refine ('strip the unused css'); the PR shipped.",
+          steering_summary: "Minimal mid-flight steering. Five short user messages, zero interrupts. The orchestration brief absorbed the structure that would normally live in the prompt.",
+          what_worked: "Contract isolation. Workers don't see each other's output and don't coordinate. Merge happens once, at the end.",
+          what_hit_friction: "Nothing this session. Compare with Thursday's session (Alice·Thu) where two workers returned overlapping diffs — that's the natural failure mode and Alice has a recovery template for it.",
+        },
+        drill_observations: {
+          started_with_brainstorming: false,
+          started_from_predefined_aspect: true,
+          long_running_turns_count: 0,
+          long_running_turns_total_min: 0,
+          rapid_fire_after_initial: false,
+          notes: [
+            "Predefined harness, no warm-up — Alice has internalized the shape.",
+            "Single refine then ship — minimal human hand-holding after the orchestration brief landed.",
+            "47 min wall · 45 min active · 2 min idle — almost no thinking-pause time.",
+          ],
+        },
+      },
+
+      {
+        id: "case-bob-wed-migration",
+        author: "Bob",
+        date: "2026-05-06",
+        project: "kipwise-v1",
+        duration: { wall_min: 252, active_min: 248, idle_min: 4 },
+        turn_count: 18,
+        outcome: "shipped 1 PR",
+        working_shape: "long-autonomous",
+        day_signature: "4.2h autonomous migration · guard caught 2 unsafe ops · zero-rework ship",
+        harness_signature: {
+          user_skills: [{ name: "kipwise-migration-guard", uses: 5 }],
+          user_subagents: [],
+          stock_skills: [{ name: "superpowers:systematic-debugging", uses: 1 }],
+          top_tools: [
+            "Bash×142 (psql×38, pnpm×27, git×19, pg_dump×9)",
+            "Read×96 (schema, migration history)",
+            "Edit×38 (migration files)",
+          ],
+        },
+        steering: { user_msg_count: 4, long_user_msg_count: 3, median_user_msg_chars: 1400, interrupts: 1 },
+        timeline: {
+          duration_min: 252,
+          active_intervals: [
+            { start_min: 0, end_min: 42 },
+            { start_min: 44, end_min: 98 },
+            { start_min: 100, end_min: 158 },
+            { start_min: 161, end_min: 252 },
+          ],
+          pins: [
+            { start_min: 0, kind: "user-steering", label: "1400-char brief — schema dump + KIP-148 ref + prior-migration history" },
+            { start_min: 2, kind: "skill-load", label: "kipwise-migration-guard loaded" },
+            { start_min: 5, end_min: 42, kind: "long-autonomous", label: "Agent runs schema analysis, drafts migration (37 min)" },
+            { start_min: 44, kind: "harness-chain", label: "Guard caught a DROP COLUMN — agent rewrites approach" },
+            { start_min: 46, end_min: 98, kind: "long-autonomous", label: "Agent finalizes safe migration, runs tests on staging" },
+            { start_min: 100, end_min: 158, kind: "long-autonomous", label: "Staging migration runs to completion, verification" },
+            { start_min: 160, kind: "user-steering", label: "1100-char confirm — 'looks good, proceed with prod migration'" },
+            { start_min: 161, kind: "harness-chain", label: "Guard caught a second unsafe ALTER, agent revises" },
+            { start_min: 163, end_min: 248, kind: "long-autonomous", label: "Prod migration runs in 85 min, all checks green" },
+            { start_min: 249, kind: "pr-ship", label: "PR opened, merged" },
+          ],
+        },
+        narrative: {
+          why_picked: "Longest single autonomous run of the week (4.2h), shipped without a rework cycle — unusual for a flag-touching change on a 50M-row table.",
+          session_summary:
+            "Bob wrote a 1400-character contextual brief at the start (schema dump, KIP-148 reference, prior-migration history). Then kipwise-migration-guard loaded and the agent ran four near-uninterrupted long stretches over 4.2 hours: schema analysis → drafting the migration → staging run + verification → prod migration. Bob's mid-flight interventions: one confirm before prod, and acknowledging two guard catches.",
+          steering_summary: "Heavy front-loading. One long brief (1400 chars), near-zero mid-flight steering. The guard skill substitutes for human attention by gating the irreversible operations.",
+          what_worked: "Migration-guard caught two unsafe operations that would have shipped otherwise. Long brief eliminated mid-flight context-gathering. Most of Bob's attention budget moved from mid-session to up-front.",
+          what_hit_friction: "Bash had to retry 3 times for a transient pg connection issue (counted in the retry-chain stat). No friction on the migration logic itself.",
+        },
+        drill_observations: {
+          started_with_brainstorming: false,
+          started_from_predefined_aspect: true,
+          long_running_turns_count: 4,
+          long_running_turns_total_min: 232,
+          rapid_fire_after_initial: false,
+          notes: [
+            "Front-loaded human time — ~15 min writing the brief, then 4h+ autonomous.",
+            "Migration-guard is the load-bearing safety mechanism. Without it, this level of autonomy doesn't ship.",
+            "Demonstrates: predefined harness + rich up-front context → long-running agent turns that ship.",
+          ],
+        },
+      },
+
+      {
+        id: "case-bob-thu-rapid-fire",
+        author: "Bob",
+        date: "2026-05-07",
+        project: "kipwise-v1",
+        duration: { wall_min: 142, active_min: 130, idle_min: 12 },
+        turn_count: 38,
+        outcome: "partial · 1 commit, no PR",
+        working_shape: "conversational-debug",
+        day_signature: "Initial work autonomous · then rapid-fire debug cascade · last-mile human hand-holding",
+        harness_signature: {
+          user_skills: [{ name: "kipwise-migration-guard", uses: 1 }],
+          user_subagents: [{ type: "implement-teammate", count: 1 }],
+          stock_skills: [{ name: "superpowers:systematic-debugging", uses: 1 }],
+          top_tools: ["Bash×84 (psql×34, git×18)", "Read×52", "Edit×38", "Grep×24"],
+        },
+        steering: { user_msg_count: 28, long_user_msg_count: 0, median_user_msg_chars: 32, interrupts: 6 },
+        timeline: {
+          duration_min: 142,
+          active_intervals: [
+            { start_min: 0, end_min: 28 },
+            { start_min: 30, end_min: 68 },
+            { start_min: 72, end_min: 82 },
+            { start_min: 84, end_min: 98 },
+            { start_min: 100, end_min: 130 },
+          ],
+          pins: [
+            { start_min: 0, kind: "user-steering", label: "Brief — 'fix the migration backfill that broke staging tonight, KIP-152'" },
+            { start_min: 2, end_min: 28, kind: "long-autonomous", label: "Agent investigates, reproduces error, drafts a fix" },
+            { start_min: 28, kind: "user-steering", label: "12-char nudge — 'try -X option'" },
+            { start_min: 30, kind: "interrupt", label: "User stops agent before commit" },
+            { start_min: 32, end_min: 48, kind: "long-autonomous", label: "Agent runs revised fix" },
+            { start_min: 48, kind: "user-steering", label: "11-char — 'nope, retry'" },
+            { start_min: 50, kind: "user-steering", label: "8-char — 'wait'" },
+            { start_min: 54, kind: "user-steering", label: "22-char — 'check pg version first'" },
+            { start_min: 60, end_min: 68, kind: "interrupt", label: "Cluster of 12+ short user nudges over 8 min (rapid fire)" },
+            { start_min: 82, kind: "skill-load", label: "Bob loads superpowers:systematic-debugging mid-session" },
+            { start_min: 84, end_min: 98, kind: "long-autonomous", label: "Agent applies the debugging framework" },
+            { start_min: 100, end_min: 130, kind: "long-autonomous", label: "Final fix runs, tests pass" },
+            { start_min: 130, kind: "interrupt", label: "Bob stops before PR — 'verify staging first'" },
+          ],
+        },
+        narrative: {
+          why_picked: "Demonstrates the 'harness works but last-mile needs hand-holding' pattern. Initial autonomous work landed in 28 minutes; the remaining 100 minutes were rapid-fire human steering through the actual bug.",
+          session_summary:
+            "Bob opened with a 60-character brief referencing KIP-152. The agent ran autonomously for 28 minutes, identified the issue, and drafted a fix. Then the pattern shifted: 18 short messages over 40 minutes as Bob debugged the actual root cause with the agent — short nudges, occasional 'wait', 'retry', 'check pg version first'. Mid-session at minute 82 Bob loaded systematic-debugging, which framed the search. Final fix landed at minute 130. Bob stopped before the PR to verify staging.",
+          steering_summary:
+            "Highest interrupt count of the week (6). Median user message: 32 chars — these are nudges, not briefs. The mid-session systematic-debugging load was a course correction. Phase change: median brief length dropped from 60 chars (initial brief) to ~20 chars during rapid-fire (debug nudges).",
+          what_worked: "The agent's initial 28-minute autonomous diagnosis correctly identified the broken backfill. Without that initial run, the rapid-fire debug would have been pure exploration.",
+          what_hit_friction:
+            "The actual root cause needed Bob's domain knowledge of a pg version compatibility issue. The agent couldn't infer it from the codebase. The long tail of short nudges suggests the harness doesn't yet capture this 'debug-with-domain-expert' mode well.",
+        },
+        drill_observations: {
+          started_with_brainstorming: false,
+          started_from_predefined_aspect: false,
+          long_running_turns_count: 3,
+          long_running_turns_total_min: 72,
+          rapid_fire_after_initial: true,
+          notes: [
+            "Canonical 'harness handles 70%, last 30% is rapid-fire hand-holding' shape.",
+            "Phase change in steering style: long brief → short debug nudges.",
+            "Mid-session skill-load (systematic-debugging) signals Bob recognized he needed more structure.",
+            "Likely a candidate for authoring a new skill — 'rapid-fire debug with domain context' — to compress future sessions like this.",
+          ],
+        },
+      },
+
+      {
+        id: "case-charlie-mon-reviewer-triad",
+        author: "Charlie",
+        date: "2026-05-04",
+        project: "topeka",
+        duration: { wall_min: 186, active_min: 180, idle_min: 6 },
+        turn_count: 22,
+        outcome: "shipped 1 PR",
+        working_shape: "reviewer-triad",
+        day_signature: "Three reviewer subagents BEFORE any code · zero-rework first PR",
+        harness_signature: {
+          user_skills: [{ name: "spec-frame-loader", uses: 1 }],
+          user_subagents: [{ type: "spec-reviewer", count: 3 }],
+          stock_skills: [
+            { name: "superpowers:writing-plans", uses: 1 },
+            { name: "superpowers:brainstorming", uses: 1 },
+          ],
+          top_tools: ["Read×84", "Edit×26", "Write×11", "Task×3 (spec-reviewer parallel)"],
+        },
+        steering: { user_msg_count: 8, long_user_msg_count: 3, median_user_msg_chars: 520, interrupts: 0 },
+        timeline: {
+          duration_min: 186,
+          active_intervals: [
+            { start_min: 0, end_min: 32 },
+            { start_min: 34, end_min: 68 },
+            { start_min: 70, end_min: 108 },
+            { start_min: 110, end_min: 142 },
+            { start_min: 144, end_min: 180 },
+          ],
+          pins: [
+            { start_min: 0, kind: "user-steering", label: "Brief — 'design the team insight report, reference the spec template'" },
+            { start_min: 1, end_min: 5, kind: "brainstorm-loop", label: "superpowers:brainstorming — agent asks clarifying questions" },
+            { start_min: 6, kind: "skill-load", label: "spec-frame-loader auto-selects writing-plans" },
+            { start_min: 12, kind: "user-steering", label: "Refines scope — 'focus on opt-in submissions, defer LLM design'" },
+            { start_min: 32, kind: "harness-chain", label: "Spec draft saved to docs/superpowers/specs/" },
+            { start_min: 38, end_min: 68, kind: "subagent-burst", label: "Three spec-reviewer subagents in parallel — correctness / ergonomics / rollback lenses" },
+            { start_min: 72, kind: "user-steering", label: "Reads reviewer findings, accepts 4 of 5 recommendations" },
+            { start_min: 78, end_min: 108, kind: "long-autonomous", label: "Agent revises spec per accepted findings" },
+            { start_min: 110, kind: "user-steering", label: "Approves revised spec, kicks off implementation" },
+            { start_min: 115, end_min: 142, kind: "long-autonomous", label: "Agent implements per the spec" },
+            { start_min: 144, end_min: 180, kind: "long-autonomous", label: "Test + commit + PR" },
+            { start_min: 183, kind: "pr-ship", label: "PR shipped — no follow-up review needed" },
+          ],
+        },
+        narrative: {
+          why_picked: "First-time-on-team use of reviewer-triad gating BEFORE any code is written. Resulted in a zero-rework PR — unusual for a feature spec of this scope.",
+          session_summary:
+            "Charlie opened with a brainstorming warm-up, then loaded spec-frame-loader, which auto-selected writing-plans. The agent drafted the spec; three spec-reviewer subagents then critiqued in parallel — correctness, ergonomics, rollback. Charlie merged 4 of 5 recommendations into a revised spec. Only then did implementation start. The PR shipped without a follow-up review cycle.",
+          steering_summary: "Eight user messages, three of them long. Steering concentrated at decision points: scope clarification, accepting reviewer findings, approving the revised spec. Implementation phase had near-zero steering.",
+          what_worked: "Pre-implementation reviewer-triad caught issues at the spec level, where they're cheap to fix. The investment paid off in zero rework cycles after the code landed.",
+          what_hit_friction: "Brainstorming warm-up was a slow start — 5 minutes of clarifying questions. Faster if Charlie front-loads more context.",
+        },
+        drill_observations: {
+          started_with_brainstorming: true,
+          started_from_predefined_aspect: false,
+          long_running_turns_count: 3,
+          long_running_turns_total_min: 96,
+          rapid_fire_after_initial: false,
+          notes: [
+            "Investment in spec quality up front, paid off in implementation phase with zero rework.",
+            "Reviewer-triad applied to spec, not code — moved the critique to the cheaper stage.",
+            "Skill-loading chain: brainstorming → writing-plans (via spec-frame-loader) → spec-reviewer subagents.",
+          ],
+        },
+      },
+
+      {
+        id: "case-charlie-tue-meta-skill",
+        author: "Charlie",
+        date: "2026-05-05",
+        project: "topeka",
+        duration: { wall_min: 144, active_min: 138, idle_min: 6 },
+        turn_count: 16,
+        outcome: "no PR · meta · new skill committed",
+        working_shape: "solo-design",
+        day_signature: "Authoring a skill that loads other skills — team's first metasynthesized skill",
+        harness_signature: {
+          user_skills: [],
+          user_subagents: [],
+          stock_skills: [{ name: "superpowers:writing-skills", uses: 1 }],
+          top_tools: ["Edit×17", "Read×42", "Glob×8", "Write×5"],
+        },
+        steering: { user_msg_count: 9, long_user_msg_count: 4, median_user_msg_chars: 480, interrupts: 0 },
+        timeline: {
+          duration_min: 144,
+          active_intervals: [
+            { start_min: 0, end_min: 18 },
+            { start_min: 22, end_min: 52 },
+            { start_min: 56, end_min: 98 },
+            { start_min: 100, end_min: 138 },
+          ],
+          pins: [
+            { start_min: 0, kind: "user-steering", label: "Brief — 'design a skill that picks which skills to load based on first_user'" },
+            { start_min: 2, end_min: 18, kind: "brainstorm-loop", label: "Open exploration — agent surfaces taxonomy + fallback questions" },
+            { start_min: 22, kind: "skill-load", label: "superpowers:writing-skills loaded" },
+            { start_min: 28, end_min: 52, kind: "long-autonomous", label: "Agent drafts skill spec + decision tree" },
+            { start_min: 54, kind: "user-steering", label: "Refines — 'add personal-habit category for handoff-prose'" },
+            { start_min: 58, end_min: 98, kind: "long-autonomous", label: "Agent implements spec-frame-loader.md" },
+            { start_min: 100, end_min: 138, kind: "long-autonomous", label: "Agent writes test prompts + adds to CLAUDE.md" },
+            { start_min: 140, kind: "pr-ship", label: "Committed as workspace skill (no PR — local-only artifact)" },
+          ],
+        },
+        narrative: {
+          why_picked: "Team's first metasynthesized skill — a skill that loads other skills. Sets a pattern for adaptive harness selection.",
+          session_summary:
+            "Charlie spent the first 18 minutes in open exploration with the agent, deciding scope and taxonomy. Then loaded writing-skills as primary and the agent drafted the spec, implementation, and test prompts over three long autonomous stretches. Charlie's role was scope-setter and reviewer, not implementer.",
+          steering_summary: "Nine user messages, four long. Steering concentrated at design-decision points. After spec lock-in, near-zero mid-flight steering.",
+          what_worked: "Open exploration up front let the agent surface taxonomy questions Charlie hadn't considered. Writing-skills carried the implementation structure.",
+          what_hit_friction: "Decision-fatigue mid-session — choosing between three competing taxonomies for skill-load triggers cost ~10 minutes.",
+        },
+        drill_observations: {
+          started_with_brainstorming: true,
+          started_from_predefined_aspect: false,
+          long_running_turns_count: 3,
+          long_running_turns_total_min: 110,
+          rapid_fire_after_initial: false,
+          notes: [
+            "Inverse of Bob's debug session: planning-heavy phase, then long-autonomous build, very little last-mile steering.",
+            "The session product isn't a PR but a tool for future sessions — harness-as-output.",
+            "The resulting skill (spec-frame-loader) was used in 2 of Charlie's subsequent sessions this week.",
+          ],
+        },
+      },
+    ],
+
+    // ─── v2: Closing reflections ─────────────────────────────────────────
+    v2_closing: [
+      {
+        heading: "What the case studies are showing",
+        body: "Five sessions submitted, four distinct collaboration shapes: front-loaded contract (Alice), front-loaded autonomy (Bob's migration), rapid-fire debug-after-initial (Bob's Thursday), pre-code reviewer triad (Charlie's Monday), and meta-skill authoring (Charlie's Tuesday). The shapes vary more than the members do — same member can show two textures in two days.",
+      },
+      {
+        heading: "Where the harness is doing the work",
+        body: "Three sessions had near-zero mid-flight steering: Alice's parallel ship, Bob's migration, Charlie's spec triad. In each, a load-bearing skill or contract absorbed the structure that would otherwise live in human attention — harness-orchestrate, kipwise-migration-guard, and the spec-reviewer subagent pattern. The lesson is the same across three different shapes: when the harness carries the structure, the agent runs long without losing direction.",
+      },
+      {
+        heading: "Where the human is still doing the last mile",
+        body: "Bob's Thursday debug is the visible counter-example. The agent's initial autonomous run nailed the diagnosis, then the team's harness ran out of structure and the next 100 minutes were rapid-fire nudges. Median user message dropped from 60 chars (the initial brief) to 32 chars (debug-mode shorthand). This is a clean signal that the harness covers the build path but not yet the debug-with-domain-knowledge path. The pattern is worth a 1:1 — does Bob want to author a 'rapid-fire debug' skill to compress sessions like this?",
+      },
+    ],
+
+    // ─── v1 story-only paragraphs (kept; consumed by v1-combined) ────────
     story_paragraphs: [
       {
         heading: "The week the team noticed",

@@ -4,19 +4,21 @@ import { getPool } from "../../../../db/pool";
 import { validateSession } from "../../../../lib/auth";
 import { VariantMaximal } from "../../../../components/insights-variants/v0-maximal";
 import { VariantCombined } from "../../../../components/insights-variants/v1-combined";
+import { VariantCaseStudies } from "../../../../components/insights-variants/v2-case-studies";
 import { mockTeamInsightReport } from "./mock-data";
 
 export const dynamic = "force-dynamic";
 
-type VariantId = "0" | "1";
+type VariantId = "0" | "1" | "2";
 
 const VARIANTS: { id: VariantId; label: string; tagline: string }[] = [
   { id: "0", label: "v0 · Maximal", tagline: "30-section enumeration · everything possible · reference" },
-  { id: "1", label: "v1 · Combined", tagline: "Agent-collaboration narrative · per-member growth · five lenses in one report" },
+  { id: "1", label: "v1 · Combined", tagline: "Agent-collaboration narrative · per-member fingerprints · five lenses" },
+  { id: "2", label: "v2 · Case studies", tagline: "WoW aggregates on top · deep session walkthroughs as the spine" },
 ];
 
 function isVariantId(v: string): v is VariantId {
-  return v === "0" || v === "1";
+  return v === "0" || v === "1" || v === "2";
 }
 
 export default async function TeamInsightsPage({
@@ -28,7 +30,7 @@ export default async function TeamInsightsPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const raw = sp?.v ?? "1";
+  const raw = sp?.v ?? "2";
   const v: VariantId = isVariantId(raw) ? raw : "1";
 
   const pool = getPool();
@@ -80,6 +82,7 @@ export default async function TeamInsightsPage({
 
       {v === "0" && <VariantMaximal r={r} slug={slug} />}
       {v === "1" && <VariantCombined r={r} />}
+      {v === "2" && <VariantCaseStudies r={r} />}
 
       <footer className="page-footer">
         <span>Fleetlens · Team Edition · iteration {v}</span>

@@ -1959,3 +1959,370 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   border-radius: 2px;
   border-top: 2px solid var(--rule);
 }
+
+/* ─── v2 · WoW pulse + case studies ──────────────────────────────────── */
+
+.wow-tile-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+@media (max-width: 900px) {
+  .wow-tile-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.wow-tile {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 14px 16px;
+  border-radius: 2px;
+}
+.wow-tile.wide { grid-column: span 4; }
+@media (max-width: 900px) {
+  .wow-tile.wide { grid-column: span 2; }
+}
+.wow-tile-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 6px;
+}
+.wow-tile-value {
+  font-family: "Instrument Serif", serif;
+  font-size: 26px;
+  line-height: 1.1;
+  color: var(--ink);
+}
+.wow-tile-delta {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--mute);
+  font-family: "JetBrains Mono", monospace;
+}
+.wow-tile-delta.positive { color: var(--positive); }
+.wow-tile-delta.negative { color: var(--danger); }
+.wow-tile-sub {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.wow-block { margin-top: 22px; }
+.wow-block-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+.wow-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.wow-table th,
+.wow-table td {
+  padding: 7px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.wow-table th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.wow-table td.muted { color: var(--mute); }
+.wow-table td.proj-name code,
+.wow-table td code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+.wow-table td.delta {
+  font-family: "JetBrains Mono", monospace;
+  font-weight: 600;
+  text-align: right;
+}
+.wow-table td.delta.positive { color: var(--positive); }
+.wow-table td.delta.negative { color: var(--danger); }
+
+/* Case study card */
+
+.case-study-card {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  border-radius: 2px;
+  padding: 24px 28px;
+  margin-bottom: 28px;
+}
+.cs-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--rule-soft);
+  margin-bottom: 18px;
+}
+.cs-author {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.cs-title {
+  font-family: "Instrument Serif", serif;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--ink);
+  margin: 6px 0 8px;
+}
+.cs-meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+  letter-spacing: 0.02em;
+}
+.cs-shape-tag {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--rule));
+  padding: 4px 10px;
+  border-radius: 2px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cs-section {
+  margin: 18px 0;
+}
+.cs-section + .cs-section {
+  padding-top: 18px;
+  border-top: 1px solid var(--rule-soft);
+}
+.cs-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 10px;
+}
+
+/* Timeline minimap */
+
+.cs-minimap-wrap { margin: 6px 0 14px; }
+.cs-minimap-bar {
+  position: relative;
+  width: 100%;
+  height: 36px;
+  background: var(--rule-soft);
+  border-radius: 3px;
+}
+.cs-active-interval {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 2px;
+}
+.cs-pin-span {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 3px;
+}
+.cs-pin-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 3px;
+  border-radius: 1px;
+  transform: translateX(-1.5px);
+}
+.cs-minimap-ruler {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  color: var(--mute);
+}
+
+.cs-pin-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.cs-pin-list li {
+  display: grid;
+  grid-template-columns: 80px 110px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 12px;
+}
+.cs-pin-time {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+}
+.cs-pin-tag {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  text-align: center;
+}
+.cs-pin-label {
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* Drill observations */
+
+.cs-drill-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 720px) {
+  .cs-drill-grid { grid-template-columns: 1fr; }
+}
+.cs-drill-cell {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 12px 14px;
+  border-radius: 2px;
+  border-left: 3px solid var(--rule);
+}
+.cs-drill-cell.yes { border-left-color: var(--positive); }
+.cs-drill-cell.no { border-left-color: var(--mute); }
+.cs-drill-cell.alert { border-left-color: var(--warning); background: color-mix(in srgb, var(--warning) 6%, var(--paper)); }
+.cs-drill-q {
+  font-size: 11px;
+  color: var(--mute);
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+}
+.cs-drill-a {
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.cs-drill-cell.alert .cs-drill-a { color: var(--warning); }
+.cs-drill-notes {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+}
+.cs-drill-notes li {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  padding: 4px 0 4px 18px;
+  position: relative;
+}
+.cs-drill-notes li::before {
+  content: "›";
+  position: absolute;
+  left: 4px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Narrative */
+
+.cs-narrative-block { margin-bottom: 12px; }
+.cs-narrative-block:last-child { margin-bottom: 0; }
+.cs-narrative-block.half { flex: 1; }
+.cs-narrative-row {
+  display: flex;
+  gap: 18px;
+  margin-top: 4px;
+}
+@media (max-width: 720px) {
+  .cs-narrative-row { flex-direction: column; }
+}
+.cs-narrative-head {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.cs-narrative-head.positive { color: var(--positive); }
+.cs-narrative-head.warning { color: var(--warning); }
+.cs-narrative-block p {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+}
+
+/* Harness signature */
+
+.cs-sig-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .cs-sig-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.cs-sig-heading {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+.cs-sig-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 12px;
+}
+.cs-sig-row code {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--ink);
+}
+.cs-sig-count {
+  font-family: "JetBrains Mono", monospace;
+  color: var(--mute);
+  font-size: 11px;
+}
+.cs-sig-empty { color: var(--mute); font-size: 12px; }
+
+.cs-steering {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper));
+  border: 1px solid var(--rule-soft);
+  border-radius: 2px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: baseline;
+}
+.cs-steering strong {
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+}

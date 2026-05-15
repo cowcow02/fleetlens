@@ -548,21 +548,151 @@ export type StoryParagraph = {
 };
 
 export type VariantsPayload = {
-  // v1
+  // v1 (kept; consumed by v1-combined)
   fingerprints: MemberFingerprint[];
-  // v2
   trajectory_rows: TrajectoryRow[];
   trajectory_observations: TrajectoryObservation[];
-  // v3
   diffusion_practices: DiffusionPractice[];
   diffusion_grid: DiffusionGridRow[];
   diffusion_arrows: DiffusionArrow[];
-  // v4
   session_archetypes: SessionArchetype[];
   archetype_distribution: ArchetypeDistributionRow[];
   illustrative_session_timelines: IllustrativeSessionTimeline[];
-  // v5
   story_paragraphs: StoryParagraph[];
+
+  // v2 — case-studies-first
+  wow_pulse: WowPulseStats;
+  case_studies: CaseStudy[];
+  v2_closing: StoryParagraph[];
+};
+
+// ─── v2 types ─────────────────────────────────────────────────────────────
+
+export type WowDelta = {
+  current: number;
+  last_week: number;
+  delta_pct?: number;
+  delta_abs?: number;
+};
+
+export type WowProjectTime = {
+  project: string;
+  hours_this_week: number;
+  hours_last_week: number;
+  delta_pct: number;
+};
+
+export type WowGoalMix = {
+  category: string;
+  share_pct: number;
+  delta_pp: number; // percentage points vs last week
+};
+
+export type WowSkillUse = {
+  skill: string;
+  uses_this_week: number;
+  uses_last_week: number;
+  delta: number;
+};
+
+export type WowTicket = {
+  source: "Linear" | "GitHub" | "Jira";
+  current: number;
+  last_week: number;
+  delta: number;
+  sample_refs: string[]; // a few representative ref IDs
+};
+
+export type WowLongAutonomousTexture = {
+  count: number; // count of "long" turns this week
+  total_min: number; // total time spent in long turns
+  max_single_min: number; // longest single turn
+  count_wow_delta: number; // count delta vs last week
+  total_min_wow_delta_pct: number; // total-min delta % vs last week
+};
+
+export type WowParallelExecution = {
+  total_min: number; // total minutes the team had ≥2 concurrent sessions
+  peak_concurrent: number;
+  total_min_wow_delta_pct: number;
+};
+
+export type WowPulseStats = {
+  agent_hours: WowDelta;
+  sessions: WowDelta;
+  tickets_resolved: WowTicket;
+  parallel_execution: WowParallelExecution;
+  long_autonomous: WowLongAutonomousTexture;
+  project_time: WowProjectTime[];
+  goal_mix: WowGoalMix[];
+  skill_usage: WowSkillUse[];
+};
+
+export type CaseStudyPinKind =
+  | "user-steering"
+  | "subagent-burst"
+  | "long-autonomous"
+  | "plan-mode"
+  | "pr-ship"
+  | "harness-chain"
+  | "interrupt"
+  | "brainstorm-loop"
+  | "skill-load";
+
+export type CaseStudyPin = {
+  start_min: number;
+  end_min?: number;
+  kind: CaseStudyPinKind;
+  label: string;
+};
+
+export type CaseStudy = {
+  id: string;
+  author: string;
+  date: string;
+  project: string;
+  duration: { wall_min: number; active_min: number; idle_min: number };
+  turn_count: number;
+  outcome: string; // "shipped 1 PR" | "partial · 1 commit" | "no PR · meta"
+  working_shape: string;
+  day_signature: string;
+
+  harness_signature: {
+    user_skills: { name: string; uses: number }[];
+    user_subagents: { type: string; count: number }[];
+    stock_skills: { name: string; uses: number }[];
+    top_tools: string[]; // already formatted ("Bash×142 (psql×38, …)")
+  };
+
+  steering: {
+    user_msg_count: number;
+    long_user_msg_count: number;
+    median_user_msg_chars: number;
+    interrupts: number;
+  };
+
+  timeline: {
+    duration_min: number;
+    active_intervals: { start_min: number; end_min: number }[];
+    pins: CaseStudyPin[];
+  };
+
+  narrative: {
+    why_picked: string;
+    session_summary: string;
+    steering_summary: string;
+    what_worked: string;
+    what_hit_friction: string;
+  };
+
+  drill_observations: {
+    started_with_brainstorming: boolean;
+    started_from_predefined_aspect: boolean;
+    long_running_turns_count: number;
+    long_running_turns_total_min: number;
+    rapid_fire_after_initial: boolean;
+    notes: string[];
+  };
 };
 
 // ─── The whole report ─────────────────────────────────────────────────────
