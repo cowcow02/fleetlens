@@ -411,4 +411,44 @@ describe("groups API: members add / remove / promote", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("rejects promoting a revoked member to manager with 400", async () => {
+    // Create a fresh group + member, add to group, then revoke the membership.
+    const cReq = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups`,
+      adminCookieToken,
+      { method: "POST", body: { slug: "revokedpromo", name: "Revoked Promo" } },
+    );
+    const cRes = await groupsPOST(cReq, { params: Promise.resolve({ slug: teamSlug }) });
+    const { group } = await cRes.json();
+
+    const u = await createUserAccount("revoked-promo@example.com", "pass1234", null, {}, pool);
+    const inv = await createInvite(teamId, adminUserId, {}, pool);
+    const redeemed = await redeemInvite(inv.token, u.id, pool);
+    const membershipId = redeemed!.membershipId;
+
+    const addReq = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${group.id}/members`,
+      adminCookieToken,
+      { method: "POST", body: { membershipId } },
+    );
+    const addRes = await membersPOST(addReq, {
+      params: Promise.resolve({ slug: teamSlug, group: group.id }),
+    });
+    expect(addRes.status).toBe(200);
+
+    await pool.query("UPDATE memberships SET revoked_at = now() WHERE id = $1", [membershipId]);
+
+    const promoteReq = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${group.id}/members`,
+      adminCookieToken,
+      { method: "PATCH", body: { membershipId, isManager: true } },
+    );
+    const promoteRes = await membersPATCH(promoteReq, {
+      params: Promise.resolve({ slug: teamSlug, group: group.id }),
+    });
+    expect(promoteRes.status).toBe(400);
+    const body = await promoteRes.json();
+    expect(body.error.toLowerCase()).toContain("revoked");
+  });
 });

@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   const fail = requireAdmin(ctx);
   if (fail) return fail;
 
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
   if (!body.slug || !body.name) return NextResponse.json({ error: "slug and name required" }, { status: 400 });
   if (!/^[a-z0-9-]+$/.test(body.slug)) return NextResponse.json({ error: "slug must be lowercase letters, digits, hyphens" }, { status: 400 });
 

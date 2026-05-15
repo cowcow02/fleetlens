@@ -20,7 +20,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ sl
   if (fail) return fail;
   const id = await resolveGroupId(ctx, group);
   if (!id) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const body = await req.json();
+  const body = await req.json().catch(() => ({}));
   if (!body.name) return NextResponse.json({ error: "name required" }, { status: 400 });
   await renameGroup(id, body.name, ctx.user.id, ctx.pool);
   return NextResponse.json({ ok: true });
