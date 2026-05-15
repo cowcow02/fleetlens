@@ -4,6 +4,17 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.2] — 2026-05-15
+
+### Fixed
+- **Session-detail minimap no longer paints subagent runtime as idle.** Long agent runs that dispatched many subagents were reading as wall-to-wall "Session idle" stripes because the parent's tool_use → tool_result gap (the subagent's actual runtime) was classified as in-turn idle. `rawIdleBands` now carves subagent run spans out of every candidate gap; for in-turn gaps that overlap any subagent run the entire gap is dropped, and between-turn gaps with background subagent activity keep only the genuinely-unwatched residue.
+- **First-response thinking stops registering as idle.** Anchors now include every timestamped event (agent-thinking, meta, etc.), and the loop tracks an "awaiting first response" phase across intermediate thinking anchors. A `user → thinking → thinking → agent` sequence where the model takes a while to compose its first reply is now treated as response latency rather than painted as a stripe.
+- **Turn duration no longer shows `0ms` for single-row turns.** `buildMegaRows` now anchors a turn's `tOffsetMs` and `durationMs` at the originating user message rather than at the first agent row. Single-row turns show the actual user → agent latency, and the visual span of the turn rectangle on the minimap covers the whole arc.
+- **Single `Session idle` divider per band.** A user row and the turn-collapsed row that follows it now share a `tOffsetMs`, so the body's `IdleDivider` emitter dedupes per band to stop two consecutive identical idle markers around the same boundary.
+
+### Changed
+- Minimap idle threshold raised from 10s to 30s. Ordinary tool latency (slow Bash, big-file Read, between-anchor model thinking) no longer registers as idle.
+
 ## [0.10.1] — 2026-05-14
 
 ### Added
