@@ -91,8 +91,10 @@ export async function loadMember(membershipId: string, pool: pg.Pool): Promise<M
   return res.rowCount ? res.rows[0] : null;
 }
 
-export async function loadGroupRoster(groupId: string, pool: pg.Pool): Promise<RosterRow[]> {
-  const res = await pool.query<RosterRow & { is_manager: boolean }>(`
+export type GroupRosterRow = RosterRow & { is_manager: boolean };
+
+export async function loadGroupRoster(groupId: string, pool: pg.Pool): Promise<GroupRosterRow[]> {
+  const res = await pool.query<GroupRosterRow>(`
     SELECT
       m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at,
       gm.is_manager,
