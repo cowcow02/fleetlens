@@ -108,6 +108,9 @@ export function SettingsPanel({ team, members, teamSlug }: { team: TeamRow; memb
           <h2>Members</h2>
           <span className="kicker">{members.filter((m) => !m.revoked_at).length} active</span>
         </div>
+        <p style={{ marginTop: 12 }}>
+          <a href={`/team/${teamSlug}/settings/groups`}>Manage groups &rarr;</a>
+        </p>
         <table className="member-table">
           <thead>
             <tr>
