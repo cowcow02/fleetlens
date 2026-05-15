@@ -2357,12 +2357,12 @@ export const mockTeamInsightReport: TeamInsightReport = {
       v5_closing: [
         {
           heading: "The whole picture",
-          body: "With all four integrations enabled, the report can finally close the loop: ticket → session → commit → PR → merge → CI → deployed. Every step has a timestamp and an attribution. The team can answer not just 'how is the agent being used' but 'what did the agent's use actually produce, and at what quality, and how does that compare to the human-authored baseline'.",
+          body: "With all four integrations enabled, the report can finally close the loop: ticket → session → commit → PR → merge → CI → deployed. Every step has a timestamp and an attribution. The team can answer not just 'how is the agent being used' but 'what did the agent's use actually produce, and at what quality'.",
         },
         {
           heading: "What flips from aspirational to real",
-          body: "The DORA metrics, the quality watch (conformity / rework / churn), the cost-per-ticket, and the end-to-end pipeline view all become real numbers — not placeholders. The 'AI-assisted vs human-authored' attribution split is the single most-requested 2026 metric per DORA's 'Balancing AI tensions' framing, and it's only available once GitHub + CI/CD are wired.",
-          cites: [{ label: "DORA · Balancing AI tensions (2026)", href: "https://dora.dev/insights/balancing-ai-tensions/" }],
+          body: "The DORA metrics, the quality watch (conformity / rework / churn), the cost-per-ticket, and the end-to-end pipeline view all become real numbers — not placeholders. These outcome and timing signals are what the DORA 'Balancing AI tensions' article points at when it argues you must go beyond throughput-only metrics to read the AI-augmented SDLC honestly.",
+          cites: [{ label: "DORA · Balancing AI tensions (March 2026)", href: "https://dora.dev/insights/balancing-ai-tensions/" }],
         },
         {
           heading: "What the privacy model still protects",
@@ -2373,6 +2373,229 @@ export const mockTeamInsightReport: TeamInsightReport = {
           body: "Task complexity and skill-level-required are still LLM-enriched primitives — no integration unlocks them. They live in the perception layer alongside narrative, friction, and outcome. The integrations expand the deterministic surface, but the qualitative spine still needs opt-in.",
         },
       ],
+
+      // v5.1 — narrative shaped to match dora.dev/insights/balancing-ai-tensions
+      dora_narrative: {
+        opening: {
+          headline:
+            "90%+ of this team's sessions use AI — but the gains aren't linear. Throughput is up; instability signals are mixed. Same paradox DORA names at the industry level, visible at this team's scale.",
+          used_pct: 95,
+          perceived_productive_pct: 80,
+          throughput_signal: "PRs shipped 6 (+2 vs last week) · Tickets resolved 7 (+2)",
+          instability_signal:
+            "Rework rate 11% (-3pp WoW) · Conformity failures across 4 unique lint rules · 1 yellow-CI session (didn't deploy)",
+        },
+        amplifier: {
+          headline:
+            "AI functions as an amplifier — it magnifies organisational strengths and dysfunctions equally. Higher adoption correlates with both increased throughput AND increased instability. The list below names what this team is amplifying right now, in both directions.",
+          strengths_amplified: [
+            {
+              observation: "harness-orchestrate (Alice) is spreading — Charlie picked it up 3 days after Alice authored it",
+              supporting_metric: "1 cross-member skill pickup this week; 3 of 5 members now using it",
+            },
+            {
+              observation: "Plan-mode discipline is climbing four weeks running",
+              supporting_metric: "Plan-mode adopters: 1 → 2 → 3 → 3 over 4 weeks",
+            },
+            {
+              observation: "Median session length is dropping for Charlie as he leans more on orchestration",
+              supporting_metric: "Charlie median session: 41 → 38 → 31 → 25 min over 4 weeks",
+            },
+            {
+              observation: "Cost-per-shipped-PR dropped 19% week-over-week — the harness is starting to pay off",
+              supporting_metric: "Cost-per-PR: ~$24 → $19.42 (kipwise-v1) / $20.82 (topeka)",
+            },
+          ],
+          dysfunctions_amplified: [
+            {
+              observation: "Bob ran three late-night sessions (Tue/Wed/Thu) all >2h — wellbeing signal to watch",
+              supporting_metric: "Late-night sessions: 3 (vs ~1 typical)",
+            },
+            {
+              observation: "Bob's Thursday session shows the 'babysitting' pattern — 28 short user nudges after the initial autonomous diagnosis",
+              supporting_metric: "Median user message 32 chars, 6 interrupts, 38 turns",
+            },
+            {
+              observation: "kipwise-migration-guard is a Bob-only practice — single-practitioner bus factor",
+              supporting_metric: "1 of 5 members; load-bearing on Wednesday's migration",
+            },
+            {
+              observation: "Conformity check failures cluster on the same patterns — agent doesn't yet know the team's standards",
+              supporting_metric: "test:must-cover-error-path tripped twice this week, in two different members' sessions",
+            },
+          ],
+        },
+        use_cases: [
+          { name: "code generation", our_mapping: "goal_category: build", sessions: 18, hours: 7.7, ai_autonomy_avg: 4, success_rate_pct: 89, notable_signal: "Alice's parallel-dispatch is the canonical high-autonomy example" },
+          { name: "debugging", our_mapping: "goal_category: debug", sessions: 8, hours: 3.3, ai_autonomy_avg: 2, success_rate_pct: 50, notable_signal: "Bob's Thursday session — low autonomy, partial outcome, the 'expertise paradox' case" },
+          { name: "refactoring", our_mapping: "goal_category: refactor", sessions: 5, hours: 2.6, ai_autonomy_avg: 4, success_rate_pct: 80 },
+          { name: "idea generation", our_mapping: "goal_category: plan", sessions: 4, hours: 2.2, ai_autonomy_avg: 3, success_rate_pct: 75, notable_signal: "Charlie's brainstorm warmup pattern" },
+          { name: "code review", our_mapping: "subagent: spec-reviewer / code-reviewer dispatches", sessions: 3, hours: 1.4, ai_autonomy_avg: 5, success_rate_pct: 100, notable_signal: "Charlie's reviewer-triad: 3 parallel reviewers, zero rework" },
+          { name: "info seeking", our_mapping: "goal_category: research", sessions: 4, hours: 1.1, ai_autonomy_avg: 3, success_rate_pct: 100 },
+          { name: "testing", our_mapping: "goal_category: test", sessions: 2, hours: 0.5, ai_autonomy_avg: 3, success_rate_pct: 100, notable_signal: "Low absolute count — test session share lagging the DORA Google baseline" },
+          { name: "learning", our_mapping: "goal_category: meta", sessions: 2, hours: 2.4, ai_autonomy_avg: 4, success_rate_pct: 100, notable_signal: "Charlie's meta-skill authoring — team's first metasynthesized skill" },
+          { name: "prototyping", our_mapping: "early-phase build sessions before spec", sessions: 1, hours: 0.4, ai_autonomy_avg: 4, success_rate_pct: 100 },
+          { name: "writing docs", our_mapping: "(near-zero; CLAUDE.md additions + spec writing only)", sessions: 0, hours: 0.0, ai_autonomy_avg: 1, success_rate_pct: 0, notable_signal: "Underused — opportunity to lean on AI for docs" },
+        ],
+        immediate_value: {
+          headline:
+            "Where AI drove a concrete win this week — anchored to specific opted-in sessions, with the ticket / PR / outcome linked.",
+          wins: [
+            {
+              title: "47-min parallel-dispatch ship — fastest first-pass of the week",
+              member: "Alice",
+              ticket: "KIP-156",
+              detail: "Brief-as-contract pattern (harness-orchestrate) dispatched four worker subagents in parallel; merged in 47 min, no rework, PR closed clean.",
+            },
+            {
+              title: "4.2h autonomous migration that didn't need a rework cycle",
+              member: "Bob",
+              ticket: "KIP-148",
+              detail: "kipwise-migration-guard caught two unsafe operations during a long autonomous run; the safety skill let the autonomy ship without revisions.",
+            },
+            {
+              title: "Zero-rework first PR on a feature spec",
+              member: "Charlie",
+              ticket: "KIP-144",
+              detail: "Three reviewer subagents critiqued the spec BEFORE any code — 4 of 5 findings landed in the revised spec; the implementation phase shipped with no follow-up review.",
+            },
+          ],
+        },
+        tensions: [
+          {
+            number: 1,
+            name: "The push and pull on velocity",
+            article_quote:
+              "I feel somewhat more productive, but it's at a cost. While I end up spending less time writing code, I spend more time babysitting the AI and reviewing what it is trying to do.",
+            our_data_summary:
+              "Coding time grew 13% week-over-week, but the team also generated 22% more PR review activity. Bob's Thursday session is the canonical 'babysitting' shape on this team — initial autonomous diagnosis (28 min) then 100 min of short-turn human steering. Median user message during that tail: 32 characters.",
+            signal_metrics: [
+              { label: "Coding-time WoW", value: "+13%", note: "agent-hours in build/refactor sessions" },
+              { label: "Review-time WoW", value: "+22%", note: "PR review minutes from GitHub" },
+              { label: "Heavy-steering sessions", value: "9 of 38", note: "≥10 short user turns after initial agent work" },
+              { label: "Tools-per-shipped-change", value: "38 (median)", note: "rising trend over 4 weeks" },
+            ],
+            canonical_example: {
+              session_label: "Bob · Thu · kipwise-v1 · rapid-fire debug",
+              member: "Bob",
+              explanation:
+                "Initial agent run nailed the diagnosis in 28 min. Then 18 short user messages over 40 min — 'try -X', 'nope, retry', 'wait', 'check pg version first' — dragged the session to 142 min wall. Median user message dropped from 60 chars (the initial brief) to 32 chars (debug nudges). Phase-changed from 'writing' to 'babysitting'.",
+            },
+          },
+          {
+            number: 2,
+            name: "The expertise paradox",
+            article_quote:
+              "AI powered development has allowed me to develop more quickly in areas I don't have experience in, but that means that I occasionally get a sense of 'the blind leading the blind' where I don't have enough context to ensure that the AI is correct.",
+            our_data_summary:
+              "The conformity-check signal is the clearest read on this tension. The agent tripped 4 unique team-standard lint rules this week across 4 sessions, and the same rule (test:must-cover-error-path) tripped twice in two different members' sessions. The agent doesn't yet know the team's conventions; the team's seniors caught all four at PR review, but the failure cluster repeats.",
+            signal_metrics: [
+              { label: "Conformity failures (unique rules)", value: "4", note: "test, lint, naming, error-handling categories" },
+              { label: "Sessions with conformity failure", value: "4 of 38", note: "all caught pre-merge by reviewers" },
+              { label: "Skill-level required (median, LLM-enriched)", value: "4 / 5", note: "rising — work skewing senior" },
+              { label: "Rework PR rate", value: "11%", note: "follow-up fix within 24h — proxy for blind-leading-blind" },
+            ],
+            canonical_example: {
+              session_label: "Bob · Thu · kipwise-v1 · rapid-fire debug",
+              member: "Bob",
+              explanation:
+                "Same session as Tension 1. The agent couldn't infer the pg-version compatibility issue from the codebase; it needed Bob's domain expertise. The 'rapid-fire' tail is the audible signal of the expertise paradox — the agent was generating fixes faster than Bob could verify them against his knowledge.",
+            },
+          },
+          {
+            number: 3,
+            name: "The workflow gap",
+            article_quote:
+              "It's hard to know which AI tool to use for a given task and whether the AI will be able to complete the task.",
+            our_data_summary:
+              "We can read this as 'mid-session skill loads' — moments when a member realises mid-flight that they reached for the wrong harness initially. The team had 3 mid-session skill loads this week (Bob loading systematic-debugging mid-debug; Charlie loading writing-skills mid-meta-session; etc.). Plus: the team authored a brand-new skill (spec-frame-loader) explicitly to AUTOMATE which skill to load — a literal answer to the workflow gap.",
+            signal_metrics: [
+              { label: "Mid-session skill loads", value: "3", note: "corrective — member reaching for a different harness mid-flight" },
+              { label: "Skills loaded but never dispatched", value: "2", note: "wrong-tool-loaded signal" },
+              { label: "Sessions with zero skills loaded", value: "6", note: "'didn't know what to reach for'" },
+              { label: "New skills authored this week", value: "1", note: "spec-frame-loader — a skill that picks skills" },
+            ],
+            canonical_example: {
+              session_label: "Charlie · Tue · topeka · authoring spec-frame-loader",
+              member: "Charlie",
+              explanation:
+                "The session itself is the workflow-gap response — Charlie noticed he kept asking 'which skill should I load for this kind of task?' and authored a meta-skill that decides for him. The team's first metasynthesized skill, built explicitly to close the gap the DORA article names.",
+            },
+          },
+        ],
+        practical_insights: [
+          {
+            framework: "SEQ",
+            full_name: "Speed, Ease, Quality (Google)",
+            purpose:
+              "Three indicators of developer productivity. The article calls SEQ out as a model worth borrowing.",
+            our_mapping: [
+              { dimension: "Speed", current_value: "142 min median end-to-end ticket → deployed; lead-time down 22% WoW", note: "Pipeline view." },
+              { dimension: "Ease", current_value: "Delegation depth: 24% fully delegated, up from 11% four weeks ago; 9 heavy-steering sessions", note: "Delegation depth section." },
+              { dimension: "Quality", current_value: "Conformity 84% (+6pp), rework 11% (-3pp), CFR 6% (AI 5% / human 8%)", note: "Quality watch + DORA." },
+            ],
+            citation: { label: "SEQ at Google (DORA article reference)", href: "https://dora.dev/insights/balancing-ai-tensions/" },
+          },
+          {
+            framework: "SPACE",
+            full_name: "Satisfaction, Performance, Activity, Communication, Efficiency",
+            purpose:
+              "A constellation of metrics; the article points at SPACE as the right shape for productivity context (not a single number).",
+            our_mapping: [
+              { dimension: "Satisfaction", current_value: "Helpfulness mix: 11 essential / 5 helpful / 2 neutral / 0 unhelpful (member-day mode)", note: "Tier-2 LLM-enriched signal." },
+              { dimension: "Performance", current_value: "6 PRs shipped (+2 WoW), 7 tickets resolved (+2)", note: "Outcome." },
+              { dimension: "Activity", current_value: "18.4h combined agent time (+12%), 41 sessions, 4 of 5 members active", note: "Team pulse." },
+              { dimension: "Communication", current_value: "1 cross-member skill pickup, 3 shared files, concurrent sessions on Thu", note: "Skill diffusion." },
+              { dimension: "Efficiency", current_value: "$23.73 / shipped PR (-19% WoW), $20.82-$27.91 / resolved ticket", note: "Cost per resolved." },
+            ],
+            citation: { label: "SPACE framework — ACM Queue (referenced from DORA article)", href: "https://queue.acm.org/detail.cfm?id=3454124" },
+          },
+          {
+            framework: "H.E.A.R.T.",
+            full_name: "Happiness, Engagement, Adoption, Retention, Task success",
+            purpose:
+              "The article's recommendation for staying connected to users' experiences with the products. Less directly applicable to internal dev tooling, but the 'Adoption' and 'Task success' dimensions map onto our agent-tooling usage.",
+            our_mapping: [
+              { dimension: "Adoption (of user-authored skills)", current_value: "3 of 5 members use harness-orchestrate; 1 skill picked up cross-member this week" },
+              { dimension: "Task success (per Economic Index)", current_value: "Median task success 4/5 across opted-in case studies" },
+              { dimension: "Engagement (with the harness)", current_value: "1.5 skills loaded per session; 11/16 sessions pre-flight-load for Charlie" },
+            ],
+            citation: { label: "H.E.A.R.T. (DORA article reference)", href: "https://cloud.google.com/transform/unlocking-product-success-by-combining-dora-and-heart" },
+          },
+          {
+            framework: "VSM",
+            full_name: "Value Stream Management",
+            purpose:
+              "Identify system bottlenecks via downstream indicators — code review turnaround, failed-deployment recovery time, deployment rework rates, production incidents. The article specifically names these signals.",
+            our_mapping: [
+              { dimension: "Code review turnaround", current_value: "22 min PR-opened → first review; 28 min review → merge", note: "Pipeline view." },
+              { dimension: "Failed-deployment recovery time", current_value: "MTTR 38 min (AI-assisted 32 / human-authored 54)", note: "DORA." },
+              { dimension: "Deployment rework rate", current_value: "11% rework PRs (<24h follow-up after merge)", note: "Quality watch." },
+              { dimension: "Production incidents", current_value: "0 incident-tagged sessions this week", note: "From CI/CD integration." },
+            ],
+            citation: { label: "VSM guide on dora.dev", href: "https://dora.dev/guides/value-stream-management/" },
+          },
+        ],
+        conclusion_paragraphs: [
+          {
+            heading: "Engineering rigor still matters",
+            body: "Echoing the DORA article's close: AI is fundamentally shifting the rules of software development, but it hasn't replaced the need for engineering rigor. The team that shipped 6 PRs this week did so because the harness — context engineering, the spec-reviewer subagent pattern, kipwise-migration-guard's safety gates — carried the rigor that used to live in human discipline alone.",
+          },
+          {
+            heading: "Three concrete tradeoffs to watch next week",
+            body: "1. Bob's late-night session count (wellbeing × velocity push/pull tension). 2. Conformity-check failure clustering on test:must-cover-error-path (expertise paradox — candidate for a team-standards skill). 3. The single-practitioner bus factor on kipwise-migration-guard (the harness diffusion signal we want to inverse).",
+          },
+          {
+            heading: "Where the article points us next",
+            body: "The DORA article's specific recommendations — small batches, AI-accessible internal data, context-aware review agents, test automation — map cleanly to where this team's harness investment is already heading. The harness-orchestrate and reviewer-triad patterns are the team's emerging answer to 'context-aware review agents'. The spec-frame-loader skill is the team's emerging answer to 'AI-accessible internal data'. Worth surfacing in the next 1:1s.",
+          },
+        ],
+        closing_citation: {
+          label: "DORA · Balancing AI tensions",
+          href: "https://dora.dev/insights/balancing-ai-tensions/",
+          published: "March 10, 2026",
+        },
+      },
     },
 
     // ─── v2: Closing reflections ─────────────────────────────────────────

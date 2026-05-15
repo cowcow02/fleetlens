@@ -3689,3 +3689,437 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   line-height: 1.6;
   color: var(--ink-soft);
 }
+
+/* ─── v5 · DORA narrative spine ─────────────────────────────────────── */
+
+.dora-opening-headline,
+.amplifier-headline,
+.value-headline {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.5;
+  color: var(--ink);
+  padding: 16px 20px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+  border-left: 4px solid var(--accent);
+  border-radius: 2px;
+  margin-bottom: 18px;
+}
+
+.opening-paradox-row {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+@media (max-width: 720px) {
+  .opening-paradox-row { grid-template-columns: 1fr; }
+  .paradox-vs { display: none; }
+}
+.paradox-side {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 16px 20px;
+  border-radius: 2px;
+}
+.paradox-side.throughput { border-left: 3px solid var(--positive); }
+.paradox-side.instability { border-left: 3px solid var(--warning); }
+.paradox-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.paradox-side.throughput .paradox-label { color: var(--positive); }
+.paradox-side.instability .paradox-label { color: var(--warning); }
+.paradox-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.55;
+}
+.paradox-vs {
+  text-align: center;
+  font-family: "Instrument Serif", serif;
+  font-size: 28px;
+  color: var(--mute);
+}
+
+.opening-adoption-row {
+  display: flex;
+  gap: 36px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+.opening-adoption-row strong {
+  font-family: "Instrument Serif", serif;
+  font-size: 24px;
+  color: var(--accent);
+  font-style: italic;
+  margin-right: 4px;
+}
+
+/* AI as amplifier */
+
+.amplifier-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 900px) { .amplifier-grid { grid-template-columns: 1fr; } }
+.amplifier-side {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 16px 20px;
+  border-radius: 2px;
+}
+.amplifier-side.strengths { border-left: 3px solid var(--positive); }
+.amplifier-side.dysfunctions { border-left: 3px solid var(--warning); }
+.amplifier-side-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.amplifier-side-sign {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 18px;
+  font-weight: 700;
+}
+.amplifier-side.strengths .amplifier-side-label,
+.amplifier-side.strengths .amplifier-side-sign { color: var(--positive); }
+.amplifier-side.dysfunctions .amplifier-side-label,
+.amplifier-side.dysfunctions .amplifier-side-sign { color: var(--warning); }
+.amplifier-item {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.amplifier-item:last-child { border-bottom: none; }
+.amplifier-observation {
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.55;
+  margin-bottom: 5px;
+}
+.amplifier-metric {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+  line-height: 1.5;
+}
+
+/* 10 use cases table */
+
+.usecase-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.usecase-table th,
+.usecase-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+.usecase-table th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  border-bottom: 1px solid var(--rule);
+}
+.usecase-name {
+  font-family: "Instrument Serif", serif;
+  font-size: 14px;
+  color: var(--ink);
+  font-style: italic;
+}
+.usecase-mapping code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+}
+.usecase-num {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--ink);
+}
+.usecase-autonomy {
+  text-align: center;
+}
+.usecase-note {
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+/* Where AI drove value */
+
+.value-wins-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.value-win {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  border-left: 3px solid var(--positive);
+  padding: 14px 18px;
+  border-radius: 2px;
+}
+.value-win-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.value-win-member {
+  font-family: "Instrument Serif", serif;
+  font-size: 17px;
+  font-style: italic;
+  color: var(--accent);
+}
+.value-win-ticket {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.value-win-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+.value-win-detail {
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+/* The three tensions */
+
+.tension-card {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  border-radius: 2px;
+  padding: 24px 28px;
+  margin-bottom: 22px;
+  border-left: 4px solid var(--warning);
+}
+.tension-number {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--warning);
+  margin-bottom: 6px;
+}
+.tension-name {
+  font-family: "Instrument Serif", serif;
+  font-size: 26px;
+  font-style: italic;
+  color: var(--ink);
+  margin-bottom: 14px;
+  line-height: 1.2;
+}
+.tension-quote {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  padding: 14px 22px;
+  border-left: 3px solid var(--mute);
+  background: color-mix(in srgb, var(--mute) 6%, var(--paper));
+  margin: 12px 0 6px;
+}
+.tension-source {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+  margin-bottom: 16px;
+}
+.tension-summary {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-soft);
+  margin: 14px 0 18px;
+}
+.tension-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+@media (max-width: 720px) { .tension-metrics-grid { grid-template-columns: 1fr; } }
+.tension-metric {
+  border: 1px solid var(--rule-soft);
+  background: var(--bg);
+  padding: 10px 14px;
+  border-radius: 2px;
+}
+.tension-metric-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 4px;
+}
+.tension-metric-value {
+  font-family: "Instrument Serif", serif;
+  font-size: 20px;
+  color: var(--ink);
+  font-style: italic;
+}
+.tension-metric-note {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+.tension-example {
+  background: color-mix(in srgb, var(--warning) 6%, var(--paper));
+  border-left: 3px solid var(--warning);
+  border-radius: 2px;
+  padding: 14px 18px;
+}
+.tension-example-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--warning);
+  margin-bottom: 6px;
+}
+.tension-example-session {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.tension-example-explanation {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+/* Practical insights · framework cards */
+
+.framework-card {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  border-radius: 2px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.framework-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.framework-card-acronym {
+  font-family: "Instrument Serif", serif;
+  font-size: 30px;
+  font-style: italic;
+  color: var(--accent);
+}
+.framework-card-full {
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.framework-card-purpose {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin-bottom: 14px;
+}
+.framework-mapping-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.framework-mapping-row {
+  display: grid;
+  grid-template-columns: 220px 1fr 220px;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  align-items: center;
+  font-size: 12px;
+}
+@media (max-width: 900px) {
+  .framework-mapping-row { grid-template-columns: 1fr; gap: 4px; padding: 10px 0; }
+}
+.framework-mapping-dim {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.framework-mapping-value {
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.framework-mapping-note {
+  font-size: 11px;
+  color: var(--mute);
+  font-style: italic;
+}
+.framework-citation {
+  display: inline-block;
+  margin-top: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.framework-citation:hover { text-decoration: underline; }
+
+/* Closing citation */
+
+.closing-citation-block {
+  margin-top: 24px;
+  padding: 14px 20px;
+  border: 1px dashed var(--rule);
+  border-radius: 2px;
+  background: var(--paper);
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.55;
+  font-style: italic;
+}
+.closing-citation-block a {
+  color: var(--accent);
+  text-decoration: none;
+  font-family: "JetBrains Mono", monospace;
+  font-style: normal;
+}
+.closing-citation-block a:hover { text-decoration: underline; }

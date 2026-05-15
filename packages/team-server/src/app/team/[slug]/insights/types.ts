@@ -793,6 +793,77 @@ export type V5Extras = {
   cost_per_resolved: V5CostPerResolved[];
   newly_answerable_questions: { question: string; answer: string }[];
   v5_closing: { heading?: string; body: string; cites?: { label: string; href: string }[] }[];
+  // v5.1 — DORA-narrative version that follows the structure of
+  // dora.dev/insights/balancing-ai-tensions (March 2026).
+  dora_narrative: V5DoraNarrative;
+};
+
+// v5.1 — top-down narrative shape borrowed verbatim from
+// dora.dev/insights/balancing-ai-tensions (March 10, 2026).
+export type V5DoraUseCase = {
+  // DORA article's 10 use-case taxonomy.
+  name:
+    | "code generation"
+    | "info seeking"
+    | "code review"
+    | "testing"
+    | "debugging"
+    | "prototyping"
+    | "idea generation"
+    | "writing docs"
+    | "refactoring"
+    | "learning";
+  our_mapping: string; // which of our goal_categories or signals maps to this
+  sessions: number;
+  hours: number;
+  ai_autonomy_avg: 1 | 2 | 3 | 4 | 5;
+  success_rate_pct: number;
+  notable_signal?: string;
+};
+
+export type V5Tension = {
+  number: 1 | 2 | 3;
+  name: string;
+  article_quote: string; // verbatim from the article
+  our_data_summary: string;
+  signal_metrics: { label: string; value: string; note?: string }[];
+  canonical_example: {
+    session_label: string;
+    member: string;
+    explanation: string;
+  };
+};
+
+export type V5Framework = {
+  framework: "SEQ" | "SPACE" | "H.E.A.R.T." | "VSM";
+  full_name: string;
+  purpose: string; // 1 sentence
+  our_mapping: { dimension: string; current_value: string; note?: string }[];
+  citation: { label: string; href: string };
+};
+
+export type V5DoraNarrative = {
+  opening: {
+    headline: string;
+    used_pct: number;
+    perceived_productive_pct: number;
+    throughput_signal: string; // "PRs shipped 6 (+2 vs last week)"
+    instability_signal: string; // "Rework rate 11% (-3pp WoW), but conformity failures up to 4 unique"
+  };
+  amplifier: {
+    headline: string;
+    strengths_amplified: { observation: string; supporting_metric: string }[];
+    dysfunctions_amplified: { observation: string; supporting_metric: string }[];
+  };
+  use_cases: V5DoraUseCase[];
+  immediate_value: {
+    headline: string;
+    wins: { title: string; member: string; ticket?: string; detail: string }[];
+  };
+  tensions: V5Tension[];
+  practical_insights: V5Framework[];
+  conclusion_paragraphs: { heading?: string; body: string }[];
+  closing_citation: { label: string; href: string; published: string };
 };
 
 export type V3Extras = {
