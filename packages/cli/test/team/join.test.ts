@@ -13,16 +13,21 @@ vi.mock("../../src/team/config.js", async (importOriginal) => {
   };
 });
 
-// joinTeam fires backfill + sync after pairing. Stub them here so tests stay
+// joinTeam fires the unified sync after pairing. Stub it here so tests stay
 // hermetic: no JSONL reads, no extra fetches against the mocked-fetch budget.
-vi.mock("../../src/team/backfill.js", () => ({
-  runTeamBackfill: vi.fn(async () => ({
-    paired: true, sentSnapshots: 0, insertedSnapshots: 0, skippedSnapshots: 0, batches: 0,
-  })),
-}));
 vi.mock("../../src/team/sync.js", () => ({
   runTeamSync: vi.fn(async () => ({
-    paired: true, pushed: 0, queued: 0, queuedDrained: 0,
+    paired: true,
+    pushed: 0,
+    queued: 0,
+    queuedDrained: 0,
+    usageBackfill: {
+      paired: true,
+      sentSnapshots: 0,
+      insertedSnapshots: 0,
+      skippedSnapshots: 0,
+      batches: 0,
+    },
   })),
 }));
 

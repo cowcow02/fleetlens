@@ -28,25 +28,40 @@ export async function team(args: string[]) {
         console.error("Not paired. Run 'fleetlens team join <url> <device-token>' first.");
         process.exit(1);
       }
-      if (outcome.error) process.exit(1);
+      if (outcome.error || outcome.usageBackfill?.error) process.exit(1);
+      const sent = outcome.usageBackfill?.sentSnapshots ?? 0;
+      const usageChecked = sent > 0
+        ? `, ${sent} usage snapshot${sent === 1 ? "" : "s"} checked`
+        : "";
       console.log(
-        `✓ ${outcome.pushed} day${outcome.pushed === 1 ? "" : "s"} pushed` +
+        `✓ ${outcome.pushed} activity payload${outcome.pushed === 1 ? "" : "s"} pushed` +
+        usageChecked +
         (outcome.queuedDrained ? `, ${outcome.queuedDrained} queued retried` : "") +
         (outcome.queued ? `, ${outcome.queued} queued for retry (will fire next cycle)` : "")
       );
       break;
     }
     case "backfill": {
-      const { runTeamBackfill } = await import("../team/backfill.js");
-      const outcome = await runTeamBackfill((level, msg) => console.log(`[${level}] ${msg}`));
+      const { runTeamSync } = await import("../team/sync.js");
+      const outcome = await runTeamSync(
+        (level, msg) => console.log(`[${level}] ${msg}`),
+        undefined,
+        { forceUsageBackfill: true },
+      );
       if (!outcome.paired) {
         console.error("Not paired. Run 'fleetlens team join <url> <device-token>' first.");
         process.exit(1);
       }
-      if (outcome.error) process.exit(1);
+      if (outcome.error || outcome.usageBackfill?.error) process.exit(1);
+      const inserted = outcome.usageBackfill?.insertedSnapshots ?? 0;
       console.log(
-        `✓ ${outcome.insertedSnapshots} new snapshot${outcome.insertedSnapshots === 1 ? "" : "s"} loaded` +
-        (outcome.skippedSnapshots ? `, ${outcome.skippedSnapshots} already-known` : "")
+        `✓ ${inserted} new snapshot${inserted === 1 ? "" : "s"} loaded` +
+        (outcome.usageBackfill?.skippedSnapshots
+          ? `, ${outcome.usageBackfill.skippedSnapshots} already-known`
+          : "") +
+        (outcome.pushed
+          ? `, ${outcome.pushed} activity payload${outcome.pushed === 1 ? "" : "s"} pushed`
+          : "")
       );
       break;
     }
