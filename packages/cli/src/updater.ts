@@ -19,7 +19,7 @@ export function shouldUpdate(local: string, remote: string): boolean {
 }
 
 /** Fetch latest version from npm registry. Returns null on failure. */
-async function fetchLatestVersion(): Promise<string | null> {
+export async function fetchLatestVersion(): Promise<string | null> {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CHECK_TIMEOUT_MS);
@@ -210,11 +210,32 @@ function reExec(): never {
  * Returns true if the CLI is running from a local development path
  * (i.e., not a global npm install). Skip auto-update in dev mode.
  */
-function isDevMode(): boolean {
+export function isDevMode(): boolean {
   // When running via `node packages/cli/dist/index.js`, argv[1] is a local path.
   // Global installs go through a shim in the npm prefix bin directory.
   const script = process.argv[1] ?? "";
   return script.includes("packages/cli/") || script.includes("packages\\cli\\");
+}
+
+export type UpdateAvailability = {
+  current: string;
+  latest: string | null;
+  updateAvailable: boolean;
+};
+
+export async function getUpdateAvailability(): Promise<UpdateAvailability | null> {
+  if (isDevMode()) return null;
+  const latest = await fetchLatestVersion();
+  if (latest === null) return {
+    current: CLI_VERSION,
+    latest: null,
+    updateAvailable: false,
+  };
+  return {
+    current: CLI_VERSION,
+    latest,
+    updateAvailable: shouldUpdate(CLI_VERSION, latest),
+  };
 }
 
 /**
@@ -230,12 +251,11 @@ export async function checkForUpdate(): Promise<void> {
     process.env.__CCLENS_UPDATED === "1"
   ) return;
 
-  const latest = await fetchLatestVersion();
-  if (latest === null) return; // offline or error
+  const availability = await getUpdateAvailability();
+  if (!availability?.latest) return; // dev mode, offline, or error
+  if (!availability.updateAvailable) return;
 
-  const current = CLI_VERSION;
-  if (!shouldUpdate(current, latest)) return;
-
+  const { current, latest } = availability;
   console.log(`Updating ${PACKAGE_NAME} ${current} → ${latest}...`);
 
   // Tear down any running server + daemon BEFORE installing so the
