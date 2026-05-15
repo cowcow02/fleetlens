@@ -448,6 +448,123 @@ export type CrossEditionStats = {
   roster: { membership_id: string; display_name: string; agent_hours: number; shipped: number }[];
 };
 
+// ─── Variant-specific shapes (v1–v5) ─────────────────────────────────────
+
+// v1: Member fingerprints — per-member synthesized portrait of how they
+// collaborate with the agent + their weekly arc.
+
+export type MemberFingerprintArc = {
+  weeks_back: number; // e.g. 4 for a 4-week window
+  // Each array is length === weeks_back, oldest → newest.
+  sessions_per_week: number[];
+  skill_loads_per_session: number[];
+  orchestrated_pct: number[];
+  median_session_min: number[];
+  first_user_to_merge_min: number[];
+  cost_per_pr_usd: number[];
+};
+
+export type MemberFingerprint = {
+  member: string;
+  role_hint: string; // editorial: "Structured-imperative", "Terse delegator", …
+  signature_move: string; // single short line: "5-min brainstorm → long brief → small refinements"
+  signature_paragraph: string; // 2-3 sentence synthesis of how they collaborate
+  this_week: {
+    sessions: number;
+    hours: number;
+    prs: number;
+    median_first_user_to_merge_min: number;
+    notable_signals: string[];
+  };
+  arc: MemberFingerprintArc;
+  growth_synthesis: string; // 1-2 sentences naming the multi-week trend
+};
+
+// v2: Growth trajectories — practice × member matrix of weekly sparklines.
+
+export type TrajectoryRow = {
+  practice: string;
+  unit: string; // for tooltips: "sessions/week", "min", "%", "$"
+  direction_better: "higher" | "lower"; // semantics for color hints
+  per_member: { member: string; weekly: number[]; current_label?: string }[];
+};
+
+export type TrajectoryObservation = {
+  member: string;
+  observation: string;
+};
+
+// v3: Practice diffusion grid — members × practices, cells = status.
+
+export type DiffusionStatus = "originator" | "regular" | "tried" | "not_yet";
+
+export type DiffusionPractice = {
+  key: string;
+  label: string;
+  short_desc: string;
+};
+
+export type DiffusionGridRow = {
+  member: string;
+  cells: Record<string, DiffusionStatus>; // keyed by DiffusionPractice.key
+};
+
+export type DiffusionArrow = {
+  practice_key: string;
+  from_member: string;
+  to_member: string;
+  date: string;
+  note: string;
+};
+
+// v4: Session archetypes — named shapes + per-member distribution.
+
+export type SessionArchetype = {
+  key: string;
+  name: string;
+  description: string;
+  cue: string;
+  illustrative_signature: string;
+};
+
+export type ArchetypeDistributionRow = {
+  member: string;
+  distribution: { archetype_key: string; pct: number }[];
+};
+
+export type IllustrativeSessionTimeline = {
+  session_label: string;
+  member: string;
+  archetype_key: string;
+  // Sequence of turns, each a label + relative size (chars or duration).
+  turns: { kind: "user" | "agent" | "tool" | "subagent"; weight: number; tag?: string }[];
+};
+
+// v5: Story — ordered prose paragraphs that read like a magazine column.
+
+export type StoryParagraph = {
+  heading?: string;
+  body: string;
+};
+
+export type VariantsPayload = {
+  // v1
+  fingerprints: MemberFingerprint[];
+  // v2
+  trajectory_rows: TrajectoryRow[];
+  trajectory_observations: TrajectoryObservation[];
+  // v3
+  diffusion_practices: DiffusionPractice[];
+  diffusion_grid: DiffusionGridRow[];
+  diffusion_arrows: DiffusionArrow[];
+  // v4
+  session_archetypes: SessionArchetype[];
+  archetype_distribution: ArchetypeDistributionRow[];
+  illustrative_session_timelines: IllustrativeSessionTimeline[];
+  // v5
+  story_paragraphs: StoryParagraph[];
+};
+
 // ─── The whole report ─────────────────────────────────────────────────────
 
 export type TeamInsightReport = {
@@ -486,4 +603,6 @@ export type TeamInsightReport = {
   spotlights: Spotlight[];
   meta: MetaStats;
   cross_edition: CrossEditionStats;
+
+  variants: VariantsPayload;
 };

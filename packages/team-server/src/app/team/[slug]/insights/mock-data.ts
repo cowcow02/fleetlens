@@ -1062,6 +1062,540 @@ export const mockTeamInsightReport: TeamInsightReport = {
       { membership_id: "mock-membership-dana", display_name: "Dana", agent_hours: 1.4, shipped: 0 },
     ],
   },
+
+  // ─── Variant-specific payloads ──────────────────────────────────────────
+  variants: {
+    // ─── v1: Member fingerprints ──────────────────────────────────────────
+    fingerprints: [
+      {
+        member: "Charlie",
+        role_hint: "Structured-imperative · planning-heavy",
+        signature_move: "Brainstorm warmup → long structured brief → TodoWrite → small refinements",
+        signature_paragraph:
+          "Charlie almost always loads a brainstorming or writing-plans skill before any tool fires, then drops a 900-character structured brief, then iterates through small turn-by-turn refinements. The planning is front-loaded; the building is delegated. He's the team's lowest cost-per-PR ($17.07), and the front-loaded planning seems to be why.",
+        this_week: {
+          sessions: 16,
+          hours: 6.8,
+          prs: 3,
+          median_first_user_to_merge_min: 88,
+          notable_signals: [
+            "Pre-flight skill loads in 11/16 sessions",
+            "4-day plan-mode discipline streak",
+            "Authored 2 new skills this week (release-ship-check, spec-frame-loader)",
+            "First-time use of harness-orchestrate (picked up from Alice)",
+          ],
+        },
+        arc: {
+          weeks_back: 4,
+          sessions_per_week: [9, 11, 14, 16],
+          skill_loads_per_session: [0.8, 1.1, 1.5, 1.9],
+          orchestrated_pct: [22, 28, 31, 38],
+          median_session_min: [41, 38, 31, 25],
+          first_user_to_merge_min: [124, 102, 95, 88],
+          cost_per_pr_usd: [28.40, 24.10, 20.20, 17.07],
+        },
+        growth_synthesis:
+          "Compressing planning into a tighter, more delegated workflow — sessions are getting shorter, orchestrated-session share is climbing, and time-to-merge is dropping four weeks running.",
+      },
+      {
+        member: "Alice",
+        role_hint: "Terse-imperative · delegator",
+        signature_move: "Short brief → harness-orchestrate brief subagent → parallel workers → merge",
+        signature_paragraph:
+          "Alice writes the shortest briefs on the team (median ~80 chars) and relies on harness-orchestrate to expand them into structured orchestration briefs that workers can read. Three of her sessions this week dispatched ≥3 subagents in parallel. Workers don't talk to each other; the orchestration brief is the contract.",
+        this_week: {
+          sessions: 11,
+          hours: 4.9,
+          prs: 1,
+          median_first_user_to_merge_min: 47,
+          notable_signals: [
+            "3/3 parallel-dispatch sessions shipped first-pass",
+            "Authored the brief-as-contract pattern (week's invention)",
+            "Highest delegation rate (1.27 dispatches/session)",
+            "Brief length dropped 18% week-over-week — leaning more on harness",
+          ],
+        },
+        arc: {
+          weeks_back: 4,
+          sessions_per_week: [7, 8, 10, 11],
+          skill_loads_per_session: [0.4, 0.6, 1.2, 1.4],
+          orchestrated_pct: [38, 47, 58, 64],
+          median_session_min: [54, 48, 41, 38],
+          first_user_to_merge_min: [82, 64, 51, 47],
+          cost_per_pr_usd: [62.10, 48.80, 39.40, 36.74],
+        },
+        growth_synthesis:
+          "Moving deeper into orchestration — briefs are shrinking as harness-orchestrate absorbs the structure, and first-pass ship rate keeps rising.",
+      },
+      {
+        member: "Bob",
+        role_hint: "Exploratory-conversational · long-autonomous",
+        signature_move: "Long contextual brief → load migration-guard → long autonomous turn → review",
+        signature_paragraph:
+          "Bob writes the longest briefs on the team (median ~1400 chars) — heavy on external context, Linear ticket refs, error logs. Once briefed, the agent runs autonomously for a long time. His kipwise-migration-guard skill gates the irreversible operations, which is what lets the autonomous runs ship safely on flag-touching changes.",
+        this_week: {
+          sessions: 9,
+          hours: 5.3,
+          prs: 2,
+          median_first_user_to_merge_min: 264,
+          notable_signals: [
+            "Longest single session: 4.2h autonomous on kipwise-v1",
+            "Highest tool-error rate (6.4%) — also highest recovery rate",
+            "Three late-night sessions (Tue/Wed/Thu) — worth a check-in",
+            "Brief length rose 24% week-over-week — documenting more context up-front",
+          ],
+        },
+        arc: {
+          weeks_back: 4,
+          sessions_per_week: [6, 7, 8, 9],
+          skill_loads_per_session: [0.5, 0.6, 0.7, 0.8],
+          orchestrated_pct: [8, 10, 11, 12],
+          median_session_min: [38, 46, 58, 71],
+          first_user_to_merge_min: [388, 312, 281, 264],
+          cost_per_pr_usd: [34.20, 28.80, 23.40, 20.59],
+        },
+        growth_synthesis:
+          "Building longer-running, lower-orchestration sessions — the bet is on better up-front context plus migration-guard, not delegation. Pattern is working: cost-per-PR keeps dropping even as autonomous runs get longer.",
+      },
+      {
+        member: "Dana",
+        role_hint: "New member · ramp-up week 3",
+        signature_move: "Short imperative prompts → mostly stock skills → no subagents yet",
+        signature_paragraph:
+          "Dana joined three weeks ago and is mid-ramp. Sessions are short, stock-skill-heavy, near-zero delegation. The shape of her sessions resembles Alice's early weeks more than Bob's. Friday saw her first subagent dispatch (Explore) and her first cross-member skill pickup (release-ship-check from Charlie).",
+        this_week: {
+          sessions: 5,
+          hours: 1.4,
+          prs: 0,
+          median_first_user_to_merge_min: 0,
+          notable_signals: [
+            "First subagent dispatch this week (Explore)",
+            "First pickup of another member's skill: release-ship-check from Charlie",
+            "Zero PRs shipped in 3 weeks — likely onboarding-pacing, not a problem yet",
+            "Stock-vs-user skill ratio: 92% stock (still early)",
+          ],
+        },
+        arc: {
+          weeks_back: 4,
+          sessions_per_week: [0, 2, 4, 5],
+          skill_loads_per_session: [0, 0.5, 0.8, 1.0],
+          orchestrated_pct: [0, 0, 0, 0],
+          median_session_min: [0, 18, 22, 24],
+          first_user_to_merge_min: [0, 0, 0, 0],
+          cost_per_pr_usd: [0, 0, 0, 0],
+        },
+        growth_synthesis:
+          "Standard new-member ramp — sessions and skill loads both climbing linearly. Friday's first subagent dispatch is the early-orchestration milestone usually seen around week 3-4.",
+      },
+    ],
+
+    // ─── v2: Growth trajectories ──────────────────────────────────────────
+    trajectory_rows: [
+      {
+        practice: "Sessions per week",
+        unit: "sessions",
+        direction_better: "higher",
+        per_member: [
+          { member: "Charlie", weekly: [9, 11, 14, 16], current_label: "16" },
+          { member: "Alice", weekly: [7, 8, 10, 11], current_label: "11" },
+          { member: "Bob", weekly: [6, 7, 8, 9], current_label: "9" },
+          { member: "Dana", weekly: [0, 2, 4, 5], current_label: "5" },
+        ],
+      },
+      {
+        practice: "Pre-flight skill loads / session",
+        unit: "loads",
+        direction_better: "higher",
+        per_member: [
+          { member: "Charlie", weekly: [0.8, 1.1, 1.5, 1.9], current_label: "1.9" },
+          { member: "Alice", weekly: [0.4, 0.6, 1.2, 1.4], current_label: "1.4" },
+          { member: "Bob", weekly: [0.5, 0.6, 0.7, 0.8], current_label: "0.8" },
+          { member: "Dana", weekly: [0, 0.5, 0.8, 1.0], current_label: "1.0" },
+        ],
+      },
+      {
+        practice: "Subagent dispatches / session",
+        unit: "dispatches",
+        direction_better: "higher",
+        per_member: [
+          { member: "Charlie", weekly: [0.4, 0.6, 0.8, 1.1], current_label: "1.1" },
+          { member: "Alice", weekly: [0.8, 1.0, 1.2, 1.3], current_label: "1.3" },
+          { member: "Bob", weekly: [0.1, 0.2, 0.2, 0.3], current_label: "0.3" },
+          { member: "Dana", weekly: [0, 0, 0, 0.2], current_label: "0.2" },
+        ],
+      },
+      {
+        practice: "Orchestrated session share",
+        unit: "%",
+        direction_better: "higher",
+        per_member: [
+          { member: "Charlie", weekly: [22, 28, 31, 38], current_label: "38%" },
+          { member: "Alice", weekly: [38, 47, 58, 64], current_label: "64%" },
+          { member: "Bob", weekly: [8, 10, 11, 12], current_label: "12%" },
+          { member: "Dana", weekly: [0, 0, 0, 0], current_label: "0%" },
+        ],
+      },
+      {
+        practice: "Plan-mode adoption (days/wk)",
+        unit: "days",
+        direction_better: "higher",
+        per_member: [
+          { member: "Charlie", weekly: [3, 3, 4, 4], current_label: "4" },
+          { member: "Alice", weekly: [0, 1, 2, 2], current_label: "2" },
+          { member: "Bob", weekly: [0, 0, 0, 0], current_label: "0" },
+          { member: "Dana", weekly: [0, 0, 1, 1], current_label: "1" },
+        ],
+      },
+      {
+        practice: "Median brief length",
+        unit: "chars",
+        direction_better: "lower",
+        per_member: [
+          { member: "Charlie", weekly: [1100, 1050, 980, 920], current_label: "920" },
+          { member: "Alice", weekly: [180, 140, 100, 80], current_label: "80" },
+          { member: "Bob", weekly: [1100, 1200, 1320, 1400], current_label: "1400" },
+          { member: "Dana", weekly: [0, 220, 280, 310], current_label: "310" },
+        ],
+      },
+      {
+        practice: "Median first-user → merge",
+        unit: "min",
+        direction_better: "lower",
+        per_member: [
+          { member: "Charlie", weekly: [124, 102, 95, 88], current_label: "88m" },
+          { member: "Alice", weekly: [82, 64, 51, 47], current_label: "47m" },
+          { member: "Bob", weekly: [388, 312, 281, 264], current_label: "264m" },
+          { member: "Dana", weekly: [0, 0, 0, 0], current_label: "—" },
+        ],
+      },
+      {
+        practice: "Cost per shipped PR",
+        unit: "$",
+        direction_better: "lower",
+        per_member: [
+          { member: "Charlie", weekly: [28.40, 24.10, 20.20, 17.07], current_label: "$17" },
+          { member: "Alice", weekly: [62.10, 48.80, 39.40, 36.74], current_label: "$37" },
+          { member: "Bob", weekly: [34.20, 28.80, 23.40, 20.59], current_label: "$21" },
+          { member: "Dana", weekly: [0, 0, 0, 0], current_label: "—" },
+        ],
+      },
+      {
+        practice: "Recovery moves (rescued sessions)",
+        unit: "count",
+        direction_better: "higher",
+        per_member: [
+          { member: "Charlie", weekly: [0, 1, 1, 2], current_label: "2" },
+          { member: "Alice", weekly: [1, 1, 2, 3], current_label: "3" },
+          { member: "Bob", weekly: [1, 2, 2, 2], current_label: "2" },
+          { member: "Dana", weekly: [0, 0, 0, 0], current_label: "0" },
+        ],
+      },
+    ],
+    trajectory_observations: [
+      {
+        member: "Charlie",
+        observation: "Pre-flight skill-loads more than doubled (0.8 → 1.9). The discipline is consolidating into a habit, and cost-per-PR is the lagging indicator: 39% drop in four weeks.",
+      },
+      {
+        member: "Alice",
+        observation: "Brief length dropping 18% week-over-week while delegation rate climbs — she's offloading structure to harness-orchestrate rather than to the prompt. The shape of her sessions is changing fast.",
+      },
+      {
+        member: "Bob",
+        observation: "Brief length is growing (1100 → 1400 chars), not shrinking — opposite of Alice. He's betting on richer up-front context rather than orchestration. Cost-per-PR still dropping, so the bet is paying off.",
+      },
+      {
+        member: "Dana",
+        observation: "Standard week-3 ramp curve. Friday's first subagent dispatch is the inflection most new members hit around week 3-4.",
+      },
+    ],
+
+    // ─── v3: Practice diffusion grid ──────────────────────────────────────
+    diffusion_practices: [
+      { key: "plan_mode", label: "Plan-mode discipline", short_desc: "Uses ExitPlanMode before building" },
+      { key: "brainstorm_warmup", label: "Brainstorm warmup", short_desc: "Opens with a brainstorming skill" },
+      { key: "parallel_dispatch", label: "Parallel dispatch", short_desc: "≥3 subagents in parallel" },
+      { key: "reviewer_triad", label: "Reviewer triad", short_desc: "Multiple reviewer subagents before merge" },
+      { key: "long_autonomous", label: "Long autonomous", short_desc: "Tolerates >1h autonomous turns" },
+      { key: "skill_authoring", label: "Skill authoring", short_desc: "Has authored a user-skill" },
+      { key: "harness_orchestrate", label: "harness-orchestrate", short_desc: "Uses the brief-as-contract pattern" },
+      { key: "migration_guard", label: "migration-guard", short_desc: "Uses kipwise-migration-guard" },
+      { key: "release_ship_check", label: "release-ship-check", short_desc: "Pre-ship verification skill" },
+      { key: "todowrite_discipline", label: "TodoWrite discipline", short_desc: "Loads TodoWrite after spec" },
+      { key: "handoff_prose", label: "Cross-session handoff", short_desc: "Writes handoff prose between sessions" },
+      { key: "subagent_pickup", label: "Cross-member skill pickup", short_desc: "Uses a skill another member authored" },
+    ],
+    diffusion_grid: [
+      {
+        member: "Charlie",
+        cells: {
+          plan_mode: "regular",
+          brainstorm_warmup: "regular",
+          parallel_dispatch: "tried",
+          reviewer_triad: "originator",
+          long_autonomous: "tried",
+          skill_authoring: "originator",
+          harness_orchestrate: "tried",
+          migration_guard: "not_yet",
+          release_ship_check: "originator",
+          todowrite_discipline: "regular",
+          handoff_prose: "regular",
+          subagent_pickup: "regular",
+        },
+      },
+      {
+        member: "Alice",
+        cells: {
+          plan_mode: "tried",
+          brainstorm_warmup: "tried",
+          parallel_dispatch: "originator",
+          reviewer_triad: "tried",
+          long_autonomous: "not_yet",
+          skill_authoring: "originator",
+          harness_orchestrate: "originator",
+          migration_guard: "not_yet",
+          release_ship_check: "tried",
+          todowrite_discipline: "regular",
+          handoff_prose: "tried",
+          subagent_pickup: "not_yet",
+        },
+      },
+      {
+        member: "Bob",
+        cells: {
+          plan_mode: "not_yet",
+          brainstorm_warmup: "not_yet",
+          parallel_dispatch: "not_yet",
+          reviewer_triad: "not_yet",
+          long_autonomous: "originator",
+          skill_authoring: "originator",
+          harness_orchestrate: "not_yet",
+          migration_guard: "originator",
+          release_ship_check: "tried",
+          todowrite_discipline: "tried",
+          handoff_prose: "tried",
+          subagent_pickup: "not_yet",
+        },
+      },
+      {
+        member: "Dana",
+        cells: {
+          plan_mode: "tried",
+          brainstorm_warmup: "not_yet",
+          parallel_dispatch: "not_yet",
+          reviewer_triad: "not_yet",
+          long_autonomous: "not_yet",
+          skill_authoring: "not_yet",
+          harness_orchestrate: "not_yet",
+          migration_guard: "not_yet",
+          release_ship_check: "tried",
+          todowrite_discipline: "tried",
+          handoff_prose: "not_yet",
+          subagent_pickup: "tried",
+        },
+      },
+    ],
+    diffusion_arrows: [
+      {
+        practice_key: "harness_orchestrate",
+        from_member: "Alice",
+        to_member: "Charlie",
+        date: "2026-05-07",
+        note: "Charlie used Alice's harness-orchestrate for the first time on Thursday's topeka session. 3 days from origin to pickup.",
+      },
+      {
+        practice_key: "release_ship_check",
+        from_member: "Charlie",
+        to_member: "Dana",
+        date: "2026-05-09",
+        note: "Dana's first cross-member skill pickup — release-ship-check on a Friday ops-runbooks session.",
+      },
+    ],
+
+    // ─── v4: Session archetypes ───────────────────────────────────────────
+    session_archetypes: [
+      {
+        key: "spec_then_iterate",
+        name: "Spec-then-iterate",
+        description: "Long structured brief up-front, then small turn-by-turn refinements.",
+        cue: "First user msg >800 chars, no immediate subagent dispatch, many short follow-ups.",
+        illustrative_signature: "■■■■■ · ▪ · ▪ · ▪ · ▪ · ▪ · ▪ · ▪",
+      },
+      {
+        key: "parallel_orchestration",
+        name: "Parallel orchestration",
+        description: "Brief loaded once, then ≥3 worker subagents dispatched in parallel, then merge.",
+        cue: "Single subagent followed by N concurrent subagents within 2 min.",
+        illustrative_signature: "▪ · ◆ · ◆◆◆◆ · ▪",
+      },
+      {
+        key: "long_autonomous",
+        name: "Long autonomous",
+        description: "Short brief, then an extended uninterrupted agent run (>1h) with tool-heavy execution.",
+        cue: "Single user msg, then >60 min of tool calls without user turn.",
+        illustrative_signature: "▪ · ████████████████",
+      },
+      {
+        key: "conversational_debug",
+        name: "Conversational debug",
+        description: "Many short back-and-forth turns, exploratory, often with external refs.",
+        cue: "High turn-count, low tool-per-turn, multiple corrections mid-flight.",
+        illustrative_signature: "▪·▪·▪·▪·▪·▪·▪·▪·▪·▪·▪·▪",
+      },
+      {
+        key: "skill_loaded_ritual",
+        name: "Skill-loaded ritual",
+        description: "Pre-flight loads 2+ skills before any tool call, then executes structured workflow.",
+        cue: "Two or more skill loads in the first 60 seconds.",
+        illustrative_signature: "✦✦ · ▪ · ▪ · ▪ · ▪",
+      },
+      {
+        key: "reviewer_triad_gate",
+        name: "Reviewer-triad gate",
+        description: "Implementer agent runs first; then N reviewer subagents critique in parallel before merge.",
+        cue: "One implementation pass, then a burst of ≥2 reviewer subagents.",
+        illustrative_signature: "▪ · ◆ · ▪ · ★★★ · ▪",
+      },
+    ],
+    archetype_distribution: [
+      {
+        member: "Charlie",
+        distribution: [
+          { archetype_key: "spec_then_iterate", pct: 31 },
+          { archetype_key: "parallel_orchestration", pct: 19 },
+          { archetype_key: "long_autonomous", pct: 6 },
+          { archetype_key: "conversational_debug", pct: 13 },
+          { archetype_key: "skill_loaded_ritual", pct: 25 },
+          { archetype_key: "reviewer_triad_gate", pct: 6 },
+        ],
+      },
+      {
+        member: "Alice",
+        distribution: [
+          { archetype_key: "spec_then_iterate", pct: 9 },
+          { archetype_key: "parallel_orchestration", pct: 64 },
+          { archetype_key: "long_autonomous", pct: 0 },
+          { archetype_key: "conversational_debug", pct: 18 },
+          { archetype_key: "skill_loaded_ritual", pct: 9 },
+          { archetype_key: "reviewer_triad_gate", pct: 0 },
+        ],
+      },
+      {
+        member: "Bob",
+        distribution: [
+          { archetype_key: "spec_then_iterate", pct: 22 },
+          { archetype_key: "parallel_orchestration", pct: 0 },
+          { archetype_key: "long_autonomous", pct: 56 },
+          { archetype_key: "conversational_debug", pct: 22 },
+          { archetype_key: "skill_loaded_ritual", pct: 0 },
+          { archetype_key: "reviewer_triad_gate", pct: 0 },
+        ],
+      },
+      {
+        member: "Dana",
+        distribution: [
+          { archetype_key: "spec_then_iterate", pct: 40 },
+          { archetype_key: "parallel_orchestration", pct: 0 },
+          { archetype_key: "long_autonomous", pct: 0 },
+          { archetype_key: "conversational_debug", pct: 60 },
+          { archetype_key: "skill_loaded_ritual", pct: 0 },
+          { archetype_key: "reviewer_triad_gate", pct: 0 },
+        ],
+      },
+    ],
+    illustrative_session_timelines: [
+      {
+        session_label: "Charlie · Mon · topeka · reviewer-triad",
+        member: "Charlie",
+        archetype_key: "reviewer_triad_gate",
+        turns: [
+          { kind: "user", weight: 4, tag: "spec brief 920 ch" },
+          { kind: "tool", weight: 1, tag: "Read" },
+          { kind: "tool", weight: 1, tag: "Read" },
+          { kind: "subagent", weight: 3, tag: "implementer" },
+          { kind: "user", weight: 1, tag: "refine" },
+          { kind: "subagent", weight: 2, tag: "reviewer (correctness)" },
+          { kind: "subagent", weight: 2, tag: "reviewer (ergonomics)" },
+          { kind: "subagent", weight: 2, tag: "reviewer (rollback)" },
+          { kind: "agent", weight: 2, tag: "merge findings" },
+          { kind: "user", weight: 1, tag: "ship" },
+        ],
+      },
+      {
+        session_label: "Alice · Tue · topeka · 4-way parallel",
+        member: "Alice",
+        archetype_key: "parallel_orchestration",
+        turns: [
+          { kind: "user", weight: 1, tag: "short brief 80 ch" },
+          { kind: "tool", weight: 1, tag: "Skill: harness-orchestrate" },
+          { kind: "subagent", weight: 2, tag: "orchestration brief" },
+          { kind: "subagent", weight: 2, tag: "worker 1" },
+          { kind: "subagent", weight: 2, tag: "worker 2" },
+          { kind: "subagent", weight: 2, tag: "worker 3" },
+          { kind: "subagent", weight: 2, tag: "worker 4" },
+          { kind: "agent", weight: 2, tag: "merge diffs" },
+          { kind: "user", weight: 1, tag: "ship" },
+        ],
+      },
+      {
+        session_label: "Bob · Wed · kipwise-v1 · 4.2h autonomous",
+        member: "Bob",
+        archetype_key: "long_autonomous",
+        turns: [
+          { kind: "user", weight: 5, tag: "1400-char context + KIP-148 ref" },
+          { kind: "tool", weight: 1, tag: "Skill: kipwise-migration-guard" },
+          { kind: "tool", weight: 1, tag: "Read schema" },
+          { kind: "tool", weight: 1, tag: "Read migration history" },
+          { kind: "tool", weight: 1, tag: "Bash: pg_dump" },
+          { kind: "tool", weight: 1, tag: "Edit migration" },
+          { kind: "tool", weight: 1, tag: "Bash: pnpm test" },
+          { kind: "tool", weight: 1, tag: "Edit migration" },
+          { kind: "tool", weight: 1, tag: "Bash: pnpm db:migrate" },
+          { kind: "tool", weight: 1, tag: "guard caught DROP COLUMN" },
+          { kind: "user", weight: 1, tag: "confirm" },
+          { kind: "tool", weight: 1, tag: "Edit" },
+          { kind: "tool", weight: 1, tag: "Bash: pnpm test" },
+          { kind: "tool", weight: 1, tag: "Commit + PR" },
+        ],
+      },
+    ],
+
+    // ─── v5: Story-only ───────────────────────────────────────────────────
+    story_paragraphs: [
+      {
+        heading: "The week the team noticed",
+        body: "Five days that hint that the team's relationship with the coding agent is changing. Two members compressed their workflow, one member doubled down on the opposite approach, and a new member crossed the first orchestration milestone — all in the same week. None of it would show up in a PR review or a sprint report. It only shows up in how each of them held the keyboard.",
+      },
+      {
+        heading: "Charlie's planning ritual is becoming a habit",
+        body: "Four weeks ago, Charlie loaded a skill in roughly one of every two sessions. This week he loaded one in fourteen of sixteen. The skill is almost always superpowers:writing-plans or superpowers:brainstorming, fired before any tool call. The lagging indicator: his cost per shipped PR dropped from $28 to $17 in the same four weeks. The team's lowest now.",
+      },
+      {
+        heading: "Alice taught the team how to dispatch in parallel",
+        body: "On Tuesday afternoon Alice ran four worker subagents against the same file at the same time, with one orchestration brief subagent acting as their shared contract. The session shipped a PR in 47 minutes — the team's fastest first-pass ship of the week. By Thursday, Charlie tried the pattern for the first time. The diffusion arrow on the dashboard says three days from origin to first pickup. The pattern was unknown on this team four weeks ago.",
+      },
+      {
+        heading: "Bob is making the opposite bet, and it's also working",
+        body: "Where Alice shrinks her briefs and offloads structure to harness-orchestrate, Bob's briefs have grown 27% in four weeks. He's pouring more context — KIP refs, error logs, schema dumps — into the first user message, and then letting the agent run for hours. The 4.2-hour autonomous session on Wednesday's migration was the longest of the week, and it shipped without rework. His cost-per-PR is also dropping. Two different theories of the human-agent collaboration, both gaining evidence.",
+      },
+      {
+        heading: "Dana hit the third-week inflection",
+        body: "Dana's first three weeks resemble the curve every new member rides — short sessions, mostly stock skills, near-zero delegation. Friday's Explore subagent dispatch is the first orchestration milestone, the one most new members hit around week 3-4. The next inflection to watch for is the first cross-member skill pickup; that happened the same day (release-ship-check, from Charlie). Two milestones at once, slightly ahead of the median ramp.",
+      },
+      {
+        heading: "Where the team is converging",
+        body: "Three of the four active members loaded a brainstorming or writing-plans skill at least once this week, up from one last week. Plan-mode adoption is at 75% — far above the org baseline of 41%. The team is not just building with agents; they're starting to share a small repertoire of structured warmup moves. The team-built skill collection (harness-orchestrate, kipwise-migration-guard, release-ship-check, spec-frame-loader) is the visible product of that shared repertoire.",
+      },
+      {
+        heading: "Where the team is still solo",
+        body: "Bob's migration-guard skill is used by exactly one person — Bob — and it's the load-bearing piece of his Wednesday session. If Bob's out for a sprint, no one else on the team has that pattern in their muscle memory. The bus-factor view on the dashboard names the practice; the question for next week's 1:1s is whether to pair-document it or accept the concentration.",
+      },
+      {
+        heading: "What to ask in this week's 1:1s",
+        body: "Three concrete prompts surface from the week. Ask Alice whether harness-orchestrate generalizes beyond topeka or is project-specific. Ask Bob about the late-night session count — three nights in a row Tue/Wed/Thu, all over two hours, is a workload check, not a productivity question. Ask Dana what the ramp has felt like; she's a few days ahead of the median curve, and that's worth understanding before week four.",
+      },
+    ],
+  },
 };
 
 void MEMBERS;
