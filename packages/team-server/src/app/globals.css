@@ -2595,3 +2595,236 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   text-decoration: none;
 }
 .methodology-cite:hover { text-decoration: underline; }
+
+/* ─── v3 (2026) · delegation gap headline ────────────────────────────── */
+
+.delegation-headline {
+  font-family: "Instrument Serif", serif;
+  font-size: 18px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--ink);
+  padding: 14px 18px;
+  background: color-mix(in srgb, var(--accent) 5%, var(--paper));
+  border-left: 3px solid var(--accent);
+  border-radius: 2px;
+  margin-bottom: 16px;
+}
+
+.delegation-row {
+  display: grid;
+  grid-template-columns: 1fr 30px 1fr 30px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .delegation-row { grid-template-columns: 1fr; }
+  .delegation-arrow { display: none; }
+}
+.delegation-block {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 16px 18px;
+  border-radius: 2px;
+  text-align: center;
+}
+.delegation-block.delegation-gap {
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+}
+.delegation-block-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+.delegation-block-value {
+  font-family: "Instrument Serif", serif;
+  font-size: 38px;
+  line-height: 1;
+  color: var(--ink);
+}
+.delegation-block.delegation-gap .delegation-block-value { color: var(--accent); }
+.delegation-block-spark {
+  margin-top: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+}
+.delegation-arrow {
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 22px;
+  color: var(--mute);
+}
+
+/* ─── v3 · DX framework (Util / Impact / Cost) ─────────────────────── */
+
+.dx-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 6px;
+}
+@media (max-width: 900px) {
+  .dx-grid { grid-template-columns: 1fr; }
+}
+.dx-pillar {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  padding: 18px 20px;
+  border-radius: 2px;
+  border-top: 3px solid var(--accent);
+}
+.dx-pillar:nth-child(2) { border-top-color: var(--positive); }
+.dx-pillar:nth-child(3) { border-top-color: var(--warning); }
+.dx-pillar-label {
+  font-family: "Instrument Serif", serif;
+  font-size: 22px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.dx-pillar-tagline {
+  font-size: 11px;
+  color: var(--mute);
+  margin-bottom: 18px;
+  font-style: italic;
+}
+.dx-pillar-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dx-metric {
+  padding: 10px 0;
+  border-top: 1px solid var(--rule-soft);
+}
+.dx-metric:first-child { border-top: none; }
+.dx-metric-label {
+  font-size: 11px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.dx-metric-value {
+  font-family: "Instrument Serif", serif;
+  font-size: 24px;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.dx-metric-delta {
+  margin-top: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+}
+.dx-metric-delta.positive { color: var(--positive); }
+.dx-metric-delta.negative { color: var(--danger); }
+
+/* ─── v3 · augmentation/automation flip ───────────────────────────── */
+
+.flip-bar {
+  display: flex;
+  height: 32px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.flip-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+}
+.flip-augmentation { background: #2a6f97; }
+.flip-automation { background: var(--accent); }
+.flip-note {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--mute) 5%, var(--paper));
+  border-radius: 2px;
+  border-left: 3px solid var(--mute);
+}
+
+/* ─── v3 · context-engineering context-file authorship strip ────────── */
+
+.ce-context-files {
+  margin-top: 22px;
+  padding: 14px 18px;
+  background: color-mix(in srgb, var(--positive) 4%, var(--paper));
+  border-left: 3px solid var(--positive);
+  border-radius: 2px;
+}
+.ce-context-files-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+.ce-context-files-bar {
+  display: flex;
+  height: 28px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.ce-context-files-seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+}
+.ce-context-files-seg.human { background: var(--positive); }
+.ce-context-files-seg.llm { background: var(--warning); }
+.ce-context-files-note {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* ─── v3 · Economic Index primitives table ─────────────────────── */
+
+.primitives-table .primitives-cell {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+.primitives-session-meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+  margin-top: 2px;
+}
+.primitive-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.primitive-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rule);
+}
+.primitive-dot.filled { background: var(--accent); }
+.primitive-dots-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+  margin-left: 4px;
+}

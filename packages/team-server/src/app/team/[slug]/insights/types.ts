@@ -569,60 +569,151 @@ export type VariantsPayload = {
   v3_extras: V3Extras;
 };
 
-export type V3Extras = {
-  // Universal-vendor metric (Anthropic / Copilot / Cursor / Cody all expose it).
-  // Approximated as: agent-suggested edits that survived to commit / total agent edits.
-  acceptance_rate: {
-    pct_this_week: number;
-    pct_last_week: number;
-    delta_pp: number;
-  };
+// v3 reference set (all Q1/Q2 2026):
+// - DX AI Measurement Framework (April 2026): Utilization / Impact / Cost
+//   https://getdx.com/whitepaper/ai-measurement-framework/
+// - Anthropic 2026 Agentic Coding Trends Report (May 2026): delegation gap
+//   https://resources.anthropic.com/2026-agentic-coding-trends-report
+// - Anthropic Economic Index Jan 2026: five economic primitives
+//   https://www.anthropic.com/research/anthropic-economic-index-january-2026-report
+// - Context engineering (Fowler, May 2026)
+//   https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html
+// - Harness engineering (OpenAI 2026, Philipp Schmid 2026)
+//   https://openai.com/index/harness-engineering/
+// - METR self-reported impact May 2026 (walks back 2025 RCT)
+//   https://metr.org/blog/2026-05-11-ai-usage-survey/
+// - DX AI Impact Report Q1 2026 (April 2026) — "Shadow AI" counter-pattern
+//   https://getdx.com/blog/ai-impact-report-q1-2026/
 
-  // Economic Index automation vs augmentation axis.
-  // "augmentation" = sessions with steady human steering (interactive).
-  // "automation" = sessions with long autonomous turns (handoff).
-  automation_share: {
-    automation_pct_this_week: number;
-    automation_pct_last_week: number;
-    automation_pct_trend: number[]; // 4 weeks
-    delta_pp: number;
-  };
+// Anthropic Economic Index January 2026 — five primitives per session.
+export type EconomicPurpose =
+  | "build"
+  | "debug"
+  | "refactor"
+  | "plan"
+  | "research"
+  | "test"
+  | "release"
+  | "meta";
 
-  // Economic Index interaction-type mix (population view, anchored in shared sessions).
-  interaction_type_mix: { type: InteractionType; share_pct: number; delta_pp: number }[];
+export type EconomicPrimitives = {
+  task_complexity: 1 | 2 | 3 | 4 | 5;
+  skill_level_required: 1 | 2 | 3 | 4 | 5; // 1=junior, 5=staff/expert
+  purpose: EconomicPurpose;
+  ai_autonomy: 1 | 2 | 3 | 4 | 5; // 1=heavy human steer, 5=fully autonomous
+  task_success: 1 | 2 | 3 | 4 | 5; // 1=blocked, 5=shipped clean
+};
 
-  // Economic Index complexity distribution (1–5).
-  complexity_distribution: { score: ComplexityScore; sessions: number }[];
-  complexity_median_this_week: number;
-  complexity_median_last_week: number;
-
-  // Faros AI Productivity Paradox — where the bottleneck moved.
-  bottleneck_shift: {
-    phase: "coding" | "reviewing" | "merging" | "deploying";
-    minutes_this_week: number;
-    minutes_last_week: number;
+// DX AI Measurement Framework (April 2026, Atlassian/DX).
+export type DxFramework = {
+  utilization: {
+    sessions_per_eng_per_week: number;
     delta_pct: number;
-  }[];
-  bottleneck_headline: string; // LLM one-liner summarizing the shift
-
-  // DORA-style instability watch — honest reporting of regressions.
-  quality_watch: {
-    reverts_this_week: number;
-    reverts_last_week: number;
-    rework_prs_this_week: number; // PRs needing follow-up fixes <24h
-    rework_prs_last_week: number;
-    incident_tagged_sessions: number;
-    headline: string; // LLM line characterizing the quality picture
+    agent_assisted_pr_share_pct: number;
+    delta_pp: number;
+    skills_loaded_per_session: number;
   };
+  impact: {
+    median_first_user_to_merge_min: number;
+    delta_pct: number;
+    rework_pr_pct: number;
+    delta_pp: number;
+    shipped_via_agent_share_pct: number;
+    delta_pp_shipped: number;
+  };
+  cost: {
+    usd_total_week: number;
+    delta_pct: number;
+    usd_per_shipped_pr: number;
+    delta_pct_per_pr: number;
+    plan_burn_pct: number;
+  };
+};
 
-  // Methodology / honesty footer. Each entry is a single declarative line.
+// Anthropic 2026 Agentic Coding Trends Report — delegation gap.
+// used = sessions where AI is in the loop; fully_delegated = sessions with
+// minimal human turns after the initial brief (Anthropic 2026: ~60% / <20%).
+export type DelegationGap = {
+  used_pct: number; // share of sessions using AI
+  fully_delegated_pct: number; // share where human ≤ 1 turn after initial brief
+  gap_pp: number; // used_pct - fully_delegated_pct
+  trend_used_pct: number[]; // 4 weeks
+  trend_fully_delegated_pct: number[]; // 4 weeks
+  headline: string;
+};
+
+// Context engineering metrics (Fowler 2026, packmind).
+export type ContextEngineeringMetrics = {
+  conformity_rate_pct: number; // generated code matches team standards
+  conformity_delta_pp: number;
+  rework_ratio_pct: number; // post-merge fix time vs initial dev time
+  rework_delta_pp: number;
+  review_depth_per_pr: number; // human comments per agent-authored PR
+  review_depth_delta_pct: number;
+  code_churn_14d_pct: number; // new code reverted within 14 days
+  code_churn_delta_pp: number;
+  user_authored_context_files: number; // CLAUDE.md, skills, etc.
+  llm_authored_context_files: number; // generated rules/skills
+};
+
+// Harness engineering metrics (OpenAI 2026, Philipp Schmid 2026).
+export type HarnessEngineeringMetrics = {
+  working_memory_budget: {
+    median_pct_used: number; // % of context window consumed at session end
+    sessions_over_80pct: number; // sessions that bumped against the ceiling
+  };
+  cache_hit_rate_pct: number;
+  cache_hit_delta_pp: number;
+  tool_call_efficiency: {
+    successful_calls_pct: number;
+    median_tools_per_outcome_unit: number; // tools per shipped change
+  };
+  trajectory_eval: {
+    sessions_with_unforced_loops: number;
+    sessions_with_premature_completion: number;
+    sessions_with_steady_progress: number;
+  };
+};
+
+// Augmentation vs automation flip (Economic Index Jan 2026: 52% / 45% reversed
+// from August 2025's automation lead).
+export type AutomationAugmentationFlip = {
+  augmentation_pct_this_week: number;
+  automation_pct_this_week: number;
+  trend_this_team: { week_monday: string; augmentation_pct: number; automation_pct: number }[];
+  industry_baseline_jan_2026: { augmentation_pct: number; automation_pct: number };
+  note: string;
+};
+
+// DORA + attribution layers — the 2026 reframing (DORA "Balancing AI tensions").
+export type DoraAttribution = {
+  deployment_frequency: { current: number; ai_assisted_pct: number };
+  lead_time_min: { current: number; ai_assisted_delta_pct: number };
+  change_failure_rate_pct: { current: number; ai_assisted: number; human_authored: number };
+  mttr_min: { current: number; ai_assisted_delta_pct: number };
+  note: string;
+};
+
+export type V3Extras = {
+  // DX AI Measurement Framework backbone
+  dx_framework: DxFramework;
+  // Anthropic 2026 delegation gap (replaces "AI adoption %")
+  delegation_gap: DelegationGap;
+  // Economic Index January 2026 augmentation/automation flip
+  flip: AutomationAugmentationFlip;
+  // Context engineering metrics (post-prompt-engineering frontier)
+  context_engineering: ContextEngineeringMetrics;
+  // Harness engineering metrics
+  harness_engineering: HarnessEngineeringMetrics;
+  // DORA + attribution layers
+  dora_attribution: DoraAttribution;
+  // Honest methodology — explicit Shadow-AI counter-pattern framing
   methodology_notes: {
     title: string;
     body: string;
     citation?: { label: string; href: string };
   }[];
-
-  // Closing paragraphs that explicitly tie observations back to precedent.
+  // Closing reflections each tied to a 2026 source
   v3_closing: { heading?: string; body: string; cites?: { label: string; href: string }[] }[];
 };
 
@@ -728,6 +819,8 @@ export type CaseStudy = {
   // v3 additions — optional so v2 mock data still typechecks.
   interaction_type?: InteractionType;
   complexity?: ComplexityScore;
+  // v3.1 — full Economic Index primitives (Jan 2026 taxonomy) when available.
+  economic_primitives?: EconomicPrimitives;
 
   harness_signature: {
     user_skills: { name: string; uses: number }[];

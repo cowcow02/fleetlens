@@ -1618,6 +1618,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
         day_signature: "Brief-as-contract · four workers in parallel · merge → ship",
         interaction_type: "directive",
         complexity: 3,
+        economic_primitives: {
+          task_complexity: 3,
+          skill_level_required: 4,
+          purpose: "build",
+          ai_autonomy: 5,
+          task_success: 5,
+        },
         harness_signature: {
           user_skills: [{ name: "harness-orchestrate", uses: 1 }],
           user_subagents: [{ type: "implement-teammate", count: 4 }],
@@ -1672,6 +1679,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
         day_signature: "4.2h autonomous migration · guard caught 2 unsafe ops · zero-rework ship",
         interaction_type: "task-iteration",
         complexity: 5,
+        economic_primitives: {
+          task_complexity: 5,
+          skill_level_required: 5,
+          purpose: "release",
+          ai_autonomy: 5,
+          task_success: 5,
+        },
         harness_signature: {
           user_skills: [{ name: "kipwise-migration-guard", uses: 5 }],
           user_subagents: [],
@@ -1738,6 +1752,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
         day_signature: "Initial work autonomous · then rapid-fire debug cascade · last-mile human hand-holding",
         interaction_type: "feedback-loop",
         complexity: 4,
+        economic_primitives: {
+          task_complexity: 4,
+          skill_level_required: 5,
+          purpose: "debug",
+          ai_autonomy: 2,
+          task_success: 3,
+        },
         harness_signature: {
           user_skills: [{ name: "kipwise-migration-guard", uses: 1 }],
           user_subagents: [{ type: "implement-teammate", count: 1 }],
@@ -1807,6 +1828,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
         day_signature: "Three reviewer subagents BEFORE any code · zero-rework first PR",
         interaction_type: "validation",
         complexity: 4,
+        economic_primitives: {
+          task_complexity: 4,
+          skill_level_required: 4,
+          purpose: "plan",
+          ai_autonomy: 4,
+          task_success: 5,
+        },
         harness_signature: {
           user_skills: [{ name: "spec-frame-loader", uses: 1 }],
           user_subagents: [{ type: "spec-reviewer", count: 3 }],
@@ -1875,6 +1903,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
         day_signature: "Authoring a skill that loads other skills — team's first metasynthesized skill",
         interaction_type: "learning",
         complexity: 4,
+        economic_primitives: {
+          task_complexity: 4,
+          skill_level_required: 4,
+          purpose: "meta",
+          ai_autonomy: 4,
+          task_success: 4,
+        },
         harness_signature: {
           user_skills: [],
           user_subagents: [],
@@ -1924,93 +1959,155 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
     ],
 
-    // ─── v3: extras grounded in precedent (Economic Index, Faros, DORA, SPACE) ───
+    // ─── v3 (Q1-Q2 2026 grounded): DX framework + Anthropic 2026 delegation gap +
+    //      Economic Index Jan 2026 primitives + context engineering + harness
+    //      engineering + DORA-with-attribution ──────────────────────────────────
     v3_extras: {
-      acceptance_rate: {
-        pct_this_week: 87,
-        pct_last_week: 82,
-        delta_pp: 5,
+      dx_framework: {
+        utilization: {
+          sessions_per_eng_per_week: 10.3,
+          delta_pct: 14,
+          agent_assisted_pr_share_pct: 86,
+          delta_pp: 4,
+          skills_loaded_per_session: 1.5,
+        },
+        impact: {
+          median_first_user_to_merge_min: 81,
+          delta_pct: -22,
+          rework_pr_pct: 4.8,
+          delta_pp: 1.2,
+          shipped_via_agent_share_pct: 100,
+          delta_pp_shipped: 8,
+        },
+        cost: {
+          usd_total_week: 142.36,
+          delta_pct: 8,
+          usd_per_shipped_pr: 23.73,
+          delta_pct_per_pr: -19,
+          plan_burn_pct: 64,
+        },
       },
-      automation_share: {
-        automation_pct_this_week: 58,
-        automation_pct_last_week: 49,
-        automation_pct_trend: [38, 44, 49, 58],
-        delta_pp: 9,
-      },
-      interaction_type_mix: [
-        { type: "directive", share_pct: 32, delta_pp: 7 },
-        { type: "feedback-loop", share_pct: 22, delta_pp: -4 },
-        { type: "task-iteration", share_pct: 28, delta_pp: 2 },
-        { type: "validation", share_pct: 11, delta_pp: 1 },
-        { type: "learning", share_pct: 7, delta_pp: -6 },
-      ],
-      complexity_distribution: [
-        { score: 1, sessions: 4 },
-        { score: 2, sessions: 8 },
-        { score: 3, sessions: 14 },
-        { score: 4, sessions: 11 },
-        { score: 5, sessions: 4 },
-      ],
-      complexity_median_this_week: 3.4,
-      complexity_median_last_week: 3.0,
-      bottleneck_shift: [
-        { phase: "coding", minutes_this_week: 1108, minutes_last_week: 982, delta_pct: 13 },
-        { phase: "reviewing", minutes_this_week: 484, minutes_last_week: 254, delta_pct: 91 },
-        { phase: "merging", minutes_this_week: 88, minutes_last_week: 76, delta_pct: 16 },
-        { phase: "deploying", minutes_this_week: 42, minutes_last_week: 38, delta_pct: 11 },
-      ],
-      bottleneck_headline:
-        "Coding time grew 13% — but review time grew 91%. The team's bottleneck moved from writing code to reviewing it, the same pattern Faros documented across 10,000 developers.",
-      quality_watch: {
-        reverts_this_week: 1,
-        reverts_last_week: 0,
-        rework_prs_this_week: 2,
-        rework_prs_last_week: 1,
-        incident_tagged_sessions: 0,
+      delegation_gap: {
+        used_pct: 95,
+        fully_delegated_pct: 24,
+        gap_pp: 71,
+        trend_used_pct: [78, 84, 90, 95],
+        trend_fully_delegated_pct: [11, 14, 19, 24],
         headline:
-          "One revert + two rework PRs this week (vs zero + one last week). Quality picture is stable but slightly elevated — typical when output volume rises. Worth a check, not a flag.",
+          "AI is in the loop in 95% of sessions, but only 24% are fully delegated (≤1 human turn after the initial brief). The 71-point delegation gap is the team's growth headroom — almost identical to the team-wide pattern Anthropic documented in its 2026 Agentic Coding Trends Report.",
+      },
+      flip: {
+        augmentation_pct_this_week: 41,
+        automation_pct_this_week: 59,
+        trend_this_team: [
+          { week_monday: "2026-04-13", augmentation_pct: 62, automation_pct: 38 },
+          { week_monday: "2026-04-20", augmentation_pct: 56, automation_pct: 44 },
+          { week_monday: "2026-04-27", augmentation_pct: 51, automation_pct: 49 },
+          { week_monday: "2026-05-04", augmentation_pct: 41, automation_pct: 59 },
+        ],
+        industry_baseline_jan_2026: { augmentation_pct: 52, automation_pct: 45 },
+        note:
+          "Industry-wide, Anthropic's January 2026 Economic Index reported a flip from automation-led (Aug 2025) to augmentation-led (52/45). This team is moving the opposite direction over the past four weeks — toward more autonomous runs. Worth tracking whether that holds, or whether complexity 5 work pulls the team back toward augmentation.",
+      },
+      context_engineering: {
+        conformity_rate_pct: 84,
+        conformity_delta_pp: 6,
+        rework_ratio_pct: 11,
+        rework_delta_pp: -3,
+        review_depth_per_pr: 3.4,
+        review_depth_delta_pct: 18,
+        code_churn_14d_pct: 7,
+        code_churn_delta_pp: -2,
+        user_authored_context_files: 4,
+        llm_authored_context_files: 0,
+      },
+      harness_engineering: {
+        working_memory_budget: {
+          median_pct_used: 62,
+          sessions_over_80pct: 3,
+        },
+        cache_hit_rate_pct: 78,
+        cache_hit_delta_pp: 6,
+        tool_call_efficiency: {
+          successful_calls_pct: 96.4,
+          median_tools_per_outcome_unit: 38,
+        },
+        trajectory_eval: {
+          sessions_with_unforced_loops: 2,
+          sessions_with_premature_completion: 1,
+          sessions_with_steady_progress: 36,
+        },
+      },
+      dora_attribution: {
+        deployment_frequency: { current: 1.7, ai_assisted_pct: 100 },
+        lead_time_min: { current: 81, ai_assisted_delta_pct: -22 },
+        change_failure_rate_pct: { current: 6, ai_assisted: 5, human_authored: 8 },
+        mttr_min: { current: 38, ai_assisted_delta_pct: -12 },
+        note:
+          "Per DORA 2026's 'Balancing AI tensions' reframing, the four classic metrics are reported here with an explicit AI-assisted vs human-authored attribution layer. The classic four are necessary but no longer sufficient on their own — AI's effect can hide in the aggregate without the split.",
       },
       methodology_notes: [
         {
-          title: "Acceptance rate is a proxy, not ground truth.",
-          body: "We measure 'agent-suggested edits that survived to commit' as a proxy for acceptance. Edits that the agent revised before commit are counted as accepted (the revision was the human's accept signal). Different from GitHub Copilot's inline-completion acceptance, which counts ghost-text acceptances.",
+          title: "DX AI Measurement Framework as the backbone.",
+          body: "The top-of-page Utilization / Impact / Cost trichotomy is the DX AI Measurement Framework (Atlassian/DX, April 2026), explicitly designed to layer on top of DX Core 4 for AI-augmented work. We map each axis to existing fleet metrics rather than introducing parallel ones.",
+          citation: { label: "DX AI Measurement Framework whitepaper", href: "https://getdx.com/whitepaper/ai-measurement-framework/" },
         },
         {
-          title: "These metrics are deliberately conservative.",
-          body: "Sessions that haven't been opted into the team report contribute to numeric aggregates (Tier 1) but not to the case-study spine. Private projects don't contribute at any tier. Numbers here represent an underestimate of total agent activity.",
-          citation: { label: "Claude Code analytics docs", href: "https://code.claude.com/docs/en/analytics" },
+          title: "Delegation gap, not adoption %.",
+          body: "Per Anthropic's 2026 Agentic Coding Trends Report: 93%+ adoption is now table stakes industry-wide. The interesting headline metric is the delegation gap — what share of sessions are fully delegated (≤1 human turn after the brief) vs merely 'using AI'. The gap is the growth headroom.",
+          citation: { label: "Anthropic 2026 Agentic Coding Trends Report", href: "https://resources.anthropic.com/2026-agentic-coding-trends-report" },
         },
         {
-          title: "No per-member productivity ranking by design.",
-          body: "We follow SPACE's framing: activity data should identify bottlenecks, not rank people. Per-member rates and counts appear only inside their own case studies; the dashboard does not produce a sorted leaderboard.",
-          citation: { label: "SPACE framework — ACM Queue", href: "https://queue.acm.org/detail.cfm?id=3454124" },
+          title: "Five Economic Index primitives per session.",
+          body: "Each opted-in case study carries task complexity, skill level required, purpose, AI autonomy, and task success — the five primitives Anthropic introduced in its January 2026 Economic Index update. We apply them at single-team scale rather than population-scale Claude.ai data.",
+          citation: { label: "Anthropic Economic Index January 2026", href: "https://www.anthropic.com/research/anthropic-economic-index-january-2026-report" },
         },
         {
-          title: "Quality is reported alongside speed.",
-          body: "Per DORA 2025: 'AI doesn't fix a team; it amplifies what's already there.' The Quality Watch section reports reverts, rework PRs, and incident-tagged sessions next to the speed metrics — not in a separate dashboard a reader might skip.",
-          citation: { label: "DORA 2025 AI report", href: "https://cloud.google.com/resources/content/2025-dora-ai-assisted-software-development-report" },
+          title: "Context engineering metrics over prompt-quality grades.",
+          body: "Following Fowler's 2026 framing, the team-level signals worth tracking are conformity rate, rework ratio, review depth, and 14-day code churn — properties of how generated code lands and survives, not properties of any individual prompt. Note: LLM-authored context files have been shown to reduce task resolution by ~3% (Fowler/Anthropic 2026), so we track who authored the context.",
+          citation: { label: "Context engineering for coding agents — Martin Fowler", href: "https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html" },
         },
         {
-          title: "Interaction types follow Anthropic's Economic Index taxonomy.",
-          body: "Each shared session is classified as directive / feedback-loop / task-iteration / validation / learning. The taxonomy is from Anthropic's March 2026 Economic Index, applied here to a single team rather than population-scale Claude.ai data.",
-          citation: { label: "Anthropic Economic Index March 2026", href: "https://www.anthropic.com/research/economic-index-march-2026-report" },
+          title: "Harness engineering as a first-class measurement surface.",
+          body: "Per OpenAI's 'harness engineering' framing and Philipp Schmid's 2026 expansion, the team-scale signals are working-memory budget utilization, cache hit rate, tool-call efficiency, and trajectory-level evaluation (was the session on track even if outcome looks fine). These are properties of the orchestration shell, not the model.",
+          citation: { label: "Harness engineering — OpenAI 2026", href: "https://openai.com/index/harness-engineering/" },
+        },
+        {
+          title: "DORA + attribution, not DORA alone.",
+          body: "Per DORA 2026's 'Balancing AI tensions' reframing, the four classic metrics need an attribution overlay (AI-assisted vs human-authored) to be useful in AI-augmented teams. We report each metric with the split inline.",
+          citation: { label: "DORA · Balancing AI tensions", href: "https://dora.dev/insights/balancing-ai-tensions/" },
+        },
+        {
+          title: "Shadow-AI counter-pattern — opt-in by design.",
+          body: "DX's Q1 2026 AI Impact Report named 'Shadow AI' as the leading enterprise risk — devs using personal AI accounts outside team telemetry. Our privacy-preserving, opt-in-per-session model is explicitly the counter-pattern: nothing transcript-level leaves a member's machine without per-session consent, even at the cost of report completeness.",
+          citation: { label: "DX AI Impact Report Q1 2026", href: "https://getdx.com/blog/ai-impact-report-q1-2026/" },
+        },
+        {
+          title: "METR's 2025 'AI makes devs slower' finding has been walked back.",
+          body: "The widely-circulated 2025 METR RCT showing experienced developers were ~19% slower with AI was substantially revised in METR's February 2026 update — they now believe their original methodology over-corrected. We mention this because some readers may bring the 2025 framing into this report; it doesn't apply.",
+          citation: { label: "METR · Changing dev productivity experiment design (Feb 2026)", href: "https://metr.org/blog/2026-02-24-uplift-update/" },
         },
       ],
       v3_closing: [
         {
-          heading: "The bottleneck moved",
-          body: "Coding time grew 13%; review time grew 91%. The pattern matches Faros's 10,000-developer study: 'AI Productivity Paradox' — individual speed wins don't aggregate to org-level delivery improvements when the bottleneck silently relocates to PR review. The team's next compounding investment is probably review tooling, not faster agents.",
-          cites: [{ label: "Faros AI Productivity Paradox", href: "https://www.faros.ai/blog/ai-software-engineering" }],
+          heading: "The delegation gap is the headline",
+          body: "AI is in the loop in 95% of this team's sessions — only 24% are fully delegated. That 71-point gap is the team's growth headroom for the next quarter and matches the pattern Anthropic documented in its 2026 Agentic Coding Trends Report at the industry level. The interesting question is no longer 'is the team using AI' but 'where does delegation still break down' — and the case-study spine answers that on a session-by-session basis.",
+          cites: [{ label: "Anthropic 2026 Agentic Coding Trends Report", href: "https://resources.anthropic.com/2026-agentic-coding-trends-report" }],
         },
         {
-          heading: "Automation share is climbing — augmentation isn't dying",
-          body: "The team's automation share rose from 38% to 58% over four weeks (sessions with long autonomous turns, vs sessions with steady human steering). But Bob's Thursday debug session is the visible reminder that augmentation still carries the highest-complexity work — where the agent can't infer domain knowledge from the codebase. The two modes coexist; the share rebalances.",
-          cites: [{ label: "Anthropic Economic Index", href: "https://www.anthropic.com/research/economic-index-march-2026-report" }],
+          heading: "Augmentation/automation is flipping back toward automation here",
+          body: "Industry-wide, Anthropic's January 2026 Economic Index reported a flip from automation-led (Aug 2025) to augmentation-led (52% / 45%). This team is moving the opposite direction over four weeks — from 62/38 augmentation to 41/59 automation. Worth watching whether complexity-5 work (Bob's migrations) pulls the team back toward augmentation, the way Anthropic's industry data did.",
+          cites: [{ label: "Anthropic Economic Index January 2026", href: "https://www.anthropic.com/research/anthropic-economic-index-january-2026-report" }],
         },
         {
-          heading: "Complexity rose, acceptance rose",
-          body: "Median session complexity moved from 3.0 to 3.4 over the week, and agent-edit acceptance rate moved from 82% to 87%. This is the team-scale version of the trajectory Anthropic published for its own Claude Code use (3.2 → 3.8 across H1 2025). Worth tracking month over month — a sustained climb here would be the strongest evidence the harness is genuinely getting better, not just busier.",
-          cites: [{ label: "How Anthropic teams use Claude Code (PDF)", href: "https://www-cdn.anthropic.com/58284b19e702b49db9302d5b6f135ad8871e7658.pdf" }],
+          heading: "Context engineering is the post-prompt frontier",
+          body: "Conformity rate up 6pp, code churn down 2pp, review depth up 18% — three signals from Fowler's context-engineering framing point the same direction: the team's CLAUDE.md and user-authored skills are tightening the harness. All four context files in use this week are human-authored (zero LLM-generated rules); per Fowler/Anthropic 2026, that's the right ratio — LLM-generated context files reduce task resolution by ~3%.",
+          cites: [{ label: "Context engineering for coding agents — Fowler", href: "https://martinfowler.com/articles/exploring-gen-ai/context-engineering-coding-agents.html" }],
+        },
+        {
+          heading: "Harness engineering is where the next compounding investment lives",
+          body: "Cache hit rate 78% (+6pp), tool-call success 96.4%, three sessions touched 80% of the context window. The harness is doing real work, and the working-memory budget is the next constraint to watch. Two sessions had unforced loops — that's the trajectory-evaluation signal OpenAI's 2026 harness-engineering post named as the early warning for context engineering investment.",
+          cites: [{ label: "Harness engineering — OpenAI 2026", href: "https://openai.com/index/harness-engineering/" }],
         },
       ],
     },
