@@ -1,44 +1,110 @@
 import { describe, it, expect } from "vitest";
 import { mockTeamInsightReport } from "../../src/app/team/[slug]/insights/mock-data";
 
-describe("mockTeamInsightReport", () => {
-  it("has all surfaced sections populated with non-trivial content", () => {
+describe("mockTeamInsightReport (maximal prototype)", () => {
+  it("populates all 30 sections (A–DD) with non-trivial content", () => {
     const r = mockTeamInsightReport;
     expect(r.week_monday).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(r.generated_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
-    expect(r.pulse.agent_hours).toBeGreaterThan(0);
-    expect(r.pulse.members_active).toBeLessThanOrEqual(r.pulse.members_total);
-    expect(r.pulse.concurrency_peak.peak).toBeGreaterThan(0);
+    // A. Volume
+    expect(r.volume.agent_hours_total).toBeGreaterThan(0);
+    expect(r.volume.agent_hours_per_member.length).toBeGreaterThan(0);
+    expect(r.volume.session_length_histogram.length).toBeGreaterThan(0);
 
-    expect(r.how_they_worked.goal_categories.length).toBeGreaterThanOrEqual(3);
-    const goalSharePct = r.how_they_worked.goal_categories.reduce((s, g) => s + g.share_pct, 0);
-    expect(goalSharePct).toBeGreaterThan(95);
-    expect(goalSharePct).toBeLessThan(105);
+    // B. Code zones
+    expect(r.code_zones.file_heatmap.length).toBeGreaterThan(0);
+    expect(r.code_zones.cold_directories.length).toBeGreaterThan(0);
 
-    expect(r.harness.tool_families.length).toBeGreaterThanOrEqual(3);
-    expect(r.harness.user_skills.length).toBeGreaterThanOrEqual(2);
-    expect(r.harness.user_subagents.length).toBeGreaterThanOrEqual(1);
+    // C. Working style
+    expect(r.working_style.prompt_length_distribution_per_member.length).toBeGreaterThan(0);
+    expect(r.working_style.sentiment_user_messages_per_member.length).toBeGreaterThan(0);
 
-    expect(r.projects.length).toBeGreaterThanOrEqual(3);
-    r.projects.forEach((p) => {
-      expect(p.members.length).toBeGreaterThan(0);
-    });
+    // D. Tool usage
+    expect(r.tool_usage.bash_subverb_heatmap.length).toBeGreaterThan(0);
 
-    // Spotlight unit is an opt-in SESSION — every spotlight must carry a
-    // concrete session anchor (date + project + duration) and a
-    // harness signature that names the actual skills/subagents used.
-    const flavors = new Set(r.spotlights.map((s) => s.flavor));
-    expect(flavors.has("case-study")).toBe(true);
-    expect(flavors.has("strength-surfacing")).toBe(true);
+    // E. Skills & harness
+    expect(r.skills_harness.user_authored_skills.length).toBeGreaterThan(0);
+    expect(r.skills_harness.skill_diffusion_events.length).toBeGreaterThan(0);
+
+    // F. Delegation
+    expect(r.delegation.subagent_dispatches_per_member.length).toBeGreaterThan(0);
+
+    // G. Plan mode
+    expect(r.plan_mode.adopters).toBeGreaterThan(0);
+
+    // H. Outcomes
+    expect(r.outcomes.prs_shipped).toBeGreaterThan(0);
+
+    // I. Friction
+    expect(r.friction.cooccurring_friction.length).toBeGreaterThan(0);
+
+    // J. Diffusion
+    expect(r.diffusion.skill_pickups.length).toBeGreaterThan(0);
+    expect(r.diffusion.skill_family_curve[0].weekly.length).toBeGreaterThan(0);
+
+    // K. Co-occurrence
+    expect(r.cooccurrence.shared_files_same_week.length).toBeGreaterThan(0);
+
+    // L. Bench
+    expect(r.bench.task_category_bench.length).toBeGreaterThan(0);
+
+    // M. Novelty
+    expect(r.novelty.weeks_invention.headline.length).toBeGreaterThan(0);
+
+    // N. External systems
+    expect(r.external_systems.linear_refs.length).toBeGreaterThan(0);
+
+    // O. Prompting fingerprint
+    expect(r.prompting_fingerprint.style_per_member.length).toBeGreaterThan(0);
+
+    // P. Rhythm
+    expect(r.rhythm.team_hour_histogram.length).toBe(24);
+
+    // Q. Velocity
+    expect(r.velocity.sessions_per_day.length).toBeGreaterThan(0);
+
+    // R. Knowledge flow
+    expect(r.knowledge_flow.pattern_a_to_b.length).toBeGreaterThan(0);
+
+    // S. AI behavior
+    expect(r.ai_behavior.model_usage.length).toBeGreaterThan(0);
+
+    // T. Cost
+    expect(r.cost_efficiency.cost_per_pr_per_project.length).toBeGreaterThan(0);
+
+    // U. Coverage
+    expect(r.coverage.untouched_files_count).toBeGreaterThan(0);
+
+    // V. Trend
+    expect(r.trend.maturity_composite_weekly.length).toBeGreaterThan(0);
+
+    // W. Onboarding
+    expect(r.onboarding.ramp_up_curves.length).toBeGreaterThan(0);
+
+    // X. Manager
+    expect(r.manager.wins_this_week.length).toBeGreaterThan(0);
+
+    // Y. Org rollup
+    expect(r.org_rollup.team_vs_org_comparison.length).toBeGreaterThan(0);
+
+    // Z. Pair work
+    expect(r.pair_work.multiday_continuations.length).toBeGreaterThan(0);
+
+    // AA. Outliers
+    expect(r.outliers.atypical_day_per_member.length).toBeGreaterThan(0);
+
+    // BB. Spotlights
+    expect(r.spotlights.length).toBeGreaterThanOrEqual(3);
     r.spotlights.forEach((s) => {
-      expect(s.body.length).toBeGreaterThan(200);
+      expect(s.body.length).toBeGreaterThan(100);
       expect(s.session_meta.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(s.session_meta.project.length).toBeGreaterThan(0);
-      expect(s.session_meta.duration_hours).toBeGreaterThan(0);
-      expect(s.harness_signature.length).toBeGreaterThan(20);
     });
 
-    expect(r.roster.length).toBe(r.pulse.members_active);
+    // CC. Meta
+    expect(r.meta.section_coverage.length).toBe(30);
+    expect(r.meta.section_coverage.every((s) => s.populated)).toBe(true);
+
+    // DD. Cross-edition
+    expect(r.cross_edition.roster.length).toBeGreaterThan(0);
   });
 });

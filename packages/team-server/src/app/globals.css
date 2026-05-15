@@ -1064,3 +1064,272 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   color: var(--mute);
   line-height: 1.6;
 }
+
+/* ─── Maximal dashboard primitives ────────────────────────────────────── */
+
+.section-letter {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-right: 6px;
+  letter-spacing: 0.05em;
+}
+
+.insights-toc {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 14px 18px;
+  margin: 0 0 28px;
+}
+.insights-toc-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 8px;
+}
+.insights-toc-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 4px 16px;
+}
+.insights-toc-links a {
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding: 3px 0;
+}
+.insights-toc-links a:hover { color: var(--accent); }
+.insights-toc-links a .mono {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+  margin-right: 6px;
+}
+
+.sensitive-callout {
+  background: color-mix(in srgb, var(--warning) 8%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--warning) 30%, var(--rule));
+  border-left: 3px solid var(--warning);
+  border-radius: 2px;
+  padding: 12px 16px;
+  margin: 18px 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.sensitive-marker {
+  display: inline-block;
+  color: var(--warning);
+  font-weight: 700;
+  margin-right: 4px;
+}
+.pulse-tile.sensitive {
+  border-left: 3px solid var(--warning);
+}
+.fact-row.sensitive,
+.narrative-line.sensitive {
+  border-left: 3px solid var(--warning);
+  padding-left: 10px;
+}
+
+.fact-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  align-items: center;
+  font-size: 13px;
+}
+@media (max-width: 720px) {
+  .fact-row { grid-template-columns: 1fr; }
+}
+.fact-row-label {
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.fact-row-value {
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+}
+.fact-row-sub {
+  color: var(--mute);
+  font-size: 11px;
+}
+
+.sparkline {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+
+.simple-table-wrap {
+  overflow-x: auto;
+  margin-top: 6px;
+}
+.simple-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.simple-table th,
+.simple-table td {
+  text-align: left;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+.simple-table th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+  border-bottom: 1px solid var(--rule);
+}
+.simple-table code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.narrative-line {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  padding: 4px 0;
+}
+.narrative-line code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  padding: 1px 5px;
+  border-radius: 2px;
+}
+.narrative-line em {
+  font-style: italic;
+  color: var(--ink);
+}
+
+.narrative-card {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  border-left: 3px solid var(--accent);
+  border-radius: 2px;
+  padding: 14px 18px;
+  margin: 10px 0;
+}
+.narrative-card-head {
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.narrative-card-body {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.chip-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.chip {
+  display: inline-block;
+  background: var(--rule-soft);
+  border-radius: 2px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--ink-soft);
+}
+
+.member-bar-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 5px 0;
+}
+.member-bar-name {
+  font-size: 12px;
+  color: var(--ink-soft);
+  font-family: "JetBrains Mono", monospace;
+}
+.member-bar-track {
+  display: flex;
+  height: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 1px;
+  overflow: hidden;
+  background: var(--rule-soft);
+}
+.member-bar-seg {
+  height: 100%;
+}
+
+.invention-card {
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--rule));
+  border-left: 4px solid var(--accent);
+  border-radius: 2px;
+  padding: 22px 26px;
+  margin: 14px 0 22px;
+}
+.invention-card-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+.invention-card-title {
+  font-family: "Instrument Serif", serif;
+  font-size: 26px;
+  line-height: 1.2;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.invention-card-meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+  margin-bottom: 14px;
+}
+.invention-card-body {
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+
+.section-coverage-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.section-coverage-chip {
+  display: inline-block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 2px;
+  border: 1px solid var(--rule);
+}
+.section-coverage-chip.filled {
+  background: color-mix(in srgb, var(--positive) 15%, var(--paper));
+  color: var(--positive);
+  border-color: color-mix(in srgb, var(--positive) 30%, var(--rule));
+}
+.section-coverage-chip.empty {
+  background: var(--paper);
+  color: var(--mute);
+}
