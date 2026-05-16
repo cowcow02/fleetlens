@@ -107,4 +107,29 @@ describe("mockTeamInsightReport (maximal prototype)", () => {
     // DD. Cross-edition
     expect(r.cross_edition.roster.length).toBeGreaterThan(0);
   });
+
+  it("populates v6 ticket-flow data with coherent phase journeys", () => {
+    const v6 = mockTeamInsightReport.variants.v6_extras;
+    expect(v6.phase_summaries.map((p) => p.phase)).toEqual([
+      "spec",
+      "ready",
+      "implementation",
+      "code-review",
+      "qa",
+      "launch",
+    ]);
+    expect(v6.workflow_mappings.length).toBeGreaterThanOrEqual(6);
+    expect(v6.ticket_journeys.length).toBeGreaterThanOrEqual(3);
+
+    for (const ticket of v6.ticket_journeys) {
+      const summed = ticket.phase_spans.reduce((sum, span) => sum + span.duration_min, 0);
+      expect(summed).toBe(ticket.total_min);
+      expect(ticket.phase_spans.some((span) => span.submitted_sections.length > 0)).toBe(true);
+    }
+
+    expect(v6.implementation_trend.at(-1)?.median_implementation_min).toBeLessThan(
+      v6.implementation_trend[0].median_implementation_min,
+    );
+    expect(v6.case_studies.some((c) => c.evidence_level === "opt-in-session")).toBe(true);
+  });
 });

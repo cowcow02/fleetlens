@@ -8,11 +8,13 @@ import { VariantCaseStudies } from "../../../../components/insights-variants/v2-
 import { VariantGrounded } from "../../../../components/insights-variants/v3-grounded";
 import { VariantFinalized } from "../../../../components/insights-variants/v4-finalized";
 import { VariantConnected } from "../../../../components/insights-variants/v5-connected";
+import { VariantBuilder } from "../../../../components/insights-variants/v7-builder";
+import { VariantTicketFlow } from "../../../../components/insights-variants/v6-ticket-flow";
 import { mockTeamInsightReport } from "./mock-data";
 
 export const dynamic = "force-dynamic";
 
-type VariantId = "0" | "1" | "2" | "3" | "4" | "5";
+type VariantId = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7";
 
 const VARIANTS: { id: VariantId; label: string; tagline: string }[] = [
   { id: "0", label: "v0 · Maximal", tagline: "30-section enumeration · everything possible · reference" },
@@ -21,10 +23,12 @@ const VARIANTS: { id: VariantId; label: string; tagline: string }[] = [
   { id: "3", label: "v3 · Grounded", tagline: "Q1–Q2 2026 references · DX AI Measurement Framework backbone" },
   { id: "4", label: "v4 · Finalized", tagline: "Best of v1–v3 · capturability-tagged · honest placeholders for integrations" },
   { id: "5", label: "v5 · Connected", tagline: "Hypothetical · all 4 external integrations enabled · the whole-picture view" },
+  { id: "6", label: "v6 · Ticket flow", tagline: "Ticket lifecycle spine · phase bottlenecks · Codex telemetry overlay" },
+  { id: "7", label: "v7 · Builder", tagline: "Lego-style · pick blocks from the catalog · URL-encoded selection" },
 ];
 
 function isVariantId(v: string): v is VariantId {
-  return v === "0" || v === "1" || v === "2" || v === "3" || v === "4" || v === "5";
+  return v === "0" || v === "1" || v === "2" || v === "3" || v === "4" || v === "5" || v === "6" || v === "7";
 }
 
 export default async function TeamInsightsPage({
@@ -32,11 +36,11 @@ export default async function TeamInsightsPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ v?: string }>;
+  searchParams: Promise<{ v?: string; blocks?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const raw = sp?.v ?? "5";
+  const raw = sp?.v ?? "7";
   const v: VariantId = isVariantId(raw) ? raw : "1";
 
   const pool = getPool();
@@ -92,6 +96,8 @@ export default async function TeamInsightsPage({
       {v === "3" && <VariantGrounded r={r} />}
       {v === "4" && <VariantFinalized r={r} />}
       {v === "5" && <VariantConnected r={r} />}
+      {v === "6" && <VariantTicketFlow r={r} />}
+      {v === "7" && <VariantBuilder r={r} slug={slug} blocksParam={sp?.blocks} />}
 
       <footer className="page-footer">
         <span>Fleetlens · Team Edition · iteration {v}</span>

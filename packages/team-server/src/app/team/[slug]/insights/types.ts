@@ -571,6 +571,8 @@ export type VariantsPayload = {
   v4_extras: V4Extras;
   // v5 — hypothetical with all 4 external integrations enabled
   v5_extras: V5Extras;
+  // v6 — ticket lifecycle spine + individual telemetry overlay
+  v6_extras: V6Extras;
 };
 
 // v3 reference set (all Q1/Q2 2026):
@@ -793,9 +795,177 @@ export type V5Extras = {
   cost_per_resolved: V5CostPerResolved[];
   newly_answerable_questions: { question: string; answer: string }[];
   v5_closing: { heading?: string; body: string; cites?: { label: string; href: string }[] }[];
-  // v5.1 — DORA-narrative version that follows the structure of
-  // dora.dev/insights/balancing-ai-tensions (March 2026).
+  // v5.1 — DORA-narrative version (kept for reference but no longer the v5 spine).
   dora_narrative: V5DoraNarrative;
+  // v5.2 — manager-action dashboard (current v5 spine).
+  actionables: V5Actionables;
+};
+
+// v5.2 — action-first shape. Every card ends with a concrete next step.
+export type V5ActionCard = {
+  observation: string;
+  metric: string;
+  action: string;
+};
+
+export type V5RiskLevel = "green" | "yellow" | "red";
+
+export type V5RiskSignal = {
+  name: string;
+  current_value: string;
+  level: V5RiskLevel;
+  threshold_note: string;
+  trend_4w: number[];
+  action: string;
+};
+
+export type V5PairedMetric = {
+  speed: { label: string; value: string; delta?: string; delta_class?: "positive" | "negative" | "" };
+  quality: { label: string; value: string; delta?: string; delta_class?: "positive" | "negative" | "" };
+  honest_read: string;
+};
+
+export type V5Investment = {
+  title: string;
+  rationale: string;
+  evidence: string;
+  effort: "small" | "medium" | "large";
+};
+
+export type V5OneOnOnePrompt = {
+  member: string;
+  prompt: string;
+  evidence: string;
+};
+
+export type V5DemoCandidate = {
+  session_label: string;
+  member: string;
+  one_line: string;
+};
+
+export type V5Actionables = {
+  hero_takeaway: string;
+  strengths: V5ActionCard[];
+  dysfunctions: V5ActionCard[];
+  risk_signals: V5RiskSignal[];
+  bottleneck_callout: { headline: string; phase: string; delta_pct: number; action: string };
+  paired_metrics: V5PairedMetric[];
+  investments: V5Investment[];
+  oneonone_prompts: V5OneOnOnePrompt[];
+  demo_candidates: V5DemoCandidate[];
+  appendix_note: string;
+};
+
+// v6 — ticket lifecycle spine. Status names are source-specific; phases are
+// normalized per team/project after reading the ticketing workflow.
+export type V6PhaseId =
+  | "spec"
+  | "ready"
+  | "implementation"
+  | "code-review"
+  | "qa"
+  | "launch";
+
+export type V6WorkflowMapping = {
+  source: "Linear" | "Jira" | "Custom";
+  raw_status: string;
+  normalized_phase: V6PhaseId;
+  confidence: "high" | "medium" | "needs-review";
+  note: string;
+};
+
+export type V6SubmittedSectionMarker = {
+  timestamp: string;
+  member: string;
+  label: string;
+  sensitivity: "tier-1" | "opt-in";
+};
+
+export type V6PhaseSummary = {
+  phase: V6PhaseId;
+  label: string;
+  median_min: number;
+  previous_median_min: number;
+  delta_pct: number;
+  ticket_count: number;
+  agent_time_min: number;
+  submitted_sections: number;
+  bottleneck_score: number;
+  narrative: string;
+};
+
+export type V6TicketPhaseSpan = {
+  phase: V6PhaseId;
+  label: string;
+  start: string;
+  end: string;
+  duration_min: number;
+  agent_time_min: number;
+  submitted_sections: V6SubmittedSectionMarker[];
+};
+
+export type V6TicketJourney = {
+  id: string;
+  title: string;
+  source: "Linear" | "Jira";
+  owner: string;
+  outcome: "launched" | "qa-ready" | "reviewing" | "blocked";
+  total_min: number;
+  delta_vs_prior_pct: number;
+  implementation_window_min: number;
+  previous_implementation_window_min: number;
+  phase_spans: V6TicketPhaseSpan[];
+  insight: string;
+};
+
+export type V6ImplementationTrend = {
+  period: string;
+  median_implementation_min: number;
+  median_total_min: number;
+  review_qa_share_pct: number;
+};
+
+export type V6AllocationRow = {
+  member: string;
+  spec_min: number;
+  implementation_min: number;
+  review_min: number;
+  qa_min: number;
+  launch_min: number;
+  dominant_phase: V6PhaseId;
+  note: string;
+};
+
+export type V6CaseStudy = {
+  title: string;
+  ticket_id: string;
+  member: string;
+  session_window: string;
+  phase: V6PhaseId;
+  what_happened: string;
+  why_it_matters: string;
+  evidence_level: "ticket-only" | "ticket-plus-telemetry" | "opt-in-session";
+};
+
+export type V6AnswerableQuestion = {
+  question: string;
+  data_needed: string;
+  answer_if_connected: string;
+  capturability: "ticket-integration" | "individual-telemetry" | "opt-in-session" | "needs-workflow-mapping";
+};
+
+export type V6Extras = {
+  headline: string;
+  premise: string;
+  universal_workflow_note: string;
+  phase_summaries: V6PhaseSummary[];
+  workflow_mappings: V6WorkflowMapping[];
+  ticket_journeys: V6TicketJourney[];
+  implementation_trend: V6ImplementationTrend[];
+  allocation: V6AllocationRow[];
+  case_studies: V6CaseStudy[];
+  answerable_questions: V6AnswerableQuestion[];
 };
 
 // v5.1 — top-down narrative shape borrowed verbatim from
