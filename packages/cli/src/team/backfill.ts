@@ -11,6 +11,7 @@ const PROFILE_CACHE = cclensPath("profile.json");
 // Server caps each batch (zod schema). Stay safely under so a few extra
 // header bytes don't tip a payload over.
 const BATCH_SIZE = 500;
+const POST_TIMEOUT_MS = 15_000;
 
 type LogFn = (level: "info" | "warn", message: string) => void;
 const noopLog: LogFn = () => {};
@@ -21,7 +22,12 @@ export type BackfillOutcome = {
   insertedSnapshots: number;
   skippedSnapshots: number;
   batches: number;
+  lastSnapshotAt?: string;
   error?: string;
+};
+
+export type BackfillOptions = {
+  sinceCapturedAt?: string;
 };
 
 function rawToWire(raw: UsageSnapshot): WireUsageSnapshot {
@@ -62,6 +68,7 @@ async function postBatch(
 ): Promise<{ inserted: number; skipped: number; status: number }> {
   const res = await fetch(`${config.serverUrl}/api/ingest/usage-history`, {
     method: "POST",
+    signal: AbortSignal.timeout(POST_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.bearerToken}`,
@@ -79,10 +86,40 @@ async function postBatch(
   };
 }
 
+// On full backfill (no high-water mark) a malformed captured_at falls through
+// to the server; on incremental sync we skip it instead, because we can't
+// order it against the HWM and including it would either re-send the same
+// row each tick (if it sorts first) or stall the HWM. Skipping is the
+// defensive choice — a malformed snapshot would be a JSONL corruption bug,
+// not normal operation.
+function isAfterSince(snapshot: UsageSnapshot, sinceCapturedAt: string | undefined): boolean {
+  if (!sinceCapturedAt) return true;
+  const sinceMs = Date.parse(sinceCapturedAt);
+  if (Number.isNaN(sinceMs)) return true;
+  const capturedMs = Date.parse(snapshot.captured_at);
+  return !Number.isNaN(capturedMs) && capturedMs > sinceMs;
+}
+
+function capturedAtMs(snapshot: UsageSnapshot): number {
+  const ms = Date.parse(snapshot.captured_at);
+  return Number.isNaN(ms) ? Number.MAX_SAFE_INTEGER : ms;
+}
+
+function latestCapturedAt(snapshots: WireUsageSnapshot[]): string | undefined {
+  let latest: { at: string; ms: number } | null = null;
+  for (const s of snapshots) {
+    const ms = Date.parse(s.capturedAt);
+    if (Number.isNaN(ms)) continue;
+    if (!latest || ms > latest.ms) latest = { at: s.capturedAt, ms };
+  }
+  return latest?.at;
+}
+
 export async function runTeamBackfill(
   log: LogFn = noopLog,
   filePath: string = USAGE_LOG,
   configOverride?: TeamConfig | null,
+  options: BackfillOptions = {},
 ): Promise<BackfillOutcome> {
   const config = configOverride === undefined ? readTeamConfig() : configOverride;
   if (!config) {
@@ -94,7 +131,10 @@ export async function runTeamBackfill(
   // so mixing agents (codex resets May 15, claude resets May 11) would make
   // the burndown flip-flop based on whichever agent polled most recently.
   // Legacy snapshots without an agent field were claude-code by design.
-  const claudeOnly = raw.filter((s) => !s.agent || s.agent === "claude-code");
+  const claudeOnly = raw.filter((s) =>
+    (!s.agent || s.agent === "claude-code") &&
+    isAfterSince(s, options.sinceCapturedAt)
+  ).sort((a, b) => capturedAtMs(a) - capturedAtMs(b));
   if (claudeOnly.length === 0) {
     log("info", "team backfill: no usage snapshots to send");
     return { paired: true, sentSnapshots: 0, insertedSnapshots: 0, skippedSnapshots: 0, batches: 0 };
@@ -106,6 +146,7 @@ export async function runTeamBackfill(
 
   let inserted = 0;
   let skipped = 0;
+  let lastSnapshotAt: string | undefined;
   for (let i = 0; i < batches.length; i++) {
     const batch = batches[i]!;
     try {
@@ -118,11 +159,13 @@ export async function runTeamBackfill(
           insertedSnapshots: inserted,
           skippedSnapshots: skipped,
           batches: i,
+          lastSnapshotAt,
           error: `HTTP ${result.status}`,
         };
       }
       inserted += result.inserted;
       skipped += result.skipped;
+      lastSnapshotAt = latestCapturedAt(batch) ?? lastSnapshotAt;
     } catch (err) {
       log("warn", `team backfill: batch ${i + 1}/${batches.length} error: ${(err as Error).message}`);
       return {
@@ -131,6 +174,7 @@ export async function runTeamBackfill(
         insertedSnapshots: inserted,
         skippedSnapshots: skipped,
         batches: i,
+        lastSnapshotAt,
         error: (err as Error).message,
       };
     }
@@ -146,5 +190,6 @@ export async function runTeamBackfill(
     insertedSnapshots: inserted,
     skippedSnapshots: skipped,
     batches: batches.length,
+    lastSnapshotAt,
   };
 }

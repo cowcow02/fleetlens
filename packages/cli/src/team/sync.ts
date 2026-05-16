@@ -7,6 +7,7 @@ import {
   type IngestPayload,
 } from "./push.js";
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
+import { runTeamBackfill, type BackfillOutcome } from "./backfill.js";
 import { getPlanTier } from "../usage/profile.js";
 import { cclensPath } from "@claude-lens/parser/fs";
 
@@ -22,13 +23,19 @@ export type SyncOutcome = {
   pushed: number;
   queued: number;
   queuedDrained: number;
+  usageBackfill?: BackfillOutcome;
   failedDay?: string;
   error?: string;
+};
+
+export type TeamSyncOptions = {
+  forceUsageBackfill?: boolean;
 };
 
 export async function runTeamSync(
   log: LogFn = noopLog,
   configOverride?: TeamConfig | null,
+  options: TeamSyncOptions = {},
 ): Promise<SyncOutcome> {
   const config = configOverride === undefined ? readTeamConfig() : configOverride;
   if (!config) return { paired: false, pushed: 0, queued: 0, queuedDrained: 0 };
@@ -37,6 +44,21 @@ export async function runTeamSync(
     const { listSessions, loadCalibrationCurve } = await import("@claude-lens/parser/fs");
     const { toLocalDay } = await import("@claude-lens/parser");
     const today = toLocalDay(Date.now());
+    let nextConfig: TeamConfig = { ...config };
+
+    const persistConfig = (patch: Partial<TeamConfig>) => {
+      nextConfig = { ...nextConfig, ...patch };
+      writeTeamConfig(nextConfig);
+    };
+
+    const usageBackfill = await runTeamBackfill(log, USAGE_LOG, config, {
+      sinceCapturedAt: options.forceUsageBackfill
+        ? undefined
+        : config.lastSyncedUsageSnapshotAt,
+    });
+    if (usageBackfill.lastSnapshotAt) {
+      persistConfig({ lastSyncedUsageSnapshotAt: usageBackfill.lastSnapshotAt });
+    }
 
     const sessions = await listSessions({ limit: 10_000 });
     const rollups = buildRollupsForRange(sessions, config.lastSyncedDay);
@@ -61,15 +83,15 @@ export async function runTeamSync(
       // don't freeze.
       const hasLiveData = Boolean(usageSnapshot || planTier || cyclePeaks);
       if (!hasLiveData) {
-        log("info", "team push: nothing to sync");
-        return { paired: true, pushed: 0, queued: 0, queuedDrained: 0 };
+        if (usageBackfill.sentSnapshots === 0) log("info", "team push: nothing to sync");
+        return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
       }
       const payload = buildIngestPayload(undefined, usageSnapshot, planTier, cyclePeaks);
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
         log("warn", `team push (live-only) failed (${result.status}); queueing`);
         enqueuePayload(payload);
-        return { paired: true, pushed: 0, queued: 1, queuedDrained: 0 };
+        return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
       // Try to drain any queued backlog while the server is reachable.
       let queuedDrained = 0;
@@ -84,12 +106,13 @@ export async function runTeamSync(
       }
       log("info", `team push ok: live-only (no new daily activity)` +
         (queuedDrained ? `, ${queuedDrained} queued retried` : ""));
-      return { paired: true, pushed: 1, queued: 0, queuedDrained };
+      return { paired: true, pushed: 1, queued: 0, queuedDrained, usageBackfill };
     }
 
     let pushed = 0;
     let queued = 0;
     let failedDay: string | undefined;
+    let lastPushedDay: string | undefined;
 
     for (let i = 0; i < rollups.length; i++) {
       const rollup = rollups[i]!;
@@ -111,10 +134,14 @@ export async function runTeamSync(
         break;
       }
       pushed++;
+      lastPushedDay = rollup.day;
     }
 
-    const nextConfig: TeamConfig = { ...config, lastSyncedDay: today };
-    if (pushed > 0 || !failedDay) writeTeamConfig(nextConfig);
+    if (failedDay) {
+      if (lastPushedDay) persistConfig({ lastSyncedDay: lastPushedDay });
+    } else {
+      persistConfig({ lastSyncedDay: today });
+    }
 
     let queuedDrained = 0;
     if (!failedDay) {
@@ -135,7 +162,7 @@ export async function runTeamSync(
         (queued ? `, ${queued} queued for retry` : ""));
     }
 
-    return { paired: true, pushed, queued, queuedDrained, failedDay };
+    return { paired: true, pushed, queued, queuedDrained, usageBackfill, failedDay };
   } catch (err) {
     const message = (err as Error).message;
     log("warn", `team push error: ${message}`);

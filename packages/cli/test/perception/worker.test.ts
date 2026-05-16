@@ -2,8 +2,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runPerceptionSweep } from "./worker.js";
-import { __setStatePathForTest } from "./state.js";
+import { runPerceptionSweep } from "../../src/perception/worker.js";
+import { __setStatePathForTest } from "../../src/perception/state.js";
 import { __setEntriesDirForTest } from "@claude-lens/entries/fs";
 
 describe("runPerceptionSweep", () => {
@@ -62,14 +62,14 @@ describe("runPerceptionSweep", () => {
   });
 
   it("sets sweep_in_progress=false after completion", async () => {
-    const { readState } = await import("./state.js");
+    const { readState } = await import("../../src/perception/state.js");
     await runPerceptionSweep({ projectsRoot });
     expect(readState().sweep_in_progress).toBe(false);
     expect(readState().last_sweep_completed_at).toBeTruthy();
   });
 
   it("skips sweep when one is already in progress and not stale", async () => {
-    const { markSweepStart, readState } = await import("./state.js");
+    const { markSweepStart, readState } = await import("../../src/perception/state.js");
     markSweepStart();
     const r = await runPerceptionSweep({ projectsRoot });
     expect(r).toEqual({ sessionsProcessed: 0, entriesWritten: 0, errors: 0 });

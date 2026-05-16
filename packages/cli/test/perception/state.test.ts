@@ -5,7 +5,7 @@ import { join } from "node:path";
 import {
   readState, updateCheckpoint, markSweepStart, markSweepEnd,
   isSweepStale, __setStatePathForTest,
-} from "./state.js";
+} from "../../src/perception/state.js";
 
 describe("perception state", () => {
   let tmp: string;

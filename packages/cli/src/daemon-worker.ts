@@ -12,8 +12,10 @@
  * server disagrees with our local view. Those should be rare.
  */
 
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { spawn } from "node:child_process";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { appendSnapshot } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
@@ -22,12 +24,15 @@ import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/back
 import { runTeamSync } from "./team/sync.js";
 import { runPerceptionSweep } from "./perception/worker.js";
 import { backfillLastWeekDigest, backfillYesterdayDigest } from "./perception/backfill.js";
+import { getUpdateAvailability } from "./updater.js";
 
 const USAGE_LOG = cclensPath("usage.jsonl");
 const DAEMON_LOG = cclensPath("daemon.log");
+const UPDATE_STATE = cclensPath("daemon-update.json");
 // Watchdog cadence. Short so we notice wake-from-sleep and token refresh
 // within a few seconds instead of waiting out a 5-minute interval.
 const WATCHDOG_INTERVAL_MS = 5 * 1000;
+const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 mkdirSync(dirname(USAGE_LOG), { recursive: true });
 
@@ -41,8 +46,10 @@ function log(level: "info" | "warn" | "error", message: string): void {
 }
 
 let nextPollAtMs = 0;
+let nextTeamSyncAtMs = 0;
 let currentIntervalMs = BASE_INTERVAL_MS;
 let waitingForRefresh = false;
+let updateCheckInFlight = false;
 
 const PERCEPTION_INTERVAL_MS = 5 * 60 * 1000;
 let perceptionInFlight = false;
@@ -77,6 +84,119 @@ const perceptionHandle: NodeJS.Timeout = setInterval(async () => {
     perceptionInFlight = false;
   }
 }, PERCEPTION_INTERVAL_MS);
+
+type DaemonUpdateState = {
+  lastCheckedAt?: string;
+  current?: string;
+  latest?: string | null;
+  updateAvailable?: boolean;
+  updateSpawnedAt?: string;
+  error?: string;
+};
+
+function readUpdateState(): DaemonUpdateState | null {
+  try {
+    return JSON.parse(readFileSync(UPDATE_STATE, "utf8")) as DaemonUpdateState;
+  } catch {
+    return null;
+  }
+}
+
+function writeUpdateState(state: DaemonUpdateState): void {
+  try {
+    writeFileSync(UPDATE_STATE, JSON.stringify(state, null, 2), { mode: 0o600 });
+  } catch {
+    // Non-critical state; the daemon can still run without it.
+  }
+}
+
+function nextUpdateCheckFromState(nowMs: number): number {
+  const lastCheckedAt = readUpdateState()?.lastCheckedAt;
+  if (!lastCheckedAt) return 0;
+  const lastMs = Date.parse(lastCheckedAt);
+  if (Number.isNaN(lastMs)) return 0;
+  return nowMs - lastMs >= AUTO_UPDATE_INTERVAL_MS
+    ? 0
+    : lastMs + AUTO_UPDATE_INTERVAL_MS;
+}
+
+let nextUpdateCheckAtMs = nextUpdateCheckFromState(Date.now());
+
+function cliEntryPath(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "index.js");
+}
+
+async function runDaemonUpdateCheck(): Promise<void> {
+  if (process.env.FLEETLENS_DAEMON_AUTO_UPDATE === "0") {
+    nextUpdateCheckAtMs = Date.now() + AUTO_UPDATE_INTERVAL_MS;
+    return;
+  }
+  if (updateCheckInFlight) return;
+  updateCheckInFlight = true;
+
+  const checkedAt = new Date().toISOString();
+  try {
+    const availability = await getUpdateAvailability();
+    if (!availability) return;
+
+    const state: DaemonUpdateState = {
+      lastCheckedAt: checkedAt,
+      current: availability.current,
+      latest: availability.latest,
+      updateAvailable: availability.updateAvailable,
+    };
+    writeUpdateState(state);
+
+    if (!availability.latest) {
+      log("warn", "update check skipped: npm registry unreachable");
+      return;
+    }
+    if (!availability.updateAvailable) {
+      log("info", `update check ok: ${availability.current} is current`);
+      return;
+    }
+
+    const entry = cliEntryPath();
+    if (!existsSync(entry)) {
+      log("warn", `update check found ${availability.latest}, but CLI entry is missing at ${entry}`);
+      return;
+    }
+
+    let logFd: number | "ignore" = "ignore";
+    try {
+      logFd = openSync(DAEMON_LOG, "a");
+    } catch {
+      // If we cannot append logs, still let the updater run detached.
+    }
+
+    const child = spawn(process.execPath, [entry, "update"], {
+      detached: true,
+      stdio: ["ignore", logFd, logFd],
+      env: { ...process.env, FLEETLENS_UPDATE_SOURCE: "daemon" },
+    });
+    if (typeof logFd === "number") {
+      child.on("exit", () => {
+        try { closeSync(logFd); } catch {}
+      });
+    }
+    child.unref();
+
+    writeUpdateState({
+      ...state,
+      updateSpawnedAt: new Date().toISOString(),
+    });
+    log(
+      "info",
+      `update check found ${availability.latest}; spawned updater pid=${child.pid ?? "unknown"}`,
+    );
+  } catch (err) {
+    writeUpdateState({ lastCheckedAt: checkedAt, error: (err as Error).message });
+    log("warn", `update check failed: ${(err as Error).message}`);
+  } finally {
+    updateCheckInFlight = false;
+    nextUpdateCheckAtMs = Date.now() + AUTO_UPDATE_INTERVAL_MS;
+  }
+}
 
 async function tick(): Promise<PollOutcome> {
   // Iterate every registered agent source. Each declares its own
@@ -183,9 +303,17 @@ async function runLoop(): Promise<void> {
         scheduleAfter(Date.now(), outcome);
       }
 
+    }
+    const teamNow = Date.now();
+    if (teamNow >= nextTeamSyncAtMs) {
       // Team push is independent of Claude OAuth state — it uses its own bearer
-      // and a different server. Runs whether or not the usage poll fired.
+      // and a different server. Keep it on its own cadence so an expired Claude
+      // token cannot turn the team sync loop into a 5-second retry storm.
       await runTeamSync(log);
+      nextTeamSyncAtMs = Date.now() + BASE_INTERVAL_MS;
+    }
+    if (Date.now() >= nextUpdateCheckAtMs) {
+      await runDaemonUpdateCheck();
     }
     await sleep(WATCHDOG_INTERVAL_MS);
   }

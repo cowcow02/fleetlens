@@ -46,7 +46,7 @@ vi.mock("@claude-lens/parser/fs", async (importOriginal) => {
 // push). Tests that exercise the live-only push path can override these.
 vi.mock("../../src/usage/storage.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/usage/storage.js")>();
-  return { ...actual, latestSnapshot: () => null };
+  return { ...actual, latestSnapshot: () => null, latestClaudeCodeSnapshot: () => null };
 });
 vi.mock("../../src/usage/profile.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/usage/profile.js")>();
@@ -73,6 +73,10 @@ vi.mock("../../src/team/queue.js", async (importOriginal) => {
   };
 });
 
+vi.mock("../../src/team/backfill.js", () => ({
+  runTeamBackfill: vi.fn(),
+}));
+
 // ---------- fixtures ----------
 
 const CONFIG: TeamConfig = {
@@ -84,8 +88,16 @@ const CONFIG: TeamConfig = {
 };
 
 describe("runTeamSync", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.stubGlobal("fetch", vi.fn());
+    const { runTeamBackfill } = await import("../../src/team/backfill.js");
+    vi.mocked(runTeamBackfill).mockResolvedValue({
+      paired: true,
+      sentSnapshots: 0,
+      insertedSnapshots: 0,
+      skippedSnapshots: 0,
+      batches: 0,
+    });
   });
 
   afterEach(() => {
@@ -175,6 +187,37 @@ describe("runTeamSync", () => {
     expect(result.queued).toBeGreaterThanOrEqual(1);
     expect(enqueuePayload).toHaveBeenCalledOnce();
     expect(result.failedDay).toBeDefined();
+  });
+
+  it("does not advance lastSyncedDay past an unpushed failed day", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([
+      makeSession("2026-04-14"),
+      makeSession("2026-04-15"),
+    ]);
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+      } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync();
+
+    expect(result.failedDay).toBe("2026-04-15");
+    expect(writeTeamConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ lastSyncedDay: "2026-04-14" }),
+    );
   });
 
   it("drains queue after successful push", async () => {
@@ -325,5 +368,52 @@ describe("runTeamSync", () => {
     // 2026-04-14 is before lastSyncedDay 2026-04-15, so nothing to push
     expect(result.pushed).toBe(0);
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("passes usage-history high-water into the unified sync backfill", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue({
+      ...CONFIG,
+      lastSyncedUsageSnapshotAt: "2026-04-20T01:00:00.000Z",
+    });
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([]);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    const { runTeamBackfill } = await import("../../src/team/backfill.js");
+    expect(runTeamBackfill).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.any(String),
+      expect.any(Object),
+      { sinceCapturedAt: "2026-04-20T01:00:00.000Z" },
+    );
+  });
+
+  it("persists usage-history high-water after successful backfill", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { runTeamBackfill } = await import("../../src/team/backfill.js");
+    vi.mocked(runTeamBackfill).mockResolvedValueOnce({
+      paired: true,
+      sentSnapshots: 2,
+      insertedSnapshots: 2,
+      skippedSnapshots: 0,
+      batches: 1,
+      lastSnapshotAt: "2026-04-20T02:00:00.000Z",
+    });
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([]);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    expect(writeTeamConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ lastSyncedUsageSnapshotAt: "2026-04-20T02:00:00.000Z" }),
+    );
   });
 });

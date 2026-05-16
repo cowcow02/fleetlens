@@ -75,6 +75,7 @@ export type IngestPayload = {
 // poison the rolling-window math even though Anthropic's window has already
 // rolled over.
 const SNAPSHOT_FRESHNESS_MS = 10 * 60 * 1000;
+const POST_TIMEOUT_MS = 15_000;
 
 export function readLatestUsageSnapshotForWire(
   filePath: string,
@@ -168,6 +169,7 @@ export async function pushToTeamServer(
 ): Promise<{ ok: boolean; status: number; body: unknown }> {
   const res = await fetch(`${config.serverUrl}/api/ingest/metrics`, {
     method: "POST",
+    signal: AbortSignal.timeout(POST_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.bearerToken}`,
