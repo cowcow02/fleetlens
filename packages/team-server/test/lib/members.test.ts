@@ -9,6 +9,7 @@ import {
 } from "../../src/lib/members.js";
 import { createUserAccount } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
+import { createGroup } from "../../src/lib/groups.js";
 let pool: ReturnType<typeof getPool>;
 let adminUserId: string;
 let teamId: string;
@@ -173,5 +174,63 @@ describe("revokeMembership", () => {
     );
     expect(row.rows[0].revoked_at).not.toBeNull();
     expect(row.rows[0].bearer_token_hash).toBeNull();
+  });
+});
+
+describe("invite group placement", () => {
+  it("places redeemed member into invite.group_ids", async () => {
+    const pool = await resetDb();
+    const t = await pool.query("INSERT INTO teams (slug, name) VALUES ('t','T') RETURNING id");
+    const teamId = t.rows[0].id;
+    const admin = await createUserAccount("admin@x.com", "pw12345678", null, {}, pool);
+    const g1 = await createGroup(teamId, "g1", "G1", admin.id, pool);
+    const g2 = await createGroup(teamId, "g2", "G2", admin.id, pool);
+
+    const { token } = await createInvite(
+      teamId, admin.id,
+      { role: "member", groupIds: [g1.id, g2.id] },
+      pool,
+    );
+
+    const newUser = await createUserAccount("new@x.com", "pw12345678", null, {}, pool);
+    const r = await redeemInvite(token, newUser.id, pool);
+    expect(r).not.toBeNull();
+
+    const membership = await pool.query(
+      "SELECT id FROM memberships WHERE user_account_id = $1 AND team_id = $2",
+      [newUser.id, teamId],
+    );
+    const mId = membership.rows[0].id;
+    const rows = await pool.query(
+      "SELECT group_id, is_manager FROM group_members WHERE membership_id = $1 ORDER BY group_id",
+      [mId],
+    );
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows.every((r) => r.is_manager === false)).toBe(true);
+  });
+
+  it("skips group_ids that no longer exist at redeem time", async () => {
+    const pool = await resetDb();
+    const t = await pool.query("INSERT INTO teams (slug, name) VALUES ('t','T') RETURNING id");
+    const teamId = t.rows[0].id;
+    const admin = await createUserAccount("admin@x.com", "pw12345678", null, {}, pool);
+    const g1 = await createGroup(teamId, "g1", "G1", admin.id, pool);
+    const g2 = await createGroup(teamId, "g2", "G2", admin.id, pool);
+    const { token } = await createInvite(
+      teamId, admin.id, { role: "member", groupIds: [g1.id, g2.id] }, pool,
+    );
+    await pool.query("DELETE FROM groups WHERE id = $1", [g2.id]);
+    const newUser = await createUserAccount("new@x.com", "pw12345678", null, {}, pool);
+    await redeemInvite(token, newUser.id, pool);
+    const membership = await pool.query(
+      "SELECT id FROM memberships WHERE user_account_id = $1 AND team_id = $2",
+      [newUser.id, teamId],
+    );
+    const rows = await pool.query(
+      "SELECT group_id FROM group_members WHERE membership_id = $1",
+      [membership.rows[0].id],
+    );
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0].group_id).toBe(g1.id);
   });
 });

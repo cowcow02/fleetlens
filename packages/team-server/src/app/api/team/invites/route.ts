@@ -12,6 +12,22 @@ export async function POST(req: NextRequest) {
   if (adminErr) return adminErr;
 
   const body = await req.json().catch(() => ({}));
+  const groupIds = body?.groupIds;
+  if (groupIds !== undefined) {
+    if (!Array.isArray(groupIds) || !groupIds.every((g) => typeof g === "string")) {
+      return NextResponse.json({ error: "groupIds must be string[]" }, { status: 400 });
+    }
+    if (groupIds.length > 0) {
+      const r = await ctx.pool.query(
+        "SELECT id FROM groups WHERE id = ANY($1::uuid[]) AND team_id = $2",
+        [groupIds, ctx.membership.team_id],
+      );
+      if (r.rowCount !== groupIds.length) {
+        return NextResponse.json({ error: "one or more groups not in this team" }, { status: 400 });
+      }
+    }
+  }
+
   const result = await createInvite(
     ctx.membership.team_id,
     ctx.user.id,
@@ -19,6 +35,7 @@ export async function POST(req: NextRequest) {
       email: typeof body?.email === "string" ? body.email : undefined,
       role: body?.role === "admin" ? "admin" : "member",
       expiresInDays: typeof body?.expiresInDays === "number" ? body.expiresInDays : 7,
+      groupIds: Array.isArray(groupIds) ? groupIds : undefined,
     },
     ctx.pool,
   );

@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "../../../../db/pool";
 import { validateSession } from "../../../../lib/auth";
+import { listGroupsForTeam } from "../../../../lib/groups";
 import { getStatus } from "../../../../lib/self-update/service";
 import { SettingsPanel } from "../../../../components/settings-panel";
 import { ServerUpdatePanel } from "../../../../components/server-update-panel";
@@ -35,7 +36,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
     );
   }
 
-  const [members, updateStatus] = await Promise.all([
+  const [members, updateStatus, groups] = await Promise.all([
     pool.query(
       `SELECT m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at, m.revoked_at, m.plan_tier
        FROM memberships m JOIN user_accounts u ON u.id = m.user_account_id
@@ -43,6 +44,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
       [team.id]
     ),
     session.user.is_staff ? getStatus() : Promise.resolve(null),
+    listGroupsForTeam(team.id, pool),
   ]);
 
   return (
@@ -56,7 +58,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
         </div>
       </div>
       {updateStatus && <ServerUpdatePanel status={updateStatus} />}
-      <SettingsPanel team={team} members={members.rows} teamSlug={slug} />
+      <SettingsPanel team={team} members={members.rows} teamSlug={slug} groups={groups} />
     </>
   );
 }
