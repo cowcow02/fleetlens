@@ -11,6 +11,14 @@ import { VariantConnected } from "../../../../components/insights-variants/v5-co
 import { VariantBuilder } from "../../../../components/insights-variants/v7-builder";
 import { VariantTicketFlow } from "../../../../components/insights-variants/v6-ticket-flow";
 import { mockTeamInsightReport } from "./mock-data";
+import {
+  isoMondayOf,
+  perProjectTimeWoW,
+  skillUsageWeek,
+  teamPulseWeek,
+  workingShapeDistribution,
+} from "../../../../lib/insights-aggregate";
+import { LiveInsights, type LiveInsightsData } from "../../../../components/live-insights";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +48,8 @@ export default async function TeamInsightsPage({
 }) {
   const { slug } = await params;
   const sp = await searchParams;
-  const raw = sp?.v ?? "7";
-  const v: VariantId = isVariantId(raw) ? raw : "1";
+  const raw = sp?.v;
+  const variant: VariantId | null = raw && isVariantId(raw) ? raw : null;
 
   const pool = getPool();
   const cookieStore = await cookies();
@@ -49,17 +57,42 @@ export default async function TeamInsightsPage({
   const session = token ? await validateSession(token, pool) : null;
   if (!session) redirect("/login");
 
-  const teamRes = await pool.query("SELECT id FROM teams WHERE slug = $1", [slug]);
+  const teamRes = await pool.query("SELECT id, name FROM teams WHERE slug = $1", [slug]);
   if (!teamRes.rowCount) return <div>Team not found.</div>;
   const teamId = teamRes.rows[0].id;
+  const teamName = teamRes.rows[0].name;
   const myMembership = session.memberships.find((m) => m.team_id === teamId);
   if (!myMembership) redirect("/login");
+
+  // Live (default): real data from rich_daily_rollups. The variant tabs stay
+  // accessible via ?v=N so the mock-driven prototypes remain available as
+  // reference for blocks Phase 1 doesn't cover yet.
+  if (!variant) {
+    const weekMonday = isoMondayOf(new Date());
+    const scope = { kind: "team-wide" as const };
+    const [pulse, projects, skills, shapes] = await Promise.all([
+      teamPulseWeek(teamId, scope, weekMonday, pool),
+      perProjectTimeWoW(teamId, scope, weekMonday, pool, { limit: 12 }),
+      skillUsageWeek(teamId, scope, weekMonday, pool, { limit: 20 }),
+      workingShapeDistribution(teamId, scope, weekMonday, pool),
+    ]);
+    const data: LiveInsightsData = {
+      scopeLabel: `All of ${teamName}`,
+      weekMonday,
+      pulse,
+      projects,
+      skills,
+      shapes,
+    };
+    return <LiveInsights data={data} />;
+  }
 
   const r = mockTeamInsightReport;
   const weekDate = new Date(`${r.week_monday}T12:00:00`);
   const weekEnd = new Date(weekDate);
   weekEnd.setDate(weekDate.getDate() + 6);
   const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+  const v = variant;
 
   return (
     <>
@@ -74,7 +107,7 @@ export default async function TeamInsightsPage({
             {r.volume.agent_hours_total.toFixed(1)}h combined agent time
           </div>
         </div>
-        <div className="kicker">Iterations · pick a tab</div>
+        <div className="kicker"><a href="?">← live data</a> · iterations</div>
       </div>
 
       <nav className="variant-tabstrip">

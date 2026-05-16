@@ -53,7 +53,10 @@ export default async function GroupDetailPage({
             {(totalAgentMs / 3600000).toFixed(1)}h combined agent time
           </div>
         </div>
-        <a href={`/team/${slug}/groups/${group.slug}/invite`} className="btn">+ Invite member</a>
+        <div style={{ display: "flex", gap: 10 }}>
+          <a href={`/team/${slug}/groups/${group.slug}/insights`} className="btn">Insights →</a>
+          <a href={`/team/${slug}/groups/${group.slug}/invite`} className="btn">+ Invite member</a>
+        </div>
       </div>
       <div className="roster-grid">
         {roster.map((r) => <RosterCard key={r.id} member={r} teamSlug={slug} />)}

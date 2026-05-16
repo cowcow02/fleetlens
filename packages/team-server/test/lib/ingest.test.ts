@@ -270,6 +270,86 @@ describe("processIngest", () => {
     );
     expect(rows[0].count).toBe("1");
   });
+  it("UPSERTs rich_daily_rollups on V2 payload with richRollup", async () => {
+    const day = "2026-05-12";
+    const richRollup = {
+      day,
+      agentTimeMs: 7_200_000,
+      sessions: 4,
+      toolCalls: 40,
+      turns: 12,
+      tokens: { input: 1000, output: 500, cacheRead: 200, cacheWrite: 100 },
+      projects: [{ project: "fleetlens", agentTimeMs: 7_200_000, sessions: 4 }],
+      workingShapes: [{ shape: "solo-build", sessions: 3, agentTimeMs: 5_400_000 }],
+      concurrencyPeak: 3,
+      parallelMinutes: 45,
+      longAutonomous: { count: 2, totalMin: 180, maxSingleMin: 110 },
+      toolErrors: 1,
+      skillsLoaded: [{ name: "brainstorming", sessions: 2 }],
+      subagentsDispatched: [{ type: "reviewer", count: 3 }],
+      brainstormWarmupSessions: 1,
+      planModeUsed: 2,
+      prs: 1,
+      commits: 4,
+      pushes: 3,
+    };
+    await processIngest(
+      makePayload({
+        ingestId: `rich-${Date.now()}`,
+        schemaVersion: 2,
+        richRollup,
+        enrichedExtras: {
+          outcomeMix: { shipped: 1, partial: 2 },
+          helpfulnessMix: { essential: 2, helpful: 1 },
+          goalMix: { build: 90, debug: 30 },
+        },
+      }),
+      membershipId, teamId, pool,
+    );
+    const { rows } = await pool.query(
+      `SELECT concurrency_peak, prs, projects, working_shapes, skills_loaded, outcome_mix
+       FROM rich_daily_rollups WHERE team_id=$1 AND membership_id=$2 AND day=$3`,
+      [teamId, membershipId, day],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].concurrency_peak).toBe(3);
+    expect(rows[0].prs).toBe(1);
+    expect(rows[0].projects).toEqual([{ project: "fleetlens", agentTimeMs: 7_200_000, sessions: 4 }]);
+    expect(rows[0].working_shapes[0].shape).toBe("solo-build");
+    expect(rows[0].outcome_mix).toEqual({ shipped: 1, partial: 2 });
+  });
+
+  it("preserves prior outcome_mix when a later push omits enrichedExtras (opt-out path)", async () => {
+    const day = "2026-05-13";
+    const richRollup = {
+      day,
+      agentTimeMs: 0, sessions: 0, toolCalls: 0, turns: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      projects: [], workingShapes: [], concurrencyPeak: 0, parallelMinutes: 0,
+      longAutonomous: { count: 0, totalMin: 0, maxSingleMin: 0 },
+      toolErrors: 0, skillsLoaded: [], subagentsDispatched: [],
+      brainstormWarmupSessions: 0, planModeUsed: 0, prs: 0, commits: 0, pushes: 0,
+    };
+    await processIngest(
+      makePayload({
+        ingestId: `opt-in-${Date.now()}`, schemaVersion: 2, richRollup,
+        enrichedExtras: { outcomeMix: { shipped: 5 }, helpfulnessMix: {}, goalMix: {} },
+      }),
+      membershipId, teamId, pool,
+    );
+    // Re-push without enrichedExtras
+    await processIngest(
+      makePayload({
+        ingestId: `opt-out-${Date.now()}`, schemaVersion: 2, richRollup,
+      }),
+      membershipId, teamId, pool,
+    );
+    const { rows } = await pool.query(
+      "SELECT outcome_mix FROM rich_daily_rollups WHERE day=$1 AND membership_id=$2",
+      [day, membershipId],
+    );
+    expect(rows[0].outcome_mix).toEqual({ shipped: 5 });
+  });
 });
 
 describe("processUsageHistory", () => {
