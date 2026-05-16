@@ -10,7 +10,7 @@ import { __setEntriesDirForTest, __setDigestsDirForTest } from "@claude-lens/ent
 import {
   backfillLastWeekDigest, backfillYesterdayDigest,
   lastCompletedWeekMonday, yesterdayLocalDay,
-} from "./backfill.js";
+} from "../../src/perception/backfill.js";
 
 // Pin clock to a known Sunday so lastCompletedWeekMonday is deterministic.
 // Sunday 2026-04-26 12:00 local → last completed week starts Mon 2026-04-13.

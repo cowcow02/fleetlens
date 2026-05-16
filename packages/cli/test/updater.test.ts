@@ -3,7 +3,7 @@ import {
   shouldUpdate,
   isDevMode,
   getUpdateAvailability,
-} from "./updater.js";
+} from "../src/updater.js";
 
 describe("shouldUpdate", () => {
   it("returns true when remote is newer", () => {
