@@ -44,7 +44,21 @@ export type DashboardBlock = {
   tier: BlockTier;
   source_version: string;
   render: (r: TeamInsightReport) => ReactNode;
+  // Defaults for the v7.2 grid layout. 12-column grid; h is in row-units (~30px each).
+  defaultW?: number; // 1–12 cols, defaults to 6
+  defaultH?: number; // row-units, defaults to 8
+  minW?: number;
+  minH?: number;
 };
+
+export function defaultSizeFor(b: DashboardBlock): { w: number; h: number; minW: number; minH: number } {
+  return {
+    w: b.defaultW ?? 6,
+    h: b.defaultH ?? 8,
+    minW: b.minW ?? 3,
+    minH: b.minH ?? 3,
+  };
+}
 
 // ─── Small inline render helpers ─────────────────────────────────────────
 
@@ -75,6 +89,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "activity",
     tier: "deterministic",
     source_version: "v2 / v5",
+    defaultW: 12,
+    defaultH: 5,
     render: (r) => {
       const p = r.variants.wow_pulse;
       return (
@@ -324,6 +340,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "harness",
     tier: "deterministic",
     source_version: "v4",
+    defaultW: 6,
+    defaultH: 6,
     render: (r) => (
       <div className="diffusion-arrows">
         {r.skills_harness.skill_diffusion_events.map((e, i) => (
@@ -464,6 +482,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "risks",
     tier: "deterministic",
     source_version: "v5",
+    defaultW: 12,
+    defaultH: 9,
     render: (r) => (
       <div className="risk-tile-row">
         {r.variants.v5_extras.actionables.risk_signals.map((s) => <RiskSignalTile key={s.name} signal={s} />)}
@@ -536,6 +556,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "case-studies",
     tier: "llm-enriched",
     source_version: "v2 / v4",
+    defaultW: 12,
+    defaultH: 20,
     render: (r) => (
       <>
         {r.variants.case_studies.map((cs) => <CaseStudyCard key={cs.id} cs={cs} />)}
@@ -560,6 +582,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "tickets",
     tier: "external-plug-in",
     source_version: "v6",
+    defaultW: 12,
+    defaultH: 8,
     render: (r) => {
       const phases = r.variants.v6_extras.phase_summaries;
       const maxScore = Math.max(...phases.map((p) => p.bottleneck_score), 1);
@@ -577,6 +601,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "tickets",
     tier: "external-plug-in",
     source_version: "v6",
+    defaultW: 12,
+    defaultH: 14,
     render: (r) => (
       <>
         {r.variants.v6_extras.ticket_journeys.map((t) => <V6TicketJourneyCard key={t.id} ticket={t} />)}
@@ -636,6 +662,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "people",
     tier: "llm-enriched",
     source_version: "v5",
+    defaultW: 12,
+    defaultH: 10,
     render: (r) => (
       <div className="oneonone-stack">
         {r.variants.v5_extras.actionables.oneonone_prompts.map((p, i) => <OneOnOneCard key={i} p={p} />)}
@@ -664,6 +692,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "narrative",
     tier: "llm-enriched",
     source_version: "v5",
+    defaultW: 12,
+    defaultH: 4,
     render: (r) => <div className="hero-takeaway">{r.variants.v5_extras.actionables.hero_takeaway}</div>,
   },
   {
@@ -673,6 +703,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "narrative",
     tier: "llm-enriched",
     source_version: "v5",
+    defaultW: 6,
+    defaultH: 10,
     render: (r) => <ActionCardBlock kind="strength" cards={r.variants.v5_extras.actionables.strengths} />,
   },
   {
@@ -682,6 +714,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     category: "narrative",
     tier: "llm-enriched",
     source_version: "v5",
+    defaultW: 6,
+    defaultH: 10,
     render: (r) => <ActionCardBlock kind="dysfunction" cards={r.variants.v5_extras.actionables.dysfunctions} />,
   },
   {

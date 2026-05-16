@@ -1,16 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import GridLayout, { WidthProvider, type Layout as LayoutItem } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 import type { TeamInsightReport } from "../../app/team/[slug]/insights/types";
 import {
   BLOCK_CATALOG,
   CATEGORY_LABELS,
   STARTER_BLOCKS,
+  defaultSizeFor,
   groupBlocksByCategory,
   type BlockCategory,
   type BlockTier,
   type DashboardBlock,
 } from "./v7-builder-blocks";
+
+const ReactGridLayout = WidthProvider(GridLayout);
 
 const TIER_LABEL: Record<BlockTier, string> = {
   deterministic: "Deterministic",
@@ -24,11 +30,19 @@ const TIER_SYMBOL: Record<BlockTier, string> = {
   "external-plug-in": "◌",
 };
 
+const GRID_COLS = 12;
+const GRID_ROW_HEIGHT = 30;
+const GRID_MARGIN: [number, number] = [12, 12];
+
+type GridItem = { i: string; x: number; y: number; w: number; h: number; minW?: number; minH?: number };
+type PersistedState = { ids: string[]; layout: GridItem[] };
+type StoredFormat = string[] | PersistedState;
+
 function storageKey(slug: string): string {
   return `fleetlens-builder-v7:${slug}`;
 }
 
-function parseBlocks(raw: string | undefined): string[] {
+function parseBlocksParam(raw: string | undefined): string[] {
   if (!raw) return [];
   const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
   const seen = new Set<string>();
@@ -42,6 +56,60 @@ function parseBlocks(raw: string | undefined): string[] {
   return out;
 }
 
+function nextRowY(items: GridItem[]): number {
+  if (items.length === 0) return 0;
+  return Math.max(...items.map((it) => it.y + it.h));
+}
+
+function autoLayoutForIds(ids: string[]): GridItem[] {
+  const items: GridItem[] = [];
+  let cursorX = 0;
+  let cursorY = 0;
+  let rowMaxH = 0;
+
+  for (const id of ids) {
+    const block = BLOCK_CATALOG.find((b) => b.id === id);
+    if (!block) continue;
+    const { w, h, minW, minH } = defaultSizeFor(block);
+    const useW = Math.min(GRID_COLS, w);
+    // Wrap to next row when it won't fit horizontally
+    if (cursorX + useW > GRID_COLS) {
+      cursorX = 0;
+      cursorY += rowMaxH;
+      rowMaxH = 0;
+    }
+    items.push({ i: id, x: cursorX, y: cursorY, w: useW, h, minW, minH });
+    cursorX += useW;
+    rowMaxH = Math.max(rowMaxH, h);
+  }
+  return items;
+}
+
+function appendItem(items: GridItem[], id: string): GridItem[] {
+  if (items.some((it) => it.i === id)) return items;
+  const block = BLOCK_CATALOG.find((b) => b.id === id);
+  if (!block) return items;
+  const { w, h, minW, minH } = defaultSizeFor(block);
+  const y = nextRowY(items);
+  return [...items, { i: id, x: 0, y, w: Math.min(GRID_COLS, w), h, minW, minH }];
+}
+
+function removeItem(items: GridItem[], id: string): GridItem[] {
+  return items.filter((it) => it.i !== id);
+}
+
+function syncLayoutToIds(layout: GridItem[], ids: string[]): GridItem[] {
+  // Drop items not in ids; add new ids with default position
+  const kept = layout.filter((it) => ids.includes(it.i));
+  let result = kept;
+  for (const id of ids) {
+    if (!result.some((it) => it.i === id)) {
+      result = appendItem(result, id);
+    }
+  }
+  return result;
+}
+
 export function VariantBuilder({
   r,
   slug,
@@ -51,31 +119,49 @@ export function VariantBuilder({
   slug: string;
   blocksParam: string | undefined;
 }) {
-  const urlInitial = useMemo(() => parseBlocks(blocksParam), [blocksParam]);
+  const urlInitial = useMemo(() => parseBlocksParam(blocksParam), [blocksParam]);
 
-  // committed = what's actually shown in the dashboard
-  // draft = what user is editing in the sheet
-  const [committed, setCommitted] = useState<string[]>(urlInitial.length > 0 ? urlInitial : STARTER_BLOCKS);
+  // Initial state — server-rendered with starter preset (hydrates after mount from localStorage).
+  const initialIds = urlInitial.length > 0 ? urlInitial : STARTER_BLOCKS;
+  const initialLayout = useMemo(() => autoLayoutForIds(initialIds), [initialIds]);
+
+  const [committedIds, setCommittedIds] = useState<string[]>(initialIds);
+  const [layout, setLayout] = useState<GridItem[]>(initialLayout);
   const [hydrated, setHydrated] = useState(false);
-  const [draft, setDraft] = useState<string[]>(committed);
+  const [draftIds, setDraftIds] = useState<string[]>(initialIds);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [hovered, setHovered] = useState<string | null>(null);
 
-  // On mount, hydrate from localStorage if URL didn't override
+  // Hydrate from localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (urlInitial.length === 0) {
       try {
         const stored = window.localStorage.getItem(storageKey(slug));
         if (stored) {
-          const parsed = JSON.parse(stored);
+          const parsed = JSON.parse(stored) as StoredFormat;
           if (Array.isArray(parsed)) {
+            // v7.1 format: just string[]. Convert to layout.
             const filtered = parsed.filter(
               (id): id is string => typeof id === "string" && BLOCK_CATALOG.some((b) => b.id === id),
             );
             if (filtered.length > 0) {
-              setCommitted(filtered);
-              setDraft(filtered);
+              setCommittedIds(filtered);
+              setDraftIds(filtered);
+              setLayout(autoLayoutForIds(filtered));
+            }
+          } else if (parsed && typeof parsed === "object" && Array.isArray(parsed.ids)) {
+            // v7.2 format: {ids, layout}
+            const validIds = parsed.ids.filter(
+              (id): id is string => typeof id === "string" && BLOCK_CATALOG.some((b) => b.id === id),
+            );
+            if (validIds.length > 0) {
+              setCommittedIds(validIds);
+              setDraftIds(validIds);
+              const validLayout = Array.isArray(parsed.layout)
+                ? parsed.layout.filter((it) => validIds.includes(it.i))
+                : [];
+              setLayout(syncLayoutToIds(validLayout, validIds));
             }
           }
         }
@@ -90,14 +176,15 @@ export function VariantBuilder({
   useEffect(() => {
     if (!hydrated || typeof window === "undefined") return;
     try {
-      window.localStorage.setItem(storageKey(slug), JSON.stringify(committed));
+      const payload: PersistedState = { ids: committedIds, layout };
+      window.localStorage.setItem(storageKey(slug), JSON.stringify(payload));
     } catch {
-      // ignore quota / disabled storage
+      // ignore
     }
-  }, [committed, slug, hydrated]);
+  }, [committedIds, layout, slug, hydrated]);
 
   function openSheet() {
-    setDraft(committed);
+    setDraftIds(committedIds);
     setHovered(null);
     setSheetOpen(true);
   }
@@ -105,35 +192,73 @@ export function VariantBuilder({
     setSheetOpen(false);
   }
   function applySheet() {
-    setCommitted(draft);
+    setCommittedIds(draftIds);
+    setLayout((prev) => syncLayoutToIds(prev, draftIds));
     setSheetOpen(false);
   }
   function toggleDraft(id: string) {
-    setDraft((d) => (d.includes(id) ? d.filter((x) => x !== id) : [...d, id]));
+    setDraftIds((d) => (d.includes(id) ? d.filter((x) => x !== id) : [...d, id]));
   }
-  function reorderCommitted(id: string, direction: "up" | "down") {
-    setCommitted((prev) => {
-      const idx = prev.indexOf(id);
-      if (idx === -1) return prev;
-      const next = [...prev];
-      const swap = direction === "up" ? idx - 1 : idx + 1;
-      if (swap < 0 || swap >= next.length) return prev;
-      [next[idx], next[swap]] = [next[swap], next[idx]];
-      return next;
-    });
+  function loadStarter() {
+    setDraftIds(STARTER_BLOCKS);
+  }
+  function selectAll() {
+    setDraftIds(BLOCK_CATALOG.map((b) => b.id));
+  }
+  function clearAll() {
+    setDraftIds([]);
   }
   function removeFromCommitted(id: string) {
-    setCommitted((prev) => prev.filter((x) => x !== id));
+    setCommittedIds((prev) => prev.filter((x) => x !== id));
+    setLayout((prev) => removeItem(prev, id));
+  }
+
+  function handleLayoutChange(next: LayoutItem[]) {
+    // GridLayout passes Layout[]; we only persist the fields we care about.
+    setLayout((prev) => {
+      const map = new Map(prev.map((it) => [it.i, it]));
+      const merged: GridItem[] = next.map((it) => {
+        const existing = map.get(it.i);
+        return {
+          i: it.i,
+          x: it.x,
+          y: it.y,
+          w: it.w,
+          h: it.h,
+          minW: existing?.minW,
+          minH: existing?.minH,
+        };
+      });
+      return merged;
+    });
   }
 
   const grouped = useMemo(() => groupBlocksByCategory(BLOCK_CATALOG), []);
   const hoveredBlock = hovered ? BLOCK_CATALOG.find((b) => b.id === hovered) ?? null : null;
-  const isEmpty = committed.length === 0;
-  const draftSet = new Set(draft);
+  const draftSet = new Set(draftIds);
+  const isEmpty = committedIds.length === 0;
 
   function blockById(id: string): DashboardBlock | null {
     return BLOCK_CATALOG.find((b) => b.id === id) ?? null;
   }
+
+  // Build the layout that the grid renders: filter to committed ids, ensure all
+  // committed ids have a layout entry.
+  const renderedLayout: LayoutItem[] = useMemo(() => {
+    const filtered = layout.filter((it) => committedIds.includes(it.i));
+    const have = new Set(filtered.map((it) => it.i));
+    const missing = committedIds.filter((id) => !have.has(id));
+    const withMissing = [...filtered];
+    let cursorY = nextRowY(withMissing);
+    for (const id of missing) {
+      const b = blockById(id);
+      if (!b) continue;
+      const { w, h, minW, minH } = defaultSizeFor(b);
+      withMissing.push({ i: id, x: 0, y: cursorY, w, h, minW, minH });
+      cursorY += h;
+    }
+    return withMissing;
+  }, [committedIds, layout]);
 
   return (
     <div className="variant-frame">
@@ -141,8 +266,8 @@ export function VariantBuilder({
         <div className="builder-header-left">
           <h2 className="builder-header-title">Dashboard</h2>
           <div className="builder-header-sub">
-            {committed.length} block{committed.length === 1 ? "" : "s"} ·{" "}
-            <span className="builder-header-source">stored in your browser</span>
+            {committedIds.length} block{committedIds.length === 1 ? "" : "s"} ·{" "}
+            <span className="builder-header-source">drag headers to move · resize from bottom-right corner · saved in your browser</span>
           </div>
         </div>
         <button type="button" className="builder-customize-button" onClick={openSheet}>
@@ -154,60 +279,91 @@ export function VariantBuilder({
       {isEmpty ? (
         <div className="builder-empty">
           <p>Your dashboard is empty.</p>
-          <button type="button" className="builder-action" onClick={() => setCommitted(STARTER_BLOCKS)}>
+          <button
+            type="button"
+            className="builder-action"
+            onClick={() => {
+              setCommittedIds(STARTER_BLOCKS);
+              setLayout(autoLayoutForIds(STARTER_BLOCKS));
+            }}
+          >
             ⇢ Load starter preset ({STARTER_BLOCKS.length} blocks)
           </button>
         </div>
       ) : (
-        <div className="builder-dashboard">
-          {committed.map((id, index) => {
+        <ReactGridLayout
+          className="builder-grid"
+          layout={renderedLayout}
+          cols={GRID_COLS}
+          rowHeight={GRID_ROW_HEIGHT}
+          margin={GRID_MARGIN}
+          draggableHandle=".builder-widget-drag-handle"
+          compactType="vertical"
+          onLayoutChange={handleLayoutChange}
+          isBounded={false}
+          resizeHandles={["se"]}
+        >
+          {committedIds.map((id) => {
             const block = blockById(id);
             if (!block) return null;
-            const isFirst = index === 0;
-            const isLast = index === committed.length - 1;
             return (
-              <article key={id} className="builder-dashboard-block">
-                <header className="builder-dashboard-block-head">
-                  <div>
-                    <h3 className="builder-dashboard-block-title">{block.title}</h3>
-                    <div className="builder-dashboard-block-meta">
+              <div key={id} className="builder-widget">
+                <header className="builder-widget-head builder-widget-drag-handle">
+                  <div className="builder-widget-titlewrap">
+                    <h3 className="builder-widget-title">{block.title}</h3>
+                    <div className="builder-widget-meta">
                       <span className={`builder-tier tier-${block.tier}`}>
                         {TIER_SYMBOL[block.tier]} {TIER_LABEL[block.tier]}
                       </span>
                       <span className="builder-source">from {block.source_version}</span>
                     </div>
                   </div>
-                  <div className="builder-dashboard-block-controls">
-                    {!isFirst && (
-                      <button type="button" className="builder-block-control" title="Move up" onClick={() => reorderCommitted(id, "up")}>↑</button>
-                    )}
-                    {!isLast && (
-                      <button type="button" className="builder-block-control" title="Move down" onClick={() => reorderCommitted(id, "down")}>↓</button>
-                    )}
-                    <button type="button" className="builder-block-control danger" title="Remove" onClick={() => removeFromCommitted(id)}>×</button>
+                  <div
+                    className="builder-widget-controls"
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="builder-block-control danger"
+                      title="Remove"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFromCommitted(id);
+                      }}
+                    >
+                      ×
+                    </button>
                   </div>
                 </header>
-                <div className="builder-dashboard-block-body">{block.render(r)}</div>
-              </article>
+                <div className="builder-widget-body">{block.render(r)}</div>
+              </div>
             );
           })}
-        </div>
+        </ReactGridLayout>
       )}
 
       {/* ─── Side sheet ─────────────────────────────────────────────── */}
-      <div className={`builder-sheet-backdrop${sheetOpen ? " open" : ""}`} onClick={closeSheet} aria-hidden={!sheetOpen} />
-      <aside className={`builder-sheet${sheetOpen ? " open" : ""}`} aria-hidden={!sheetOpen} aria-label="Customize dashboard">
+      <div
+        className={`builder-sheet-backdrop${sheetOpen ? " open" : ""}`}
+        onClick={closeSheet}
+        aria-hidden={!sheetOpen}
+      />
+      <aside
+        className={`builder-sheet${sheetOpen ? " open" : ""}`}
+        aria-hidden={!sheetOpen}
+        aria-label="Customize dashboard"
+      >
         <header className="builder-sheet-head">
           <div>
             <h2 className="builder-sheet-title">Customize dashboard</h2>
             <div className="builder-sheet-sub">
-              {draft.length} of {BLOCK_CATALOG.length} blocks selected · hover any block to preview it with your team's data
+              {draftIds.length} of {BLOCK_CATALOG.length} blocks selected · hover any block to preview it with your team's data
             </div>
           </div>
           <div className="builder-sheet-quickactions">
-            <button type="button" className="builder-action" onClick={() => setDraft(STARTER_BLOCKS)}>Starter</button>
-            <button type="button" className="builder-action" onClick={() => setDraft(BLOCK_CATALOG.map((b) => b.id))}>All</button>
-            <button type="button" className="builder-action danger" onClick={() => setDraft([])}>Clear</button>
+            <button type="button" className="builder-action" onClick={loadStarter}>Starter</button>
+            <button type="button" className="builder-action" onClick={selectAll}>All</button>
+            <button type="button" className="builder-action danger" onClick={clearAll}>Clear</button>
           </div>
         </header>
 
@@ -280,7 +436,7 @@ export function VariantBuilder({
 
         <footer className="builder-sheet-footer">
           <div className="builder-sheet-footer-info">
-            Changes saved on Apply · selection persists in your browser
+            Apply saves your selection · drag and resize on the dashboard after closing
           </div>
           <div className="builder-sheet-footer-actions">
             <button type="button" className="builder-cta" onClick={closeSheet}>Cancel</button>
