@@ -4,6 +4,20 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.3] — 2026-05-16
+
+### Added
+- **Daemon auto-update every 6 hours.** The local daemon now hourly-checks `registry.npmjs.org/fleetlens/latest` and spawns a detached `fleetlens update` child when a newer version exists. Timestamp persisted in `~/.cclens/daemon-update.json` so closing the laptop lid for days and reopening triggers an immediate catch-up check instead of waiting out the interval. Opt-out via `FLEETLENS_DAEMON_AUTO_UPDATE=0`.
+
+### Changed
+- **Unified team sync.** `runTeamSync` now drives history backfill, daily activity, live utilization, queue drain, and tier propagation through a single path. `team join` and the daemon's 5-min tick both call the same function — so a user disconnected from the team server for days will autonomously catch up on next sync, no manual `team backfill` needed.
+- New `lastSyncedUsageSnapshotAt` high-water mark in `~/.cclens/team.json` means incremental syncs only ship eligible new snapshots. Cold-start full backfill is bypass-able via `fleetlens team backfill --force` (and still runs unconditionally on first pair).
+- Team sync cadence is now independent of Claude OAuth polling, so an expired Claude token can no longer turn team sync into a 5-second retry storm.
+
+### Fixed
+- `lastSyncedDay` no longer advances past a failed day on partial outage — previously a transient mid-stream 5xx left a permanent hole in the team-server's daily-activity coverage.
+- Both `/api/ingest/metrics` and `/api/ingest/usage-history` POSTs now have a 15-second `AbortSignal.timeout` to bound hangs on network stalls.
+
 ## [0.10.2] — 2026-05-15
 
 ### Fixed
