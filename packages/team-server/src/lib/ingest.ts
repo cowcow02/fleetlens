@@ -45,6 +45,78 @@ export async function processIngest(
           r.tokens.input, r.tokens.output, r.tokens.cacheRead, r.tokens.cacheWrite]);
     }
 
+    if (payload.richRollup) {
+      const r = payload.richRollup;
+      const ex = payload.enrichedExtras;
+      await client.query(`
+        INSERT INTO rich_daily_rollups (
+          team_id, membership_id, day,
+          agent_time_ms, sessions,
+          prs, commits, pushes,
+          concurrency_peak, parallel_minutes,
+          long_auto_count, long_auto_total_min, long_auto_max_single_min,
+          tool_errors, brainstorm_warmup_sessions, plan_mode_used,
+          projects, working_shapes, skills_loaded, subagents_dispatched,
+          outcome_mix, helpfulness_mix, goal_mix,
+          tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
+        )
+        VALUES (
+          $1, $2, $3,
+          $4, $5,
+          $6, $7, $8,
+          $9, $10,
+          $11, $12, $13,
+          $14, $15, $16,
+          $17, $18, $19, $20,
+          $21, $22, $23,
+          $24, $25, $26, $27
+        )
+        ON CONFLICT (team_id, membership_id, day) DO UPDATE SET
+          agent_time_ms = EXCLUDED.agent_time_ms,
+          sessions = EXCLUDED.sessions,
+          prs = EXCLUDED.prs,
+          commits = EXCLUDED.commits,
+          pushes = EXCLUDED.pushes,
+          concurrency_peak = EXCLUDED.concurrency_peak,
+          parallel_minutes = EXCLUDED.parallel_minutes,
+          long_auto_count = EXCLUDED.long_auto_count,
+          long_auto_total_min = EXCLUDED.long_auto_total_min,
+          long_auto_max_single_min = EXCLUDED.long_auto_max_single_min,
+          tool_errors = EXCLUDED.tool_errors,
+          brainstorm_warmup_sessions = EXCLUDED.brainstorm_warmup_sessions,
+          plan_mode_used = EXCLUDED.plan_mode_used,
+          projects = EXCLUDED.projects,
+          working_shapes = EXCLUDED.working_shapes,
+          skills_loaded = EXCLUDED.skills_loaded,
+          subagents_dispatched = EXCLUDED.subagents_dispatched,
+          -- Preserve previously-pushed enriched extras on opt-out: re-pushing
+          -- without enrichedExtras leaves the columns alone instead of
+          -- nulling them. Member opt-out should be done by the team-server
+          -- admin tool, not silently by every metric push.
+          outcome_mix = COALESCE(EXCLUDED.outcome_mix, rich_daily_rollups.outcome_mix),
+          helpfulness_mix = COALESCE(EXCLUDED.helpfulness_mix, rich_daily_rollups.helpfulness_mix),
+          goal_mix = COALESCE(EXCLUDED.goal_mix, rich_daily_rollups.goal_mix),
+          tokens_input = EXCLUDED.tokens_input,
+          tokens_output = EXCLUDED.tokens_output,
+          tokens_cache_read = EXCLUDED.tokens_cache_read,
+          tokens_cache_write = EXCLUDED.tokens_cache_write,
+          ingested_at = now()
+      `, [
+        teamId, membershipId, r.day,
+        r.agentTimeMs, r.sessions,
+        r.prs, r.commits, r.pushes,
+        r.concurrencyPeak, r.parallelMinutes,
+        r.longAutonomous.count, r.longAutonomous.totalMin, r.longAutonomous.maxSingleMin,
+        r.toolErrors, r.brainstormWarmupSessions, r.planModeUsed,
+        JSON.stringify(r.projects), JSON.stringify(r.workingShapes),
+        JSON.stringify(r.skillsLoaded), JSON.stringify(r.subagentsDispatched),
+        ex?.outcomeMix ? JSON.stringify(ex.outcomeMix) : null,
+        ex?.helpfulnessMix ? JSON.stringify(ex.helpfulnessMix) : null,
+        ex?.goalMix ? JSON.stringify(ex.goalMix) : null,
+        r.tokens.input, r.tokens.output, r.tokens.cacheRead, r.tokens.cacheWrite,
+      ]);
+    }
+
     if (payload.planTier) {
       // Server-trusted source of truth — the daemon read this directly from
       // Anthropic's profile endpoint. Admin can still override post-hoc;

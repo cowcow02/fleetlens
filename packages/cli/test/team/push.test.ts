@@ -112,7 +112,7 @@ describe("buildIngestPayload", () => {
       durationMs: 0, airTimeMs: 0, peakParallelism: 0,
     });
     const before = Date.now();
-    const payload = buildIngestPayload(rollup);
+    const payload = buildIngestPayload({ rollup });
     const after = Date.now();
 
     expect(payload.dailyRollup).toEqual(rollup);
@@ -128,8 +128,8 @@ describe("buildIngestPayload", () => {
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       durationMs: 0, airTimeMs: 0, peakParallelism: 0,
     });
-    const a = buildIngestPayload(rollup);
-    const b = buildIngestPayload(rollup);
+    const a = buildIngestPayload({ rollup });
+    const b = buildIngestPayload({ rollup });
     expect(a.ingestId).not.toBe(b.ingestId);
   });
 
@@ -149,7 +149,7 @@ describe("buildIngestPayload", () => {
       sevenDayCowork: null,
       extraUsage: null,
     };
-    const payload = buildIngestPayload(rollup, snapshot);
+    const payload = buildIngestPayload({ rollup, usageSnapshot: snapshot });
     expect(payload.usageSnapshot).toEqual(snapshot);
   });
 
@@ -159,7 +159,7 @@ describe("buildIngestPayload", () => {
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       durationMs: 0, airTimeMs: 0, peakParallelism: 0,
     });
-    const payload = buildIngestPayload(rollup);
+    const payload = buildIngestPayload({ rollup });
     expect("usageSnapshot" in payload).toBe(false);
   });
 });
