@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 import type { TeamInsightReport } from "../../app/team/[slug]/insights/types";
 import { CaseStudyCard } from "./v2-case-studies";

@@ -1,3 +1,5 @@
+"use client";
+
 import type {
   TeamInsightReport,
   V6AllocationRow,

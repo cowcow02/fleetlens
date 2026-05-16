@@ -1,3 +1,5 @@
+"use client";
+
 import type { TeamInsightReport } from "../../app/team/[slug]/insights/types";
 import { TextSparkline } from "../insights-primitives";
 

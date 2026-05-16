@@ -1,3 +1,5 @@
+"use client";
+
 import type { DiffusionStatus, TeamInsightReport } from "../../app/team/[slug]/insights/types";
 
 const STATUS_LABEL: Record<DiffusionStatus, string> = {

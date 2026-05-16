@@ -4891,6 +4891,304 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
 }
 .builder-footer-note a:hover { text-decoration: underline; }
 
+/* ─── v7.1 · sticky header + side sheet ───────────────────────────── */
+
+.builder-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: color-mix(in srgb, var(--paper) 96%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
+  padding: 14px 0;
+  margin-bottom: 18px;
+}
+.builder-header-left { display: flex; flex-direction: column; gap: 2px; }
+.builder-header-title {
+  font-family: "Instrument Serif", serif;
+  font-size: 24px;
+  color: var(--ink);
+  font-style: italic;
+}
+.builder-header-sub {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+}
+.builder-header-source { color: var(--ink-soft); }
+
+.builder-customize-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 20%, transparent);
+}
+.builder-customize-button:hover {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+.builder-customize-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Side sheet */
+
+.builder-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--ink) 35%, transparent);
+  z-index: 90;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.builder-sheet-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.builder-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(1200px, 80vw);
+  background: var(--paper);
+  border-left: 1px solid var(--rule);
+  box-shadow: -10px 0 40px color-mix(in srgb, var(--ink) 25%, transparent);
+  z-index: 100;
+  transform: translateX(100%);
+  transition: transform 0.22s cubic-bezier(0.32, 0.72, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+}
+.builder-sheet.open {
+  transform: translateX(0);
+}
+@media (max-width: 900px) {
+  .builder-sheet { width: 100vw; }
+}
+
+.builder-sheet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 28px;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper));
+}
+.builder-sheet-title {
+  font-family: "Instrument Serif", serif;
+  font-size: 26px;
+  font-style: italic;
+  color: var(--ink);
+}
+.builder-sheet-sub {
+  font-size: 12px;
+  color: var(--mute);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.builder-sheet-quickactions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.builder-sheet-body {
+  display: grid;
+  grid-template-columns: minmax(360px, 460px) 1fr;
+  flex: 1;
+  min-height: 0;
+}
+@media (max-width: 900px) {
+  .builder-sheet-body { grid-template-columns: 1fr; }
+}
+
+.builder-sheet-catalog {
+  border-right: 1px solid var(--rule-soft);
+  padding: 20px 24px;
+  overflow-y: auto;
+}
+.builder-sheet-catalog .builder-cat-group { margin-bottom: 22px; }
+.builder-sheet-catalog .builder-block-grid {
+  grid-template-columns: 1fr;
+}
+.builder-sheet-catalog .builder-block-chip {
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.builder-sheet-catalog .builder-block-chip.hovered {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+}
+.builder-sheet-catalog .builder-block-chip.selected.hovered {
+  border-left-color: var(--positive);
+  background: color-mix(in srgb, var(--positive) 8%, var(--paper));
+}
+
+.builder-sheet-preview {
+  padding: 24px 28px 32px;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.builder-preview-head {
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.builder-preview-eyebrow {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.builder-preview-title {
+  font-family: "Instrument Serif", serif;
+  font-size: 24px;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.builder-preview-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.builder-preview-desc {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+.builder-preview-body { /* host renderers · inherit block styles */ }
+
+.builder-preview-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 320px;
+  color: var(--mute);
+  text-align: center;
+  padding: 40px 24px;
+  border: 1px dashed var(--rule);
+  border-radius: 2px;
+  background: var(--paper);
+}
+.builder-preview-empty-glyph {
+  font-size: 36px;
+  color: var(--rule);
+  margin-bottom: 12px;
+}
+.builder-preview-empty-sub {
+  font-size: 12px;
+  color: var(--mute);
+  margin-top: 10px;
+  max-width: 360px;
+  line-height: 1.55;
+}
+
+.builder-sheet-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 28px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+.builder-sheet-footer-info {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--mute);
+}
+.builder-sheet-footer-actions {
+  display: flex;
+  gap: 10px;
+}
+.builder-cta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.builder-cta:hover { border-color: var(--mute); color: var(--ink); }
+.builder-cta.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+.builder-cta.primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, black);
+}
+
+/* Make the catalog buttons fully button-styled */
+button.builder-block-chip {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+button.builder-block-control {
+  cursor: pointer;
+  background: var(--paper);
+  font-family: inherit;
+}
+button.builder-action {
+  background: var(--paper);
+  cursor: pointer;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--rule));
+  padding: 6px 12px;
+  border-radius: 999px;
+}
+button.builder-action:hover { background: color-mix(in srgb, var(--accent) 8%, var(--paper)); }
+button.builder-action.danger {
+  color: var(--mute);
+  border-color: var(--rule);
+}
+button.builder-action.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
 /* ─── v6 · Ticket flow lifecycle spine ─────────────────────────────────── */
 
 .v6-frame {
