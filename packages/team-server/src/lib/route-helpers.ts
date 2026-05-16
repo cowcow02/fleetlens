@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import type pg from "pg";
 import { getPool } from "../db/pool";
 import { validateSession, type SessionContext } from "./auth";
+import { loadGroupBySlug } from "./groups";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type TeamContext = SessionContext & {
   pool: pg.Pool;
@@ -44,8 +47,8 @@ export async function requireTeamMembership(
 }
 
 export function requireAdmin(ctx: TeamContext): NextResponse | null {
-  if (ctx.membership.role !== "admin") return NextResponse.json({ error: "Admin only" }, { status: 403 });
-  return null;
+  if (ctx.user.is_staff || ctx.membership.role === "admin") return null;
+  return NextResponse.json({ error: "Admin only" }, { status: 403 });
 }
 
 export async function requireStaff(
@@ -55,4 +58,46 @@ export async function requireStaff(
   if (base instanceof NextResponse) return base;
   if (!base.user.is_staff) return NextResponse.json({ error: "Staff only" }, { status: 403 });
   return base;
+}
+
+export async function resolveGroupId(
+  ctx: { pool: pg.Pool; membership: { team_id: string } },
+  groupParam: string,
+): Promise<string | null> {
+  if (UUID_RE.test(groupParam)) return groupParam;
+  const g = await loadGroupBySlug(ctx.membership.team_id, groupParam, ctx.pool);
+  return g?.id ?? null;
+}
+
+// Returns false on malformed UUID too, so callers don't need a separate format check
+// to avoid Postgres throwing on a non-UUID string.
+export async function assertMembershipBelongsToTeam(
+  ctx: { pool: pg.Pool; membership: { team_id: string } },
+  membershipId: string,
+): Promise<boolean> {
+  if (!UUID_RE.test(membershipId)) return false;
+  const r = await ctx.pool.query(
+    "SELECT 1 FROM memberships WHERE id = $1 AND team_id = $2",
+    [membershipId, ctx.membership.team_id],
+  );
+  return r.rowCount === 1;
+}
+
+// 404 not 403 so members can't probe which groups exist.
+export async function requireGroupManager(
+  ctx: TeamContext,
+  groupSlug: string,
+): Promise<{ id: string; slug: string; name: string } | NextResponse> {
+  const g = await ctx.pool.query<{ id: string; slug: string; name: string }>(
+    "SELECT id, slug, name FROM groups WHERE team_id = $1 AND slug = $2",
+    [ctx.membership.team_id, groupSlug],
+  );
+  if (!g.rowCount) return NextResponse.json({ error: "Group not found" }, { status: 404 });
+  if (ctx.user.is_staff || ctx.membership.role === "admin") return g.rows[0];
+  const isMgr = await ctx.pool.query(
+    "SELECT 1 FROM group_members WHERE group_id = $1 AND membership_id = $2 AND is_manager = true",
+    [g.rows[0].id, ctx.membership.id],
+  );
+  if (!isMgr.rowCount) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return g.rows[0];
 }

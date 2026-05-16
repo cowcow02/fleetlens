@@ -162,12 +162,26 @@ describe("requireAdmin", () => {
     expect(err).toBeNull();
   });
 
-  it("returns 403 NextResponse when role is member", async () => {
+  it("returns 403 NextResponse when role is member and not staff", async () => {
     const req = makeNextReqWithCookie(memberCookieToken);
     const ctx = (await requireTeamMembership(req, teamSlug, { bySlug: true })) as TeamContext;
     expect(ctx instanceof NextResponse).toBe(false);
     const err = requireAdmin(ctx as TeamContext);
     expect(err).not.toBeNull();
     expect((err as NextResponse).status).toBe(403);
+  });
+
+  it("returns null (ok) for a staff user joined as a regular member", async () => {
+    const staff = await createUserAccount("rh-staff-member@example.com", "pass1234", null, { isStaff: true }, pool);
+    const { token } = await createInvite(teamId, (await pool.query("SELECT user_account_id FROM memberships WHERE id = $1", [adminMembershipId])).rows[0].user_account_id, {}, pool);
+    await redeemInvite(token, staff.id, pool);
+    const { cookieToken } = await createSession(staff.id, pool);
+    const req = makeNextReqWithCookie(cookieToken);
+    const ctx = (await requireTeamMembership(req, teamSlug, { bySlug: true })) as TeamContext;
+    expect(ctx instanceof NextResponse).toBe(false);
+    expect(ctx.membership.role).toBe("member");
+    expect(ctx.user.is_staff).toBe(true);
+    const err = requireAdmin(ctx);
+    expect(err).toBeNull();
   });
 });

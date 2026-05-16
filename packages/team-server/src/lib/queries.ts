@@ -90,3 +90,57 @@ export async function loadMember(membershipId: string, pool: pg.Pool): Promise<M
   );
   return res.rowCount ? res.rows[0] : null;
 }
+
+export type GroupRosterRow = RosterRow & { is_manager: boolean };
+
+export async function loadGroupRoster(groupId: string, pool: pg.Pool): Promise<GroupRosterRow[]> {
+  const res = await pool.query<GroupRosterRow>(`
+    SELECT
+      m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at,
+      gm.is_manager,
+      COALESCE(SUM(r.agent_time_ms), 0)::bigint AS week_agent_time_ms,
+      COALESCE(SUM(r.sessions), 0)::int AS week_sessions,
+      COALESCE(SUM(r.tool_calls), 0)::int AS week_tool_calls,
+      COALESCE(SUM(r.turns), 0)::int AS week_turns,
+      COALESCE(SUM(r.tokens_input + r.tokens_output + r.tokens_cache_read + r.tokens_cache_write), 0)::bigint AS week_tokens
+    FROM group_members gm
+    JOIN memberships m ON m.id = gm.membership_id
+    JOIN user_accounts u ON u.id = m.user_account_id
+    LEFT JOIN daily_rollups r ON r.membership_id = m.id AND r.team_id = m.team_id AND r.day >= $2
+    WHERE gm.group_id = $1 AND m.revoked_at IS NULL
+    GROUP BY m.id, u.email, u.display_name, gm.is_manager
+    ORDER BY gm.is_manager DESC, m.last_seen_at DESC NULLS LAST
+  `, [groupId, weekStartIso()]);
+  return res.rows;
+}
+
+export type GroupAffiliation = {
+  groupId: string;
+  slug: string;
+  name: string;
+  isManager: boolean;
+};
+
+export async function loadMemberGroupAffiliations(
+  teamId: string,
+  pool: pg.Pool,
+): Promise<Map<string, GroupAffiliation[]>> {
+  const res = await pool.query<{ membership_id: string; group_id: string; slug: string; name: string; is_manager: boolean }>(`
+    SELECT gm.membership_id, g.id AS group_id, g.slug, g.name, gm.is_manager
+    FROM group_members gm
+    JOIN groups g ON g.id = gm.group_id
+    WHERE g.team_id = $1
+    ORDER BY g.name
+  `, [teamId]);
+  const map = new Map<string, GroupAffiliation[]>();
+  for (const row of res.rows) {
+    if (!map.has(row.membership_id)) map.set(row.membership_id, []);
+    map.get(row.membership_id)!.push({
+      groupId: row.group_id,
+      slug: row.slug,
+      name: row.name,
+      isManager: row.is_manager,
+    });
+  }
+  return map;
+}

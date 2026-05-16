@@ -4,6 +4,44 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.3] — 2026-05-16
+
+### Added
+- **Daemon auto-update every 6 hours.** The local daemon now hourly-checks `registry.npmjs.org/fleetlens/latest` and spawns a detached `fleetlens update` child when a newer version exists. Timestamp persisted in `~/.cclens/daemon-update.json` so closing the laptop lid for days and reopening triggers an immediate catch-up check instead of waiting out the interval. Opt-out via `FLEETLENS_DAEMON_AUTO_UPDATE=0`.
+
+### Changed
+- **Unified team sync.** `runTeamSync` now drives history backfill, daily activity, live utilization, queue drain, and tier propagation through a single path. `team join` and the daemon's 5-min tick both call the same function — so a user disconnected from the team server for days will autonomously catch up on next sync, no manual `team backfill` needed.
+- New `lastSyncedUsageSnapshotAt` high-water mark in `~/.cclens/team.json` means incremental syncs only ship eligible new snapshots. Cold-start full backfill is bypass-able via `fleetlens team backfill --force` (and still runs unconditionally on first pair).
+- Team sync cadence is now independent of Claude OAuth polling, so an expired Claude token can no longer turn team sync into a 5-second retry storm.
+
+### Fixed
+- `lastSyncedDay` no longer advances past a failed day on partial outage — previously a transient mid-stream 5xx left a permanent hole in the team-server's daily-activity coverage.
+- Both `/api/ingest/metrics` and `/api/ingest/usage-history` POSTs now have a 15-second `AbortSignal.timeout` to bound hangs on network stalls.
+
+## [0.10.2] — 2026-05-15
+
+### Fixed
+- **Session-detail minimap no longer paints subagent runtime as idle.** Long agent runs that dispatched many subagents were reading as wall-to-wall "Session idle" stripes because the parent's tool_use → tool_result gap (the subagent's actual runtime) was classified as in-turn idle. `rawIdleBands` now carves subagent run spans out of every candidate gap; for in-turn gaps that overlap any subagent run the entire gap is dropped, and between-turn gaps with background subagent activity keep only the genuinely-unwatched residue.
+- **First-response thinking stops registering as idle.** Anchors now include every timestamped event (agent-thinking, meta, etc.), and the loop tracks an "awaiting first response" phase across intermediate thinking anchors. A `user → thinking → thinking → agent` sequence where the model takes a while to compose its first reply is now treated as response latency rather than painted as a stripe.
+- **Turn duration no longer shows `0ms` for single-row turns.** `buildMegaRows` now anchors a turn's `tOffsetMs` and `durationMs` at the originating user message rather than at the first agent row. Single-row turns show the actual user → agent latency, and the visual span of the turn rectangle on the minimap covers the whole arc.
+- **Single `Session idle` divider per band.** A user row and the turn-collapsed row that follows it now share a `tOffsetMs`, so the body's `IdleDivider` emitter dedupes per band to stop two consecutive identical idle markers around the same boundary.
+
+### Changed
+- Minimap idle threshold raised from 10s to 30s. Ordinary tool latency (slow Bash, big-file Read, between-anchor model thinking) no longer registers as idle.
+
+## [0.10.1] — 2026-05-14
+
+### Added
+- **Alternative claude runtime via tmux.** When `tmux` is on PATH, both the LLM pipeline (digest synth, entry enrichment, top-session perception) and the `/ask` feature now drive `claude` through a detached tmux session instead of `claude -p`. Sessions produced this way carry `entrypoint: cli` in their JSONL, which is also extracted by the parser and surfaced as a small badge on `/sessions/<id>` next to the model chip — green for `cli` / `claude-desktop`, amber for `sdk-*`. The path falls back to `claude -p` whenever tmux is unavailable or the run errors; set `FLEETLENS_FORCE_PRINT_MODE=1` to disable the tmux path entirely.
+- **`CCLENS_HOME` env override.** All `~/.cclens/` state (pid file, daemon log, perception state, usage snapshot log, llm-runs traces) is now reached through a shared `cclensHome()` helper that honors `CCLENS_HOME`. Lets multiple installs / workspaces run side-by-side without stomping on each other's state.
+
+### Fixed
+- `/api/runs` rendered every successful tmux-driven run as `status=error`. Tmux runs have no subprocess exit code (the session is killed by cleanup), and the runs viewer was treating a missing code as failure. End records now stamp `exit_code: 0` on success and the active-process filter no longer requires the literal `claude -p` flag, so tmux-driven processes also show up in the "active" panel while they're running.
+- `JobQueueWidget`'s `/api/jobs` polling effect listed `jobs` in its deps, so each tick re-armed the effect on the freshly-set state ref — effective cadence collapsed to a 1–4 ms refetch loop. Now tracks `hasActive` in a closure-local var and runs the effect once on mount.
+
+### Conductor
+- New `conductor.json` + `scripts/conductor-{setup,run,archive}.sh` so each Conductor workspace allocates its own 3-port band (web / team-server / postgres) and boots its own `fleetlens-<workspace>` Compose stack against `.harness/cclens-state`. Replaces ~30 hard-coded `join(homedir(), ".cclens", …)` call sites with the shared `cclensHome()/cclensPath()` helper so a second workspace can boot without colliding with the user's primary install.
+
 ## [0.10.0] — 2026-05-08
 
 ### Changed

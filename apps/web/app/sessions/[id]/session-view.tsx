@@ -292,34 +292,42 @@ export function SessionView({
   /** Detect PR creations in this session. */
   const prMarkers = useMemo(() => detectPrMarkers(session), [session]);
 
-  /** Idle bands derived from raw event timestamps, classified per gap.
+  /** Idle bands derived from raw event timestamps. Anchors include every
+   *  timestamped event (agent-thinking and meta are activity too), and
+   *  each emitted band's `start..end` is a literal time range so the
+   *  minimap stripe width tracks actual idle duration — no across-gap
+   *  merging.
    *
-   *  Two flavors:
-   *    - In-turn idle (gap between agent activities within the same user
-   *      turn) — multiple of these inside one turn collapse into ONE merged
-   *      band whose `start..end` spans the whole period and `durationMs`
-   *      sums the actual idle.
-   *    - Between-turn idle (gap whose terminating anchor IS a user message)
-   *      — emitted standalone. This is "user paused, walked away, came
-   *      back" time and is conceptually distinct from agent thinking.
-   *
-   *  Anchors only count user / agent / tool-call / tool-result events —
-   *  meta + thinking events are skipped so sub-second event-to-event gaps
-   *  don't crowd the strip.
+   *  Two exclusions keep "delegated work" and "response latency" out of
+   *  idle:
+   *    - Subagent run spans are carved out of every candidate gap. When a
+   *      parent dispatches an Agent tool call the gap between tool_use and
+   *      tool_result is the subagent's runtime — not idle. Background
+   *      runs that overlap a user-away gap likewise get clipped out so
+   *      only the genuinely-unwatched portion remains. The carve can
+   *      produce multiple surviving slices per gap; each becomes its own
+   *      band so the visual extent matches reality.
+   *    - "Awaiting first response" — the period between a user message
+   *      and the first agent/tool-call anchor — is dropped wholesale,
+   *      even if intermediate thinking/meta anchors split it into
+   *      multiple sub-gaps. Long model reasoning before the first reply
+   *      is composing, not idle. (User→user gaps still register as
+   *      between-turn idle because no agent activity occurred between.)
    *
    *  Side effect: the leading warm-up gap before the first agent response
    *  drops out unless it crosses MIN_GAP_MS — which the first 6s in a
    *  typical Codex session does not. */
   const rawIdleBands = useMemo(() => {
-    const isAnchor = (role: string) =>
-      role === "user" ||
-      role === "agent" ||
-      role === "tool-call" ||
-      role === "tool-result";
-    const MIN_GAP_MS = 10_000;
+    // Anchor on ANY timestamped event so agent-thinking, meta, and other
+    // intra-turn signals prove the parent is doing work. Only what we
+    // need to distinguish is "user" (turn boundary) vs everything else.
+    const isUserRole = (role: string) => role === "user";
+    // 30s threshold: keeps ordinary tool latency (Read big file, slow Bash,
+    // model thinking between anchors) out of the idle stripes while still
+    // catching anything that reads as a real pause.
+    const MIN_GAP_MS = 30_000;
     const anchors: { ms: number; role: string }[] = [];
     for (const e of events) {
-      if (!isAnchor(e.role)) continue;
       if (!e.timestamp) continue;
       const ms = Date.parse(e.timestamp);
       if (!Number.isFinite(ms)) continue;
@@ -329,38 +337,103 @@ export function SessionView({
     anchors.sort((a, b) => a.ms - b.ms);
     const sessionStartMs = anchors[0]!.ms - (events.find((e) => e.timestamp)?.tOffsetMs ?? 0);
 
-    type Band = { start: number; end: number; durationMs: number };
-    const bands: Band[] = [];
-    let inTurn: Band | null = null;
+    const subagentSpans = (session.subagents ?? [])
+      .filter(
+        (s): s is SubagentRun & { startTOffsetMs: number; endTOffsetMs: number } =>
+          s.startTOffsetMs !== undefined && s.endTOffsetMs !== undefined,
+      )
+      .map((s) => ({ start: s.startTOffsetMs, end: s.endTOffsetMs }))
+      .sort((a, b) => a.start - b.start);
 
-    const flushInTurn = () => {
-      if (inTurn && inTurn.durationMs > MIN_GAP_MS) bands.push(inTurn);
-      inTurn = null;
+    /** Subtract subagent spans from [start, end] in offset coordinates,
+     *  returning 0+ remaining slices in time order. */
+    const carveOutSubagents = (
+      start: number,
+      end: number,
+    ): { start: number; end: number }[] => {
+      let pieces: { start: number; end: number }[] = [{ start, end }];
+      for (const span of subagentSpans) {
+        if (span.end <= start) continue;
+        if (span.start >= end) break;
+        const next: { start: number; end: number }[] = [];
+        for (const p of pieces) {
+          if (span.end <= p.start || span.start >= p.end) {
+            next.push(p);
+            continue;
+          }
+          if (span.start > p.start) next.push({ start: p.start, end: span.start });
+          if (span.end < p.end) next.push({ start: span.end, end: p.end });
+        }
+        pieces = next;
+      }
+      return pieces;
     };
 
+    const overlapsSubagent = (start: number, end: number): boolean => {
+      for (const span of subagentSpans) {
+        if (span.end <= start) continue;
+        // subagentSpans is sorted by start, so once span.start >= end no
+        // later span can overlap [start, end] either — bail out cleanly.
+        if (span.start >= end) return false;
+        return true;
+      }
+      return false;
+    };
+
+    type Band = { start: number; end: number; durationMs: number };
+    const bands: Band[] = [];
+
+    // "Awaiting first response" — true after a user message, false once an
+    // agent or tool-call anchor proves the model started replying.
+    // Thinking and meta events don't clear it, so a user→thinking→agent
+    // sequence where thinking→agent crosses MIN_GAP_MS still reads as
+    // response latency rather than idle.
+    let awaitingFirstResponse = false;
+    if (anchors[0]) {
+      if (isUserRole(anchors[0].role)) awaitingFirstResponse = true;
+    }
+
     for (let i = 1; i < anchors.length; i++) {
-      const gap = anchors[i]!.ms - anchors[i - 1]!.ms;
-      if (gap <= MIN_GAP_MS) continue;
+      const rawGap = anchors[i]!.ms - anchors[i - 1]!.ms;
+      const curRole = anchors[i]!.role;
+      // Snapshot the phase BEFORE updating, so the gap is classified by
+      // the state at its start (anchors[i-1]).
+      const skipAsLatency = awaitingFirstResponse && !isUserRole(curRole);
+
+      if (isUserRole(curRole)) awaitingFirstResponse = true;
+      else if (curRole === "agent" || curRole === "tool-call") awaitingFirstResponse = false;
+
+      if (rawGap <= MIN_GAP_MS) continue;
+      if (skipAsLatency) continue;
+
       const gStart = anchors[i - 1]!.ms - sessionStartMs;
       const gEnd = anchors[i]!.ms - sessionStartMs;
+      const betweenTurn = isUserRole(curRole);
 
-      if (anchors[i]!.role === "user") {
-        // Between-turn idle — close any in-progress in-turn merge first,
-        // then push the between-turn band on its own.
-        flushInTurn();
-        bands.push({ start: gStart, end: gEnd, durationMs: gap });
-      } else {
-        // In-turn idle — accumulate into the running merged band.
-        if (!inTurn) inTurn = { start: gStart, end: gEnd, durationMs: gap };
-        else {
-          inTurn.end = gEnd;
-          inTurn.durationMs += gap;
+      if (!betweenTurn) {
+        // In-turn gap: the parent is mid-turn. If any subagent run overlaps,
+        // the parent is waiting on delegated work — not idle. Drop the
+        // whole gap rather than carving out startup/teardown slivers that
+        // would clutter the minimap with thin stripes. Gaps with no
+        // subagent overlap (long Bash runs, model thinking between tool
+        // calls) still emit as a single band.
+        if (overlapsSubagent(gStart, gEnd)) continue;
+        bands.push({ start: gStart, end: gEnd, durationMs: gEnd - gStart });
+        continue;
+      }
+
+      // Between-turn gap: user walked away. Carve out background subagent
+      // activity so only the genuinely-unwatched portion counts as idle.
+      // Each surviving slice becomes its own band.
+      for (const slice of carveOutSubagents(gStart, gEnd)) {
+        const dur = slice.end - slice.start;
+        if (dur > MIN_GAP_MS) {
+          bands.push({ start: slice.start, end: slice.end, durationMs: dur });
         }
       }
     }
-    flushInTurn();
     return bands;
-  }, [events]);
+  }, [events, session.subagents]);
 
   const coldResumeMarkers = useMemo(() => {
     const seen = new Set<string>();
@@ -621,6 +694,12 @@ export function SessionView({
           </span>
           <InlineStatDivider />
           {model && <InlineStat icon={<Cpu size={12} />} value={model} mono />}
+          {session.entrypoint && (
+            <>
+              <InlineStatDivider />
+              <EntrypointBadge entrypoint={session.entrypoint} />
+            </>
+          )}
           <InlineStatDivider />
           <InlineStat icon={<Folder size={12} />} value={projectName} truncate />
           <InlineStatDivider />
@@ -1139,6 +1218,31 @@ function InlineStatDivider() {
       }}
     >
       ·
+    </span>
+  );
+}
+
+function EntrypointBadge({ entrypoint }: { entrypoint: string }) {
+  // cli + claude-desktop are human-driven; sdk-* are programmatic.
+  const isSdk = entrypoint.startsWith("sdk-");
+  const tone = isSdk
+    ? { bg: "rgba(245, 158, 11, 0.16)", fg: "#b45309" }
+    : { bg: "rgba(16, 185, 129, 0.16)", fg: "#047857" };
+  return (
+    <span
+      title={`entrypoint: ${entrypoint}`}
+      style={{
+        fontSize: 10.5,
+        padding: "2px 7px",
+        borderRadius: 4,
+        background: tone.bg,
+        color: tone.fg,
+        fontWeight: 600,
+        fontFamily: "var(--font-mono)",
+        letterSpacing: 0.2,
+      }}
+    >
+      {entrypoint}
     </span>
   );
 }
@@ -2637,14 +2741,15 @@ function TranscriptList({
   }
 
   const idleBandList = (rawIdleBands ?? []).slice().sort((a, b) => a.start - b.start);
-  /** Returns the durationMs of the idle band that ends at (or just before)
-   *  the given row's tOffset, or null if no band matches. Tolerance is 1s
-   *  to absorb Date.parse rounding differences between anchor.ms and the
-   *  presentation row's tOffsetMs. */
-  const idleBeforeOffset = (tOff: number | undefined): number | null => {
+  /** Returns the first matching idle band (or null) whose end falls within
+   *  1s of the given row's tOffset. Tolerance absorbs Date.parse rounding
+   *  between anchor.ms and the presentation row's tOffsetMs. */
+  const idleBandBeforeOffset = (
+    tOff: number | undefined,
+  ): { start: number; durationMs: number } | null => {
     if (tOff === undefined) return null;
     for (const b of idleBandList) {
-      if (Math.abs(b.end - tOff) < 1000) return b.durationMs;
+      if (Math.abs(b.end - tOff) < 1000) return b;
     }
     return null;
   };
@@ -2656,6 +2761,11 @@ function TranscriptList({
   };
 
   const out: React.ReactNode[] = [];
+  // A user row and the turn-collapsed row that follows it share a
+  // tOffsetMs (turn anchors at the user message — see buildMegaRows), so
+  // both would match the same between-turn band without this guard. Track
+  // emitted band starts and skip duplicates.
+  const emittedBandStarts = new Set<number>();
   for (let i = 0; i < displayRows.length; i++) {
     const d = displayRows[i];
     // Emit a "Session idle" divider before any row that starts right after
@@ -2663,9 +2773,14 @@ function TranscriptList({
     // expanded turn doesn't render dividers for its inner steps.
     const indented = d.kind === "presentation" ? d.indented : false;
     if (!indented) {
-      const idleMs = idleBeforeOffset(rowTOffset(d));
-      if (idleMs !== null && idleMs > IDLE_THRESHOLD_MS) {
-        out.push(<IdleDivider key={`idle-before-${i}`} gapMs={idleMs} />);
+      const band = idleBandBeforeOffset(rowTOffset(d));
+      if (
+        band !== null &&
+        band.durationMs > IDLE_THRESHOLD_MS &&
+        !emittedBandStarts.has(band.start)
+      ) {
+        emittedBandStarts.add(band.start);
+        out.push(<IdleDivider key={`idle-before-${i}`} gapMs={band.durationMs} />);
       }
     }
 

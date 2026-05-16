@@ -452,6 +452,7 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
   let sessionId = "";
   let cwd: string | undefined;
   let gitBranch: string | undefined;
+  let entrypoint: string | undefined;
   let teamName: string | undefined;
   let agentName: string | undefined;
   let hasTeamCreate = false;
@@ -542,6 +543,7 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
     if (typeof o.sessionId === "string" && !sessionId) sessionId = o.sessionId;
     if (typeof o.cwd === "string" && !cwd) cwd = o.cwd;
     if (typeof o.gitBranch === "string" && !gitBranch) gitBranch = o.gitBranch;
+    if (typeof o.entrypoint === "string" && !entrypoint) entrypoint = o.entrypoint;
     if (typeof o.teamName === "string" && !teamName) teamName = o.teamName;
     if (typeof o.agentName === "string" && !agentName) agentName = o.agentName;
     if (o.type === "assistant") {
@@ -580,6 +582,7 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       model,
       cwd,
       gitBranch,
+      entrypoint,
       totalUsage,
       status: "idle",
       firstUserPreview,

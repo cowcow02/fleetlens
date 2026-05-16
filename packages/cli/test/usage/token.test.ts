@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractCredentials, isUsable } from "./token.js";
+import { extractCredentials, isUsable } from "../../src/usage/token.js";
 
 describe("extractCredentials", () => {
   it("pulls accessToken and expiresAt from the Claude Code blob shape", () => {

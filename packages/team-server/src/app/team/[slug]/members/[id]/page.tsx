@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getPool } from "../../../../../db/pool";
 import { validateSession } from "../../../../../lib/auth";
 import { loadMember, loadMemberRollups } from "../../../../../lib/queries";
@@ -12,6 +12,7 @@ import { tierEntry } from "../../../../../lib/plan-tiers";
 import { formatAgentTime, formatTokens } from "../../../../../lib/format";
 import { MemberProfile } from "../../../../../components/member-profile";
 import { MemberPlanBlock } from "../../../../../components/member-plan-block";
+import { canSeeMember, loadManagedMemberIds } from "../../../../../lib/visibility";
 
 export default async function MemberPage({
   params,
@@ -32,19 +33,15 @@ export default async function MemberPage({
   const myMembership = session.memberships.find((m) => m.team_id === member.team_id);
   if (!myMembership) redirect("/login");
 
-  const isSelf = myMembership.id === id;
-  if (myMembership.role !== "admin" && !isSelf) {
-    return (
-      <div className="section-head">
-        <div>
-          <h1>Not <em>authorized</em></h1>
-          <div className="kicker" style={{ marginTop: 8 }}>
-            You can only view your own profile on this team.
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Visibility guard: staff/admin/self/manager-of-target can view; everyone
+  // else 404s (not 403) to avoid existence probing of other memberships.
+  const viewer = {
+    membershipId: myMembership.id,
+    role: myMembership.role,
+    isStaff: session.user.is_staff,
+  };
+  const managed = await loadManagedMemberIds(viewer.membershipId, pool);
+  if (!canSeeMember(viewer, id, managed)) notFound();
 
   const [rollups, planSummary, allCyclePeaks, currentCycle] = await Promise.all([
     loadMemberRollups(member.team_id, id, 30, pool),

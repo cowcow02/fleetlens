@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateCost } from "./pricing.js";
+import { estimateCost } from "../src/pricing.js";
 import type { Usage } from "@claude-lens/parser";
 
 describe("estimateCost", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nextIntervalMs, BASE_INTERVAL_MS, MAX_INTERVAL_MS } from "./backoff.js";
+import { nextIntervalMs, BASE_INTERVAL_MS, MAX_INTERVAL_MS } from "../../src/usage/backoff.js";
 
 describe("nextIntervalMs", () => {
   it("resets to base on success", () => {

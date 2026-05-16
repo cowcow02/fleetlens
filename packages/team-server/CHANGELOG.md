@@ -4,6 +4,24 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.8.1] — 2026-05-16
+
+### Added
+- **Team groups & manager-scoped visibility.** Admins can create named groups (e.g., "Platform Squad", "Growth Team") and place members into them. A group member with `is_manager = true` becomes a manager of that group — they see only their group's members on the dashboard and can invite new people into groups they manage. Plain members continue to see only their own profile.
+- **Group affiliation chips** on the admin roster, with a ★ marker for group managers.
+- **`/team/<slug>/groups`** picker and **`/team/<slug>/groups/<group>`** detail pages with their own roster grid and an "Invite to this group" action.
+- **`/team/<slug>/settings/groups`** for admin group management (create, rename, delete; add/remove members; toggle the manager flag).
+- **Admin invite form** gains an optional "Place in groups" multi-select; the placement is carried server-side on the invite and applied on redemption.
+- **Manager invite form** at `/team/<slug>/groups/<group>/invite` with role locked to member, current group pre-checked and disabled, only manager-managed groups selectable.
+
+### Changed
+- `requireAdmin` route helper now honours `is_staff`; staff users who are regular members of a team can manage group state.
+- `addGroupMember` no longer takes an `isManager` option — add and promote are distinct operations, so an idempotent re-add cannot silently change the manager flag.
+- Manager invite endpoint returns the same response shape as the admin invite (`{ inviteId, joinUrl, tokenPlaintext, expiresAt }` at 201).
+
+### Migration
+- `0004_team_groups.sql` adds `groups`, `group_members`, and an `invites.group_ids uuid[]` column. Purely additive — no changes to `memberships.role`, no backfill required.
+
 ## [0.8.0] — 2026-05-08
 
 ### Changed

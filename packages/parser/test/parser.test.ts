@@ -527,6 +527,27 @@ describe("buildMegaRows", () => {
     }
   });
 
+  it("anchors turn duration at the originating user message", () => {
+    // Single-row turn used to render as 0ms because durationMs was
+    // last-row minus first-row (excluding the user message). Now the
+    // turn spans from the user prompt to the last agent row.
+    const lines = [
+      makeUser("ask", "2026-04-10T10:00:00.000Z"),
+      makeAssistantText("answer", "2026-04-10T10:00:15.000Z"),
+      makeUser("follow-up", "2026-04-10T10:00:30.000Z"),
+    ];
+    const { events } = parseTranscript(lines);
+    const rows = buildPresentation(events);
+    const mega = buildMegaRows(rows);
+
+    const turn = mega.find((r) => r.kind === "turn");
+    expect(turn).toBeDefined();
+    if (turn?.kind === "turn") {
+      expect(turn.durationMs).toBe(15_000);
+      expect(turn.tOffsetMs).toBe(0);
+    }
+  });
+
   it("skips task-notification coda when picking conclusion", () => {
     const lines = [
       makeUser("first", "2026-04-10T10:00:00.000Z"),

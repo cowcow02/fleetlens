@@ -11,6 +11,7 @@ export type TeamConfig = {
   teamSlug: string;
   pairedAt: string;
   lastSyncedDay?: string;
+  lastSyncedUsageSnapshotAt?: string;
 };
 
 export function readTeamConfig(dir?: string): TeamConfig | null {

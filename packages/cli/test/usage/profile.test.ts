@@ -8,7 +8,7 @@ import {
   readCachedProfile,
   writeCachedProfile,
   type AnthropicProfile,
-} from "./profile.js";
+} from "../../src/usage/profile.js";
 
 describe("mapRateLimitTier", () => {
   const cases: Array<[string | null, string]> = [

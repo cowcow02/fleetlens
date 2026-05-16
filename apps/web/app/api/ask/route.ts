@@ -18,6 +18,12 @@
 import { getSession } from "@claude-lens/parser/fs";
 import { summarizeSessionForAI } from "@/lib/ai/session-summary";
 import { spawn } from "node:child_process";
+import {
+  runClaudeUnderTmux,
+  tmuxRunnerAvailable,
+  TmuxRunError,
+  TmuxUnavailableError,
+} from "@claude-lens/entries/node";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -56,6 +62,11 @@ export async function POST(request: Request) {
   const fullPrompt = `Here is the session transcript summary:\n\n${context}\n\n---\n\nUser's question: ${question}`;
 
   const encoder = new TextEncoder();
+  // Resolve at request time so an admin toggling tmux on/off doesn't
+  // require a server restart.
+  const useTmux =
+    process.env.FLEETLENS_FORCE_PRINT_MODE !== "1" && tmuxRunnerAvailable().ok;
+
   const stream = new ReadableStream({
     start(controller) {
       let closed = false;
@@ -69,127 +80,129 @@ export async function POST(request: Request) {
         }
       }
 
-      // Resolve the claude binary — prefer the well-known location if it
-      // exists, otherwise fall back to PATH resolution. The user must have
-      // Claude Code installed and logged in.
-      const claudeBin = "claude";
+      function finish() {
+        if (!closed) {
+          try { controller.close(); } catch {}
+          closed = true;
+        }
+      }
 
-      const args = [
-        "-p", // print mode (non-interactive)
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--model",
-        model,
-        "--tools",
-        "", // no tools — pure analysis
-        "--disable-slash-commands",
-        "--no-session-persistence",
-        "--setting-sources",
-        "", // skip user settings for speed
-        "--append-system-prompt",
-        SYSTEM_PROMPT,
-      ];
-
-      const proc = spawn(claudeBin, args, {
-        stdio: ["pipe", "pipe", "pipe"],
-        // Inherit PATH so the claude binary is found.
-        env: { ...process.env },
-      });
-
-      // Write the prompt to stdin and close.
-      proc.stdin.write(fullPrompt);
-      proc.stdin.end();
-
-      let stderr = "";
-
-      proc.stdout.on("data", (chunk: Buffer) => {
-        const text = chunk.toString("utf8");
-        // stream-json emits one JSON object per line.
-        for (const line of text.split("\n")) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
+      // Kick off the LLM work without awaiting — Next.js waits for start()
+      // to return before opening the response, so any blocking here would
+      // stall the SSE headers.
+      void (async () => {
+        if (useTmux) {
           try {
-            const obj = JSON.parse(trimmed) as Record<string, unknown>;
+            const res = await runClaudeUnderTmux({
+              systemPrompt: SYSTEM_PROMPT,
+              model,
+              userPrompt: fullPrompt,
+              onDelta: (chunk) => send({ type: "delta", text: chunk }),
+              signal: request.signal,
+            });
+            send({ type: "done", totalTokens: res.input_tokens + res.output_tokens });
+            finish();
+            return;
+          } catch (err) {
+            const isExpected = err instanceof TmuxUnavailableError || err instanceof TmuxRunError;
+            if (!isExpected) {
+              console.warn("[ask] tmux runner failed, falling back to -p:", err);
+            }
+            // fall through to print mode
+          }
+        }
+        runPrintModeFallback();
+      })();
 
-            // We care about assistant message content blocks of type "text".
-            if (obj.type === "assistant") {
-              const msg = obj.message as Record<string, unknown> | undefined;
-              const content = msg?.content as Array<Record<string, unknown>> | undefined;
-              if (Array.isArray(content)) {
-                for (const block of content) {
-                  if (block.type === "text" && typeof block.text === "string") {
-                    send({ type: "delta", text: block.text });
+      function runPrintModeFallback() {
+        const claudeBin = "claude";
+
+        const args = [
+          "-p",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--model",
+          model,
+          "--tools",
+          "",
+          "--disable-slash-commands",
+          "--no-session-persistence",
+          "--setting-sources",
+          "",
+          "--append-system-prompt",
+          SYSTEM_PROMPT,
+        ];
+
+        const proc = spawn(claudeBin, args, {
+          stdio: ["pipe", "pipe", "pipe"],
+          env: { ...process.env },
+        });
+
+        proc.stdin.write(fullPrompt);
+        proc.stdin.end();
+
+        let stderr = "";
+
+        proc.stdout.on("data", (chunk: Buffer) => {
+          const text = chunk.toString("utf8");
+          for (const line of text.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+            try {
+              const obj = JSON.parse(trimmed) as Record<string, unknown>;
+              if (obj.type === "assistant") {
+                const msg = obj.message as Record<string, unknown> | undefined;
+                const content = msg?.content as Array<Record<string, unknown>> | undefined;
+                if (Array.isArray(content)) {
+                  for (const block of content) {
+                    if (block.type === "text" && typeof block.text === "string") {
+                      send({ type: "delta", text: block.text });
+                    }
                   }
                 }
               }
+              if (obj.type === "result") {
+                const usage = obj.usage as Record<string, unknown> | undefined;
+                const totalTokens =
+                  typeof usage?.input_tokens === "number" &&
+                  typeof usage?.output_tokens === "number"
+                    ? usage.input_tokens + usage.output_tokens
+                    : undefined;
+                send({ type: "done", totalTokens: totalTokens ?? undefined });
+              }
+            } catch {
+              // Skip non-JSON lines (verbose debug output, etc.)
             }
-
-            // Result event — extract total tokens for display.
-            if (obj.type === "result") {
-              const usage = obj.usage as Record<string, unknown> | undefined;
-              const totalTokens =
-                typeof usage?.input_tokens === "number" &&
-                typeof usage?.output_tokens === "number"
-                  ? usage.input_tokens + usage.output_tokens
-                  : undefined;
-              send({ type: "done", totalTokens: totalTokens ?? undefined });
-            }
-          } catch {
-            // Skip non-JSON lines (verbose debug output, etc.)
           }
-        }
-      });
+        });
 
-      proc.stderr.on("data", (chunk: Buffer) => {
-        stderr += chunk.toString("utf8");
-      });
+        proc.stderr.on("data", (chunk: Buffer) => {
+          stderr += chunk.toString("utf8");
+        });
 
-      proc.on("close", (code) => {
-        if (code !== 0 && !closed) {
-          send({
-            type: "error",
-            message: stderr.trim().slice(0, 300) || `claude exited with code ${code}`,
-          });
-        }
-        if (!closed) {
-          try {
-            controller.close();
-          } catch {
-            // already closed
+        proc.on("close", (code) => {
+          if (code !== 0 && !closed) {
+            send({
+              type: "error",
+              message: stderr.trim().slice(0, 300) || `claude exited with code ${code}`,
+            });
           }
-          closed = true;
-        }
-      });
+          finish();
+        });
 
-      proc.on("error", (err) => {
-        if (!closed) {
-          send({ type: "error", message: `Failed to spawn claude: ${err.message}` });
-          try {
-            controller.close();
-          } catch {
-            // already closed
+        proc.on("error", (err) => {
+          if (!closed) {
+            send({ type: "error", message: `Failed to spawn claude: ${err.message}` });
+            finish();
           }
-          closed = true;
-        }
-      });
+        });
 
-      // If the client aborts, kill the subprocess.
-      request.signal.addEventListener("abort", () => {
-        try {
-          proc.kill("SIGTERM");
-        } catch {
-          // ignore
-        }
-        if (!closed) {
-          try {
-            controller.close();
-          } catch {
-            // already closed
-          }
-          closed = true;
-        }
-      });
+        request.signal.addEventListener("abort", () => {
+          try { proc.kill("SIGTERM"); } catch { /* ignore */ }
+          finish();
+        });
+      }
     },
   });
 

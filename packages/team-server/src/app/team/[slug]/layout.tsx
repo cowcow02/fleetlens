@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { instanceState } from "../../../lib/server-config";
+import { listGroupsManagedBy } from "../../../lib/groups";
 import { NavFooter } from "../../../components/nav-footer";
 
 export default async function TeamLayout({
@@ -35,6 +36,9 @@ export default async function TeamLayout({
   const created = new Date(team.created_at);
   const issueNum = String(Math.floor((Date.now() - created.getTime()) / (7 * 24 * 3600 * 1000)) + 1).padStart(2, "0");
   const isAdmin = myMembership.role === "admin";
+  const isAdminOrStaff = isAdmin || session.user.is_staff;
+  const managedCount = isAdminOrStaff ? 1 : (await listGroupsManagedBy(myMembership.id, pool)).length;
+  const showGroups = isAdminOrStaff || managedCount > 0;
 
   return (
     <>
@@ -61,6 +65,9 @@ export default async function TeamLayout({
           <a href={`/team/${slug}/insights`}>Insights <span className="mono">02</span></a>
           {isAdmin && <a href={`/team/${slug}/plan`}>Plan <span className="mono">03</span></a>}
           {isAdmin && <a href={`/team/${slug}/settings`}>Settings <span className="mono">04</span></a>}
+          {showGroups && (
+            <a href={`/team/${slug}/groups`}>Groups <span className="mono">{isAdmin ? "05" : "03"}</span></a>
+          )}
           {state.allowMultipleTeams && <a href="/teams/new">+ New team</a>}
 
           {session.user.is_staff && (

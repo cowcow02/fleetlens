@@ -2,7 +2,8 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
-import { loadRoster } from "../../../lib/queries";
+import { listGroupsManagedBy } from "../../../lib/groups";
+import { loadRoster, loadMemberGroupAffiliations } from "../../../lib/queries";
 import { RosterCard } from "../../../components/roster-card";
 import { LiveRefresher } from "../../../components/live-refresher";
 
@@ -21,10 +22,20 @@ export default async function RosterPage({ params }: { params: Promise<{ slug: s
   const myMembership = session.memberships.find((m) => m.team_id === teamId);
   if (!myMembership) redirect("/login");
 
-  // Non-admin members see only their own profile — send them straight there.
-  if (myMembership.role !== "admin") redirect(`/team/${slug}/members/${myMembership.id}`);
+  if (myMembership.role !== "admin" && !session.user.is_staff) {
+    const managed = await listGroupsManagedBy(myMembership.id, pool);
+    if (managed.length === 1) {
+      redirect(`/team/${slug}/groups/${managed[0].slug}`);
+    }
+    if (managed.length > 1) {
+      redirect(`/team/${slug}/groups`);
+    }
+    // 0 managed groups → plain member → see only self.
+    redirect(`/team/${slug}/members/${myMembership.id}`);
+  }
 
   const roster = await loadRoster(teamId, pool);
+  const affiliations = await loadMemberGroupAffiliations(teamId, pool);
   const totalAgentMs = roster.reduce((sum, m) => sum + Number(m.week_agent_time_ms), 0);
   const totalHours = (totalAgentMs / 3600000).toFixed(1);
 
@@ -47,7 +58,14 @@ export default async function RosterPage({ params }: { params: Promise<{ slug: s
         <div className="kicker">Live · updates via SSE</div>
       </div>
       <div className="roster-grid">
-        {roster.map((m) => <RosterCard key={m.id} member={m} teamSlug={slug} />)}
+        {roster.map((m) => (
+          <RosterCard
+            key={m.id}
+            member={m}
+            teamSlug={slug}
+            groups={affiliations.get(m.id) ?? []}
+          />
+        ))}
       </div>
       <footer className="page-footer">
         <span>Fleetlens · Team Edition</span>

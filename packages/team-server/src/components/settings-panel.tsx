@@ -12,12 +12,27 @@ type MemberRow = {
   plan_tier: string;
 };
 
-export function SettingsPanel({ team, members, teamSlug }: { team: TeamRow; members: MemberRow[]; teamSlug: string }) {
+export function SettingsPanel({
+  team,
+  members,
+  teamSlug,
+  groups,
+}: {
+  team: TeamRow;
+  members: MemberRow[];
+  teamSlug: string;
+  groups?: { id: string; slug: string; name: string }[];
+}) {
   const [teamName, setTeamName] = useState(team.name);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+
+  function toggleGroup(id: string) {
+    setSelectedGroupIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
+  }
 
   async function saveProfile() {
     setSaving(true);
@@ -37,7 +52,7 @@ export function SettingsPanel({ team, members, teamSlug }: { team: TeamRow; memb
     const res = await fetch(`/api/team/invites?team=${teamSlug}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role, expiresInDays: 7 }),
+      body: JSON.stringify({ role, expiresInDays: 7, groupIds: selectedGroupIds }),
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
@@ -83,6 +98,32 @@ export function SettingsPanel({ team, members, teamSlug }: { team: TeamRow; memb
           <h2>Invite a member</h2>
           <span className="kicker">Share-link · 7-day expiry</span>
         </div>
+        {groups && groups.length > 0 && (
+          <fieldset
+            style={{
+              border: "1px solid var(--rule)",
+              padding: "10px 12px",
+              margin: "0 0 12px 0",
+              maxWidth: 520,
+            }}
+          >
+            <legend className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--mute)", padding: "0 6px" }}>
+              PLACE IN GROUPS (OPTIONAL)
+            </legend>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {groups.map((g) => (
+                <label key={g.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedGroupIds.includes(g.id)}
+                    onChange={() => toggleGroup(g.id)}
+                  />
+                  {g.name}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={() => createInvite("member")} className="btn">+ Member invite</button>
           <button onClick={() => createInvite("admin")} className="btn secondary">+ Admin invite</button>
@@ -108,6 +149,9 @@ export function SettingsPanel({ team, members, teamSlug }: { team: TeamRow; memb
           <h2>Members</h2>
           <span className="kicker">{members.filter((m) => !m.revoked_at).length} active</span>
         </div>
+        <p style={{ marginTop: 12 }}>
+          <a href={`/team/${teamSlug}/settings/groups`}>Manage groups &rarr;</a>
+        </p>
         <table className="member-table">
           <thead>
             <tr>

@@ -57,8 +57,12 @@ function listActiveRuns(): ActiveRun[] {
   }
   const runs: ActiveRun[] = [];
   for (const line of out.split("\n")) {
-    if (!line.includes("claude -p")) continue;
+    // Match both `claude -p` (print mode) and tmux-driven interactive
+    // (no `-p`). The shared marker is `--append-system-prompt`, which
+    // the LLM-runner pipeline always sets — interactive user sessions
+    // launched from a terminal don't carry it.
     if (!line.includes("--append-system-prompt")) continue;
+    if (!/\bclaude\b/.test(line)) continue;
     if (line.includes("grep")) continue;
     const m = line.trim().match(/^(\d+)\s+(\S+)\s+([\d:.]+)\s+(.+)$/);
     if (!m) continue;
