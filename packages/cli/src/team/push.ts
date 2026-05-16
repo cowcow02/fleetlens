@@ -208,7 +208,10 @@ export function buildRichRollupBlocks(
 
   const projects = new Map<string, { agentTimeMs: number; sessions: number }>();
   for (const s of daySessions) {
-    const name = canonicalProjectName(s.projectDir);
+    // Canonical project is computed from the human-readable cwd path, NOT the
+    // raw `~/.claude/projects/<encoded>` directory — matching the Entry's
+    // `project` field that build.ts derives via the same call.
+    const name = canonicalProjectName(s.projectName);
     if (privateProjects.has(name)) continue;
     const ms = (s.activeSegments ?? []).reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
     const cur = projects.get(name) ?? { agentTimeMs: 0, sessions: 0 };

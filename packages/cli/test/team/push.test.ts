@@ -3,14 +3,57 @@ import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { SessionMeta } from "@claude-lens/parser";
+import type { Entry } from "@claude-lens/entries";
+import { __setEntriesDirForTest, writeEntry } from "@claude-lens/entries/fs";
 import {
   bucketToRollup,
   buildRollupsForRange,
   buildIngestPayload,
+  buildRichRollupBlocks,
+  buildEnrichedExtras,
+  buildRichBlocksForDay,
   pushToTeamServer,
   readLatestUsageSnapshotForWire,
 } from "../../src/team/push.js";
 import type { TeamConfig } from "../../src/team/config.js";
+
+function makeEntry(overrides: Partial<Entry> & Pick<Entry, "session_id" | "local_day" | "project">): Entry {
+  return {
+    version: 2,
+    session_id: overrides.session_id,
+    local_day: overrides.local_day,
+    project: overrides.project,
+    start_iso: `${overrides.local_day}T10:00:00.000Z`,
+    end_iso: `${overrides.local_day}T11:00:00.000Z`,
+    numbers: {
+      active_min: 30, turn_count: 8, tools_total: 20, subagent_calls: 0,
+      skill_calls: 0, task_ops: 0, interrupts: 0, tool_errors: 0,
+      consec_same_tool_max: 2, exit_plan_calls: 0, prs: 0, commits: 0,
+      pushes: 0, tokens_total: 0,
+    },
+    flags: [],
+    primary_model: "claude-opus",
+    model_mix: {},
+    first_user: "",
+    final_agent: "",
+    pr_titles: [],
+    top_tools: [],
+    skills: {},
+    subagents: [],
+    satisfaction_signals: { happy: 0, satisfied: 0, dissatisfied: 0, frustrated: 0 },
+    user_input_sources: { human: 1, teammate: 0, skill_load: 0, slash_command: 0 },
+    enrichment: {
+      status: "pending", generated_at: null, model: null, cost_usd: null,
+      error: null, brief_summary: null, underlying_goal: null,
+      friction_detail: null, user_instructions: [], outcome: null,
+      claude_helpfulness: null, goal_categories: {}, retry_count: 0,
+    },
+    generated_at: new Date().toISOString(),
+    source_jsonl: "/tmp/x.jsonl",
+    source_checkpoint: { byte_offset: 0, last_event_ts: null },
+    ...overrides,
+  };
+}
 
 function makeSession(dayISO: string, overrides: Partial<SessionMeta> = {}): SessionMeta {
   const startMs = Date.parse(`${dayISO}T10:00:00.000Z`);
@@ -272,7 +315,7 @@ describe("pushToTeamServer", () => {
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       durationMs: 0, airTimeMs: 0, peakParallelism: 0,
     });
-    const payload = buildIngestPayload(rollup);
+    const payload = buildIngestPayload({ rollup });
     const result = await pushToTeamServer(CONFIG, payload);
 
     expect(mockFetch).toHaveBeenCalledOnce();
@@ -300,8 +343,202 @@ describe("pushToTeamServer", () => {
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       durationMs: 0, airTimeMs: 0, peakParallelism: 0,
     });
-    const payload = buildIngestPayload(rollup);
+    const payload = buildIngestPayload({ rollup });
     const result = await pushToTeamServer(CONFIG, payload);
     expect(result).toEqual({ ok: false, status: 401, body: { error: "unauthorized" } });
+  });
+});
+
+describe("buildRichRollupBlocks", () => {
+  const day = "2026-05-12";
+  const s1 = makeSession(day, {
+    id: "s1", projectName: "/Users/x/Repo/fleetlens", projectDir: "users-x-Repo-fleetlens",
+    activeSegments: [
+      { startMs: Date.parse(`${day}T10:00:00.000Z`), endMs: Date.parse(`${day}T11:00:00.000Z`) },
+    ],
+  });
+  const s2 = makeSession(day, {
+    id: "s2", projectName: "/Users/x/Repo/fleetlens/.worktrees/feature",
+    projectDir: "users-x-Repo-fleetlens---worktrees-feature",
+    activeSegments: [
+      { startMs: Date.parse(`${day}T10:30:00.000Z`), endMs: Date.parse(`${day}T12:00:00.000Z`) },
+    ],
+  });
+  const s3 = makeSession(day, {
+    id: "s3", projectName: "/Users/x/Repo/topeka", projectDir: "users-x-Repo-topeka",
+    activeSegments: [
+      { startMs: Date.parse(`${day}T14:00:00.000Z`), endMs: Date.parse(`${day}T15:00:00.000Z`) },
+    ],
+  });
+
+  it("aggregates projects, working shapes, skills, subagents, flags, PRs", () => {
+    const entries: Entry[] = [
+      makeEntry({
+        session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens",
+        numbers: { active_min: 60, turn_count: 10, tools_total: 30, subagent_calls: 1,
+          skill_calls: 2, task_ops: 0, interrupts: 0, tool_errors: 3, consec_same_tool_max: 4,
+          exit_plan_calls: 1, prs: 1, commits: 2, pushes: 1, tokens_total: 0 },
+        flags: ["long_autonomous", "plan_used"],
+        skills: { "brainstorming": 1, "writing-plans": 1 },
+        subagents: [{ type: "reviewer", description: "", background: false, prompt_preview: "" }],
+        signals: { working_shape: "solo-build", prompt_frames: [], subagent_roles: [],
+          verbosity: "medium", external_refs: [], brainstorm_warmup: true, continuation_kind: "none" },
+      }),
+      makeEntry({
+        session_id: "s2", local_day: day, project: "/Users/x/Repo/fleetlens",
+        numbers: { active_min: 90, turn_count: 15, tools_total: 50, subagent_calls: 0,
+          skill_calls: 0, task_ops: 0, interrupts: 0, tool_errors: 2, consec_same_tool_max: 0,
+          exit_plan_calls: 0, prs: 1, commits: 3, pushes: 0, tokens_total: 0 },
+        flags: ["long_autonomous"],
+        signals: { working_shape: "reviewer-triad", prompt_frames: [], subagent_roles: [],
+          verbosity: "long", external_refs: [], brainstorm_warmup: false, continuation_kind: "none" },
+      }),
+      makeEntry({
+        session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka",
+        numbers: { active_min: 60, turn_count: 8, tools_total: 12, subagent_calls: 2,
+          skill_calls: 0, task_ops: 1, interrupts: 0, tool_errors: 0, consec_same_tool_max: 0,
+          exit_plan_calls: 0, prs: 0, commits: 1, pushes: 1, tokens_total: 0 },
+        flags: [],
+        subagents: [
+          { type: "reviewer", description: "", background: false, prompt_preview: "" },
+          { type: "general-purpose", description: "", background: true, prompt_preview: "" },
+        ],
+        signals: { working_shape: "solo-build", prompt_frames: [], subagent_roles: [],
+          verbosity: "short", external_refs: [], brainstorm_warmup: false, continuation_kind: "none" },
+      }),
+    ];
+
+    const blocks = buildRichRollupBlocks(day, [s1, s2, s3], entries, new Set());
+
+    // Worktree rolled up into parent project.
+    const fleetlens = blocks.projects.find((p) => p.project === "/Users/x/Repo/fleetlens");
+    expect(fleetlens?.sessions).toBe(2);
+    expect(fleetlens?.agentTimeMs).toBe(60 * 60_000 + 90 * 60_000);
+
+    const topeka = blocks.projects.find((p) => p.project === "/Users/x/Repo/topeka");
+    expect(topeka?.sessions).toBe(1);
+
+    const solo = blocks.workingShapes.find((s) => s.shape === "solo-build");
+    expect(solo?.sessions).toBe(2);
+    const tri = blocks.workingShapes.find((s) => s.shape === "reviewer-triad");
+    expect(tri?.sessions).toBe(1);
+
+    expect(blocks.skillsLoaded.find((s) => s.name === "brainstorming")?.sessions).toBe(1);
+    expect(blocks.subagentsDispatched.find((s) => s.type === "reviewer")?.count).toBe(2);
+    expect(blocks.subagentsDispatched.find((s) => s.type === "general-purpose")?.count).toBe(1);
+
+    expect(blocks.brainstormWarmupSessions).toBe(1);
+    expect(blocks.planModeUsed).toBe(1);
+    expect(blocks.toolErrors).toBe(5);
+    expect(blocks.prs).toBe(2);
+    expect(blocks.commits).toBe(6);
+    expect(blocks.pushes).toBe(2);
+
+    expect(blocks.longAutonomous.count).toBe(2);
+    expect(blocks.longAutonomous.totalMin).toBe(150);
+    expect(blocks.longAutonomous.maxSingleMin).toBe(90);
+
+    // Concurrency: s1 + s2 overlap on (10:30-11:00) — at least one parallel
+    // interval is detected.
+    expect(blocks.concurrencyPeak).toBeGreaterThanOrEqual(2);
+    expect(blocks.parallelMinutes).toBeGreaterThan(0);
+  });
+
+  it("filters projects via privateProjects set", () => {
+    const entries: Entry[] = [
+      makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens" }),
+      makeEntry({ session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka" }),
+    ];
+    const blocks = buildRichRollupBlocks(day, [s1, s3], entries, new Set(["/Users/x/Repo/topeka"]));
+    const names = blocks.projects.map((p) => p.project);
+    expect(names).toContain("/Users/x/Repo/fleetlens");
+    expect(names).not.toContain("/Users/x/Repo/topeka");
+  });
+});
+
+describe("buildEnrichedExtras", () => {
+  const day = "2026-05-12";
+  it("rolls up done-status enrichment into outcome/helpfulness/goal mixes", () => {
+    const entries: Entry[] = [
+      makeEntry({
+        session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens",
+        enrichment: {
+          status: "done", generated_at: new Date().toISOString(), model: "x",
+          cost_usd: 0, error: null, brief_summary: "", underlying_goal: null,
+          friction_detail: null, user_instructions: [], outcome: "shipped",
+          claude_helpfulness: "essential",
+          goal_categories: { build: 60, plan: 30 } as Record<string, number>,
+          retry_count: 0,
+        },
+      }),
+      makeEntry({
+        session_id: "s2", local_day: day, project: "/Users/x/Repo/fleetlens",
+        enrichment: {
+          status: "done", generated_at: new Date().toISOString(), model: "x",
+          cost_usd: 0, error: null, brief_summary: "", underlying_goal: null,
+          friction_detail: null, user_instructions: [], outcome: "partial",
+          claude_helpfulness: "essential",
+          goal_categories: { build: 40 } as Record<string, number>,
+          retry_count: 0,
+        },
+      }),
+      // Pending status — must be skipped.
+      makeEntry({ session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka" }),
+    ];
+    const extras = buildEnrichedExtras(entries);
+    expect(extras.outcomeMix).toEqual({ shipped: 1, partial: 1 });
+    expect(extras.helpfulnessMix).toEqual({ essential: 2 });
+    expect(extras.goalMix).toEqual({ build: 100, plan: 30 });
+  });
+});
+
+describe("buildRichBlocksForDay", () => {
+  let entriesDir: string;
+  beforeEach(() => {
+    entriesDir = mkdtempSync(join(tmpdir(), "fleetlens-entries-"));
+    __setEntriesDirForTest(entriesDir);
+  });
+  afterEach(() => {
+    rmSync(entriesDir, { recursive: true, force: true });
+  });
+
+  it("returns undefined when no entries are cached for the day", () => {
+    const day = "2026-05-12";
+    const session = makeSession(day);
+    expect(buildRichBlocksForDay(day, [session], new Set(), false)).toBeUndefined();
+  });
+
+  it("reads cached entries from disk and returns blocks + enriched when opted in", () => {
+    const day = "2026-05-12";
+    const entry = makeEntry({
+      session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens",
+      enrichment: {
+        status: "done", generated_at: new Date().toISOString(), model: "x",
+        cost_usd: 0, error: null, brief_summary: "", underlying_goal: null,
+        friction_detail: null, user_instructions: [], outcome: "shipped",
+        claude_helpfulness: "helpful", goal_categories: {}, retry_count: 0,
+      },
+    });
+    writeEntry(entry);
+    const session = makeSession(day, { id: "s1", projectName: "/Users/x/Repo/fleetlens",
+      projectDir: "users-x-Repo-fleetlens" });
+
+    const out = buildRichBlocksForDay(day, [session], new Set(), true);
+    expect(out).toBeTruthy();
+    expect(out!.rich.projects[0]?.project).toBe("/Users/x/Repo/fleetlens");
+    expect(out!.enriched?.outcomeMix).toEqual({ shipped: 1 });
+  });
+
+  it("omits enriched when enrichmentOptIn=false even if entries are done-enriched", () => {
+    const day = "2026-05-12";
+    writeEntry(makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens",
+      enrichment: { status: "done", generated_at: new Date().toISOString(),
+        model: "x", cost_usd: 0, error: null, brief_summary: "",
+        underlying_goal: null, friction_detail: null, user_instructions: [],
+        outcome: "shipped", claude_helpfulness: null, goal_categories: {}, retry_count: 0 } }));
+    const session = makeSession(day, { id: "s1", projectName: "/Users/x/Repo/fleetlens",
+      projectDir: "users-x-Repo-fleetlens" });
+    const out = buildRichBlocksForDay(day, [session], new Set(), false);
+    expect(out?.enriched).toBeUndefined();
   });
 });
