@@ -58,6 +58,10 @@ export async function redeemInvite(
   try {
     await client.query("BEGIN");
     await client.query("UPDATE invites SET used_at = now() WHERE id = $1", [invite.id]);
+    // Bearer always rotates on conflict — admin issued a fresh invite, so any
+    // stale daemon token is the intended casualty. Role uses CASE so an active
+    // admin is never silently downgraded by a member-role invite, but a
+    // post-revoke rejoin still respects whatever role the new invite carries.
     const mRes = await client.query(
       `INSERT INTO memberships (user_account_id, team_id, role, bearer_token_hash)
        VALUES ($1, $2, $3, $4)

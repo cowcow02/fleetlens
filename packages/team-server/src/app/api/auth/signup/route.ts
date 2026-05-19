@@ -79,18 +79,12 @@ export async function POST(req: NextRequest) {
     if (!(err instanceof Error) || !/unique|duplicate/i.test(err.message)) {
       throw err;
     }
-    // Email is taken. The legitimate reasons to hit this branch with an invite
-    // in hand are (a) an admin re-invited an existing member with a new role,
-    // or (b) an admin revoked a member and is bringing them back. In both
-    // cases the user owns the original account — we prove ownership by
-    // password match and then let redeemInvite's ON CONFLICT upsert handle
-    // the role change / revoked_at reset.
     if (!invite) {
       return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 });
     }
-    // Note: this turns a leaked invite token into a brute-force surface
-    // against the target account's password. The signup rate limit above
-    // (10/min/IP) plus bcrypt's per-attempt cost are what keep that bounded.
+    // Require password match before letting redeemInvite upsert — without this,
+    // a leaked invite token would be a takeover primitive. Brute-force surface
+    // here is bounded by the 10/min/IP rate limit above + bcrypt's per-attempt cost.
     const existing = await findUserByEmail(email, pool);
     if (!existing || !verifyPassword(password, existing.password_hash)) {
       return NextResponse.json(

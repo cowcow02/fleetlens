@@ -43,6 +43,10 @@ afterAll(async () => {
 });
 
 describe("signup endpoint — existing user redeems an invite", () => {
+  // Original bug: admin invites Bob as member, Bob signs up, admin issues a
+  // fresh admin invite — Bob's signup attempt hit 409 and the invite stayed
+  // unused. This test pins the heal path: the same stuck invite now redeems
+  // for the existing user, no manual SQL needed.
   it("re-inviting an existing member as admin upgrades their role in place", async () => {
     const { admin, team } = await seedAdminAndTeam();
     const bob = await createUserAccount(
@@ -435,48 +439,5 @@ describe("signup endpoint — existing user redeems an invite", () => {
       params: Promise.resolve({ id: redeemed!.membershipId }),
     });
     expect(res.status).toBe(403);
-  });
-
-  it("heals the previously-bugged state: existing unused admin invite redeems for an existing member without manual intervention", async () => {
-    // Reproduce the original bug timeline: Bob signs up as member, admin then
-    // tries to invite him as admin, the invite link is generated but Bob's
-    // signup attempt fails — leaving an unused admin invite in the DB.
-    const { admin, team } = await seedAdminAndTeam();
-    const bob = await createUserAccount(
-      "bob@acme.com",
-      "bobpass1234",
-      "Bob",
-      {},
-      pool,
-    );
-    const memberInvite = await createInvite(
-      team.id,
-      admin.id,
-      { email: "bob@acme.com", role: "member" },
-      pool,
-    );
-    await redeemInvite(memberInvite.token, bob.id, pool);
-
-    const stuckAdminInvite = await createInvite(
-      team.id,
-      admin.id,
-      { email: "bob@acme.com", role: "admin" },
-      pool,
-    );
-
-    // Without any manual SQL fix, Bob can now redeem the existing stuck invite.
-    const req = makeSignupReq({
-      email: "bob@acme.com",
-      password: "bobpass1234",
-      inviteToken: stuckAdminInvite.token,
-    });
-    const res = await signupPOST(req);
-    expect(res.status).toBe(201);
-
-    const role = await pool.query(
-      "SELECT role FROM memberships WHERE user_account_id = $1 AND team_id = $2",
-      [bob.id, team.id],
-    );
-    expect(role.rows[0].role).toBe("admin");
   });
 });
