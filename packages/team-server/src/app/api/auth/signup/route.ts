@@ -88,6 +88,9 @@ export async function POST(req: NextRequest) {
     if (!invite) {
       return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 });
     }
+    // Note: this turns a leaked invite token into a brute-force surface
+    // against the target account's password. The signup rate limit above
+    // (10/min/IP) plus bcrypt's per-attempt cost are what keep that bounded.
     const existing = await findUserByEmail(email, pool);
     if (!existing || !verifyPassword(password, existing.password_hash)) {
       return NextResponse.json(

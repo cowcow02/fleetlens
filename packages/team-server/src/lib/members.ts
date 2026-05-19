@@ -64,7 +64,11 @@ export async function redeemInvite(
        ON CONFLICT (user_account_id, team_id) DO UPDATE SET
          revoked_at = NULL,
          bearer_token_hash = EXCLUDED.bearer_token_hash,
-         role = EXCLUDED.role
+         role = CASE
+           WHEN memberships.revoked_at IS NOT NULL THEN EXCLUDED.role
+           WHEN memberships.role = 'admin' THEN memberships.role
+           ELSE EXCLUDED.role
+         END
        RETURNING id`,
       [userAccountId, invite.team_id, invite.role, sha256(bearerToken)],
     );
@@ -104,11 +108,14 @@ export async function revokeMembership(membershipId: string, pool: pg.Pool): Pro
   );
 }
 
-export async function reactivateMembership(membershipId: string, pool: pg.Pool): Promise<string> {
+export async function reactivateMembership(
+  membershipId: string,
+  pool: pg.Pool,
+): Promise<string | null> {
   const bearerToken = "bt_" + generateToken(32);
-  await pool.query(
-    "UPDATE memberships SET revoked_at = NULL, bearer_token_hash = $1 WHERE id = $2",
+  const res = await pool.query(
+    "UPDATE memberships SET revoked_at = NULL, bearer_token_hash = $1 WHERE id = $2 AND revoked_at IS NOT NULL",
     [sha256(bearerToken), membershipId],
   );
-  return bearerToken;
+  return res.rowCount ? bearerToken : null;
 }

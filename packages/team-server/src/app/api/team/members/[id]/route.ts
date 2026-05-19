@@ -67,10 +67,19 @@ export async function PATCH(
   const adminErr = requireAdmin(ctx);
   if (adminErr) return adminErr;
 
-  const body = (await req.json()) as { planTier?: string; reactivate?: boolean };
+  const body = (await req.json().catch(() => ({}))) as {
+    planTier?: string;
+    reactivate?: boolean;
+  };
 
   if (body.reactivate === true) {
     const bearerToken = await reactivateMembership(id, session.pool);
+    if (!bearerToken) {
+      return NextResponse.json(
+        { error: "Membership is not revoked" },
+        { status: 400 },
+      );
+    }
     await session.pool.query(
       "INSERT INTO events (team_id, actor_id, action, payload) VALUES ($1, $2, 'member.reactivate', $3)",
       [member.team_id, session.user.id, JSON.stringify({ membershipId: id })],

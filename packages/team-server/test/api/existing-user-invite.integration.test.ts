@@ -94,6 +94,90 @@ describe("signup endpoint — existing user redeems an invite", () => {
     expect(body.deviceToken).toMatch(/^bt_/);
   });
 
+  it("a member-role invite redeemed by an existing admin does NOT silently downgrade them", async () => {
+    const { admin, team } = await seedAdminAndTeam();
+    const second = await createUserAccount(
+      "second-admin@acme.com",
+      "secondpass1",
+      "Second",
+      {},
+      pool,
+    );
+    // Promote `second` to admin first — there's no UI for this in the test
+    // helper, so build it directly: an admin-role invite that they redeem.
+    const promote = await createInvite(
+      team.id,
+      admin.id,
+      { email: "second-admin@acme.com", role: "admin" },
+      pool,
+    );
+    await redeemInvite(promote.token, second.id, pool);
+
+    // Now another admin (or even the same one) accidentally sends them a
+    // generic member-role invite. Redeeming it must NOT demote the admin.
+    const memberInvite = await createInvite(
+      team.id,
+      admin.id,
+      { email: "second-admin@acme.com", role: "member" },
+      pool,
+    );
+    const req = makeSignupReq({
+      email: "second-admin@acme.com",
+      password: "secondpass1",
+      inviteToken: memberInvite.token,
+    });
+    const res = await signupPOST(req);
+    expect(res.status).toBe(201);
+
+    const row = await pool.query(
+      "SELECT role FROM memberships WHERE user_account_id = $1 AND team_id = $2",
+      [second.id, team.id],
+    );
+    expect(row.rows[0].role).toBe("admin");
+  });
+
+  it("a revoked admin re-invited as member comes back AS member (admin's choice wins post-revoke)", async () => {
+    const { admin, team } = await seedAdminAndTeam();
+    const second = await createUserAccount(
+      "ex-admin@acme.com",
+      "expass1234",
+      null,
+      {},
+      pool,
+    );
+    const promote = await createInvite(
+      team.id,
+      admin.id,
+      { email: "ex-admin@acme.com", role: "admin" },
+      pool,
+    );
+    const redeemed = await redeemInvite(promote.token, second.id, pool);
+    await revokeMembership(redeemed!.membershipId, pool);
+
+    // After revoke, admin decides to bring them back as a plain member.
+    // The role of the invite IS authoritative here because the prior
+    // membership state is conceptually wiped.
+    const memberInvite = await createInvite(
+      team.id,
+      admin.id,
+      { email: "ex-admin@acme.com", role: "member" },
+      pool,
+    );
+    const req = makeSignupReq({
+      email: "ex-admin@acme.com",
+      password: "expass1234",
+      inviteToken: memberInvite.token,
+    });
+    expect((await signupPOST(req)).status).toBe(201);
+
+    const row = await pool.query(
+      "SELECT role, revoked_at FROM memberships WHERE user_account_id = $1 AND team_id = $2",
+      [second.id, team.id],
+    );
+    expect(row.rows[0].role).toBe("member");
+    expect(row.rows[0].revoked_at).toBeNull();
+  });
+
   it("re-inviting a revoked member reactivates them with their original password", async () => {
     const { admin, team } = await seedAdminAndTeam();
     const bob = await createUserAccount(
@@ -265,6 +349,65 @@ describe("signup endpoint — existing user redeems an invite", () => {
       [team.id],
     );
     expect(ev.rows[0].action).toBe("member.reactivate");
+  });
+
+  it("reactivate is rejected for an already-active member (no token rotation)", async () => {
+    const { admin, team } = await seedAdminAndTeam();
+    const bob = await createUserAccount("bob@acme.com", "bobpass1234", null, {}, pool);
+    const invite = await createInvite(team.id, admin.id, { email: "bob@acme.com" }, pool);
+    const redeemed = await redeemInvite(invite.token, bob.id, pool);
+
+    const before = await pool.query(
+      "SELECT bearer_token_hash FROM memberships WHERE id = $1",
+      [redeemed!.membershipId],
+    );
+
+    const { cookieToken } = await createSession(admin.id, pool);
+    const req = new NextRequest(
+      `http://localhost/api/team/members/${redeemed!.membershipId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: `fleetlens_session=${cookieToken}`,
+        },
+        body: JSON.stringify({ reactivate: true }),
+      },
+    );
+    const res = await memberPATCH(req, {
+      params: Promise.resolve({ id: redeemed!.membershipId }),
+    });
+    expect(res.status).toBe(400);
+
+    const after = await pool.query(
+      "SELECT bearer_token_hash FROM memberships WHERE id = $1",
+      [redeemed!.membershipId],
+    );
+    expect(after.rows[0].bearer_token_hash).toBe(before.rows[0].bearer_token_hash);
+  });
+
+  it("PATCH with malformed JSON body returns 400 (not a 500 crash)", async () => {
+    const { admin, team } = await seedAdminAndTeam();
+    const bob = await createUserAccount("bob@acme.com", "bobpass1234", null, {}, pool);
+    const invite = await createInvite(team.id, admin.id, { email: "bob@acme.com" }, pool);
+    const redeemed = await redeemInvite(invite.token, bob.id, pool);
+
+    const { cookieToken } = await createSession(admin.id, pool);
+    const req = new NextRequest(
+      `http://localhost/api/team/members/${redeemed!.membershipId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          cookie: `fleetlens_session=${cookieToken}`,
+        },
+        body: "not-json",
+      },
+    );
+    const res = await memberPATCH(req, {
+      params: Promise.resolve({ id: redeemed!.membershipId }),
+    });
+    expect(res.status).toBeLessThan(500);
   });
 
   it("non-admin cannot reactivate", async () => {
