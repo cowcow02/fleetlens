@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireSession, requireTeamMembership, requireAdmin } from "../../../../../lib/route-helpers";
 import { loadMember, loadMemberRollups } from "../../../../../lib/queries";
-import { revokeMembership } from "../../../../../lib/members";
+import { revokeMembership, reactivateMembership } from "../../../../../lib/members";
 import { PLAN_TIERS } from "../../../../../lib/plan-tiers";
 
 export async function GET(
@@ -67,7 +67,17 @@ export async function PATCH(
   const adminErr = requireAdmin(ctx);
   if (adminErr) return adminErr;
 
-  const body = (await req.json()) as { planTier?: string };
+  const body = (await req.json()) as { planTier?: string; reactivate?: boolean };
+
+  if (body.reactivate === true) {
+    const bearerToken = await reactivateMembership(id, session.pool);
+    await session.pool.query(
+      "INSERT INTO events (team_id, actor_id, action, payload) VALUES ($1, $2, 'member.reactivate', $3)",
+      [member.team_id, session.user.id, JSON.stringify({ membershipId: id })],
+    );
+    return NextResponse.json({ reactivated: true, deviceToken: bearerToken });
+  }
+
   if (body.planTier !== undefined) {
     if (!(body.planTier in PLAN_TIERS)) {
       return NextResponse.json(
