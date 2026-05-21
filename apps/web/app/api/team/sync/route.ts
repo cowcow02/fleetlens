@@ -42,6 +42,7 @@ function runSync(bin: string): Promise<SyncResponse> {
 
     const lines: string[] = [];
     let timedOut = false;
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
 
     const onChunk = (buf: Buffer) => {
       for (const line of buf.toString("utf8").split("\n")) {
@@ -54,11 +55,12 @@ function runSync(bin: string): Promise<SyncResponse> {
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGTERM");
-      setTimeout(() => child.kill("SIGKILL"), 2_000);
+      killTimer = setTimeout(() => child.kill("SIGKILL"), 2_000);
     }, TIMEOUT_MS);
 
     child.on("error", (err) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       resolve({
         ok: false,
         lines,
@@ -69,6 +71,7 @@ function runSync(bin: string): Promise<SyncResponse> {
 
     child.on("close", (code) => {
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       if (timedOut) {
         resolve({
           ok: false,
