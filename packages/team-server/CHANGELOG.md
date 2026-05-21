@@ -4,6 +4,26 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.8.6] — 2026-05-21
+
+### Added
+- **Reusable invite share links.** One link onboards the whole team — every redemption mints a fresh membership without consuming the link. Active links are listed in team settings with redemption counts; managers can revoke at any time. Dedup rule: at most one active link per `(role, group_set)` config per team — creating a duplicate returns 409 with a "revoke first" prompt.
+- **Per-team email-domain allowlist.** New "Sign-up policy" section in team settings accepts a comma-separated allowlist (e.g. `acme.com, acme.io`). New sign-ups via invite link or `/api/team/join` must match. Empty = no restriction (previous behavior). The 403 returned on mismatch is intentionally generic and does **not** echo the configured domains.
+- **Admin-only visibility for admin-role invites.** A new `isInviteInManagerScope` predicate gates both the GET `/api/team/[slug]/invites` listing and the revoke endpoint: non-admin callers never see admin-role links or team-default links (those carry the highest privilege and are admin/staff-only). Previously a manager of group X could have listed and copied the plaintext token of an admin-role link scoped to {X} and self-elevated.
+- **`POST /api/team/[slug]/invites/[id]/revoke`** for explicit link revocation. Authz mirrors the list endpoint (admins/staff can revoke any; managers can revoke member-role links whose `group_ids` is a non-empty subset of theirs).
+- **`GET /api/team/[slug]/invites`** lists active links scoped to the caller's visibility, including `token`/`joinUrl` for re-copy and a derived `redemptionCount`.
+- **Proper in-app modals** for invite creation and revoke confirmation on both the admin settings and group-manager invite pages. Replaces an inline form (whose group multi-select wasn't responding to clicks) and `window.confirm()`. Group chips toggle visibly, the Copy action shows a "COPIED!" pulse, and Revoke routes through a dismissable modal.
+
+### Changed
+- **Allowlist enforcement is shared between `/api/auth/signup` and `/api/team/join`.** A new `denySignupForTeamDomain` helper is the single gate; previously the allowlist could be bypassed by an already-registered outside-domain user hitting the join route directly with a leaked multi-use token.
+- **Action buttons in the active-links list are borderless link-style** (Copy link / Revoke), in line with the table-row aesthetic. Less visual ticker noise next to the data.
+- `redeemInvite` distinguishes single-use (email-scoped) invites from multi-use share links via `email IS NULL`: single-use auto-revokes on first redemption; multi-use stays open until an admin revokes.
+- Allowlist lookup short-circuits at the SQL layer (`cardinality(allowed_signup_domains) > 0`) so the common empty-allowlist case adds no round-trip to the signup hot path.
+
+### Migration
+- `0005_multi_use_invites.sql` adds `invites.token` (plaintext, for re-display in the admin UI; `token_hash` remains the canonical lookup), `invites.revoked_at`, `invites.label`, and a partial index on `(team_id, role) WHERE email IS NULL AND revoked_at IS NULL`. Also adds `teams.allowed_signup_domains text[] NOT NULL DEFAULT '{}'`.
+- **Pre-upgrade invites are blanket-revoked** via `UPDATE invites SET revoked_at = now() WHERE revoked_at IS NULL`. Recipients of an unredeemed invite need a fresh one; this trades a one-time recreate cost for a clean slate with no hash-only zombies in the new admin list UI.
+
 ## [0.8.5] — 2026-05-21
 
 ### Changed
@@ -43,6 +63,8 @@ CLI has its own log at the repo root `CHANGELOG.md`.
 
 ### Healing previously-bugged state
 Existing stuck installations need no manual SQL — a previously-bugged "stuck" member just clicks their unused admin invite again; a revoked user takes one admin click to come back.
+
+## [0.8.1] — 2026-05-16
 
 ### Added
 - **Team groups & manager-scoped visibility.** Admins can create named groups (e.g., "Platform Squad", "Growth Team") and place members into them. A group member with `is_manager = true` becomes a manager of that group — they see only their group's members on the dashboard and can invite new people into groups they manage. Plain members continue to see only their own profile.

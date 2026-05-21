@@ -35,6 +35,7 @@ export const teams = pgTable("teams", {
   resendApiKeyEnc: text("resend_api_key_enc"),
   customDomain: text("custom_domain"),
   settings: jsonb("settings").notNull().default({}),
+  allowedSignupDomains: text("allowed_signup_domains").array().notNull().default(sql`'{}'::text[]`),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -73,14 +74,18 @@ export const invites = pgTable(
     createdBy: uuid("created_by").notNull().references(() => userAccounts.id),
     email: text("email"),
     tokenHash: text("token_hash").notNull().unique(),
+    token: text("token"),
+    label: text("label"),
     role: text("role").notNull().default("member"),
     groupIds: uuid("group_ids").array().notNull().default(sql`'{}'::uuid[]`),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     usedAt: timestamp("used_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (t) => ({
     roleCheck: check("invites_role_check", sql`${t.role} IN ('admin','member')`),
+    activeByConfig: index("idx_invites_active_by_config").on(t.teamId, t.role).where(sql`${t.revokedAt} IS NULL AND ${t.email} IS NULL`),
   }),
 );
 

@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { type ActiveInvite, formatExpiresIn } from "./invite-shared";
+import { InviteLinkModal, type InviteLinkValues } from "./invite-link-modal";
+import { ConfirmModal } from "./confirm-modal";
 
 type TeamRow = { id: string; name: string; slug: string; created_at: string };
 type MemberRow = {
@@ -11,30 +14,101 @@ type MemberRow = {
   revoked_at: string | null;
   plan_tier: string;
 };
+type GroupOpt = { id: string; slug: string; name: string };
 
 export function SettingsPanel({
   team,
   members,
   teamSlug,
   groups,
+  allowedSignupDomains,
 }: {
   team: TeamRow;
   members: MemberRow[];
   teamSlug: string;
-  groups?: { id: string; slug: string; name: string }[];
+  groups?: GroupOpt[];
+  allowedSignupDomains: string[];
 }) {
   const [teamName, setTeamName] = useState(team.name);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+
+  // Active invite links
+  const [invites, setInvites] = useState<ActiveInvite[] | null>(null);
+  const [invitesError, setInvitesError] = useState<string | null>(null);
+  const [showNewLink, setShowNewLink] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<ActiveInvite | null>(null);
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [revokeMemberTarget, setRevokeMemberTarget] = useState<MemberRow | null>(null);
+  const [revokeMemberBusy, setRevokeMemberBusy] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Sign-up policy
+  const [domainsInput, setDomainsInput] = useState(allowedSignupDomains.join(", "));
+  const [domainsSaving, setDomainsSaving] = useState(false);
+  const [domainsMessage, setDomainsMessage] = useState<string | null>(null);
+  const [domainsError, setDomainsError] = useState<string | null>(null);
+
   const [reactivateTokenById, setReactivateTokenById] = useState<Record<string, string>>({});
   const [reactivateErrorById, setReactivateErrorById] = useState<Record<string, string>>({});
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
-  function toggleGroup(id: string) {
-    setSelectedGroupIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
+  useEffect(() => {
+    refreshInvites();
+  }, []);
+
+  async function refreshInvites() {
+    setInvitesError(null);
+    const res = await fetch(`/api/team/${teamSlug}/invites`);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setInvitesError(d.error || "Failed to load invites");
+      setInvites([]);
+      return;
+    }
+    const d = await res.json();
+    setInvites(d.invites ?? []);
+  }
+
+  async function createInviteLink(values: InviteLinkValues): Promise<string | null> {
+    const res = await fetch(`/api/team/invites?team=${teamSlug}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      return d.error || `HTTP ${res.status}`;
+    }
+    await refreshInvites();
+    return null;
+  }
+
+  async function copyLink(inviteId: string, joinUrl: string | null) {
+    if (!joinUrl) return;
+    try {
+      await navigator.clipboard.writeText(joinUrl);
+    } catch {
+      // Clipboard API blocked (insecure context, etc); skip toast.
+      return;
+    }
+    setCopiedId(inviteId);
+    window.setTimeout(() => {
+      setCopiedId((cur) => (cur === inviteId ? null : cur));
+    }, 1800);
+  }
+
+  async function confirmRevokeLink() {
+    if (!revokeTarget) return;
+    setRevokeBusy(true);
+    const res = await fetch(`/api/team/${teamSlug}/invites/${revokeTarget.id}/revoke`, { method: "POST" });
+    setRevokeBusy(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setInvitesError(d.error || "Failed to revoke");
+    }
+    setRevokeTarget(null);
+    await refreshInvites();
   }
 
   async function saveProfile() {
@@ -49,26 +123,28 @@ export function SettingsPanel({
     setMessage(res.ok ? "Saved." : "Failed to save.");
   }
 
-  async function createInvite(role: "admin" | "member") {
-    setInviteError(null);
-    setInviteUrl(null);
-    const res = await fetch(`/api/team/invites?team=${teamSlug}`, {
-      method: "POST",
+  async function saveDomains() {
+    setDomainsSaving(true);
+    setDomainsMessage(null);
+    setDomainsError(null);
+    const res = await fetch(`/api/team/settings?team=${teamSlug}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role, expiresInDays: 7, groupIds: selectedGroupIds }),
+      body: JSON.stringify({ allowedSignupDomains: domainsInput }),
     });
+    setDomainsSaving(false);
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      setInviteError(d.error || "Failed to create invite");
+      setDomainsError(d.error || "Failed to save");
       return;
     }
-    const data = await res.json();
-    setInviteUrl(data.joinUrl);
+    setDomainsMessage("Saved.");
   }
 
-  async function revokeMember(memberId: string) {
-    if (!confirm("Revoke this member? They will lose access immediately.")) return;
-    await fetch(`/api/team/members/${memberId}`, { method: "DELETE" });
+  async function confirmRevokeMember() {
+    if (!revokeMemberTarget) return;
+    setRevokeMemberBusy(true);
+    await fetch(`/api/team/members/${revokeMemberTarget.id}`, { method: "DELETE" });
     window.location.reload();
   }
 
@@ -121,54 +197,85 @@ export function SettingsPanel({
 
       <section className="settings-section">
         <div className="subsection-head">
-          <h2>Invite a member</h2>
-          <span className="kicker">Share-link · 7-day expiry</span>
+          <h2>Active invite links</h2>
+          <span className="kicker">Reusable · revoke when no longer needed</span>
         </div>
-        {groups && groups.length > 0 && (
-          <fieldset
-            style={{
-              border: "1px solid var(--rule)",
-              padding: "10px 12px",
-              margin: "0 0 12px 0",
-              maxWidth: 520,
-            }}
-          >
-            <legend className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--mute)", padding: "0 6px" }}>
-              PLACE IN GROUPS (OPTIONAL)
-            </legend>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {groups.map((g) => (
-                <label key={g.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedGroupIds.includes(g.id)}
-                    onChange={() => toggleGroup(g.id)}
-                  />
-                  {g.name}
-                </label>
+        {invitesError && <div className="form-error" style={{ marginBottom: 12 }}>{invitesError}</div>}
+        {invites === null ? (
+          <p className="kicker">Loading…</p>
+        ) : invites.length === 0 ? (
+          <p className="kicker">No active links yet.</p>
+        ) : (
+          <table className="member-table">
+            <thead>
+              <tr>
+                <th>Role</th>
+                <th>Groups</th>
+                <th>Created by</th>
+                <th>Expires</th>
+                <th>Redemptions</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {invites.map((inv) => (
+                <tr key={inv.id}>
+                  <td className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" }}>{inv.role}</td>
+                  <td>{inv.groupNames.length ? inv.groupNames.join(", ") : <span style={{ color: "var(--mute)" }}>Team-default</span>}</td>
+                  <td>{inv.createdBy.displayName ?? <span style={{ color: "var(--mute)" }}>—</span>}</td>
+                  <td>{formatExpiresIn(inv.expiresAt)}</td>
+                  <td>{inv.redemptionCount}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button
+                      onClick={() => copyLink(inv.id, inv.joinUrl)}
+                      className={`btn-link ${copiedId === inv.id ? "is-success" : ""}`}
+                      disabled={!inv.joinUrl}
+                      style={{ marginRight: 14 }}
+                    >
+                      {copiedId === inv.id ? "Copied!" : "Copy link"}
+                    </button>
+                    <button onClick={() => setRevokeTarget(inv)} className="btn-link is-danger">
+                      Revoke
+                    </button>
+                  </td>
+                </tr>
               ))}
-            </div>
-          </fieldset>
+            </tbody>
+          </table>
         )}
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={() => createInvite("member")} className="btn">+ Member invite</button>
-          <button onClick={() => createInvite("admin")} className="btn secondary">+ Admin invite</button>
+
+        <div style={{ marginTop: 16 }}>
+          <button className="btn" onClick={() => setShowNewLink(true)}>+ New link</button>
         </div>
-        {inviteError && <div className="form-error" style={{ marginTop: 12 }}>{inviteError}</div>}
-        {inviteUrl && (
-          <div className="help-box" style={{ marginTop: 16 }}>
-            <p>Invite link created. Copy it and share out-of-band:</p>
-            <code className="help-example">{inviteUrl}</code>
-            <p className="help-note">Expires in 7 days. The invitee creates their password on first click.</p>
+      </section>
+
+      <section className="settings-section">
+        <div className="subsection-head">
+          <h2>Sign-up policy</h2>
+          <span className="kicker">Restrict invite + public sign-ups to specific email domains</span>
+        </div>
+        <div className="form-group" style={{ maxWidth: 520 }}>
+          <label htmlFor="allowed-domains">Allowed email domains</label>
+          <input
+            id="allowed-domains"
+            value={domainsInput}
+            onChange={(e) => setDomainsInput(e.target.value)}
+            placeholder="acme.com, acme.io"
+          />
+          <p className="help-note" style={{ marginTop: 6 }}>
+            Leave empty to allow any email domain. Comma-separated. New sign-ups via invite link must match one of these domains.
+          </p>
+        </div>
+        <button onClick={saveDomains} disabled={domainsSaving} className="btn">
+          {domainsSaving ? "Saving" : "Save"}
+        </button>
+        {domainsError && <div className="form-error" style={{ marginTop: 10 }}>{domainsError}</div>}
+        {domainsMessage && (
+          <div className="mono" style={{ fontSize: 11, color: "var(--mute)", marginTop: 10, letterSpacing: "0.1em" }}>
+            {domainsMessage.toUpperCase()}
           </div>
         )}
       </section>
-
-      {/* "Plan tiers" tier-picker dropdown removed — the daemon now reads
-          each user's tier directly from /api/oauth/profile every 5 min
-          and the server upserts memberships.plan_tier on receipt. Manual
-          override is still possible by writing the column directly if a
-          user has a custom plan that profile doesn't expose. */}
 
       <section className="settings-section">
         <div className="subsection-head">
@@ -204,7 +311,7 @@ export function SettingsPanel({
                   </td>
                   <td style={{ textAlign: "right" }}>
                     {!m.revoked_at && m.role !== "admin" && (
-                      <button onClick={() => revokeMember(m.id)} className="btn danger-ghost">Revoke</button>
+                      <button onClick={() => setRevokeMemberTarget(m)} className="btn danger-ghost">Revoke</button>
                     )}
                     {m.revoked_at && (
                       <button
@@ -248,6 +355,44 @@ export function SettingsPanel({
           </tbody>
         </table>
       </section>
+
+      <InviteLinkModal
+        open={showNewLink}
+        groups={groups ?? []}
+        allowRoleChoice={true}
+        onClose={() => setShowNewLink(false)}
+        onSubmit={createInviteLink}
+      />
+
+      <ConfirmModal
+        open={revokeTarget !== null}
+        title="Revoke invite link?"
+        body={
+          revokeTarget
+            ? `The ${revokeTarget.role} link${revokeTarget.groupNames.length ? ` for ${revokeTarget.groupNames.join(", ")}` : ""} will stop working immediately. Anyone who hasn't redeemed it yet will be locked out.`
+            : ""
+        }
+        confirmLabel="Revoke link"
+        danger
+        busy={revokeBusy}
+        onConfirm={confirmRevokeLink}
+        onCancel={() => setRevokeTarget(null)}
+      />
+
+      <ConfirmModal
+        open={revokeMemberTarget !== null}
+        title="Revoke member?"
+        body={
+          revokeMemberTarget
+            ? `${revokeMemberTarget.display_name || revokeMemberTarget.email || "This member"} will lose access immediately. You can reactivate them later.`
+            : ""
+        }
+        confirmLabel="Revoke member"
+        danger
+        busy={revokeMemberBusy}
+        onConfirm={confirmRevokeMember}
+        onCancel={() => setRevokeMemberTarget(null)}
+      />
     </div>
   );
 }

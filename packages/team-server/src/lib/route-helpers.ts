@@ -6,6 +6,13 @@ import { loadGroupBySlug } from "./groups";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export function serverBaseUrl(req: NextRequest): string {
+  if (process.env.BASE_URL) return process.env.BASE_URL;
+  const host = req.headers.get("host") || "";
+  const proto = req.headers.get("x-forwarded-proto") || "https";
+  return `${proto}://${host}`;
+}
+
 export type TeamContext = SessionContext & {
   pool: pg.Pool;
   membership: { id: string; team_id: string; role: "admin" | "member" };

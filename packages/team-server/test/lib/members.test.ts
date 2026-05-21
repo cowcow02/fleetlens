@@ -93,9 +93,11 @@ describe("lookupInvite", () => {
     expect(inv.rowCount).toBe(0);
   });
 
-  it("returns null for a used (already redeemed) token", async () => {
+  it("returns null for a used (already redeemed) single-use email invite", async () => {
     const user = await createUserAccount("redeemer@example.com", "pass1234", null, {}, pool);
-    const { token } = await createInvite(teamId, adminUserId, {}, pool);
+    // Email-scoped invites auto-revoke on first redemption; multi-use share
+    // links (no email) intentionally stay redeemable until an admin revokes.
+    const { token } = await createInvite(teamId, adminUserId, { email: "redeemer@example.com" }, pool);
     await redeemInvite(token, user.id, pool);
     const inv = await lookupInvite(token, pool);
     expect(inv).toBeNull();

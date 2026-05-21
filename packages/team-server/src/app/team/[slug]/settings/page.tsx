@@ -17,7 +17,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
   if (!session) redirect("/login");
 
   const teamRes = await pool.query(
-    "SELECT id, name, slug, retention_days, custom_domain, created_at FROM teams WHERE slug = $1",
+    "SELECT id, name, slug, retention_days, custom_domain, allowed_signup_domains, created_at FROM teams WHERE slug = $1",
     [slug],
   );
   if (!teamRes.rowCount) return <div>Team not found.</div>;
@@ -58,7 +58,13 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
         </div>
       </div>
       {updateStatus && <ServerUpdatePanel status={updateStatus} />}
-      <SettingsPanel team={team} members={members.rows} teamSlug={slug} groups={groups} />
+      <SettingsPanel
+        team={team}
+        members={members.rows}
+        teamSlug={slug}
+        groups={groups}
+        allowedSignupDomains={team.allowed_signup_domains ?? []}
+      />
     </>
   );
 }

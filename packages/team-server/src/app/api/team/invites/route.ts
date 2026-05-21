@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireTeamMembership, requireAdmin } from "../../../../lib/route-helpers";
+import { requireTeamMembership, requireAdmin, serverBaseUrl } from "../../../../lib/route-helpers";
 import { createInvite } from "../../../../lib/members";
+import { checkActiveInviteConflict, parseInviteOpts } from "../../../../lib/invites";
 
 export async function POST(req: NextRequest) {
   const slug = req.nextUrl.searchParams.get("team");
@@ -28,24 +29,31 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const role: "admin" | "member" = body?.role === "admin" ? "admin" : "member";
+  const resolvedGroupIds = Array.isArray(groupIds) ? groupIds : [];
+  const { email, label, expiresInDays } = parseInviteOpts(body);
+
+  // Dedup only applies to multi-use (no-email) share links.
+  if (!email) {
+    const conflict = await checkActiveInviteConflict(
+      ctx.membership.team_id,
+      role,
+      resolvedGroupIds,
+      ctx.pool,
+    );
+    if (conflict) return conflict;
+  }
+
   const result = await createInvite(
     ctx.membership.team_id,
     ctx.user.id,
-    {
-      email: typeof body?.email === "string" ? body.email : undefined,
-      role: body?.role === "admin" ? "admin" : "member",
-      expiresInDays: typeof body?.expiresInDays === "number" ? body.expiresInDays : 7,
-      groupIds: Array.isArray(groupIds) ? groupIds : undefined,
-    },
+    { email, role, expiresInDays, groupIds: resolvedGroupIds, label },
     ctx.pool,
   );
 
-  const host = req.headers.get("host") || "";
-  const proto = req.headers.get("x-forwarded-proto") || "https";
-  const serverBaseUrl = process.env.BASE_URL || `${proto}://${host}`;
   return NextResponse.json({
     inviteId: result.inviteId,
-    joinUrl: `${serverBaseUrl}/signup?invite=${result.token}`,
+    joinUrl: `${serverBaseUrl(req)}/signup?invite=${result.token}`,
     tokenPlaintext: result.token,
     expiresAt: result.expiresAt,
   }, { status: 201 });

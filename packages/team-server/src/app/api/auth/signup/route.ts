@@ -6,7 +6,7 @@ import {
   findUserByEmail,
 } from "../../../../lib/auth";
 import { verifyPassword } from "../../../../lib/password";
-import { createTeamWithAdmin } from "../../../../lib/teams";
+import { createTeamWithAdmin, denySignupForTeamDomain } from "../../../../lib/teams";
 import { lookupInvite, redeemInvite } from "../../../../lib/members";
 import { instanceState, setConfig } from "../../../../lib/server-config";
 import { rateLimit, clientKey } from "../../../../lib/rate-limit";
@@ -63,6 +63,14 @@ export async function POST(req: NextRequest) {
     if (invite.email && invite.email !== email.toLowerCase()) {
       return NextResponse.json({ error: "Invite is scoped to a different email" }, { status: 400 });
     }
+  }
+
+  // Allowlist enforcement — only fires when an invite is present (team known).
+  // Public signup without an invite has no team context yet; first-user
+  // bootstrap is exempt by definition.
+  if (invite) {
+    const denial = await denySignupForTeamDomain(invite.team_id, email, pool);
+    if (denial) return NextResponse.json({ error: denial }, { status: 403 });
   }
 
   if (isFirstUser && !teamName) {

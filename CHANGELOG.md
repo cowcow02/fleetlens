@@ -95,6 +95,26 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 ### Fixed
 - Cycle-peaks trend no longer renders two bars labeled the same day. When Anthropic's rolling 7-day window slid its anchor between consecutive polls, the daemon's bucketer (hour-rounded) recorded both reset boundaries as distinct cycles. They're now merged within a 12 h tolerance — same fix in `apps/web/lib/cycle-peaks.ts` (used by `/usage`) and in `packages/cli/src/team/sync.ts` (the daemon's team-server push), so both the personal `/usage` chart and the team-server's plan-utilization view stay consistent. 5-hour cycles keep no merge tolerance (their anchor is stable; merging would collapse legitimate distinct cycles).
 
+## [0.7.0] — 2026-05-06
+
+### Added
+- **Multi-agent observability — Codex as the first non-Claude adapter.** The parser now defines an `AgentSource` registry; new agents land as a single file plus one registry entry. Codex CLI rollouts at `~/.codex/sessions/` flow through the same pipeline as Claude Code: their sessions appear in the dashboard, timeline, calendar, and per-project rollups alongside Claude sessions, with `agent: "codex"` carried through every event so consumers can split or aggregate.
+- **Per-agent representation in the UI.** Each session row carries an agent badge; top-sessions guarantees a multi-agent representation when both agents are active; the Gantt rail uses a per-agent glyph and outcome pills.
+- **Usage page is now agent-tabbed.** Switch between Claude and Codex views; cross-agent comparisons stay readable rather than smashed onto a single chart.
+- **Codex sessions blend into the day + week digest narratives** so the insights pipeline summarises across agents instead of treating Codex as a footnote.
+- **`fleetlens` → "Ask"** (agent-neutral). Previously labelled "Ask Claude"; the underlying prompt-routing stays Claude-backed, but the surface name no longer implies single-agent.
+
+### Changed
+- Dashboard default time range moved to **90 d** to match how multi-agent fleets actually use the tool — week-only views were truncating Codex activity that lands in week-old session files.
+- `AgentSource` interface opened up so future agents (OpenCode, Gemini CLI, …) are pure additive plug-ins; no parser core changes required.
+- Daemon auto-backfills *yesterday's* day digest on boot when `ai_features.auto_backfill_yesterday` is on, so `--no-daemon` users still get a yesterday digest on first homepage visit.
+
+### Fixed
+- **Codex calibration math no longer pollutes the Claude window.** Non-Claude snapshots are excluded from the Claude-side cycle-peaks calibration that drives plan-fit advice — previously a Codex-heavy run skewed the projected exhaustion line.
+- **Minimap idle bands** are now derived from raw event timestamps (not row kind) and coalesced per turn, so Codex sessions with sub-minute back-and-forth no longer paint as wall-to-wall idle.
+- Sessions filter state preserved in the URL so refresh / share doesn't lose the active filter.
+- `/insights` persists forced current-week digests so the page actually shows them on next load.
+
 ## [0.6.4] — 2026-05-04
 
 ### Fixed
