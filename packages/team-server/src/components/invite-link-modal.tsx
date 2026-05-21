@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 
 export type InviteLinkValues = {
-  label?: string;
   role: "admin" | "member";
   groupIds: string[];
   expiresInDays: number;
@@ -26,7 +25,6 @@ export function InviteLinkModal({
   // Resolve with null on success, or a string error to surface in the modal.
   onSubmit: (values: InviteLinkValues) => Promise<string | null>;
 }) {
-  const [label, setLabel] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>(
     lockedGroupId ? [lockedGroupId] : [],
@@ -37,7 +35,6 @@ export function InviteLinkModal({
 
   useEffect(() => {
     if (!open) return;
-    setLabel("");
     setRole("member");
     setSelectedGroupIds(lockedGroupId ? [lockedGroupId] : []);
     setExpiresInDays(90);
@@ -66,10 +63,8 @@ export function InviteLinkModal({
   async function submit() {
     setError(null);
     setBusy(true);
-    const trimmedLabel = label.trim() || undefined;
     const days = Math.max(1, Math.min(365, Math.floor(expiresInDays) || 90));
     const err = await onSubmit({
-      label: trimmedLabel,
       role,
       groupIds: selectedGroupIds,
       expiresInDays: days,
@@ -95,23 +90,15 @@ export function InviteLinkModal({
           Share a <em>reusable</em> link
         </h2>
 
-        <div className="modal-field">
-          <label htmlFor="invite-label">Label (optional)</label>
-          <input
-            id="invite-label"
-            type="text"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="Q2 hires"
-            autoFocus
-          />
-          <div className="field-hint">A name to recognise this link in the list. Visible to admins only.</div>
-        </div>
-
         {allowRoleChoice && (
           <div className="modal-field">
             <label htmlFor="invite-role">Role on join</label>
-            <select id="invite-role" value={role} onChange={(e) => setRole(e.target.value as "admin" | "member")}>
+            <select
+              id="invite-role"
+              value={role}
+              onChange={(e) => setRole(e.target.value as "admin" | "member")}
+              autoFocus
+            >
               <option value="member">Member</option>
               <option value="admin">Admin</option>
             </select>

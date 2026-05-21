@@ -41,6 +41,7 @@ export function SettingsPanel({
   const [revokeBusy, setRevokeBusy] = useState(false);
   const [revokeMemberTarget, setRevokeMemberTarget] = useState<MemberRow | null>(null);
   const [revokeMemberBusy, setRevokeMemberBusy] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Sign-up policy
   const [domainsInput, setDomainsInput] = useState(allowedSignupDomains.join(", "));
@@ -83,13 +84,18 @@ export function SettingsPanel({
     return null;
   }
 
-  async function copyLink(joinUrl: string | null) {
+  async function copyLink(inviteId: string, joinUrl: string | null) {
     if (!joinUrl) return;
     try {
       await navigator.clipboard.writeText(joinUrl);
     } catch {
-      // No-op: user can still copy from the visible text.
+      // Clipboard API blocked (insecure context, etc); skip toast.
+      return;
     }
+    setCopiedId(inviteId);
+    window.setTimeout(() => {
+      setCopiedId((cur) => (cur === inviteId ? null : cur));
+    }, 1800);
   }
 
   async function confirmRevokeLink() {
@@ -203,7 +209,6 @@ export function SettingsPanel({
           <table className="member-table">
             <thead>
               <tr>
-                <th>Label</th>
                 <th>Role</th>
                 <th>Groups</th>
                 <th>Created by</th>
@@ -215,15 +220,23 @@ export function SettingsPanel({
             <tbody>
               {invites.map((inv) => (
                 <tr key={inv.id}>
-                  <td>{inv.label ?? <span style={{ color: "var(--mute)" }}>(default)</span>}</td>
                   <td className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" }}>{inv.role}</td>
-                  <td>{inv.groupNames.length ? inv.groupNames.join(", ") : <span style={{ color: "var(--mute)" }}>—</span>}</td>
+                  <td>{inv.groupNames.length ? inv.groupNames.join(", ") : <span style={{ color: "var(--mute)" }}>Team-default</span>}</td>
                   <td>{inv.createdBy.displayName ?? <span style={{ color: "var(--mute)" }}>—</span>}</td>
                   <td>{formatExpiresIn(inv.expiresAt)}</td>
                   <td>{inv.redemptionCount}</td>
                   <td style={{ textAlign: "right" }}>
-                    <button onClick={() => copyLink(inv.joinUrl)} className="btn ghost" style={{ marginRight: 6 }} disabled={!inv.joinUrl}>Copy</button>
-                    <button onClick={() => setRevokeTarget(inv)} className="btn danger-ghost">Revoke</button>
+                    <button
+                      onClick={() => copyLink(inv.id, inv.joinUrl)}
+                      className={`btn-link ${copiedId === inv.id ? "is-success" : ""}`}
+                      disabled={!inv.joinUrl}
+                      style={{ marginRight: 14 }}
+                    >
+                      {copiedId === inv.id ? "Copied!" : "Copy link"}
+                    </button>
+                    <button onClick={() => setRevokeTarget(inv)} className="btn-link is-danger">
+                      Revoke
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -356,7 +369,7 @@ export function SettingsPanel({
         title="Revoke invite link?"
         body={
           revokeTarget
-            ? `"${revokeTarget.label ?? "(default)"}" will stop working immediately. Anyone who hasn't redeemed it yet will be locked out.`
+            ? `The ${revokeTarget.role} link${revokeTarget.groupNames.length ? ` for ${revokeTarget.groupNames.join(", ")}` : ""} will stop working immediately. Anyone who hasn't redeemed it yet will be locked out.`
             : ""
         }
         confirmLabel="Revoke link"

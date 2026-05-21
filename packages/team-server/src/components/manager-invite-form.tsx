@@ -20,6 +20,7 @@ export function ManagerInviteForm({
   const [showNewLink, setShowNewLink] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<ActiveInvite | null>(null);
   const [revokeBusy, setRevokeBusy] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     refresh();
@@ -41,13 +42,17 @@ export function ManagerInviteForm({
     setInvites(filtered);
   }
 
-  async function copyLink(joinUrl: string | null) {
+  async function copyLink(inviteId: string, joinUrl: string | null) {
     if (!joinUrl) return;
     try {
       await navigator.clipboard.writeText(joinUrl);
     } catch {
-      // No-op
+      return;
     }
+    setCopiedId(inviteId);
+    window.setTimeout(() => {
+      setCopiedId((cur) => (cur === inviteId ? null : cur));
+    }, 1800);
   }
 
   async function createInviteLink(values: InviteLinkValues): Promise<string | null> {
@@ -55,7 +60,6 @@ export function ManagerInviteForm({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        label: values.label,
         groupIds: values.groupIds,
         expiresInDays: values.expiresInDays,
       }),
@@ -96,7 +100,6 @@ export function ManagerInviteForm({
         <table className="member-table">
           <thead>
             <tr>
-              <th>Label</th>
               <th>Groups</th>
               <th>Created by</th>
               <th>Expires</th>
@@ -107,21 +110,20 @@ export function ManagerInviteForm({
           <tbody>
             {invites.map((inv) => (
               <tr key={inv.id}>
-                <td>{inv.label ?? <span style={{ color: "var(--mute)" }}>(default)</span>}</td>
-                <td>{inv.groupNames.length ? inv.groupNames.join(", ") : <span style={{ color: "var(--mute)" }}>—</span>}</td>
+                <td>{inv.groupNames.length ? inv.groupNames.join(", ") : <span style={{ color: "var(--mute)" }}>Team-default</span>}</td>
                 <td>{inv.createdBy.displayName ?? <span style={{ color: "var(--mute)" }}>—</span>}</td>
                 <td>{formatExpiresIn(inv.expiresAt)}</td>
                 <td>{inv.redemptionCount}</td>
                 <td style={{ textAlign: "right" }}>
                   <button
-                    onClick={() => copyLink(inv.joinUrl)}
-                    className="btn ghost"
-                    style={{ marginRight: 6 }}
+                    onClick={() => copyLink(inv.id, inv.joinUrl)}
+                    className={`btn-link ${copiedId === inv.id ? "is-success" : ""}`}
                     disabled={!inv.joinUrl}
+                    style={{ marginRight: 14 }}
                   >
-                    Copy
+                    {copiedId === inv.id ? "Copied!" : "Copy link"}
                   </button>
-                  <button onClick={() => setRevokeTarget(inv)} className="btn danger-ghost">
+                  <button onClick={() => setRevokeTarget(inv)} className="btn-link is-danger">
                     Revoke
                   </button>
                 </td>
@@ -151,7 +153,7 @@ export function ManagerInviteForm({
         title="Revoke invite link?"
         body={
           revokeTarget
-            ? `"${revokeTarget.label ?? "(default)"}" will stop working immediately. Anyone who hasn't redeemed it yet will be locked out.`
+            ? `The link${revokeTarget.groupNames.length ? ` for ${revokeTarget.groupNames.join(", ")}` : ""} will stop working immediately. Anyone who hasn't redeemed it yet will be locked out.`
             : ""
         }
         confirmLabel="Revoke link"

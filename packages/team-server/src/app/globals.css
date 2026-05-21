@@ -852,6 +852,41 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   margin-top: 16px;
 }
 
+/* Inline text-link button — used inside dense tables where boxed buttons
+   would create a visual ticker effect. Underline appears on hover so the
+   interactivity stays discoverable without a permanent border. */
+.btn-link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 120ms;
+}
+.btn-link:hover:not(:disabled) {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-link:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-link.is-danger { color: var(--danger); }
+.btn-link.is-danger:hover:not(:disabled) { color: var(--danger); }
+.btn-link.is-success {
+  color: var(--positive);
+  animation: btn-link-pulse 320ms ease-out;
+}
+@keyframes btn-link-pulse {
+  0% { transform: scale(0.92); opacity: 0.4; }
+  60% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 /* Confirm modal — narrower, message-focused */
 .modal--confirm { padding: 32px 36px 28px; max-width: 440px; }
 .modal--confirm::before { content: none; }
