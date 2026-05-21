@@ -7,6 +7,9 @@ import { createUserAccount } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
 let pool: ReturnType<typeof getPool>;
 let bearerToken: string;
+let membershipId: string;
+let teamId: string;
+let adminUserId: string;
 
 function makePayload(overrides: Record<string, unknown> = {}) {
   return {
@@ -52,8 +55,11 @@ function makeReq(body: unknown, authHeader?: string): NextRequest {
 beforeAll(async () => {
   pool = await resetDb();
   const admin = await createUserAccount("ingest-route-admin@example.com", "pass1234", null, {}, pool);
-  const { membership } = await createTeamWithAdmin("Ingest Route Team", admin.id, pool);
+  const { membership, team } = await createTeamWithAdmin("Ingest Route Team", admin.id, pool);
   bearerToken = membership.bearerToken;
+  membershipId = membership.id;
+  teamId = team.id;
+  adminUserId = admin.id;
 });
 
 afterAll(async () => {
@@ -181,5 +187,111 @@ describe("POST /api/ingest/metrics", () => {
     // received counts what the caller sent; inserted is unique rows that
     // actually landed (2 unique captured_at, both new).
     expect((await res.json()).snapshotHistory).toEqual({ received: 3, inserted: 2, skipped: 1 });
+  });
+});
+
+describe("POST /api/ingest/metrics — member command channel", () => {
+  async function enqueueCommand(id: string, type: string, params: Record<string, unknown>) {
+    await pool.query(
+      `INSERT INTO member_commands (id, team_id, membership_id, command_type, params, issued_by_id)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, teamId, membershipId, type, params, adminUserId],
+    );
+  }
+
+  it("delivers pending commands, marks delivered_at, processes results, and stops re-delivering completed", async () => {
+    // Wipe any rows from prior tests so this describe is self-contained.
+    await pool.query("DELETE FROM member_commands WHERE membership_id = $1", [membershipId]);
+
+    const cmdId = `cmd-${Math.random().toString(36).slice(2)}`;
+    await enqueueCommand(cmdId, "backfill_history", { days: 90 });
+
+    // 1) First ingest: command is delivered in response.
+    const first = await POST(makeReq(makePayload(), `Bearer ${bearerToken}`));
+    expect(first.status).toBe(200);
+    const firstBody = await first.json();
+    expect(firstBody.commands).toBeDefined();
+    expect(firstBody.commands).toHaveLength(1);
+    expect(firstBody.commands[0]).toEqual({
+      id: cmdId,
+      type: "backfill_history",
+      params: { days: 90 },
+    });
+
+    // 2) delivered_at is stamped on first delivery.
+    const delivered = await pool.query<{ delivered_at: Date | null; completed_at: Date | null }>(
+      "SELECT delivered_at, completed_at FROM member_commands WHERE id = $1",
+      [cmdId],
+    );
+    expect(delivered.rows[0].delivered_at).not.toBeNull();
+    expect(delivered.rows[0].completed_at).toBeNull();
+
+    // 3) Follow-up ingest with a commandResult marks the command complete.
+    const completedAt = new Date().toISOString();
+    const second = await POST(makeReq(makePayload({
+      commandResults: [{ id: cmdId, ok: true, completedAt, summary: { inserted: 42 } }],
+    }), `Bearer ${bearerToken}`));
+    expect(second.status).toBe(200);
+
+    const afterResult = await pool.query<{ completed_at: Date | null; result: unknown }>(
+      "SELECT completed_at, result FROM member_commands WHERE id = $1",
+      [cmdId],
+    );
+    expect(afterResult.rows[0].completed_at).not.toBeNull();
+    expect(afterResult.rows[0].result).toEqual({ ok: true, summary: { inserted: 42 } });
+
+    // 4) Third ingest: completed command must not be re-delivered.
+    const third = await POST(makeReq(makePayload(), `Bearer ${bearerToken}`));
+    expect(third.status).toBe(200);
+    const thirdBody = await third.json();
+    expect(thirdBody.commands).toBeUndefined();
+  });
+
+  it("does not overwrite a previously-completed command if a stale result is replayed", async () => {
+    await pool.query("DELETE FROM member_commands WHERE membership_id = $1", [membershipId]);
+    const cmdId = `cmd-${Math.random().toString(36).slice(2)}`;
+    await enqueueCommand(cmdId, "backfill_history", {});
+
+    // Pre-complete the row with a success record.
+    const firstCompletedAt = "2026-05-20T10:00:00.000Z";
+    await pool.query(
+      `UPDATE member_commands SET delivered_at = now(), completed_at = $1, result = $2 WHERE id = $3`,
+      [firstCompletedAt, { ok: true, summary: { inserted: 7 } }, cmdId],
+    );
+
+    // Send a stale "this failed" result — the completed_at IS NULL guard
+    // should prevent any clobber.
+    const res = await POST(makeReq(makePayload({
+      commandResults: [{ id: cmdId, ok: false, completedAt: "2026-05-20T11:00:00.000Z", error: "stale" }],
+    }), `Bearer ${bearerToken}`));
+    expect(res.status).toBe(200);
+
+    const row = await pool.query<{ completed_at: Date; result: { ok: boolean; summary?: { inserted: number } } }>(
+      "SELECT completed_at, result FROM member_commands WHERE id = $1",
+      [cmdId],
+    );
+    expect(row.rows[0].result).toEqual({ ok: true, summary: { inserted: 7 } });
+    expect(row.rows[0].completed_at.toISOString()).toBe(firstCompletedAt);
+  });
+
+  it("delivers pending commands even when the ingest body is a dedupe replay", async () => {
+    await pool.query("DELETE FROM member_commands WHERE membership_id = $1", [membershipId]);
+
+    // Send a payload once to populate ingest_log.
+    const payload = makePayload();
+    const initial = await POST(makeReq(payload, `Bearer ${bearerToken}`));
+    expect(initial.status).toBe(200);
+
+    // Now enqueue a command and replay the same ingestId.
+    const cmdId = `cmd-${Math.random().toString(36).slice(2)}`;
+    await enqueueCommand(cmdId, "backfill_history", { days: 7 });
+
+    const replay = await POST(makeReq(payload, `Bearer ${bearerToken}`));
+    // Dedup replay returns 202; commands should still ride along.
+    expect(replay.status).toBe(202);
+    const body = await replay.json();
+    expect(body.deduplicated).toBe(true);
+    expect(body.commands).toHaveLength(1);
+    expect(body.commands[0].id).toBe(cmdId);
   });
 });
