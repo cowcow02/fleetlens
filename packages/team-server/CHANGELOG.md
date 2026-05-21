@@ -4,6 +4,22 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.10.0] — 2026-05-21
+
+### Added
+- **v7 Insight Report builder.** New report page at `/report/[slug]` with a drag-and-drop, width-snapped (25/50/75/100%), masonry-packed block builder. Widgets are sortable via `@dnd-kit`, resize from a right-edge handle, and content-driven heights are tracked per cell via `ResizeObserver`. Inline `[+]` buttons let users insert structural blocks (divider, title, text) between widgets; dividers force page breaks in PDF mode. Layout state is debounce-persisted to `localStorage` under `fleetlens-builder-v7:<slug>`.
+- **Server-rendered A4 PDF export.** New `POST /api/team/[slug]/insights/pdf` route launches headless Chromium via Playwright, seeds the builder layout into `localStorage` before navigation, captures at a 794×1123 viewport with zero PDF margins, and returns the file as a download. Replaces the browser's print dialog (which produced unusable landscape output and ignored masonry).
+- **Hidden mock preview routes.** `/team/[slug]/insights/preview` is a shareable mock of the prime report (not linked from nav); `/team/[slug]/insights/preview/archive` keeps v0–v6 prototype variants behind a tabstrip so previously explored metric ideas remain discoverable.
+- **Compact report header.** `ReportHeader` renders FLEETLENS · INSIGHT REPORT eyebrow, team name in italic serif, ISO week range, active-member / agent-hours stats, full roster, and generation date — identical between the web view and the PDF capture.
+- **Bridge Personal → Team (Phase 1).** Daemon now pushes rich per-day rollups derived from cached Entries (project breakdowns, working shapes, skills, subagent dispatches, plan-mode usage, brainstorm warm-ups, PR/commit/push counts, long-autonomous stats) alongside the existing headline rollup. Live `/team/[slug]/insights` page is backed by `rich_daily_rollups` instead of mock data; same surface available group-scoped under `/team/[slug]/groups/[group]/insights`. Members opt in via the new `/team` consent page (existing memberships stay paired; toggling privacy on a project removes future project labels from the push).
+
+### Changed
+- **Cross-midnight session bucketing.** Rich rollup `projects[].agentTimeMs` and parallelism bursts are now clipped to each touched local day, matching the headline `dailyRollup.agentTimeMs` split semantics. Previously a session spanning 11 PM → 1 AM attributed its full agent time to the start day and was missing from the next day's project breakdown.
+- **Live insights footnote** now links to `/team/[slug]/insights/preview` (block-builder reference) instead of a `?v=7` query param that 404'd back onto the live page.
+
+### Database
+- New migration `0005_rich_daily_rollups.sql` — `rich_daily_rollups` table keyed on `(team_id, membership_id, day)` with JSONB blocks for project breakdowns, working-shape histograms, skills/subagent rollups, and aggregate counters. Cascades from `teams` and `memberships`. Added to `_journal.json` so `scripts/seed-team-demo.mjs` and other journal-driven paths apply it alongside Drizzle's runtime fallback.
+
 ## [0.9.0] — 2026-05-21
 
 ### Added
