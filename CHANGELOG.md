@@ -4,6 +4,14 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.6] — 2026-05-21
+
+### Added
+- **Team-pairing visibility in the Personal Edition dashboard.** When you've paired with a Team Edition server (`fleetlens team join …`), the dashboard now surfaces what's syncing without you having to open a terminal. A sidebar chip with a health dot (green / amber / red — re-derived client-side every 30 s so it ages correctly even when the daemon stops) and a live-aging "synced N ago" label. A `/settings → Team connection` panel showing team metadata, a labeled last-push preview (Agent time / Session count / Tool call count / Turn count / Token total / Plan tier), an explicit "What does NOT leave your machine" block, and a "Sync now" button that spawns `fleetlens team sync` as a subprocess and renders its output inline. A first-run welcome banner on the overview after pairing, dismissable per pairing. The preview also includes a "Show raw JSON payload" disclosure that displays the literal `IngestPayload` from disk — verify byte-for-byte that no transcripts, prompts, or project content leave your machine. Solo users see no change.
+
+### Changed
+- **Wire-format types now live in `@claude-lens/parser`.** `IngestPayload`, `DailyRollup`, `LastPushRecord`, and the rest of the daemon→server wire shape moved out of `packages/cli/src/team/push.ts` so the CLI and the dashboard share a single canonical definition — no drift risk on future schema changes. The CLI's `team-config` module also moved to the parser (`@claude-lens/parser/fs`) for the same reason.
+
 ## [0.10.5] — 2026-05-21
 
 ### Changed
