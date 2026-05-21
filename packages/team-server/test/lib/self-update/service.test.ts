@@ -68,6 +68,49 @@ describe("getStatus", () => {
     const status = await getStatus();
     expect(status.currentVersion).toBe("0.0.0-dev");
   });
+
+  it("recomputes updateAvailable=false when the cached latest equals the live current version", async () => {
+    // Stale cache: the row was written when current was older (0.4.1) and latest
+    // was 0.4.2 with update_available=true. The image has since been upgraded to
+    // 0.4.2 (process.env.APP_VERSION) but checkNow hasn't run again yet.
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO update_check_cache (key, current_version, latest_version, update_available, last_checked_at)
+       VALUES ('global', $1, $2, $3, now())`,
+      ["0.4.1", "0.4.2", true],
+    );
+    const status = await getStatus();
+    expect(status.currentVersion).toBe("0.4.2");
+    expect(status.latestVersion).toBe("0.4.2");
+    expect(status.updateAvailable).toBe(false);
+  });
+
+  it("recomputes updateAvailable=false when the live current has leapfrogged the cached latest", async () => {
+    // Operator jumped 0.4.0 → 0.4.2 in one move; the cached row still thinks
+    // 0.4.1 is the target. updateAvailable must clear, not show "downgrade".
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO update_check_cache (key, current_version, latest_version, update_available, last_checked_at)
+       VALUES ('global', $1, $2, $3, now())`,
+      ["0.4.0", "0.4.1", true],
+    );
+    const status = await getStatus();
+    expect(status.latestVersion).toBe("0.4.1");
+    expect(status.updateAvailable).toBe(false);
+  });
+
+  it("recomputes updateAvailable=false on dev builds even when the cached row claims an update", async () => {
+    delete process.env.APP_VERSION;
+    const pool = getPool();
+    await pool.query(
+      `INSERT INTO update_check_cache (key, current_version, latest_version, update_available, last_checked_at)
+       VALUES ('global', $1, $2, $3, now())`,
+      ["0.4.1", "0.5.0", true],
+    );
+    const status = await getStatus();
+    expect(status.currentVersion).toBe("0.0.0-dev");
+    expect(status.updateAvailable).toBe(false);
+  });
 });
 
 describe("checkNow", () => {

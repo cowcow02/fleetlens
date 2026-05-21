@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.4] — 2026-05-21
+
+### Fixed
+- **Fleetlens's own LLM runs no longer show up in the dashboard.** The tmux-driven runner records its enrichment / digest / `/ask` calls as real Claude Code transcripts under `~/.claude/projects/` (cwd `~/.cclens/runtime`), since tailing that transcript is how it reads the model's reply. Those self-generated sessions were surfacing as a `.cclens/runtime` project and inflating session, project, and token-calibration rollups. The tmux runner now deletes each transcript once the response is captured (kill-session before unlink so claude can't rewrite it, gated by `FLEETLENS_TMUX_KEEP_WRAPPER`), and the parser excludes the runtime project dir at the scan chokepoint as a safety net for any transcript that outlives cleanup.
+
 ## [0.10.3] — 2026-05-16
 
 ### Added

@@ -4,7 +4,20 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
-## [0.8.1] — 2026-05-16
+## [0.8.3] — 2026-05-21
+
+### Fixed
+- **Stale "update available" banner after an upgrade.** `/admin/updates` could show "Team-server vX.Y.Z is available. You're running vX.Y.Z." immediately after an image upgrade and stay that way until the next scheduled check. `getStatus()` was reading `current_version` live from the running process but trusting the cached `update_available` boolean from the previous check. It now recomputes the flag against the live version using the same `semver.gt` rule as the scheduled check, so the banner clears on the next page load.
+
+## [0.8.2] — 2026-05-21
+
+### Fixed
+- **Re-inviting an existing user no longer 409s.** An admin can now send a fresh invite (e.g. promoting a member to admin) to someone who already has an account. The invitee uses their existing password to redeem; wrong password returns 401 with actionable copy. Previously the duplicate-email check rejected the signup attempt before the invite was redeemed.
+- **Role updates land on re-invite.** `redeemInvite`'s `ON CONFLICT` clause now updates `role` via a CASE: post-revoke rejoin respects the invite's role, active admins are never silently downgraded by a member-role invite, and member→admin upgrade works.
+- **Reactivate path for revoked members.** New admin-only `PATCH /api/team/members/[id] { reactivate: true }` flips `revoked_at` and mints a fresh device token. Rejected for already-active members so a stray PATCH can't silently rotate a working daemon's bearer token. UI: revoked rows in `/team/<slug>/settings` show a **Reactivate** button that inline-displays the new `fleetlens team join` command.
+
+### Healing previously-bugged state
+Existing stuck installations need no manual SQL — a previously-bugged "stuck" member just clicks their unused admin invite again; a revoked user takes one admin click to come back.
 
 ### Added
 - **Team groups & manager-scoped visibility.** Admins can create named groups (e.g., "Platform Squad", "Growth Team") and place members into them. A group member with `is_manager = true` becomes a manager of that group — they see only their group's members on the dashboard and can invite new people into groups they manage. Plain members continue to see only their own profile.

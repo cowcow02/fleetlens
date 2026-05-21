@@ -186,8 +186,9 @@ async function runClaudeUnderTmuxImpl(args: TmuxRunArgs): Promise<LLMResponse> {
   let lastReportedKb = -1;
   let lastEmittedLength = 0;
 
+  let transcriptPath: string | undefined;
   try {
-    const transcriptPath = await discoverTranscript(cwd, existingBefore, startMs, timeoutMs, args.signal);
+    transcriptPath = await discoverTranscript(cwd, existingBefore, startMs, timeoutMs, args.signal);
 
     while (Date.now() - startMs < timeoutMs) {
       if (args.signal?.aborted) throw new TmuxRunError("aborted");
@@ -218,7 +219,7 @@ async function runClaudeUnderTmuxImpl(args: TmuxRunArgs): Promise<LLMResponse> {
     throw new TmuxRunError(`timeout after ${timeoutMs}ms waiting for assistant turn`);
   } finally {
     args.signal?.removeEventListener("abort", onAbort);
-    cleanup(cwd, runId, tmuxBin, sessionName);
+    cleanup(cwd, runId, tmuxBin, sessionName, transcriptPath);
   }
 }
 
@@ -348,9 +349,20 @@ function parseTranscript(path: string, defaultModel: string): ParsedTurn {
   return { assembled, inputTokens, outputTokens, modelUsed, done };
 }
 
-function cleanup(cwd: string, runId: string, tmuxBin: string, sessionName: string): void {
+function cleanup(
+  cwd: string,
+  runId: string,
+  tmuxBin: string,
+  sessionName: string,
+  transcriptPath?: string,
+): void {
+  // Kill claude before unlinking its transcript so it can't rewrite the file.
   try { spawnSync(tmuxBin, ["kill-session", "-t", sessionName], { stdio: "ignore" }); } catch {}
   if (process.env.FLEETLENS_TMUX_KEEP_WRAPPER !== "1") {
+    // Drop the transcript so our own LLM runs don't surface in the dashboard.
+    if (transcriptPath) {
+      try { unlinkSync(transcriptPath); } catch {}
+    }
     for (const f of [`system-${runId}.txt`, `user-${runId}.txt`, `run-${runId}.sh`]) {
       try { unlinkSync(join(cwd, f)); } catch {}
     }

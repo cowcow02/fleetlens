@@ -37,6 +37,20 @@ export function decodeProjectName(dir: string): string {
   return "/" + dir.slice(1).replace(/-/g, "/");
 }
 
+/** Encode a cwd into its `~/.claude/projects/` dir name (every `/` and `.` → `-`). */
+function encodeProjectDir(cwd: string): string {
+  return cwd.replace(/[/.]/g, "-");
+}
+
+// Fleetlens's own tmux LLM runs — must match runtimeCwd() in tmux-runner.ts.
+const FLEETLENS_RUNTIME_PROJECT_DIR = encodeProjectDir(
+  path.join(os.homedir(), ".cclens", "runtime"),
+);
+
+export function isFleetlensRuntimeDir(projectDir: string): boolean {
+  return projectDir === FLEETLENS_RUNTIME_PROJECT_DIR;
+}
+
 export async function readJsonlFile(filePath: string): Promise<unknown[]> {
   const raw = await fs.readFile(filePath, "utf8");
   const out: unknown[] = [];
@@ -133,7 +147,9 @@ export async function walkJsonlFiles(root: string = DEFAULT_ROOT): Promise<FileR
     return [];
   }
 
-  const projectDirs = topEntries.filter((e) => e.isDirectory()).map((e) => e.name);
+  const projectDirs = topEntries
+    .filter((e) => e.isDirectory() && !isFleetlensRuntimeDir(e.name))
+    .map((e) => e.name);
 
   const perProject = await Promise.all(
     projectDirs.map(async (projectDir): Promise<FileRef[]> => {

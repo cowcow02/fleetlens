@@ -95,9 +95,13 @@ describe("runTeamBackfill", () => {
     const originalFetch = global.fetch;
     global.fetch = (async (url: string, init: RequestInit) => {
       captured = { url, body: JSON.parse(String(init.body)) };
-      return new Response(JSON.stringify({ accepted: true, received: 2, inserted: 2, skipped: 0 }), {
-        status: 200,
-      });
+      return new Response(
+        JSON.stringify({
+          accepted: true,
+          snapshotHistory: { received: 2, inserted: 2, skipped: 0 },
+        }),
+        { status: 200 },
+      );
     }) as typeof fetch;
 
     try {
@@ -106,15 +110,21 @@ describe("runTeamBackfill", () => {
       expect(result.sentSnapshots).toBe(2);
       expect(result.insertedSnapshots).toBe(2);
       expect(result.batches).toBe(1);
-      expect(captured!.url).toBe("http://localhost:9999/api/ingest/usage-history");
-      const body = captured!.body as { snapshots: Array<Record<string, unknown>> };
-      expect(body.snapshots).toHaveLength(2);
-      expect(body.snapshots[0].capturedAt).toBe("2026-04-29T02:58:41.717+00:00");
-      expect((body.snapshots[0].fiveHour as { resetsAt: string }).resetsAt).toBe(
+      expect(captured!.url).toBe("http://localhost:9999/api/ingest/metrics");
+      const body = captured!.body as {
+        ingestId: string;
+        observedAt: string;
+        snapshotHistory: Array<Record<string, unknown>>;
+      };
+      expect(body.ingestId).toMatch(/^backfill-/);
+      expect(body.observedAt).toBeTruthy();
+      expect(body.snapshotHistory).toHaveLength(2);
+      expect(body.snapshotHistory[0].capturedAt).toBe("2026-04-29T02:58:41.717+00:00");
+      expect((body.snapshotHistory[0].fiveHour as { resetsAt: string }).resetsAt).toBe(
         "2026-04-29T07:10:00+00:00",
       );
-      expect((body.snapshots[0].extraUsage as { monthlyLimitUsd: number }).monthlyLimitUsd).toBe(0);
-      expect(body.snapshots[1].extraUsage).toBeNull();
+      expect((body.snapshotHistory[0].extraUsage as { monthlyLimitUsd: number }).monthlyLimitUsd).toBe(0);
+      expect(body.snapshotHistory[1].extraUsage).toBeNull();
     } finally {
       global.fetch = originalFetch;
     }
@@ -153,16 +163,19 @@ describe("runTeamBackfill", () => {
     const originalFetch = global.fetch;
     global.fetch = (async (_url: string, init: RequestInit) => {
       captured = { body: JSON.parse(String(init.body)) };
-      return new Response(JSON.stringify({ inserted: 1, skipped: 0 }), { status: 200 });
+      return new Response(
+        JSON.stringify({ accepted: true, snapshotHistory: { received: 1, inserted: 1, skipped: 0 } }),
+        { status: 200 },
+      );
     }) as typeof fetch;
 
     try {
       const result = await runTeamBackfill(() => {}, usagePath, fakeConfig, {
         sinceCapturedAt: "2026-04-29T02:58:41.717+00:00",
       });
-      const body = captured!.body as { snapshots: Array<{ capturedAt: string }> };
-      expect(body.snapshots).toHaveLength(1);
-      expect(body.snapshots[0].capturedAt).toBe("2026-04-29T03:03:41.717+00:00");
+      const body = captured!.body as { snapshotHistory: Array<{ capturedAt: string }> };
+      expect(body.snapshotHistory).toHaveLength(1);
+      expect(body.snapshotHistory[0].capturedAt).toBe("2026-04-29T03:03:41.717+00:00");
       expect(result.lastSnapshotAt).toBe("2026-04-29T03:03:41.717+00:00");
     } finally {
       global.fetch = originalFetch;
@@ -184,17 +197,45 @@ describe("runTeamBackfill", () => {
     const originalFetch = global.fetch;
     global.fetch = (async (_url: string, init: RequestInit) => {
       captured = { body: JSON.parse(String(init.body)) };
-      return new Response(JSON.stringify({ inserted: 2, skipped: 0 }), { status: 200 });
+      return new Response(
+        JSON.stringify({ accepted: true, snapshotHistory: { received: 2, inserted: 2, skipped: 0 } }),
+        { status: 200 },
+      );
     }) as typeof fetch;
 
     try {
       const result = await runTeamBackfill(() => {}, usagePath, fakeConfig);
-      const body = captured!.body as { snapshots: Array<{ capturedAt: string }> };
-      expect(body.snapshots.map((s) => s.capturedAt)).toEqual([
+      const body = captured!.body as { snapshotHistory: Array<{ capturedAt: string }> };
+      expect(body.snapshotHistory.map((s) => s.capturedAt)).toEqual([
         "2026-04-29T02:58:41.717+00:00",
         "2026-04-29T03:03:41.717+00:00",
       ]);
       expect(result.lastSnapshotAt).toBe("2026-04-29T03:03:41.717+00:00");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("aborts without advancing the HWM when an older server returns 200 with no snapshotHistory block", async () => {
+    // Older team-server images don't recognize the snapshotHistory field;
+    // zod passthrough() swallows it and processIngest returns no
+    // snapshotHistory result. If the CLI treated this as success it would
+    // advance lastSyncedUsageSnapshotAt in runTeamSync and the rows would
+    // never be retried after the server is upgraded. Backfill must abort.
+    const usagePath = join(dir, "usage.jsonl");
+    writeFileSync(usagePath, snapshotLine("2026-04-29T02:58:41.717+00:00") + "\n", "utf8");
+
+    const originalFetch = global.fetch;
+    global.fetch = (async () =>
+      new Response(JSON.stringify({ accepted: true, nextSyncAfter: new Date().toISOString() }), {
+        status: 200,
+      })) as typeof fetch;
+
+    try {
+      const result = await runTeamBackfill(() => {}, usagePath, fakeConfig);
+      expect(result.error).toMatch(/snapshotHistory/i);
+      expect(result.insertedSnapshots).toBe(0);
+      expect(result.lastSnapshotAt).toBeUndefined();
     } finally {
       global.fetch = originalFetch;
     }

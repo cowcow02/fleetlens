@@ -1,8 +1,13 @@
 {
   "name": "fleetlens",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "description": "fleetlens — local-only dashboard and usage tracker for Claude Code sessions and agent fleets",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cowcow02/fleetlens.git",
+    "directory": "packages/cli"
+  },
   "type": "module",
   "bin": {
     "fleetlens": "./dist/index.js"
