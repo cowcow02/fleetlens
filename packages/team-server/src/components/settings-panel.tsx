@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 type TeamRow = { id: string; name: string; slug: string; created_at: string };
 type MemberRow = {
@@ -11,32 +11,133 @@ type MemberRow = {
   revoked_at: string | null;
   plan_tier: string;
 };
+type GroupOpt = { id: string; slug: string; name: string };
+type ActiveInvite = {
+  id: string;
+  label: string | null;
+  role: "admin" | "member";
+  groupIds: string[];
+  groupNames: string[];
+  createdBy: { id: string; displayName: string | null };
+  createdAt: string;
+  expiresAt: string;
+  token: string | null;
+  joinUrl: string | null;
+  redemptionCount: number;
+};
+
+function formatExpiresIn(expiresAt: string): string {
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  const days = Math.max(0, Math.round(ms / (24 * 60 * 60 * 1000)));
+  if (days <= 0) return "today";
+  if (days === 1) return "in 1d";
+  return `in ${days}d`;
+}
 
 export function SettingsPanel({
   team,
   members,
   teamSlug,
   groups,
-  allowedSignupDomains: _allowedSignupDomains,
+  allowedSignupDomains,
 }: {
   team: TeamRow;
   members: MemberRow[];
   teamSlug: string;
-  groups?: { id: string; slug: string; name: string }[];
+  groups?: GroupOpt[];
   allowedSignupDomains: string[];
 }) {
   const [teamName, setTeamName] = useState(team.name);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+
+  // Active invite links
+  const [invites, setInvites] = useState<ActiveInvite[] | null>(null);
+  const [invitesError, setInvitesError] = useState<string | null>(null);
+  const [newLinkRole, setNewLinkRole] = useState<"admin" | "member">("member");
+  const [newLinkLabel, setNewLinkLabel] = useState("");
+  const [newLinkGroupIds, setNewLinkGroupIds] = useState<string[]>([]);
+  const [newLinkExpiresDays, setNewLinkExpiresDays] = useState(90);
+  const [newLinkBusy, setNewLinkBusy] = useState(false);
+  const [newLinkError, setNewLinkError] = useState<string | null>(null);
+  const [showNewLink, setShowNewLink] = useState(false);
+
+  // Sign-up policy
+  const [domainsInput, setDomainsInput] = useState(allowedSignupDomains.join(", "));
+  const [domainsSaving, setDomainsSaving] = useState(false);
+  const [domainsMessage, setDomainsMessage] = useState<string | null>(null);
+  const [domainsError, setDomainsError] = useState<string | null>(null);
+
   const [reactivateTokenById, setReactivateTokenById] = useState<Record<string, string>>({});
   const [reactivateErrorById, setReactivateErrorById] = useState<Record<string, string>>({});
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
-  function toggleGroup(id: string) {
-    setSelectedGroupIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
+  useEffect(() => {
+    refreshInvites();
+  }, []);
+
+  async function refreshInvites() {
+    setInvitesError(null);
+    const res = await fetch(`/api/team/${teamSlug}/invites`);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setInvitesError(d.error || "Failed to load invites");
+      setInvites([]);
+      return;
+    }
+    const d = await res.json();
+    setInvites(d.invites ?? []);
+  }
+
+  function toggleNewLinkGroup(id: string) {
+    setNewLinkGroupIds((prev) =>
+      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
+    );
+  }
+
+  async function createInviteLink() {
+    setNewLinkError(null);
+    setNewLinkBusy(true);
+    const res = await fetch(`/api/team/invites?team=${teamSlug}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role: newLinkRole,
+        groupIds: newLinkGroupIds,
+        label: newLinkLabel.trim() || undefined,
+        expiresInDays: newLinkExpiresDays,
+      }),
+    });
+    setNewLinkBusy(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setNewLinkError(d.error || `HTTP ${res.status}`);
+      return;
+    }
+    setNewLinkLabel("");
+    setNewLinkGroupIds([]);
+    setShowNewLink(false);
+    await refreshInvites();
+  }
+
+  async function copyLink(joinUrl: string | null) {
+    if (!joinUrl) return;
+    try {
+      await navigator.clipboard.writeText(joinUrl);
+    } catch {
+      // No-op: user can still copy from the visible text.
+    }
+  }
+
+  async function revokeLink(inviteId: string) {
+    if (!confirm("Revoke this invite link? It will stop working immediately.")) return;
+    const res = await fetch(`/api/team/${teamSlug}/invites/${inviteId}/revoke`, { method: "POST" });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert(d.error || "Failed to revoke");
+      return;
+    }
+    await refreshInvites();
   }
 
   async function saveProfile() {
@@ -51,21 +152,22 @@ export function SettingsPanel({
     setMessage(res.ok ? "Saved." : "Failed to save.");
   }
 
-  async function createInvite(role: "admin" | "member") {
-    setInviteError(null);
-    setInviteUrl(null);
-    const res = await fetch(`/api/team/invites?team=${teamSlug}`, {
-      method: "POST",
+  async function saveDomains() {
+    setDomainsSaving(true);
+    setDomainsMessage(null);
+    setDomainsError(null);
+    const res = await fetch(`/api/team/settings?team=${teamSlug}`, {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role, expiresInDays: 7, groupIds: selectedGroupIds }),
+      body: JSON.stringify({ allowedSignupDomains: domainsInput }),
     });
+    setDomainsSaving(false);
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      setInviteError(d.error || "Failed to create invite");
+      setDomainsError(d.error || "Failed to save");
       return;
     }
-    const data = await res.json();
-    setInviteUrl(data.joinUrl);
+    setDomainsMessage("Saved.");
   }
 
   async function revokeMember(memberId: string) {
@@ -123,54 +225,126 @@ export function SettingsPanel({
 
       <section className="settings-section">
         <div className="subsection-head">
-          <h2>Invite a member</h2>
-          <span className="kicker">Share-link · 7-day expiry</span>
+          <h2>Active invite links</h2>
+          <span className="kicker">Reusable · revoke when no longer needed</span>
         </div>
-        {groups && groups.length > 0 && (
-          <fieldset
-            style={{
-              border: "1px solid var(--rule)",
-              padding: "10px 12px",
-              margin: "0 0 12px 0",
-              maxWidth: 520,
-            }}
-          >
-            <legend className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--mute)", padding: "0 6px" }}>
-              PLACE IN GROUPS (OPTIONAL)
-            </legend>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-              {groups.map((g) => (
-                <label key={g.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedGroupIds.includes(g.id)}
-                    onChange={() => toggleGroup(g.id)}
-                  />
-                  {g.name}
-                </label>
+        {invitesError && <div className="form-error" style={{ marginBottom: 12 }}>{invitesError}</div>}
+        {invites === null ? (
+          <p className="kicker">Loading…</p>
+        ) : invites.length === 0 ? (
+          <p className="kicker">No active links yet.</p>
+        ) : (
+          <table className="member-table">
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Role</th>
+                <th>Groups</th>
+                <th>Created by</th>
+                <th>Expires</th>
+                <th>Redemptions</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {invites.map((inv) => (
+                <tr key={inv.id}>
+                  <td>{inv.label ?? <span style={{ color: "var(--mute)" }}>(default)</span>}</td>
+                  <td className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" }}>{inv.role}</td>
+                  <td>{inv.groupNames.length ? inv.groupNames.join(", ") : <span style={{ color: "var(--mute)" }}>—</span>}</td>
+                  <td>{inv.createdBy.displayName ?? <span style={{ color: "var(--mute)" }}>—</span>}</td>
+                  <td>{formatExpiresIn(inv.expiresAt)}</td>
+                  <td>{inv.redemptionCount}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <button onClick={() => copyLink(inv.joinUrl)} className="btn ghost" style={{ marginRight: 6 }} disabled={!inv.joinUrl}>Copy</button>
+                    <button onClick={() => revokeLink(inv.id)} className="btn danger-ghost">Revoke</button>
+                  </td>
+                </tr>
               ))}
-            </div>
-          </fieldset>
+            </tbody>
+          </table>
         )}
-        <div style={{ display: "flex", gap: 10 }}>
-          <button onClick={() => createInvite("member")} className="btn">+ Member invite</button>
-          <button onClick={() => createInvite("admin")} className="btn secondary">+ Admin invite</button>
+
+        <div style={{ marginTop: 16 }}>
+          {!showNewLink ? (
+            <button className="btn" onClick={() => setShowNewLink(true)}>+ New link</button>
+          ) : (
+            <div className="help-box" style={{ padding: 12 }}>
+              <div className="form-group" style={{ marginBottom: 10 }}>
+                <label>Label (optional)</label>
+                <input value={newLinkLabel} onChange={(e) => setNewLinkLabel(e.target.value)} placeholder="Q2 hires" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 10 }}>
+                <label>Role</label>
+                <select value={newLinkRole} onChange={(e) => setNewLinkRole(e.target.value as "admin" | "member")}>
+                  <option value="member">Member</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              {groups && groups.length > 0 && (
+                <fieldset style={{ border: "1px solid var(--rule)", padding: "10px 12px", margin: "0 0 10px 0" }}>
+                  <legend className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--mute)", padding: "0 6px" }}>
+                    PLACE IN GROUPS (OPTIONAL)
+                  </legend>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    {groups.map((g) => (
+                      <label key={g.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
+                        <input type="checkbox" checked={newLinkGroupIds.includes(g.id)} onChange={() => toggleNewLinkGroup(g.id)} />
+                        {g.name}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              )}
+              <div className="form-group" style={{ marginBottom: 10 }}>
+                <label>Expires in (days)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={365}
+                  value={newLinkExpiresDays}
+                  onChange={(e) => setNewLinkExpiresDays(Math.max(1, Math.min(365, Number(e.target.value) || 90)))}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={createInviteLink} disabled={newLinkBusy} className="btn">
+                  {newLinkBusy ? "Creating…" : "Create link"}
+                </button>
+                <button onClick={() => { setShowNewLink(false); setNewLinkError(null); }} className="btn ghost">Cancel</button>
+              </div>
+              {newLinkError && <div className="form-error" style={{ marginTop: 10 }}>{newLinkError}</div>}
+            </div>
+          )}
         </div>
-        {inviteError && <div className="form-error" style={{ marginTop: 12 }}>{inviteError}</div>}
-        {inviteUrl && (
-          <div className="help-box" style={{ marginTop: 16 }}>
-            <p>Invite link created. Copy it and share out-of-band:</p>
-            <code className="help-example">{inviteUrl}</code>
-            <p className="help-note">Expires in 7 days. The invitee creates their password on first click.</p>
+      </section>
+
+      <section className="settings-section">
+        <div className="subsection-head">
+          <h2>Sign-up policy</h2>
+          <span className="kicker">Restrict invite + public sign-ups to specific email domains</span>
+        </div>
+        <div className="form-group" style={{ maxWidth: 520 }}>
+          <label htmlFor="allowed-domains">Allowed email domains</label>
+          <input
+            id="allowed-domains"
+            value={domainsInput}
+            onChange={(e) => setDomainsInput(e.target.value)}
+            placeholder="acme.com, acme.io"
+          />
+          <p className="help-note" style={{ marginTop: 6 }}>
+            Leave empty to allow any email domain. Comma-separated. New sign-ups via invite or public signup must match one of these domains.
+          </p>
+        </div>
+        <button onClick={saveDomains} disabled={domainsSaving} className="btn">
+          {domainsSaving ? "Saving" : "Save"}
+        </button>
+        {domainsError && <div className="form-error" style={{ marginTop: 10 }}>{domainsError}</div>}
+        {domainsMessage && (
+          <div className="mono" style={{ fontSize: 11, color: "var(--mute)", marginTop: 10, letterSpacing: "0.1em" }}>
+            {domainsMessage.toUpperCase()}
           </div>
         )}
       </section>
-
-      {/* "Plan tiers" tier-picker dropdown removed — the daemon now reads
-          each user's tier directly from /api/oauth/profile every 5 min
-          and the server upserts memberships.plan_tier on receipt. Manual
-          override is still possible by writing the column directly if a
-          user has a custom plan that profile doesn't expose. */}
 
       <section className="settings-section">
         <div className="subsection-head">
