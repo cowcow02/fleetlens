@@ -108,6 +108,17 @@ export {
   clearTeamConfig,
 } from "./team-config.js";
 
+export {
+  type DailyRollup,
+  type WireUsageWindow,
+  type WireExtraUsage,
+  type WireUsageSnapshot,
+  type WireCyclePeak,
+  type WireCyclePeaks,
+  type IngestPayload,
+  type LastPushRecord,
+} from "./team-wire.js";
+
 /* ================================================================= */
 /*  State directory                                                  */
 /* ================================================================= */

@@ -1,16 +1,10 @@
 import { writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { cclensHome } from "@claude-lens/parser/fs";
-import type { IngestPayload } from "./push.js";
+import { cclensHome, type IngestPayload, type LastPushRecord } from "@claude-lens/parser/fs";
+
+export type { LastPushRecord };
 
 const LAST_PUSH_FILE = "team-last-push.json";
-
-export type LastPushRecord = {
-  pushedAt: string;
-  ok: boolean;
-  payload: IngestPayload;
-  error?: string;
-};
 
 function write(record: LastPushRecord, dir?: string): void {
   const d = dir ?? cclensHome();

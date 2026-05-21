@@ -1,30 +1,13 @@
 import "server-only";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { cclensHome, readTeamConfig, type TeamConfig } from "@claude-lens/parser/fs";
-
-type IngestPayload = {
-  ingestId: string;
-  observedAt: string;
-  dailyRollup?: {
-    day: string;
-    agentTimeMs: number;
-    sessions: number;
-    toolCalls: number;
-    turns: number;
-    tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
-  };
-  usageSnapshot?: unknown;
-  planTier?: string;
-  cyclePeaks?: unknown;
-};
-
-type LastPushRecord = {
-  pushedAt: string;
-  ok: boolean;
-  payload: IngestPayload;
-  error?: string;
-};
+import {
+  cclensHome,
+  readTeamConfig,
+  type TeamConfig,
+  type IngestPayload,
+  type LastPushRecord,
+} from "@claude-lens/parser/fs";
 
 export type TeamConnection =
   | { paired: false }
