@@ -62,34 +62,41 @@ export async function runTeamSync(
     const collectedCommands: ServerCommand[] = [];
 
     const dispatchAndReport = async (): Promise<void> => {
-      if (collectedCommands.length === 0) return;
-      const results: CommandResult[] = [];
-      for (const cmd of collectedCommands) {
-        if (inFlightCommands.has(cmd.id)) continue;
-        inFlightCommands.add(cmd.id);
-        try {
-          const result = await dispatchCommand(cmd, config, log);
-          results.push(result);
-        } finally {
-          inFlightCommands.delete(cmd.id);
+      try {
+        if (collectedCommands.length === 0) return;
+        const results: CommandResult[] = [];
+        for (const cmd of collectedCommands) {
+          if (inFlightCommands.has(cmd.id)) continue;
+          inFlightCommands.add(cmd.id);
+          try {
+            const result = await dispatchCommand(cmd, config, log);
+            results.push(result);
+          } finally {
+            inFlightCommands.delete(cmd.id);
+          }
         }
-      }
-      if (results.length === 0) return;
+        if (results.length === 0) return;
 
-      // Bare-results push: no rollup/snapshot/tier/cyclePeaks, just commandResults
-      // so the server can mark the corresponding rows complete. Failure here is
-      // non-fatal — the server will re-deliver on the next sync via the same
-      // pending-commands query.
-      const resultsPayload: IngestPayload = {
-        ingestId: randomUUID(),
-        observedAt: new Date().toISOString(),
-        commandResults: results,
-      };
-      const r = await pushToTeamServer(config, resultsPayload);
-      if (!r.ok) {
-        log("warn", `team commandResults push failed (${r.status}); will retry on next sync`);
-      } else {
-        log("info", `team commandResults push ok: ${results.length} result${results.length === 1 ? "" : "s"}`);
+        // Bare-results push: no rollup/snapshot/tier/cyclePeaks, just commandResults
+        // so the server can mark the corresponding rows complete. Failure here is
+        // non-fatal — the server will re-deliver on the next sync via the same
+        // pending-commands query.
+        const resultsPayload: IngestPayload = {
+          ingestId: randomUUID(),
+          observedAt: new Date().toISOString(),
+          commandResults: results,
+        };
+        const r = await pushToTeamServer(config, resultsPayload);
+        if (!r.ok) {
+          log("warn", `team commandResults push failed (${r.status}); will retry on next sync`);
+        } else {
+          log("info", `team commandResults push ok: ${results.length} result${results.length === 1 ? "" : "s"}`);
+        }
+      } catch (err) {
+        // Dispatcher errors must not reverse the main sync outcome. The server
+        // re-delivers pending commands on the next sync, and any partially-pushed
+        // backfill is idempotent on the server side (daily_rollups upsert).
+        log("warn", `team command dispatch error: ${(err as Error).message}`);
       }
     };
 

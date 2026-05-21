@@ -521,6 +521,48 @@ describe("runTeamSync", () => {
     expect(parsedBody.commandResults[0].summary).toBeDefined();
   });
 
+  it("dispatcher push failure does not reverse the main sync outcome", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    const { dequeuePayloads } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([]);
+
+    // First call (regular per-rollup push) succeeds and delivers a command.
+    // Second call (dispatcher's internal backfill push) REJECTS, simulating a
+    // fetch timeout / network error. Any subsequent calls succeed.
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          commands: [
+            { id: "cmd_fail", type: "backfill-activity", params: { days: 1 } },
+          ],
+        }),
+      } as Response)
+      .mockRejectedValueOnce(new Error("ETIMEDOUT"))
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync();
+
+    // The regular per-rollup push succeeded BEFORE the dispatcher failed.
+    // The outer try/catch must not have swallowed the throw and reversed the
+    // outcome into an error result.
+    expect(result.paired).toBe(true);
+    expect(result.error).toBeUndefined();
+    expect(result.pushed).toBeGreaterThan(0);
+  });
+
   it("persists usage-history high-water after successful backfill", async () => {
     const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
