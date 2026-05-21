@@ -4,6 +4,20 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.8.5] — 2026-05-21
+
+### Changed
+- **`/team/<slug>/groups` is now self-maintainable.** The page absorbed everything from the old admin-only `/team/<slug>/settings/groups` (which is removed): create new groups, rename, delete, add/remove members, toggle the group-manager flag. The Groups link in `/settings` now points at `/groups` itself.
+- **Editorial redesign of the Groups page.** GROUP / NN eyebrow, italic-serif group names that are themselves links to the roster, slug pill, italic-numeral member/manager counts, prominent terracotta "Open roster →" CTA per card, `•••` overflow menu (Rename / Delete) instead of equal-weight buttons. Sidebar order changed to Roster / Plan / Groups / Settings.
+- **Create new group is a modal.** A `+ Add new group` button in the top-right of `/groups` opens a Compose modal: display name, slug (auto-derived from name until edited), and an optional searchable multi-pick of members to place at creation time. Each selected member gets a per-row ☆ Member / ★ Manager pill — tap to promote individuals.
+- **Invite-to-group is a modal.** Per-card `+ Invite someone` opens an inline invite modal with email + place-in-groups multi-select (source group locked-checked) + copyable result link. The old `/team/<slug>/groups/<g>/invite` page is kept for the non-admin manager path.
+- **Add members modal with per-row manager pick.** Per-card add affordance is a dashed `+ Add members · N available` button that opens a modal hosting the same picker + per-row ☆/★ toggle.
+- **Two-click confirm for removing a group member.** First × click morphs the button into a red `CONFIRM ×` pill with a soft pulse; auto-dismisses after 4 s. Group deletion still uses native confirm.
+- **Rolling 7/30/90-day roster windows.** Replaced the Monday-start week bucket with the same rolling `today + N−1 prior calendar days` cutoff used by the local dashboard, so 7d totals now match between the personal and team views. The team roster and group detail pages gain a `7D / 30D / 90D` toggle (`?range=` URL param, default `7d`); `/api/team/roster` honors the same parameter. Helpers renamed: `weekStartIso` → `rangeStartIso(days)`, `loadRoster(teamId, pool)` → `loadRoster(teamId, days, pool)`, `loadGroupRoster(groupId, pool)` → `loadGroupRoster(groupId, days, pool)`, `week_*` → `range_*`.
+
+### Fixed
+- **Back navigation no longer breaks Groups page interactivity.** Switched the in-app links on `/groups` from plain `<a href>` to `next/link` so the React tree stays hydrated when the user navigates `/groups → /groups/<slug> → back`. Previously the kebab menu and add-member control silently stopped responding until a hard refresh.
+
 ## [0.8.4] — 2026-05-21
 
 ### Added
