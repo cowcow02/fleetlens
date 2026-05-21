@@ -52,11 +52,14 @@ export const UsageHistoryPayload = z.object({
   planTier: PlanTierKeySchema.optional(),
 });
 
-// dailyRollup is optional so the daemon can push fresh tier / snapshot /
-// cycle-peaks updates on idle days when the user hasn't run a Claude Code
-// session (no new daily activity to roll up). The server skips the
-// daily_rollups upsert in that case but still applies the rest of the
-// payload — keeps live views fresh on weekends and breaks.
+// Every field except ingestId/observedAt is optional so the daemon can push
+// any subset on each tick:
+//   - idle day  →  { snapshot, cyclePeaks, planTier }
+//   - day rollover  →  { dailyRollup, snapshot, cyclePeaks, planTier }
+//   - history backfill  →  { snapshotHistory: [...] }
+// Server applies whichever fields are present. This consolidation replaces
+// the older /api/ingest/usage-history route, which is preserved as a thin
+// shim for older CLIs (see app/api/ingest/usage-history/route.ts).
 export const IngestPayload = z.object({
   ingestId: z.string(),
   observedAt: z.string().datetime(),
@@ -76,6 +79,11 @@ export const IngestPayload = z.object({
   usageSnapshot: UsageSnapshotSchema.optional(),
   planTier: PlanTierKeySchema.optional(),
   cyclePeaks: WireCyclePeaksSchema.optional(),
+  // Bulk historical snapshots from the daemon's local usage.jsonl. Idempotent
+  // at the row level via the (team_id, membership_id, captured_at) unique
+  // key, so this stream is processed independently of the ingestId dedup
+  // gate — retrying a batch with the same ingestId still applies new rows.
+  snapshotHistory: z.array(UsageSnapshotSchema).max(1000).optional(),
 }).passthrough();
 
 export const ClaimPayload = z.object({

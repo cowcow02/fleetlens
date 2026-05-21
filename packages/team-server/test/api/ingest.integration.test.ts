@@ -109,4 +109,36 @@ describe("POST /api/ingest/metrics", () => {
     const res = await POST(req);
     expect(res.status).toBe(400);
   });
+
+  it("accepts snapshotHistory and reports inserted/skipped counts", async () => {
+    const snap = (capturedAt: string) => ({
+      capturedAt,
+      fiveHour: { utilization: 30, resetsAt: "2026-05-21T07:10:00+00:00" },
+      sevenDay: { utilization: 40, resetsAt: "2026-05-25T12:00:00+00:00" },
+      sevenDayOpus: null,
+      sevenDaySonnet: null,
+      sevenDayOauthApps: null,
+      sevenDayCowork: null,
+      extraUsage: null,
+    });
+    const payload = {
+      ingestId: `ingest-${Math.random().toString(36).slice(2)}`,
+      observedAt: new Date().toISOString(),
+      snapshotHistory: [
+        snap("2026-05-21T01:00:00+00:00"),
+        snap("2026-05-21T01:05:00+00:00"),
+        snap("2026-05-21T01:10:00+00:00"),
+      ],
+    };
+    const req = makeReq(payload, `Bearer ${bearerToken}`);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.snapshotHistory).toEqual({ received: 3, inserted: 3, skipped: 0 });
+
+    // Re-send the same batch — captured_at unique key dedups all three rows.
+    const replay = await POST(makeReq({ ...payload, ingestId: `ingest-${Math.random().toString(36).slice(2)}` }, `Bearer ${bearerToken}`));
+    const replayBody = await replay.json();
+    expect(replayBody.snapshotHistory).toEqual({ received: 3, inserted: 0, skipped: 3 });
+  });
 });

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readSnapshots } from "../usage/storage.js";
 import type { UsageSnapshot } from "../usage/api.js";
 import { readTeamConfig, type TeamConfig } from "./config.js";
@@ -66,22 +67,34 @@ async function postBatch(
   snapshots: WireUsageSnapshot[],
   planTier?: string,
 ): Promise<{ inserted: number; skipped: number; status: number }> {
-  const res = await fetch(`${config.serverUrl}/api/ingest/usage-history`, {
+  // Consolidated daemon→server path: snapshots ride on /api/ingest/metrics
+  // under the optional `snapshotHistory` field, processed by processIngest.
+  // The older /api/ingest/usage-history route still exists as a shim for
+  // older CLIs but is no longer used by this code path.
+  const res = await fetch(`${config.serverUrl}/api/ingest/metrics`, {
     method: "POST",
     signal: AbortSignal.timeout(POST_TIMEOUT_MS),
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.bearerToken}`,
     },
-    body: JSON.stringify({ snapshots, ...(planTier ? { planTier } : {}) }),
+    body: JSON.stringify({
+      ingestId: `backfill-${randomUUID()}`,
+      observedAt: new Date().toISOString(),
+      snapshotHistory: snapshots,
+      ...(planTier ? { planTier } : {}),
+    }),
   });
   if (!res.ok) {
     return { inserted: 0, skipped: snapshots.length, status: res.status };
   }
-  const body = (await res.json().catch(() => ({}))) as { inserted?: number; skipped?: number };
+  const body = (await res.json().catch(() => ({}))) as {
+    snapshotHistory?: { inserted?: number; skipped?: number };
+  };
+  const h = body.snapshotHistory ?? {};
   return {
-    inserted: body.inserted ?? 0,
-    skipped: body.skipped ?? 0,
+    inserted: h.inserted ?? 0,
+    skipped: h.skipped ?? 0,
     status: res.status,
   };
 }
