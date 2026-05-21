@@ -4,6 +4,17 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.9.0] — 2026-05-21
+
+### Added
+- **Admin-issued commands to member daemons.** A new "Request 30-day backfill" button on the member detail page lets a team admin queue a command that re-pushes the member's last 30 days of daily activity rollups. The member's daemon picks it up on its next 5-minute sync, executes serially against the existing aggregate-push helpers (no transcripts, prompts, or project content can leak through), and reports completion back via the existing ingest channel. Server-side dedup: an identical pending command (same type + same params) returns the existing row instead of creating a duplicate. Capped at 10 pending commands per ingest response. Requires `fleetlens v0.11.0+` on the member side; older CLIs ignore the `commands` field in the response and the command stays pending until the member upgrades.
+
+### Changed
+- **`/api/ingest/metrics` response now carries pending member commands.** Additive — older daemons that don't look at `commands` simply don't dispatch anything. Symmetrically, `commandResults` is a new optional field on the incoming payload; the server marks the corresponding `member_commands` rows complete when it sees them.
+
+### Database
+- New migration `0005_member_commands.sql` — `member_commands` table with `(membership_id, completed_at)` partial index for pending lookup and `(team_id, issued_at DESC)` for any future admin history view. Cascades from `teams` and `memberships`; `issued_by_id` has no cascade (audit trail).
+
 ## [0.8.6] — 2026-05-21
 
 ### Added
