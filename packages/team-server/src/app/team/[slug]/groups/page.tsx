@@ -82,20 +82,10 @@ export default async function GroupsListPage({ params }: { params: Promise<{ slu
   );
 
   return (
-    <>
-      <div className="section-head">
-        <div>
-          <h1><em>Groups</em></h1>
-          <div className="kicker" style={{ marginTop: 8 }}>
-            All groups · {groups.length} {groups.length === 1 ? "group" : "groups"}
-          </div>
-        </div>
-      </div>
-      <GroupsManagerPanel
-        teamSlug={slug}
-        groups={membersByGroup}
-        allMembers={allMembers.rows}
-      />
-    </>
+    <GroupsManagerPanel
+      teamSlug={slug}
+      groups={membersByGroup}
+      allMembers={allMembers.rows}
+    />
   );
 }
