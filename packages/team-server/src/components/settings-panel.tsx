@@ -332,7 +332,7 @@ export function SettingsPanel({
             placeholder="acme.com, acme.io"
           />
           <p className="help-note" style={{ marginTop: 6 }}>
-            Leave empty to allow any email domain. Comma-separated. New sign-ups via invite or public signup must match one of these domains.
+            Leave empty to allow any email domain. Comma-separated. New sign-ups via invite link must match one of these domains.
           </p>
         </div>
         <button onClick={saveDomains} disabled={domainsSaving} className="btn">

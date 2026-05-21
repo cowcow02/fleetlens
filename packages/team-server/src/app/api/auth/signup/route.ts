@@ -65,10 +65,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Allowlist enforcement — applies to invite signups and any public-signup
-  // path that lands a user on a specific team. Skipped for the first-user
-  // bootstrap path (no team yet) and for cases where neither an invite nor a
-  // public team context exists.
+  // Allowlist enforcement — applies to invite signups (which carry a team id).
+  // Public signup without an invite has no team context yet, so the gate is
+  // skipped — that path is also rare (gated by allow_public_signup). The
+  // first-user bootstrap is exempt by definition.
   const enforceTeamId = invite?.team_id ?? null;
   if (enforceTeamId) {
     const domains = await getAllowedSignupDomains(enforceTeamId, pool);
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
       if (!domains.includes(emailDomain)) {
         return NextResponse.json(
-          { error: `Sign-up is restricted to: ${domains.map((d) => "@" + d).join(", ")}` },
+          { error: "Sign-up is restricted for this team. Contact a team admin if you believe this is an error." },
           { status: 403 },
         );
       }

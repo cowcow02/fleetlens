@@ -42,7 +42,6 @@ describe("signup domain allowlist", () => {
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.error).toMatch(/restricted/i);
-    expect(body.error).toMatch(/acme\.com/);
   });
 
   it("allows invite signup when email's domain matches the allowlist", async () => {

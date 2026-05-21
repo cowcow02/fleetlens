@@ -131,6 +131,35 @@ describe("multi-use invite links", () => {
     expect(a.status).toBe(201);
   });
 
+  it("plain member with zero managed groups sees no invites via GET list", async () => {
+    const admin = await createUserAccount("admin@acme.com", "adminpass1", "Admin", { isStaff: true }, pool);
+    const { team } = await createTeamWithAdmin("Acme", admin.id, pool);
+    const adminSess = await createSession(admin.id, pool);
+
+    // Admin creates a team-default (group_ids = []) admin-role share link.
+    const create = await adminInvitePOST(
+      authedReq(`http://localhost/api/team/invites?team=${team.slug}`, adminSess.cookieToken, {
+        method: "POST",
+        body: { role: "admin" },
+      }),
+    );
+    expect(create.status).toBe(201);
+
+    // A plain member joins the team via a member invite.
+    const memberInv = await createInvite(team.id, admin.id, { email: "plain@acme.com" }, pool);
+    const plain = await createUserAccount("plain@acme.com", "plainpass1", "Plain", {}, pool);
+    await redeemInvite(memberInv.token, plain.id, pool);
+    const plainSess = await createSession(plain.id, pool);
+
+    const listRes = await listGET(
+      authedReq(`http://localhost/api/team/${team.slug}/invites`, plainSess.cookieToken),
+      { params: Promise.resolve({ slug: team.slug }) },
+    );
+    expect(listRes.status).toBe(200);
+    const body = await listRes.json();
+    expect(body.invites).toEqual([]);
+  });
+
   it("single-use email-scoped invite still auto-revokes on first redemption", async () => {
     const admin = await createUserAccount("admin@acme.com", "adminpass1", "Admin", { isStaff: true }, pool);
     const { team } = await createTeamWithAdmin("Acme", admin.id, pool);

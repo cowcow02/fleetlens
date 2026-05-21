@@ -48,12 +48,18 @@ function isSubset(needle: string[], haystack: Set<string>): boolean {
   return true;
 }
 
+// Group managers see only invites whose every group_id is one they manage AND
+// which target at least one group. The empty-group_ids case (team-default
+// invite) is admin-only because such invites can carry the admin role and
+// their plaintext token is visible in the list response — exposing them to
+// any plain member would be a privilege-escalation primitive. Admin callers
+// bypass this filter entirely upstream.
 export function filterInvitesByManagerScope(
   invites: ActiveInviteRow[],
   managedGroupIds: string[],
 ): ActiveInviteRow[] {
   const managed = new Set(managedGroupIds);
-  return invites.filter((inv) => isSubset(inv.group_ids, managed));
+  return invites.filter((inv) => inv.group_ids.length > 0 && isSubset(inv.group_ids, managed));
 }
 
 export async function findActiveInviteByConfig(
