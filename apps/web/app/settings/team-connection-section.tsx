@@ -1,5 +1,6 @@
 import { readTeamConnection } from "@/lib/team-data";
 import { formatRelative } from "@/lib/format";
+import { ForceSyncButton } from "./force-sync-button";
 
 const HEALTH_COLORS = {
   green: "var(--af-success, #10b981)",
@@ -24,6 +25,7 @@ export function TeamConnectionSection() {
   if (!conn.paired) return null;
 
   const { team, member, lastPush, health } = conn;
+  const cliAvailable = Boolean(process.env.FLEETLENS_CLI_BIN);
 
   return (
     <section id="team" className="space-y-4">
@@ -89,6 +91,8 @@ export function TeamConnectionSection() {
           <div>{lastPush.error}</div>
         </div>
       )}
+
+      <ForceSyncButton cliAvailable={cliAvailable} />
 
       <div className="rounded border border-gray-200 p-4 text-sm space-y-2">
         <div className="font-medium">What does NOT leave your machine</div>
