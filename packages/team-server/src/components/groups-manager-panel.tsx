@@ -414,15 +414,21 @@ export function GroupsManagerPanel({
   );
 }
 
+type PickerSelection = { membershipId: string; isManager: boolean };
+
 function MemberPicker({
   members,
   selectedIds,
-  onChange,
+  managerIds,
+  onSelectedChange,
+  onManagerChange,
   emptyHint = "No members match your search.",
 }: {
   members: Member[];
   selectedIds: string[];
-  onChange: (ids: string[]) => void;
+  managerIds: string[];
+  onSelectedChange: (ids: string[]) => void;
+  onManagerChange: (ids: string[]) => void;
   emptyHint?: string;
 }) {
   const [search, setSearch] = useState("");
@@ -435,17 +441,50 @@ function MemberPicker({
     );
   }, [members, search]);
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const managerSet = useMemo(() => new Set(managerIds), [managerIds]);
 
-  function toggle(id: string) {
-    onChange(selectedSet.has(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+  const selectedRef = useRef(selectedIds);
+  const managerRef = useRef(managerIds);
+  selectedRef.current = selectedIds;
+  managerRef.current = managerIds;
+
+  function toggleSelected(id: string) {
+    const cur = selectedRef.current;
+    if (cur.includes(id)) {
+      const next = cur.filter((x) => x !== id);
+      selectedRef.current = next;
+      onSelectedChange(next);
+      if (managerRef.current.includes(id)) {
+        const m = managerRef.current.filter((x) => x !== id);
+        managerRef.current = m;
+        onManagerChange(m);
+      }
+    } else {
+      const next = [...cur, id];
+      selectedRef.current = next;
+      onSelectedChange(next);
+    }
   }
 
-  function selectAll() {
-    onChange(Array.from(new Set([...selectedIds, ...filtered.map((m) => m.id)])));
+  function toggleManager(id: string) {
+    if (!selectedRef.current.includes(id)) return;
+    const cur = managerRef.current;
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+    managerRef.current = next;
+    onManagerChange(next);
+  }
+
+  function selectAllShown() {
+    const next = Array.from(new Set([...selectedRef.current, ...filtered.map((m) => m.id)]));
+    selectedRef.current = next;
+    onSelectedChange(next);
   }
 
   function clearAll() {
-    onChange([]);
+    selectedRef.current = [];
+    managerRef.current = [];
+    onSelectedChange([]);
+    onManagerChange([]);
   }
 
   return (
@@ -462,29 +501,46 @@ function MemberPicker({
         ) : (
           filtered.map((m) => {
             const checked = selectedSet.has(m.id);
+            const isManager = managerSet.has(m.id);
             return (
-              <label className={`member-picker-row ${checked ? "checked" : ""}`} key={m.id}>
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(m.id)}
-                />
-                <span className="avatar">{initial(m)}</span>
-                <span className="name">{m.display_name ?? m.email ?? m.id}</span>
-                {m.display_name && m.email && <span className="email">{m.email}</span>}
-              </label>
+              <div className={`member-picker-row ${checked ? "checked" : ""}`} key={m.id}>
+                <label className="member-picker-row-main">
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggleSelected(m.id)}
+                  />
+                  <span className="avatar">{initial(m)}</span>
+                  <div className="identity">
+                    <span className="name">{m.display_name ?? m.email ?? m.id}</span>
+                    {m.display_name && m.email && <span className="email">{m.email}</span>}
+                  </div>
+                </label>
+                {checked && (
+                  <button
+                    type="button"
+                    className={`role-toggle ${isManager ? "active" : ""}`}
+                    onClick={() => toggleManager(m.id)}
+                    title={isManager ? "Demote to member" : "Promote to group manager"}
+                  >
+                    <span className="star">{isManager ? "★" : "☆"}</span>
+                    {isManager ? "Manager" : "Member"}
+                  </button>
+                )}
+              </div>
             );
           })
         )}
       </div>
       <div className="member-picker-footer">
         <span>
-          <span className="selected-count">{selectedIds.length}</span> selected ·{" "}
-          {filtered.length} of {members.length} shown
+          <span className="selected-count">{selectedIds.length}</span> selected
+          {managerIds.length > 0 && <> · {managerIds.length} as {managerIds.length === 1 ? "manager" : "managers"}</>}
+          {" · "}{filtered.length} of {members.length} shown
         </span>
         <span>
           {filtered.length > 0 && (
-            <button type="button" onClick={selectAll}>
+            <button type="button" onClick={selectAllShown}>
               Select shown
             </button>
           )}
@@ -505,15 +561,14 @@ function MemberPicker({
 async function addManyMembers(
   teamSlug: string,
   groupId: string,
-  membershipIds: string[],
-  asManager: boolean,
+  selections: PickerSelection[],
 ): Promise<{ ok: number; failed: { id: string; error: string }[] }> {
   const results = await Promise.all(
-    membershipIds.map(async (membershipId) => {
+    selections.map(async ({ membershipId, isManager }) => {
       const r = await fetch(`/api/team/${teamSlug}/groups/${groupId}/members`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ membershipId, isManager: asManager }),
+        body: JSON.stringify({ membershipId, isManager }),
       });
       if (!r.ok) return { id: membershipId, error: await readError(r, `HTTP ${r.status}`) };
       return { id: membershipId, error: null as string | null };
@@ -536,7 +591,7 @@ function ComposeModal({
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [asManagers, setAsManagers] = useState(false);
+  const [managerIds, setManagerIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -558,7 +613,12 @@ function ComposeModal({
     }
     const { group } = (await r.json()) as { group: { id: string } };
     if (selectedIds.length > 0) {
-      const { failed } = await addManyMembers(teamSlug, group.id, selectedIds, asManagers);
+      const managerSet = new Set(managerIds);
+      const selections: PickerSelection[] = selectedIds.map((id) => ({
+        membershipId: id,
+        isManager: managerSet.has(id),
+      }));
+      const { failed } = await addManyMembers(teamSlug, group.id, selections);
       if (failed.length > 0) {
         setBusy(false);
         setError(
@@ -577,7 +637,7 @@ function ComposeModal({
         <div className="modal-head">
           <h2>New <em>group</em></h2>
           <p className="lede">
-            Name the group, pick who&apos;s in it, publish.
+            Name the group, pick who&apos;s in it, choose managers, publish.
           </p>
         </div>
         <div className="modal-body">
@@ -608,22 +668,19 @@ function ComposeModal({
             <span className="hint">Lowercase letters, digits, hyphens. Used in URLs.</span>
           </div>
           <div className="modal-field">
-            <label>Place members <span className="hint" style={{ marginLeft: 6, fontStyle: "normal", letterSpacing: 0, fontFamily: "inherit", textTransform: "none" }}>optional</span></label>
+            <label>
+              Place members
+              <span className="hint" style={{ marginLeft: 6, fontStyle: "normal", letterSpacing: 0, fontFamily: "inherit", textTransform: "none" }}>
+                optional · tap ☆ on a selected row to promote them to manager
+              </span>
+            </label>
             <MemberPicker
               members={allMembers}
               selectedIds={selectedIds}
-              onChange={setSelectedIds}
+              managerIds={managerIds}
+              onSelectedChange={setSelectedIds}
+              onManagerChange={setManagerIds}
             />
-            {selectedIds.length > 0 && (
-              <label className="member-picker-toggle">
-                <input
-                  type="checkbox"
-                  checked={asManagers}
-                  onChange={(e) => setAsManagers(e.target.checked)}
-                />
-                Promote selected members to group managers
-              </label>
-            )}
           </div>
           {error && <div className="group-error">{error}</div>}
         </div>
@@ -633,7 +690,7 @@ function ComposeModal({
             {busy
               ? "Publishing…"
               : selectedIds.length > 0
-                ? `+ Publish group with ${selectedIds.length} member${selectedIds.length === 1 ? "" : "s"}`
+                ? `+ Publish with ${selectedIds.length} ${selectedIds.length === 1 ? "member" : "members"}${managerIds.length > 0 ? ` (${managerIds.length} mgr)` : ""}`
                 : "+ Publish group"}
           </button>
         </div>
@@ -654,7 +711,7 @@ function AddMembersModal({
   onClose: () => void;
 }) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [asManagers, setAsManagers] = useState(false);
+  const [managerIds, setManagerIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -662,7 +719,12 @@ function AddMembersModal({
     if (selectedIds.length === 0) return;
     setError(null);
     setBusy(true);
-    const { failed } = await addManyMembers(teamSlug, group.id, selectedIds, asManagers);
+    const managerSet = new Set(managerIds);
+    const selections: PickerSelection[] = selectedIds.map((id) => ({
+      membershipId: id,
+      isManager: managerSet.has(id),
+    }));
+    const { failed } = await addManyMembers(teamSlug, group.id, selections);
     if (failed.length > 0) {
       setBusy(false);
       setError(
@@ -680,7 +742,7 @@ function AddMembersModal({
         <div className="modal-head">
           <h2>Add to <em>{group.name}</em></h2>
           <p className="lede">
-            Pick one or more teammates to add. You can promote them to group managers in the same step.
+            Pick teammates to add. Tap the ☆ on a selected row to make them a group manager.
           </p>
         </div>
         <div className="modal-body">
@@ -689,23 +751,13 @@ function AddMembersModal({
               Every active team member is already in this group.
             </div>
           ) : (
-            <>
-              <MemberPicker
-                members={available}
-                selectedIds={selectedIds}
-                onChange={setSelectedIds}
-              />
-              {selectedIds.length > 0 && (
-                <label className="member-picker-toggle">
-                  <input
-                    type="checkbox"
-                    checked={asManagers}
-                    onChange={(e) => setAsManagers(e.target.checked)}
-                  />
-                  Promote selected as group managers
-                </label>
-              )}
-            </>
+            <MemberPicker
+              members={available}
+              selectedIds={selectedIds}
+              managerIds={managerIds}
+              onSelectedChange={setSelectedIds}
+              onManagerChange={setManagerIds}
+            />
           )}
           {error && <div className="group-error">{error}</div>}
         </div>
@@ -720,7 +772,7 @@ function AddMembersModal({
               ? "Adding…"
               : selectedIds.length === 0
                 ? "+ Add members"
-                : `+ Add ${selectedIds.length} ${selectedIds.length === 1 ? "member" : "members"}`}
+                : `+ Add ${selectedIds.length} ${selectedIds.length === 1 ? "member" : "members"}${managerIds.length > 0 ? ` (${managerIds.length} mgr)` : ""}`}
           </button>
         </div>
       </div>
