@@ -6,7 +6,7 @@ import {
   findUserByEmail,
 } from "../../../../lib/auth";
 import { verifyPassword } from "../../../../lib/password";
-import { createTeamWithAdmin } from "../../../../lib/teams";
+import { createTeamWithAdmin, getAllowedSignupDomains } from "../../../../lib/teams";
 import { lookupInvite, redeemInvite } from "../../../../lib/members";
 import { instanceState, setConfig } from "../../../../lib/server-config";
 import { rateLimit, clientKey } from "../../../../lib/rate-limit";
@@ -62,6 +62,24 @@ export async function POST(req: NextRequest) {
     if (!invite) return NextResponse.json({ error: "Invite is invalid or expired" }, { status: 400 });
     if (invite.email && invite.email !== email.toLowerCase()) {
       return NextResponse.json({ error: "Invite is scoped to a different email" }, { status: 400 });
+    }
+  }
+
+  // Allowlist enforcement — applies to invite signups and any public-signup
+  // path that lands a user on a specific team. Skipped for the first-user
+  // bootstrap path (no team yet) and for cases where neither an invite nor a
+  // public team context exists.
+  const enforceTeamId = invite?.team_id ?? null;
+  if (enforceTeamId) {
+    const domains = await getAllowedSignupDomains(enforceTeamId, pool);
+    if (domains.length > 0) {
+      const emailDomain = email.split("@")[1]?.toLowerCase() ?? "";
+      if (!domains.includes(emailDomain)) {
+        return NextResponse.json(
+          { error: `Sign-up is restricted to: ${domains.map((d) => "@" + d).join(", ")}` },
+          { status: 403 },
+        );
+      }
     }
   }
 
