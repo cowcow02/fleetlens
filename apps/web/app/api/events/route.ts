@@ -25,6 +25,7 @@ export const runtime = "nodejs";
 /** cclensHome()/usage.jsonl — written by the cclens daemon every 5 minutes. */
 const USAGE_LOG_DIR = cclensHome();
 const USAGE_LOG_FILE = "usage.jsonl";
+const TEAM_LAST_PUSH_FILE = "team-last-push.json";
 
 type LiveEvent =
   | {
@@ -35,6 +36,10 @@ type LiveEvent =
     }
   | {
       type: "usage-updated";
+      mtimeMs: number;
+    }
+  | {
+      type: "team-push";
       mtimeMs: number;
     }
   | { type: "heartbeat"; tsMs: number }
@@ -154,6 +159,35 @@ export async function GET(request: Request) {
         }
       }
 
+      // Watch ~/.cclens/team-last-push.json so the sidebar chip's
+      // "synced N ago" stays fresh after every daemon push.
+      let teamPushWatcher: ReturnType<typeof watch> | null = null;
+      if (existsSync(USAGE_LOG_DIR)) {
+        try {
+          teamPushWatcher = watch(USAGE_LOG_DIR, { persistent: false }, (_eventType, filename) => {
+            if (filename?.toString() !== TEAM_LAST_PUSH_FILE) return;
+            const key = "__team_push__";
+            const prev = pending.get(key);
+            if (prev) clearTimeout(prev);
+            pending.set(
+              key,
+              setTimeout(async () => {
+                pending.delete(key);
+                if (closed) return;
+                try {
+                  const stat = await fs.stat(path.join(USAGE_LOG_DIR, TEAM_LAST_PUSH_FILE));
+                  send({ type: "team-push", mtimeMs: stat.mtimeMs });
+                } catch {
+                  // file may have been deleted (team leave) — silently drop
+                }
+              }, DEBOUNCE_MS),
+            );
+          });
+        } catch (e) {
+          console.error("[events] team-push watch failed:", e);
+        }
+      }
+
       // Initial "ready" ping so the client knows the stream is live
       // (and can clear any reconnecting indicator).
       send({ type: "ready" });
@@ -177,6 +211,11 @@ export async function GET(request: Request) {
         }
         try {
           usageWatcher?.close();
+        } catch {
+          // ignore
+        }
+        try {
+          teamPushWatcher?.close();
         } catch {
           // ignore
         }
