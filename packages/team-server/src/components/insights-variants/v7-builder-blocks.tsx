@@ -44,20 +44,28 @@ export type DashboardBlock = {
   tier: BlockTier;
   source_version: string;
   render: (r: TeamInsightReport) => ReactNode;
-  // Defaults for the v7.2 grid layout. 12-column grid; h is in row-units (~30px each).
-  defaultW?: number; // 1–12 cols, defaults to 6
-  defaultH?: number; // row-units, defaults to 8
+  // Width in 4-col grid units (1=25%, 2=50%, 3=75%, 4=100%). Legacy 1-12 values
+  // are accepted and snapped down to the 4-col scale. Height is content-driven
+  // and ignored; the legacy `defaultH` field is kept for older block defs but
+  // does nothing — widgets always grow to fit their content.
+  defaultW?: number;
+  defaultH?: number;
   minW?: number;
   minH?: number;
 };
 
-export function defaultSizeFor(b: DashboardBlock): { w: number; h: number; minW: number; minH: number } {
-  return {
-    w: b.defaultW ?? 6,
-    h: b.defaultH ?? 8,
-    minW: b.minW ?? 3,
-    minH: b.minH ?? 3,
-  };
+function snapWidth(w: number): number {
+  if (w >= 12) return 4;
+  if (w >= 8) return 3;
+  if (w >= 5) return 2;
+  if (w >= 4) return 4;
+  if (w >= 3) return 3;
+  if (w >= 2) return 2;
+  return 1;
+}
+
+export function defaultWidthFor(b: DashboardBlock): number {
+  return snapWidth(b.defaultW ?? 2);
 }
 
 // ─── Small inline render helpers ─────────────────────────────────────────

@@ -4868,6 +4868,15 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   border-color: var(--danger);
   color: var(--danger);
 }
+.builder-block-control.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.builder-block-control.active:hover {
+  background: color-mix(in srgb, var(--ink) 90%, black);
+  color: var(--paper);
+}
 .builder-dashboard-block-body {
   /* host renderers — let blocks supply their own internal spacing */
 }
@@ -4891,37 +4900,63 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
 }
 .builder-footer-note a:hover { text-decoration: underline; }
 
-/* ─── v7.1 · sticky header + side sheet ───────────────────────────── */
+/* ─── v7.3 · floating actions toolbar + side sheet ─────────────────── */
 
-.builder-header {
+.variant-frame { position: relative; }
+.builder-floating-actions {
   position: sticky;
-  top: 0;
-  z-index: 40;
+  top: 16px;
+  z-index: 50;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
-  gap: 16px;
-  background: color-mix(in srgb, var(--paper) 96%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--rule);
-  padding: 14px 0;
-  margin-bottom: 18px;
+  gap: 10px;
+  margin: 0 0 8px;
+  pointer-events: none;
 }
-.builder-header-left { display: flex; flex-direction: column; gap: 2px; }
-.builder-header-title {
-  font-family: "Instrument Serif", serif;
-  font-size: 24px;
+.builder-floating-actions > * { pointer-events: auto; }
+.builder-export-error {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, var(--danger, var(--accent)) 12%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--danger, var(--accent)) 40%, transparent);
   color: var(--ink);
-  font-style: italic;
-}
-.builder-header-sub {
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
-  color: var(--mute);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+  cursor: pointer;
 }
-.builder-header-source { color: var(--ink-soft); }
+.builder-edit-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+.builder-edit-button:hover {
+  background: color-mix(in srgb, var(--accent) 6%, var(--paper));
+  border-color: var(--accent);
+}
+.builder-edit-button.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+/* No page-break overrides in the PDF view — let content flow naturally
+   across pages exactly as it would in normal scroll. */
 
 .builder-customize-button {
   display: inline-flex;
@@ -5189,69 +5224,29 @@ button.builder-action.danger:hover {
   border-color: var(--danger);
 }
 
-/* ─── v7.2 · grid widgets (react-grid-layout) ───────────────────────── */
+/* ─── v7.3 · CSS-grid widgets · fluid content height, printable ───────── */
 
 .builder-grid {
-  position: relative;
-  min-height: 200px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 8px;
+  grid-auto-flow: row dense;
+  column-gap: 14px;
+  row-gap: 14px;
+  align-items: start;
 }
-.builder-grid .react-grid-item {
+.builder-widget {
+  position: relative;
   background: var(--paper);
   border: 1px solid var(--rule);
   border-radius: 2px;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: border-color 0.15s;
+  break-inside: avoid;
 }
-.builder-grid .react-grid-item:hover {
+.builder-widget:hover {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--rule));
-}
-.builder-grid .react-grid-item.react-draggable-dragging {
-  z-index: 50;
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--ink) 18%, transparent);
-  border-color: var(--accent);
-  cursor: grabbing;
-}
-.builder-grid .react-grid-item.react-resizable-resizing {
-  z-index: 50;
-  box-shadow: 0 8px 32px color-mix(in srgb, var(--accent) 25%, transparent);
-  border-color: var(--accent);
-}
-.builder-grid .react-grid-placeholder {
-  background: color-mix(in srgb, var(--accent) 18%, transparent) !important;
-  border: 2px dashed var(--accent) !important;
-  border-radius: 2px;
-  opacity: 0.85;
-}
-.builder-grid .react-resizable-handle {
-  width: 18px;
-  height: 18px;
-  background-image: none;
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  cursor: se-resize;
-  z-index: 5;
-}
-.builder-grid .react-resizable-handle::after {
-  content: "";
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 10px;
-  height: 10px;
-  border-right: 2px solid var(--mute);
-  border-bottom: 2px solid var(--mute);
-}
-.builder-grid .react-grid-item:hover .react-resizable-handle::after {
-  border-color: var(--accent);
-}
-
-.builder-widget {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
 }
 .builder-widget-head {
   display: flex;
@@ -5261,14 +5256,19 @@ button.builder-action.danger:hover {
   padding: 10px 16px;
   border-bottom: 1px solid var(--rule-soft);
   background: color-mix(in srgb, var(--accent) 3%, var(--paper));
-  flex-shrink: 0;
 }
-.builder-widget-drag-handle {
-  cursor: grab;
-  user-select: none;
+.builder-editing .builder-widget {
+  outline: 1px dashed color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: -1px;
 }
-.builder-widget-drag-handle:active {
-  cursor: grabbing;
+.builder-editing .builder-widget-head {
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+}
+.builder-editing .builder-widget-drag-handle { cursor: grab; touch-action: none; }
+.builder-editing .builder-widget-drag-handle:active { cursor: grabbing; }
+.builder-widget.is-dragging {
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 22%, transparent);
+  border-color: var(--accent);
 }
 .builder-widget-titlewrap {
   display: flex;
@@ -5294,15 +5294,72 @@ button.builder-action.danger:hover {
 }
 .builder-widget-controls {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
 }
-.builder-widget-body {
-  flex: 1;
-  overflow: auto;
-  padding: 14px 16px 28px;
+.builder-width-badge {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 14%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  padding: 1px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
 }
-/* Adjust child block default margins inside widgets so the auto-sizing feels tight */
+.builder-resize-handle {
+  position: absolute;
+  top: 28px;
+  right: -8px;
+  bottom: 28px;
+  width: 16px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  touch-action: none;
+}
+.builder-resize-handle::before {
+  content: "";
+  width: 4px;
+  height: 44px;
+  background: color-mix(in srgb, var(--accent) 35%, var(--rule));
+  border-radius: 3px;
+  transition: background 0.12s, height 0.12s, width 0.12s;
+}
+.builder-resize-handle:hover::before,
+.builder-widget.is-resizing .builder-resize-handle::before {
+  background: var(--accent);
+  width: 6px;
+  height: 60px;
+}
+.builder-widget.is-resizing {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.builder-widget.is-resizing::after {
+  content: attr(data-width-label);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  padding: 12px 22px;
+  border-radius: 6px;
+  pointer-events: none;
+  letter-spacing: 0.04em;
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.builder-widget-body {
+  padding: 14px 16px 22px;
+}
 .builder-widget-body > section.combined-section:first-child {
   margin-top: 0;
   padding-top: 0;
@@ -5311,10 +5368,399 @@ button.builder-action.danger:hover {
 .builder-widget-body > section.combined-section + .combined-section {
   margin-top: 16px;
 }
+@media (max-width: 900px) {
+  /* Narrow pages (A4 portrait, mobile): collapse to a single column and drop
+     the masonry row-track trick. Widgets render in DOM order, full width, with
+     heights determined by their content. This is what a printable A4 report
+     needs — predictable single-column flow, no horizontal packing surprises. */
+  .builder-grid {
+    grid-template-columns: 1fr;
+    grid-auto-rows: auto;
+    grid-auto-flow: row;
+  }
+  .builder-grid > .builder-widget,
+  .builder-grid > .builder-extra {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+  }
+}
 
-/* Drag mode indicator on grid root */
-.builder-grid.dragging-active .react-grid-item:not(.react-draggable-dragging) {
-  opacity: 0.92;
+/* ─── v7.6 · preview / archive banner ─────────────────────────────── */
+
+.preview-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  margin-bottom: 18px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--rule));
+  border-radius: 4px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+  flex-wrap: wrap;
+}
+.preview-banner-tag {
+  display: inline-flex;
+  align-items: center;
+  background: var(--accent);
+  color: var(--paper);
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.preview-banner-text {
+  flex: 1;
+  min-width: 0;
+}
+.preview-banner-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+/* ─── v7.6 · report header (shown on /team/[slug]/insights/preview and /report/[slug]) */
+
+.report-header {
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 12px;
+  margin-bottom: 20px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 18px;
+  align-items: baseline;
+}
+.report-header-eyebrow {
+  grid-column: 1 / -1;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 2px;
+}
+.report-header-team {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 30px;
+  line-height: 1.1;
+  color: var(--ink);
+  margin: 0;
+}
+.report-header-period {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+  justify-self: end;
+  text-align: right;
+}
+.report-header-stats {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 18px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.02em;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.report-header-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.report-header-stat-num {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--accent);
+  line-height: 1;
+}
+.report-header-stat-label {
+  color: var(--ink-soft);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+.report-header-roster {
+  grid-column: 1 / -1;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.02em;
+  margin-top: 2px;
+}
+.report-header-generated {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+  justify-self: end;
+}
+@media (max-width: 720px) {
+  .report-header { grid-template-columns: 1fr; }
+  .report-header-period, .report-header-generated { justify-self: start; text-align: left; }
+}
+
+/* In PDF mode, a divider forces a page break (its purpose IS a section break,
+   so paginate the report on each one). The divider line itself remains
+   visible above the new page in case the reader wants the marker. */
+.builder-pdf .builder-divider {
+  break-after: page;
+  page-break-after: always;
+}
+
+/* ─── v7.5 · printable report layout ────────────────────────────────── */
+
+.report-shell {
+  background: var(--bg);
+  min-height: 100vh;
+  /* Padding doubles as the printable page margin — Playwright's PDF margins
+     are set to 0 so the cream background extends to every page edge. */
+  padding: 64px 68px 80px;
+  display: block;
+  overflow: visible;
+  scrollbar-width: none;
+}
+.report-shell::-webkit-scrollbar { display: none; }
+.report-shell html,
+.report-shell body { scrollbar-width: none; }
+html:has(.report-shell)::-webkit-scrollbar,
+html:has(.report-shell) body::-webkit-scrollbar { display: none; }
+.report-masthead {
+  padding: 0 0 18px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--rule);
+}
+.report-masthead-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.report-masthead-brand {
+  font-family: "Instrument Serif", serif;
+  font-size: 32px;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.report-masthead-brand em {
+  font-style: italic;
+  color: var(--accent);
+}
+.report-masthead-meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.report-dot { color: var(--mute); }
+.report-masthead-footer {
+  margin-top: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
+}
+
+/* ─── v7.4 · structural extras (divider / title / text) ──────────────── */
+
+.builder-divider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 14px 0;
+  cursor: default;
+}
+.builder-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+.builder-editing .builder-divider {
+  cursor: grab;
+  padding: 18px 0;
+}
+.builder-editing .builder-divider:active { cursor: grabbing; }
+.builder-editing .builder-divider-line {
+  height: 2px;
+  background: color-mix(in srgb, var(--accent) 50%, var(--rule));
+}
+.builder-divider.is-dragging .builder-divider-line {
+  background: var(--accent);
+}
+.builder-divider-remove {
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.builder-extra {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  break-inside: avoid;
+}
+.builder-extra-title {
+  padding: 32px 4px 14px;
+}
+.builder-extra-text {
+  padding: 12px 4px 18px;
+}
+.builder-extra-title-static {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 32px;
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.15;
+}
+.builder-extra-text-static {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin: 0;
+}
+.builder-extra-input {
+  width: 100%;
+  font-family: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 4px;
+  padding: 6px 10px;
+  outline: none;
+}
+.builder-extra-input:focus {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper));
+}
+.builder-extra-title-input {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 32px;
+  line-height: 1.15;
+  padding: 4px 12px;
+}
+.builder-extra-text-input {
+  font-family: "Inter", sans-serif;
+  font-size: 14px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  resize: vertical;
+  min-height: 56px;
+}
+.builder-extra-remove {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 2;
+}
+.builder-editing .builder-extra {
+  cursor: grab;
+}
+.builder-editing .builder-extra:active { cursor: grabbing; }
+
+.builder-sheet-quickactions-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--rule);
+  margin: 0 6px;
+}
+
+/* Inline "+ insert" buttons + popover (top/bottom) */
+.builder-insert {
+  position: absolute;
+  right: 18px;
+  z-index: 8;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.builder-insert-top { top: -14px; }
+.builder-insert-bottom { bottom: -14px; }
+.builder-widget:hover > .builder-insert,
+.builder-extra:hover > .builder-insert,
+.builder-divider:hover > .builder-insert,
+.builder-insert.open,
+.builder-insert:focus-within {
+  opacity: 1;
+}
+.builder-insert-trigger {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: var(--paper);
+  color: var(--accent);
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.builder-insert-trigger:hover {
+  background: var(--accent);
+  color: var(--paper);
+}
+.builder-insert-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  padding: 4px;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.builder-insert-menu button {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: transparent;
+  border: none;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.builder-insert-menu button:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--paper));
+  color: var(--ink);
+}
+.builder-insert-menu .builder-insert-cancel {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--mute);
+}
+.builder-insert-menu .builder-insert-cancel:hover {
+  background: color-mix(in srgb, var(--danger, var(--accent)) 15%, var(--paper));
+  color: var(--ink);
 }
 
 /* ─── v6 · Ticket flow lifecycle spine ─────────────────────────────────── */
