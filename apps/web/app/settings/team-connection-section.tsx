@@ -45,14 +45,9 @@ export function TeamConnectionSection() {
 
       {lastPush.kind === "ok" && (
         <div className="rounded border border-gray-200 p-4 space-y-3 text-sm">
-          <div>
-            <div className="text-xs uppercase tracking-wide text-gray-500">
-              Last push
-              {lastPush.payload.dailyRollup ? ` — ${lastPush.payload.dailyRollup.day}` : ""}
-            </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Counts and totals only. No content, names, or payloads.
-            </div>
+          <div className="text-xs uppercase tracking-wide text-gray-500">
+            Last push
+            {lastPush.payload.dailyRollup ? ` — ${lastPush.payload.dailyRollup.day}` : ""}
           </div>
 
           {lastPush.payload.dailyRollup && (
