@@ -32,7 +32,9 @@ export async function POST(req: NextRequest) {
   const role: "admin" | "member" = body?.role === "admin" ? "admin" : "member";
   const email = typeof body?.email === "string" ? body.email : undefined;
   const resolvedGroupIds = Array.isArray(groupIds) ? groupIds : [];
-  const expiresInDays = typeof body?.expiresInDays === "number" ? body.expiresInDays : 90;
+  const expiresInDays = typeof body?.expiresInDays === "number"
+    ? Math.min(365, Math.max(1, Math.floor(body.expiresInDays)))
+    : 90;
   const label = typeof body?.label === "string" && body.label.trim() ? body.label.trim() : undefined;
 
   // Dedup only applies to multi-use (no-email) share links. Single-use

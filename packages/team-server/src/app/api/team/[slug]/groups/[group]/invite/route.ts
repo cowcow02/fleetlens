@@ -40,7 +40,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
 
   const email = typeof body.email === "string" ? body.email : undefined;
   const label = typeof body.label === "string" && body.label.trim() ? body.label.trim() : undefined;
-  const expiresInDays = typeof body.expiresInDays === "number" ? body.expiresInDays : 90;
+  const expiresInDays = typeof body.expiresInDays === "number"
+    ? Math.min(365, Math.max(1, Math.floor(body.expiresInDays)))
+    : 90;
 
   if (!email) {
     const existing = await findActiveInviteByConfig(
