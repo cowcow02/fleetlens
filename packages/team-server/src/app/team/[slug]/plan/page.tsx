@@ -228,7 +228,7 @@ export default async function PlanPage({
                       )}
                     </td>
                     <td>
-                      <CyclePeaksStrip cycles={cycles} maxBars={4} />
+                      <CyclePeaksStrip cycles={cycles} maxBars={4} includeCurrent={false} />
                     </td>
                   </tr>
                 );

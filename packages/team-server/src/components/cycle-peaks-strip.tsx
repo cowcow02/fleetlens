@@ -16,22 +16,23 @@ const SEVEN_DAYS_MS = 7 * 24 * 3_600_000;
 export function CyclePeaksStrip({
   cycles,
   maxBars = 4,
+  includeCurrent = true,
 }: {
   cycles: MembershipCyclePeak[];
   maxBars?: number;
+  includeCurrent?: boolean;
 }) {
-  // Only show completed cycles on the plan page's Recent cycles trend strip
-  const completed = cycles.filter((c) => !c.isCurrent);
+  const filtered = includeCurrent ? cycles : cycles.filter((c) => !c.isCurrent);
 
-  if (completed.length === 0) {
+  if (filtered.length === 0) {
     return (
       <span style={{ color: "var(--mute)", fontSize: 11, fontStyle: "italic" }}>
-        no completed cycles yet
+        {includeCurrent ? "no cycles yet" : "no completed cycles yet"}
       </span>
     );
   }
 
-  const visible = completed.slice(-maxBars);
+  const visible = filtered.slice(-maxBars);
 
   // Pad left with nulls to ensure a consistent, right-aligned maxBars grid structure
   const padded = [

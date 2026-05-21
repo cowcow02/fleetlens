@@ -57,8 +57,8 @@ export function MiniBurndownChart({ cycle }: { cycle: CurrentCycleData }) {
       width={width}
       height={height}
       style={{ display: "block", overflow: "visible" }}
-      title={`${(100 - latest.remaining).toFixed(0)}% peak · ${pace.label}`}
     >
+      <title>{`${(100 - latest.remaining).toFixed(0)}% peak · ${pace.label}`}</title>
       {/* Ideal diagonal — start of cycle (100% remaining) → reset (0%) */}
       <line
         x1={xScale(cycle.startMs)}
