@@ -440,4 +440,27 @@ describe("signup endpoint — existing user redeems an invite", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  it("existing user can redeem a multi-use share link (email IS NULL)", async () => {
+    const { admin, team } = await seedAdminAndTeam();
+    const bob = await createUserAccount("bob@acme.com", "bobpass1234", "Bob", {}, pool);
+
+    // No email on the invite → multi-use share link.
+    const share = await createInvite(team.id, admin.id, { role: "member" }, pool);
+
+    const req = makeSignupReq({
+      email: "bob@acme.com",
+      password: "bobpass1234",
+      inviteToken: share.token,
+    });
+    const res = await signupPOST(req);
+    expect(res.status).toBe(201);
+
+    // The link remains active for the next user.
+    const row = await pool.query<{ revoked_at: string | null }>(
+      "SELECT revoked_at FROM invites WHERE id = $1",
+      [share.inviteId],
+    );
+    expect(row.rows[0].revoked_at).toBeNull();
+  });
 });
