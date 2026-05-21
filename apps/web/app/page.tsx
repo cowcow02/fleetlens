@@ -19,8 +19,10 @@ import { RecentDaysPanel } from "@/components/recent-days-panel";
 import type { DaySummary } from "@/components/heatmap";
 import { cutoffMs, parseRange } from "@/lib/date-range";
 import { listSessions } from "@/lib/data";
+import { readTeamConnection } from "@/lib/team-data";
 import { buildEntriesIndex, listCachedDayDigests } from "@/lib/entries-index";
 import { formatDuration, formatTokens, formatRelative, prettyProjectName } from "@/lib/format";
+import { TeamWelcomeBanner } from "@/components/team-welcome-banner";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +51,7 @@ export default async function DashboardHome({
     listCachedDayDigests(),
   ]);
   const sessions = filterByRange(allSessions, cutoff);
+  const conn = readTeamConnection();
 
   // Heatmap day summaries — outcome from index, headline + helpfulness from cached digests
   const daySummaries = new Map<string, DaySummary>();
@@ -97,6 +100,9 @@ export default async function DashboardHome({
         padding: "32px 40px",
       }}
     >
+      {conn.paired && (
+        <TeamWelcomeBanner teamName={conn.team.name} pairedAt={conn.member.pairedAt} />
+      )}
       <header
         style={{
           display: "flex",
