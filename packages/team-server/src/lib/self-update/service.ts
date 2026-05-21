@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import semver from "semver";
 import { getPool } from "../../db/pool";
 import { getLatestVersion } from "./version-detector";
 import { getChangelog, getMigrationsManifest, type MigrationInfo } from "./changelog-fetcher";
@@ -11,6 +12,13 @@ export interface UpdateStatus {
   lastCheckedAt: Date | null;
 }
 
+// "update available" iff latest > current, ignoring dev sentinel.
+function isUpdateAvailable(currentVersion: string, latestVersion: string | null): boolean {
+  if (!latestVersion) return false;
+  if (currentVersion === "0.0.0-dev") return false;
+  return semver.gt(latestVersion, currentVersion);
+}
+
 export async function getStatus(): Promise<UpdateStatus> {
   const pool = getPool();
   const { rows } = await pool.query(
@@ -20,10 +28,16 @@ export async function getStatus(): Promise<UpdateStatus> {
   if (!rows.length) {
     return { currentVersion, latestVersion: null, updateAvailable: false, lastCheckedAt: null };
   }
+  const latestVersion: string | null = rows[0].latest_version;
+  // Recompute against the *live* current version. The cached `update_available`
+  // column was written when checkNow last ran and goes stale the moment the
+  // image is upgraded — until the next checkNow the row still says "true" with
+  // latest_version equal to the new current. Trust the versions, not the cached
+  // boolean.
   return {
     currentVersion,
-    latestVersion: rows[0].latest_version,
-    updateAvailable: rows[0].update_available,
+    latestVersion,
+    updateAvailable: isUpdateAvailable(currentVersion, latestVersion),
     lastCheckedAt: rows[0].last_checked_at,
   };
 }
@@ -32,11 +46,7 @@ export async function checkNow(): Promise<UpdateStatus> {
   const pool = getPool();
   const currentVersion = process.env.APP_VERSION ?? "0.0.0-dev";
   const latestVersion = await getLatestVersion();
-  // "update available" iff latest > current, ignoring dev sentinel.
-  const updateAvailable =
-    !!latestVersion &&
-    currentVersion !== "0.0.0-dev" &&
-    (await import("semver")).gt(latestVersion, currentVersion);
+  const updateAvailable = isUpdateAvailable(currentVersion, latestVersion);
   await pool.query(
     `INSERT INTO update_check_cache (key, current_version, latest_version, update_available, last_checked_at)
      VALUES ('global', $1, $2, $3, now())
