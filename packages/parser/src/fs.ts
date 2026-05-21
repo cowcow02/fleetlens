@@ -118,6 +118,9 @@ export {
   type WireCyclePeaks,
   type IngestPayload,
   type LastPushRecord,
+  type ServerCommand,
+  type CommandResult,
+  type IngestResponse,
 } from "./team-wire.js";
 
 /* ================================================================= */
