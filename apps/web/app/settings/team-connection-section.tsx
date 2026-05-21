@@ -44,32 +44,59 @@ export function TeamConnectionSection() {
       </dl>
 
       {lastPush.kind === "ok" && (
-        <div className="rounded border border-gray-200 p-4 space-y-2 text-sm">
-          <div className="text-xs uppercase tracking-wide text-gray-500">Last push</div>
+        <div className="rounded border border-gray-200 p-4 space-y-3 text-sm">
+          <div className="text-xs uppercase tracking-wide text-gray-500">
+            Last push
+            {lastPush.payload.dailyRollup ? ` — ${lastPush.payload.dailyRollup.day}` : ""}
+          </div>
+
           {lastPush.payload.dailyRollup && (
-            <div>
-              <strong>{lastPush.payload.dailyRollup.day}:</strong>{" "}
-              {formatDuration(lastPush.payload.dailyRollup.agentTimeMs)} agent time ·{" "}
-              {lastPush.payload.dailyRollup.sessions} sessions ·{" "}
-              {lastPush.payload.dailyRollup.toolCalls} tool calls ·{" "}
-              {lastPush.payload.dailyRollup.turns} turns ·{" "}
-              {formatTokens(
-                lastPush.payload.dailyRollup.tokens.input +
-                  lastPush.payload.dailyRollup.tokens.output +
-                  lastPush.payload.dailyRollup.tokens.cacheRead +
-                  lastPush.payload.dailyRollup.tokens.cacheWrite,
-              )}{" "}
-              tokens
-            </div>
+            <dl className="grid grid-cols-[10rem_1fr] gap-y-1 text-sm text-gray-700">
+              <dt className="text-gray-500">Agent time</dt>
+              <dd>{formatDuration(lastPush.payload.dailyRollup.agentTimeMs)}</dd>
+              <dt className="text-gray-500">Session count</dt>
+              <dd>{lastPush.payload.dailyRollup.sessions}</dd>
+              <dt className="text-gray-500">Tool call count</dt>
+              <dd>{lastPush.payload.dailyRollup.toolCalls}</dd>
+              <dt className="text-gray-500">Turn count</dt>
+              <dd>{lastPush.payload.dailyRollup.turns}</dd>
+              <dt className="text-gray-500">Token total</dt>
+              <dd>
+                {formatTokens(
+                  lastPush.payload.dailyRollup.tokens.input +
+                    lastPush.payload.dailyRollup.tokens.output +
+                    lastPush.payload.dailyRollup.tokens.cacheRead +
+                    lastPush.payload.dailyRollup.tokens.cacheWrite,
+                )}
+              </dd>
+              {lastPush.payload.planTier && (
+                <>
+                  <dt className="text-gray-500">Plan tier</dt>
+                  <dd>{lastPush.payload.planTier}</dd>
+                </>
+              )}
+            </dl>
           )}
-          {lastPush.payload.planTier && (
-            <div>
-              <strong>Plan tier:</strong> {lastPush.payload.planTier}
-            </div>
+
+          {!lastPush.payload.dailyRollup && lastPush.payload.planTier && (
+            <dl className="grid grid-cols-[10rem_1fr] gap-y-1 text-sm text-gray-700">
+              <dt className="text-gray-500">Plan tier</dt>
+              <dd>{lastPush.payload.planTier}</dd>
+            </dl>
           )}
+
           {!lastPush.payload.dailyRollup && !lastPush.payload.planTier && (
             <div className="text-gray-500">Live utilization snapshot only — no new daily activity.</div>
           )}
+
+          <details className="text-xs">
+            <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+              Show raw JSON payload
+            </summary>
+            <pre className="mt-2 rounded border border-gray-200 bg-gray-50 p-3 font-mono text-[11px] whitespace-pre-wrap overflow-x-auto">
+              {JSON.stringify(lastPush.payload, null, 2)}
+            </pre>
+          </details>
         </div>
       )}
 
