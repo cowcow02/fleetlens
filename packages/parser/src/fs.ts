@@ -101,6 +101,13 @@ export type {
   GetGeminiOptions,
 } from "./gemini.js";
 
+export {
+  type TeamConfig,
+  readTeamConfig,
+  writeTeamConfig,
+  clearTeamConfig,
+} from "./team-config.js";
+
 /* ================================================================= */
 /*  State directory                                                  */
 /* ================================================================= */
