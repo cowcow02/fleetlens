@@ -85,14 +85,17 @@ describe("getStatus", () => {
     expect(status.updateAvailable).toBe(false);
   });
 
-  it("recomputes updateAvailable=false when the cached latest is older than the live current version", async () => {
+  it("recomputes updateAvailable=false when the live current has leapfrogged the cached latest", async () => {
+    // Operator jumped 0.4.0 → 0.4.2 in one move; the cached row still thinks
+    // 0.4.1 is the target. updateAvailable must clear, not show "downgrade".
     const pool = getPool();
     await pool.query(
       `INSERT INTO update_check_cache (key, current_version, latest_version, update_available, last_checked_at)
        VALUES ('global', $1, $2, $3, now())`,
-      ["0.4.1", "0.4.1", true],
+      ["0.4.0", "0.4.1", true],
     );
     const status = await getStatus();
+    expect(status.latestVersion).toBe("0.4.1");
     expect(status.updateAvailable).toBe(false);
   });
 
