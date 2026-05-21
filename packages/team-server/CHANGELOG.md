@@ -4,6 +4,14 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.8.4] — 2026-05-21
+
+### Added
+- **Consolidated daemon→server ingest path.** `/api/ingest/metrics` now accepts an optional `snapshotHistory: WireUsageSnapshot[]` field, processed by the same `processIngest` handler as the rest of the daemon payload. The older `/api/ingest/usage-history` route remains as a thin shim around the consolidated handler for older CLIs. New CLIs (`fleetlens@0.10.5`+) route their backfill batches through `/api/ingest/metrics`, so deployments fronted by a path-allowlist proxy (IAP, WAF, Cloud Run / GLB path matcher) no longer need a separate allowlist entry for backfill — anything the daemon ever wants to forward rides on the one already-allowlisted path. Past incident: backfill silently 401'd at the proxy layer for ~3 weeks on one deployment because the new route was never added to the bypass list; the user-visible symptom was a "COLLECTING DATA" badge on the plan-utilization panel that never cleared.
+
+### Changed
+- **Snapshot-history writes are one round-trip per HTTP batch instead of 500.** `processIngest` now uses a single multi-row `INSERT ... ON CONFLICT DO NOTHING` for the snapshot batch (with intra-batch dedup on `captured_at` to sidestep PG's cardinality-violation rule). On managed-Postgres deployments with non-trivial RTT this is a several-seconds-per-batch win that also shortens the held-transaction window.
+
 ## [0.8.3] — 2026-05-21
 
 ### Fixed
