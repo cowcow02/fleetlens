@@ -4,12 +4,8 @@ export type RangeKey = "7d" | "30d" | "90d";
 
 export const RANGE_DAYS: Record<RangeKey, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
-export function parseRange(
-  value: string | string[] | undefined,
-  fallback: RangeKey = "7d",
-): RangeKey {
-  const v = Array.isArray(value) ? value[0] : value;
-  if (v === "7d" || v === "30d" || v === "90d") return v;
+export function parseRange(value: string | undefined, fallback: RangeKey = "7d"): RangeKey {
+  if (value === "7d" || value === "30d" || value === "90d") return value;
   return fallback;
 }
 
@@ -84,14 +80,18 @@ export async function loadMemberRollups(
   days: number,
   pool: pg.Pool,
 ): Promise<RollupRow[]> {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  // Use rangeStartIso so the cutoff matches loadRoster / loadGroupRoster
+  // exactly. The earlier raw `Date.now() - days*86400000` math worked off
+  // UTC midnight and could land a day off from the roster's local-midnight
+  // cutoff, making the member chart disagree with the roster card for the
+  // same range.
   const res = await pool.query(`
     SELECT day::text, agent_time_ms, sessions, tool_calls, turns,
            tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
     FROM daily_rollups
     WHERE team_id = $1 AND membership_id = $2 AND day >= $3
     ORDER BY day ASC
-  `, [teamId, membershipId, since]);
+  `, [teamId, membershipId, rangeStartIso(days)]);
   return res.rows;
 }
 

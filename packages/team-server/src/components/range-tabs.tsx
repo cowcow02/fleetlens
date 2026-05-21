@@ -16,7 +16,7 @@ export function RangeTabs({ value }: { value: RangeKey }) {
 
   function select(next: RangeKey) {
     if (next === value) return;
-    const sp = new URLSearchParams(params?.toString() ?? "");
+    const sp = new URLSearchParams(params.toString());
     sp.set("range", next);
     // scroll: false — toggle is a chart-zoom action, not a navigation;
     // keeping the user's scroll position avoids losing the chart they

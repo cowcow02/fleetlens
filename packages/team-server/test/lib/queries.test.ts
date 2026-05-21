@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { resetDb } from "../helpers/db.js";
 import { getPool } from "../../src/db/pool.js";
-import { rangeStartIso, loadRoster, loadMemberRollups, loadMember } from "../../src/lib/queries.js";
+import { rangeStartIso, parseRange, loadRoster, loadMemberRollups, loadMember } from "../../src/lib/queries.js";
 import { createUserAccount } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
 import { createInvite, redeemInvite } from "../../src/lib/members.js";
@@ -78,6 +78,26 @@ describe("rangeStartIso", () => {
     const today = new Date();
     const resultDate = new Date(result + "T12:00:00");
     expect(resultDate.getTime()).toBeLessThanOrEqual(today.getTime() + 86400000);
+  });
+});
+
+describe("parseRange", () => {
+  it("accepts the three valid values", () => {
+    expect(parseRange("7d")).toBe("7d");
+    expect(parseRange("30d")).toBe("30d");
+    expect(parseRange("90d")).toBe("90d");
+  });
+
+  it("falls back to 7d by default for undefined or unknown values", () => {
+    expect(parseRange(undefined)).toBe("7d");
+    expect(parseRange("")).toBe("7d");
+    expect(parseRange("garbage")).toBe("7d");
+    expect(parseRange("365d")).toBe("7d");
+  });
+
+  it("honors the caller's fallback", () => {
+    expect(parseRange(undefined, "30d")).toBe("30d");
+    expect(parseRange("nope", "90d")).toBe("90d");
   });
 });
 
