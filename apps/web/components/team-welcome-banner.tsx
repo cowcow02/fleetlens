@@ -32,7 +32,7 @@ export function TeamWelcomeBanner({
         margin: "0 0 16px",
         padding: "12px 16px",
         background: "var(--af-accent-subtle)",
-        border: "1px solid var(--af-accent-subtle)",
+        border: "1px solid var(--af-accent)",
         borderRadius: 8,
         color: "var(--af-text)",
         fontSize: 13,
