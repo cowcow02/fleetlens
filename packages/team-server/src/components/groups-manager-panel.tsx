@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 type Member = { id: string; email: string | null; display_name: string | null };
 type GroupMembership = {
@@ -10,11 +11,6 @@ type GroupMembership = {
 };
 type Group = { id: string; slug: string; name: string };
 type GroupWithMembers = { group: Group; members: GroupMembership[] };
-
-function memberLabel(m: Member) {
-  if (m.display_name && m.email) return `${m.display_name} · ${m.email}`;
-  return m.display_name ?? m.email ?? m.id;
-}
 
 function initial(m: Member | undefined) {
   const s = m?.display_name?.trim() || m?.email?.trim() || "?";
@@ -37,7 +33,8 @@ async function readError(r: Response, fallback: string) {
 type ModalState =
   | null
   | { kind: "compose" }
-  | { kind: "invite"; groupId: string };
+  | { kind: "invite"; groupId: string }
+  | { kind: "addMembers"; groupId: string };
 
 export function GroupsManagerPanel({
   teamSlug,
@@ -51,7 +48,6 @@ export function GroupsManagerPanel({
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [editingNameFor, setEditingNameFor] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState("");
-  const [pendingAdd, setPendingAdd] = useState<Record<string, string>>({});
   const [busyMember, setBusyMember] = useState<string | null>(null);
   const [errorByGroup, setErrorByGroup] = useState<Record<string, string>>({});
 
@@ -127,24 +123,6 @@ export function GroupsManagerPanel({
     setGroupError(groupId, null);
     const r = await fetch(`/api/team/${teamSlug}/groups/${groupId}`, { method: "DELETE" });
     if (!r.ok) {
-      setGroupError(groupId, await readError(r, `HTTP ${r.status}`));
-      return;
-    }
-    window.location.reload();
-  }
-
-  async function addMember(groupId: string) {
-    const membershipId = pendingAdd[groupId];
-    if (!membershipId) return;
-    setGroupError(groupId, null);
-    setBusyMember(`add:${groupId}`);
-    const r = await fetch(`/api/team/${teamSlug}/groups/${groupId}/members`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ membershipId }),
-    });
-    if (!r.ok) {
-      setBusyMember(null);
       setGroupError(groupId, await readError(r, `HTTP ${r.status}`));
       return;
     }
@@ -290,12 +268,12 @@ export function GroupsManagerPanel({
                         onKeyDown={(e) => handleNameKey(e, group.id, group.name)}
                       />
                     ) : (
-                      <a
+                      <Link
                         className="group-card-name"
                         href={`/team/${teamSlug}/groups/${group.slug}`}
                       >
                         {group.name}
-                      </a>
+                      </Link>
                     )}
                     <span className="group-card-slug">/{group.slug}</span>
                   </div>
@@ -313,12 +291,12 @@ export function GroupsManagerPanel({
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: "auto", paddingTop: 8 }}>
-                    <a
+                    <Link
                       href={`/team/${teamSlug}/groups/${group.slug}`}
                       className="group-cta-primary"
                     >
                       Open roster <span className="arrow">→</span>
-                    </a>
+                    </Link>
                     <div className="group-card-actions-secondary">
                       <button onClick={() => setModal({ kind: "invite", groupId: group.id })}>
                         + Invite someone
@@ -377,28 +355,15 @@ export function GroupsManagerPanel({
                   )}
 
                   {available.length > 0 ? (
-                    <div className="group-add">
-                      <select
-                        value={pendingAdd[group.id] ?? ""}
-                        onChange={(e) =>
-                          setPendingAdd((p) => ({ ...p, [group.id]: e.target.value }))
-                        }
-                        disabled={busyMember === `add:${group.id}`}
-                      >
-                        <option value="">Add a team member…</option>
-                        {available.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {memberLabel(m)}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        disabled={!pendingAdd[group.id] || busyMember === `add:${group.id}`}
-                        onClick={() => addMember(group.id)}
-                      >
-                        {busyMember === `add:${group.id}` ? "…" : "Add"}
-                      </button>
-                    </div>
+                    <button
+                      className="group-add-button"
+                      onClick={() => setModal({ kind: "addMembers", groupId: group.id })}
+                    >
+                      <span className="plus">+</span> Add members
+                      <span style={{ color: "var(--mute-soft)" }}>
+                        · {available.length} available
+                      </span>
+                    </button>
                   ) : (
                     <div className="group-add-empty">
                       All active team members are already in this group.
@@ -416,6 +381,7 @@ export function GroupsManagerPanel({
       {modal?.kind === "compose" && (
         <ComposeModal
           teamSlug={teamSlug}
+          allMembers={allMembers}
           onClose={() => setModal(null)}
         />
       )}
@@ -428,14 +394,149 @@ export function GroupsManagerPanel({
           onClose={() => setModal(null)}
         />
       )}
+
+      {modal?.kind === "addMembers" && (
+        <AddMembersModal
+          teamSlug={teamSlug}
+          group={allGroups.find((g) => g.id === modal.groupId)!}
+          available={(() => {
+            const inGroup = new Set(
+              groups
+                .find((g) => g.group.id === modal.groupId)
+                ?.members.map((m) => m.membership_id) ?? [],
+            );
+            return allMembers.filter((m) => !inGroup.has(m.id));
+          })()}
+          onClose={() => setModal(null)}
+        />
+      )}
     </div>
   );
 }
 
-function ComposeModal({ teamSlug, onClose }: { teamSlug: string; onClose: () => void }) {
+function MemberPicker({
+  members,
+  selectedIds,
+  onChange,
+  emptyHint = "No members match your search.",
+}: {
+  members: Member[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  emptyHint?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return members;
+    return members.filter((m) =>
+      (m.display_name ?? "").toLowerCase().includes(q) ||
+      (m.email ?? "").toLowerCase().includes(q),
+    );
+  }, [members, search]);
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  function toggle(id: string) {
+    onChange(selectedSet.has(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+  }
+
+  function selectAll() {
+    onChange(Array.from(new Set([...selectedIds, ...filtered.map((m) => m.id)])));
+  }
+
+  function clearAll() {
+    onChange([]);
+  }
+
+  return (
+    <div className="member-picker">
+      <input
+        className="member-picker-search"
+        placeholder={`Search ${members.length} ${members.length === 1 ? "member" : "members"}…`}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+      <div className="member-picker-list">
+        {filtered.length === 0 ? (
+          <div className="member-picker-empty">{emptyHint}</div>
+        ) : (
+          filtered.map((m) => {
+            const checked = selectedSet.has(m.id);
+            return (
+              <label className={`member-picker-row ${checked ? "checked" : ""}`} key={m.id}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggle(m.id)}
+                />
+                <span className="avatar">{initial(m)}</span>
+                <span className="name">{m.display_name ?? m.email ?? m.id}</span>
+                {m.display_name && m.email && <span className="email">{m.email}</span>}
+              </label>
+            );
+          })
+        )}
+      </div>
+      <div className="member-picker-footer">
+        <span>
+          <span className="selected-count">{selectedIds.length}</span> selected ·{" "}
+          {filtered.length} of {members.length} shown
+        </span>
+        <span>
+          {filtered.length > 0 && (
+            <button type="button" onClick={selectAll}>
+              Select shown
+            </button>
+          )}
+          {selectedIds.length > 0 && (
+            <>
+              {" · "}
+              <button type="button" onClick={clearAll}>
+                Clear
+              </button>
+            </>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+async function addManyMembers(
+  teamSlug: string,
+  groupId: string,
+  membershipIds: string[],
+  asManager: boolean,
+): Promise<{ ok: number; failed: { id: string; error: string }[] }> {
+  const results = await Promise.all(
+    membershipIds.map(async (membershipId) => {
+      const r = await fetch(`/api/team/${teamSlug}/groups/${groupId}/members`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ membershipId, isManager: asManager }),
+      });
+      if (!r.ok) return { id: membershipId, error: await readError(r, `HTTP ${r.status}`) };
+      return { id: membershipId, error: null as string | null };
+    }),
+  );
+  const failed = results.filter((r) => r.error).map((r) => ({ id: r.id, error: r.error! }));
+  return { ok: results.length - failed.length, failed };
+}
+
+function ComposeModal({
+  teamSlug,
+  allMembers,
+  onClose,
+}: {
+  teamSlug: string;
+  allMembers: Member[];
+  onClose: () => void;
+}) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [asManagers, setAsManagers] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -455,6 +556,17 @@ function ComposeModal({ teamSlug, onClose }: { teamSlug: string; onClose: () => 
       setError(await readError(r, `HTTP ${r.status}`));
       return;
     }
+    const { group } = (await r.json()) as { group: { id: string } };
+    if (selectedIds.length > 0) {
+      const { failed } = await addManyMembers(teamSlug, group.id, selectedIds, asManagers);
+      if (failed.length > 0) {
+        setBusy(false);
+        setError(
+          `Group created, but ${failed.length} member${failed.length === 1 ? "" : "s"} could not be added: ${failed[0].error}`,
+        );
+        return;
+      }
+    }
     window.location.reload();
   }
 
@@ -465,7 +577,7 @@ function ComposeModal({ teamSlug, onClose }: { teamSlug: string; onClose: () => 
         <div className="modal-head">
           <h2>New <em>group</em></h2>
           <p className="lede">
-            Organize this team into a squad. Add members from the roster after publishing.
+            Name the group, pick who&apos;s in it, publish.
           </p>
         </div>
         <div className="modal-body">
@@ -480,7 +592,6 @@ function ComposeModal({ teamSlug, onClose }: { teamSlug: string; onClose: () => 
                 setName(e.target.value);
                 if (!slugTouched) setSlug(normalizeSlug(e.target.value));
               }}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
           </div>
           <div className="modal-field">
@@ -493,16 +604,123 @@ function ComposeModal({ teamSlug, onClose }: { teamSlug: string; onClose: () => 
                 setSlugTouched(true);
                 setSlug(normalizeSlug(e.target.value));
               }}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
             />
             <span className="hint">Lowercase letters, digits, hyphens. Used in URLs.</span>
+          </div>
+          <div className="modal-field">
+            <label>Place members <span className="hint" style={{ marginLeft: 6, fontStyle: "normal", letterSpacing: 0, fontFamily: "inherit", textTransform: "none" }}>optional</span></label>
+            <MemberPicker
+              members={allMembers}
+              selectedIds={selectedIds}
+              onChange={setSelectedIds}
+            />
+            {selectedIds.length > 0 && (
+              <label className="member-picker-toggle">
+                <input
+                  type="checkbox"
+                  checked={asManagers}
+                  onChange={(e) => setAsManagers(e.target.checked)}
+                />
+                Promote selected members to group managers
+              </label>
+            )}
           </div>
           {error && <div className="group-error">{error}</div>}
         </div>
         <div className="modal-footer">
           <button className="cancel" onClick={onClose}>Cancel</button>
           <button className="primary" disabled={!ready} onClick={submit}>
-            {busy ? "Publishing…" : "+ Publish group"}
+            {busy
+              ? "Publishing…"
+              : selectedIds.length > 0
+                ? `+ Publish group with ${selectedIds.length} member${selectedIds.length === 1 ? "" : "s"}`
+                : "+ Publish group"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AddMembersModal({
+  teamSlug,
+  group,
+  available,
+  onClose,
+}: {
+  teamSlug: string;
+  group: Group;
+  available: Member[];
+  onClose: () => void;
+}) {
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [asManagers, setAsManagers] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (selectedIds.length === 0) return;
+    setError(null);
+    setBusy(true);
+    const { failed } = await addManyMembers(teamSlug, group.id, selectedIds, asManagers);
+    if (failed.length > 0) {
+      setBusy(false);
+      setError(
+        `${failed.length} of ${selectedIds.length} couldn't be added: ${failed[0].error}`,
+      );
+      return;
+    }
+    window.location.reload();
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <div className="modal members" onMouseDown={(e) => e.stopPropagation()}>
+        <button className="modal-close" onClick={onClose} aria-label="Close">×</button>
+        <div className="modal-head">
+          <h2>Add to <em>{group.name}</em></h2>
+          <p className="lede">
+            Pick one or more teammates to add. You can promote them to group managers in the same step.
+          </p>
+        </div>
+        <div className="modal-body">
+          {available.length === 0 ? (
+            <div className="group-add-empty" style={{ margin: 0 }}>
+              Every active team member is already in this group.
+            </div>
+          ) : (
+            <>
+              <MemberPicker
+                members={available}
+                selectedIds={selectedIds}
+                onChange={setSelectedIds}
+              />
+              {selectedIds.length > 0 && (
+                <label className="member-picker-toggle">
+                  <input
+                    type="checkbox"
+                    checked={asManagers}
+                    onChange={(e) => setAsManagers(e.target.checked)}
+                  />
+                  Promote selected as group managers
+                </label>
+              )}
+            </>
+          )}
+          {error && <div className="group-error">{error}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="cancel" onClick={onClose}>Cancel</button>
+          <button
+            className="primary"
+            disabled={busy || selectedIds.length === 0}
+            onClick={submit}
+          >
+            {busy
+              ? "Adding…"
+              : selectedIds.length === 0
+                ? "+ Add members"
+                : `+ Add ${selectedIds.length} ${selectedIds.length === 1 ? "member" : "members"}`}
           </button>
         </div>
       </div>

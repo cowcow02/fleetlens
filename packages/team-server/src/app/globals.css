@@ -759,7 +759,14 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
   background: var(--accent);
   color: var(--paper);
 }
-.modal.compose button, .modal.invite button { width: auto; }
+.modal.members { padding: 36px 40px 32px; max-width: 600px; }
+.modal.members::before {
+  content: "ADD MEMBERS";
+  background: var(--accent);
+  color: var(--paper);
+}
+.modal.compose, .modal.invite, .modal.members { /* maxwidth varies above */ }
+.modal.compose button, .modal.invite button, .modal.members button { width: auto; }
 .modal-close {
   position: absolute;
   top: 14px;
@@ -967,6 +974,114 @@ a.group-card-name:hover {
 }
 .group-card-actions-secondary button:hover { color: var(--accent); }
 .group-card-actions-secondary .sep { color: var(--rule); }
+
+/* Member picker (searchable multi-select) — used inside modals */
+.member-picker { display: flex; flex-direction: column; gap: 8px; }
+.member-picker-search {
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.member-picker-search:focus { border-color: var(--accent); background: #fff; }
+.member-picker-search::placeholder { color: var(--mute-soft); }
+.member-picker-list {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.member-picker-row {
+  display: grid;
+  grid-template-columns: auto 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule-soft);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.member-picker-row:last-child { border-bottom: none; }
+.member-picker-row:hover { background: var(--bg); }
+.member-picker-row input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.member-picker-row .avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--ink-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid var(--rule);
+}
+.member-picker-row.checked .avatar {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.member-picker-row .name {
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-picker-row .email {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px;
+  color: var(--mute);
+  letter-spacing: 0.02em;
+}
+.member-picker-empty {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--mute);
+  padding: 22px;
+  text-align: center;
+}
+.member-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.member-picker-footer .selected-count { color: var(--accent); }
+.member-picker-footer button {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.member-picker-footer button:hover { color: var(--ink); }
+.member-picker-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.member-picker-toggle input[type="checkbox"] { accent-color: var(--accent); }
 
 /* Confirm-remove pill */
 .group-row-remove.confirming {
@@ -1318,6 +1433,29 @@ a.group-card-name:hover {
   font-size: 13px;
   color: var(--mute);
 }
+.group-add-button {
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: transparent;
+  color: var(--ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px dashed var(--rule);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  align-self: flex-start;
+}
+.group-add-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.group-add-button .plus { font-size: 13px; }
 
 /* Inline error */
 .group-error {
