@@ -18,7 +18,12 @@ export async function POST(
 
   const isAdminOrStaff = ctx.user.is_staff || ctx.membership.role === "admin";
   if (!isAdminOrStaff) {
-    // Manager can only revoke links whose group_ids is a subset of theirs.
+    // Manager can only revoke **member-role** invites whose group_ids is a
+    // non-empty subset of theirs. Admin-role invites are admin-only at every
+    // surface (mirrors filterInvitesByManagerScope).
+    if (invite.role === "admin") {
+      return NextResponse.json({ error: "Not allowed" }, { status: 403 });
+    }
     const managed = await listGroupsManagedBy(ctx.membership.id, ctx.pool);
     const managedSet = new Set(managed.map((g) => g.id));
     if (invite.group_ids.length === 0 || !invite.group_ids.every((g) => managedSet.has(g))) {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "../../../../db/pool";
-import { redeemInvite } from "../../../../lib/members";
+import { lookupInvite, redeemInvite } from "../../../../lib/members";
 import { authenticate } from "../../../../lib/auth";
+import { denySignupForTeamDomain } from "../../../../lib/teams";
 import { rateLimit, clientKey } from "../../../../lib/rate-limit";
 
 export async function POST(req: NextRequest) {
@@ -24,6 +25,16 @@ export async function POST(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
+
+  // Resolve the invite up-front so the team's allowlist can gate the redeem.
+  // Without this an already-registered outside-domain user could bypass the
+  // signup gate by hitting this route with a leaked multi-use token.
+  const previewed = await lookupInvite(inviteToken, pool);
+  if (!previewed) {
+    return NextResponse.json({ error: "Invite is invalid or expired" }, { status: 400 });
+  }
+  const denial = await denySignupForTeamDomain(previewed.team_id, email, pool);
+  if (denial) return NextResponse.json({ error: denial }, { status: 403 });
 
   const redeemed = await redeemInvite(inviteToken, user.id, pool);
   if (!redeemed) {

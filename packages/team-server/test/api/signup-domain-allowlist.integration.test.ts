@@ -7,6 +7,7 @@ import { createTeamWithAdmin } from "../../src/lib/teams.js";
 import { createInvite } from "../../src/lib/members.js";
 import { setAllowedSignupDomains } from "../../src/lib/teams.js";
 import { POST as signupPOST } from "../../src/app/api/auth/signup/route.js";
+import { POST as joinPOST } from "../../src/app/api/team/join/route.js";
 
 let pool: ReturnType<typeof getPool>;
 
@@ -97,5 +98,53 @@ describe("signup domain allowlist", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toMatch(/different email/i);
+  });
+
+  it("/api/team/join also enforces the allowlist — pre-registered outside-domain user is blocked", async () => {
+    const admin = await createUserAccount("admin@acme.com", "adminpass1", "Admin", { isStaff: true }, pool);
+    const { team } = await createTeamWithAdmin("Acme", admin.id, pool);
+    await setAllowedSignupDomains(team.id, ["acme.com"], pool);
+
+    // Outside-domain user already exists in the system (e.g. registered to a
+    // different team in a multi-team install, or seeded by an earlier admin).
+    await createUserAccount("outsider@example.com", "outpass1234", "Outsider", {}, pool);
+
+    const inv = await createInvite(team.id, admin.id, {}, pool);
+
+    const req = new NextRequest("http://localhost/api/team/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "1.2.3.5" },
+      body: JSON.stringify({
+        email: "outsider@example.com",
+        password: "outpass1234",
+        inviteToken: inv.token,
+      }),
+    });
+    const res = await joinPOST(req);
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toMatch(/restricted/i);
+  });
+
+  it("/api/team/join allows matching-domain pre-registered user", async () => {
+    const admin = await createUserAccount("admin@acme.com", "adminpass1", "Admin", { isStaff: true }, pool);
+    const { team } = await createTeamWithAdmin("Acme", admin.id, pool);
+    await setAllowedSignupDomains(team.id, ["acme.com"], pool);
+
+    await createUserAccount("eve@acme.com", "evepass1234", "Eve", {}, pool);
+
+    const inv = await createInvite(team.id, admin.id, {}, pool);
+
+    const req = new NextRequest("http://localhost/api/team/join", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-forwarded-for": "1.2.3.6" },
+      body: JSON.stringify({
+        email: "eve@acme.com",
+        password: "evepass1234",
+        inviteToken: inv.token,
+      }),
+    });
+    const res = await joinPOST(req);
+    expect(res.status).toBe(201);
   });
 });

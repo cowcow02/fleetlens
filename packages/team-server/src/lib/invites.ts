@@ -48,18 +48,25 @@ function isSubset(needle: string[], haystack: Set<string>): boolean {
   return true;
 }
 
-// Group managers see only invites whose every group_id is one they manage AND
-// which target at least one group. The empty-group_ids case (team-default
-// invite) is admin-only because such invites can carry the admin role and
-// their plaintext token is visible in the list response — exposing them to
-// any plain member would be a privilege-escalation primitive. Admin callers
-// bypass this filter entirely upstream.
+// Group managers see only **member-role** invites whose every group_id is one
+// they manage AND which target at least one group. Admin-role invites are
+// admin-only regardless of scope — otherwise a manager of group X could copy
+// the plaintext token of an admin-role link scoped to {X} and self-elevate.
+// The empty-group_ids case (team-default invite) is also admin-only for the
+// same reason: such invites can carry the admin role and their token is
+// visible in the list response. Admin/staff callers bypass this filter
+// entirely upstream.
 export function filterInvitesByManagerScope(
   invites: ActiveInviteRow[],
   managedGroupIds: string[],
 ): ActiveInviteRow[] {
   const managed = new Set(managedGroupIds);
-  return invites.filter((inv) => inv.group_ids.length > 0 && isSubset(inv.group_ids, managed));
+  return invites.filter(
+    (inv) =>
+      inv.role !== "admin" &&
+      inv.group_ids.length > 0 &&
+      isSubset(inv.group_ids, managed),
+  );
 }
 
 export async function findActiveInviteByConfig(
@@ -110,9 +117,9 @@ export async function revokeInvite(
 export async function getInviteForAuthz(
   inviteId: string,
   pool: pg.Pool,
-): Promise<{ id: string; team_id: string; group_ids: string[]; email: string | null } | null> {
-  const res = await pool.query<{ id: string; team_id: string; group_ids: string[]; email: string | null }>(
-    "SELECT id, team_id, group_ids, email FROM invites WHERE id = $1",
+): Promise<{ id: string; team_id: string; group_ids: string[]; email: string | null; role: "admin" | "member" } | null> {
+  const res = await pool.query<{ id: string; team_id: string; group_ids: string[]; email: string | null; role: "admin" | "member" }>(
+    "SELECT id, team_id, group_ids, email, role FROM invites WHERE id = $1",
     [inviteId],
   );
   return res.rowCount ? res.rows[0] : null;

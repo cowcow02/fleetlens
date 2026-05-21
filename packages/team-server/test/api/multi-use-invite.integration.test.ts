@@ -4,6 +4,7 @@ import { resetDb } from "../helpers/db.js";
 import { getPool } from "../../src/db/pool.js";
 import { createUserAccount, createSession } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
+import { createGroup, addGroupMember, setGroupMemberManager } from "../../src/lib/groups.js";
 import { createInvite, redeemInvite } from "../../src/lib/members.js";
 import { POST as adminInvitePOST } from "../../src/app/api/team/invites/route.js";
 import { POST as revokePOST } from "../../src/app/api/team/[slug]/invites/[id]/revoke/route.js";
@@ -158,6 +159,47 @@ describe("multi-use invite links", () => {
     expect(listRes.status).toBe(200);
     const body = await listRes.json();
     expect(body.invites).toEqual([]);
+  });
+
+  it("manager of group X cannot see or revoke an admin-role invite scoped to {X}", async () => {
+    const admin = await createUserAccount("admin@acme.com", "adminpass1", "Admin", { isStaff: true }, pool);
+    const { team } = await createTeamWithAdmin("Acme", admin.id, pool);
+    const adminSess = await createSession(admin.id, pool);
+
+    // Manager joins the team and is promoted to manager of group X.
+    const mgrInv = await createInvite(team.id, admin.id, { email: "mgr@acme.com" }, pool);
+    const mgr = await createUserAccount("mgr@acme.com", "mgrpass1234", "Mgr", {}, pool);
+    const mgrRedeem = await redeemInvite(mgrInv.token, mgr.id, pool);
+    const groupX = await createGroup(team.id, "grp-x", "Group X", admin.id, pool);
+    await addGroupMember(groupX.id, mgrRedeem!.membershipId, admin.id, pool);
+    await setGroupMemberManager(groupX.id, mgrRedeem!.membershipId, true, admin.id, pool);
+    const mgrSess = await createSession(mgr.id, pool);
+
+    // Admin creates an admin-role invite scoped to Group X.
+    const create = await adminInvitePOST(
+      authedReq(`http://localhost/api/team/invites?team=${team.slug}`, adminSess.cookieToken, {
+        method: "POST",
+        body: { role: "admin", groupIds: [groupX.id] },
+      }),
+    );
+    expect(create.status).toBe(201);
+    const { inviteId } = await create.json();
+
+    // Manager's GET list must NOT include the admin-role link.
+    const listRes = await listGET(
+      authedReq(`http://localhost/api/team/${team.slug}/invites`, mgrSess.cookieToken),
+      { params: Promise.resolve({ slug: team.slug }) },
+    );
+    expect(listRes.status).toBe(200);
+    const body = await listRes.json();
+    expect(body.invites.find((i: { id: string }) => i.id === inviteId)).toBeUndefined();
+
+    // Manager's revoke attempt must 403 even though group_ids ⊆ managed.
+    const revRes = await revokePOST(
+      authedReq(`http://localhost/api/team/${team.slug}/invites/${inviteId}/revoke`, mgrSess.cookieToken, { method: "POST" }),
+      { params: Promise.resolve({ slug: team.slug, id: inviteId }) },
+    );
+    expect(revRes.status).toBe(403);
   });
 
   it("single-use email-scoped invite still auto-revokes on first redemption", async () => {

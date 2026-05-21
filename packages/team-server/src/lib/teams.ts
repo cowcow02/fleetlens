@@ -51,9 +51,7 @@ export async function createTeamWithAdmin(
 
 const DOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
 
-// Normalise + validate a comma-separated user input into a sorted, deduplicated
-// list of lowercase domains. Strips leading `@` and surrounding whitespace.
-// Throws when any entry is malformed so route handlers can return 400.
+// Throws on the first malformed entry so route handlers can return 400.
 export function parseAllowedDomains(input: string | string[]): string[] {
   const raw = Array.isArray(input) ? input : input.split(",");
   const cleaned: string[] = [];
@@ -87,4 +85,20 @@ export async function setAllowedSignupDomains(
     "UPDATE teams SET allowed_signup_domains = $1 WHERE id = $2",
     [domains, teamId],
   );
+}
+
+// Single gate for every redemption path (signup new user, signup existing
+// user, /api/team/join authenticated user). Returns null if the email is
+// allowed, or the generic user-facing error message if not. The message
+// deliberately doesn't echo the configured domains.
+export async function denySignupForTeamDomain(
+  teamId: string,
+  email: string,
+  pool: pg.Pool,
+): Promise<string | null> {
+  const domains = await getAllowedSignupDomains(teamId, pool);
+  if (domains.length === 0) return null;
+  const emailDomain = email.split("@")[1]?.toLowerCase();
+  if (emailDomain && domains.includes(emailDomain)) return null;
+  return "Sign-up is restricted for this team. Contact a team admin if you believe this is an error.";
 }
