@@ -17,6 +17,15 @@ export type TeamConfig = {
   pairedAt: string;
   lastSyncedDay?: string;
   lastSyncedUsageSnapshotAt?: string;
+  // Bridge V2 privacy controls — see Phase-1 spec §7.
+  // When true, LLM-enriched per-day fields (outcome/helpfulness/goal mixes)
+  // ride along with the daily ingest payload. Default off; only set after
+  // the member explicitly opts in.
+  enrichmentOptIn?: boolean;
+  // Canonical project names the member never wants to share. Excluded from
+  // richRollup.projects breakdown and any workingShapes/skills aggregation
+  // sourced from entries on those projects.
+  privateProjects?: string[];
 };
 
 export function readTeamConfig(dir?: string): TeamConfig | null {

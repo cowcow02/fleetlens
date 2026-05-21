@@ -62,30 +62,85 @@ export const UsageHistoryPayload = z.object({
   planTier: PlanTierKeySchema.optional(),
 });
 
+const DailyRollupSchema = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  agentTimeMs: z.number().int().nonnegative(),
+  sessions: z.number().int().nonnegative(),
+  toolCalls: z.number().int().nonnegative(),
+  turns: z.number().int().nonnegative(),
+  tokens: z.object({
+    input: z.number().int().nonnegative(),
+    output: z.number().int().nonnegative(),
+    cacheRead: z.number().int().nonnegative(),
+    cacheWrite: z.number().int().nonnegative(),
+  }).passthrough(),
+}).passthrough();
+
+// Rich rollup — Entry-derived deterministic per-day breakdowns. JSONB-shaped
+// payloads stay forgiving (.passthrough() + unknowns) so a daemon shipping
+// future signals never blocks ingest; the server reads only the fields it
+// knows about.
+export const RichDailyRollupSchema = DailyRollupSchema.extend({
+  projects: z.array(z.object({
+    project: z.string(),
+    agentTimeMs: z.number().int().nonnegative(),
+    sessions: z.number().int().nonnegative(),
+  }).passthrough()),
+  workingShapes: z.array(z.object({
+    shape: z.string(),
+    sessions: z.number().int().nonnegative(),
+    agentTimeMs: z.number().int().nonnegative(),
+  }).passthrough()),
+  concurrencyPeak: z.number().int().nonnegative(),
+  parallelMinutes: z.number().int().nonnegative(),
+  longAutonomous: z.object({
+    count: z.number().int().nonnegative(),
+    totalMin: z.number().int().nonnegative(),
+    maxSingleMin: z.number().int().nonnegative(),
+  }).passthrough(),
+  toolErrors: z.number().int().nonnegative(),
+  skillsLoaded: z.array(z.object({
+    name: z.string(),
+    sessions: z.number().int().nonnegative(),
+  }).passthrough()),
+  subagentsDispatched: z.array(z.object({
+    type: z.string(),
+    count: z.number().int().nonnegative(),
+  }).passthrough()),
+  brainstormWarmupSessions: z.number().int().nonnegative(),
+  planModeUsed: z.number().int().nonnegative(),
+  prs: z.number().int().nonnegative(),
+  commits: z.number().int().nonnegative(),
+  pushes: z.number().int().nonnegative(),
+}).passthrough();
+
+export const EnrichedDailyExtrasSchema = z.object({
+  outcomeMix: z.record(z.number().int().nonnegative()).optional().default({}),
+  helpfulnessMix: z.record(z.number().int().nonnegative()).optional().default({}),
+  goalMix: z.record(z.number().nonnegative()).optional().default({}),
+}).passthrough();
+
 // Every field except ingestId/observedAt is optional so the daemon can push
 // any subset on each tick:
 //   - idle day  →  { snapshot, cyclePeaks, planTier }
 //   - day rollover  →  { dailyRollup, snapshot, cyclePeaks, planTier }
 //   - history backfill  →  { snapshotHistory: [...] }
+//   - rich/enriched extras (V2) →  { richRollup, enrichedExtras }
 // Server applies whichever fields are present. This consolidation replaces
 // the older /api/ingest/usage-history route, which is preserved as a thin
 // shim for older CLIs (see app/api/ingest/usage-history/route.ts).
+//
+// dailyRollup is also optional on idle days when the user hasn't run a
+// Claude Code session — the server skips the daily_rollups upsert in that
+// case but still applies the rest of the payload.
 export const IngestPayload = z.object({
   ingestId: z.string(),
   observedAt: z.string().datetime(),
-  dailyRollup: z.object({
-    day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    agentTimeMs: z.number().int().nonnegative(),
-    sessions: z.number().int().nonnegative(),
-    toolCalls: z.number().int().nonnegative(),
-    turns: z.number().int().nonnegative(),
-    tokens: z.object({
-      input: z.number().int().nonnegative(),
-      output: z.number().int().nonnegative(),
-      cacheRead: z.number().int().nonnegative(),
-      cacheWrite: z.number().int().nonnegative(),
-    }).passthrough(),
-  }).passthrough().optional(),
+  // V2 marker. V1 daemons omit it and never set rich/enriched fields.
+  schemaVersion: z.literal(2).optional(),
+  dailyRollup: DailyRollupSchema.optional(),
+  richRollup: RichDailyRollupSchema.optional(),
+  enrichedExtras: EnrichedDailyExtrasSchema.optional(),
   usageSnapshot: UsageSnapshotSchema.optional(),
   planTier: PlanTierKeySchema.optional(),
   cyclePeaks: WireCyclePeaksSchema.optional(),

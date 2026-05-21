@@ -57,12 +57,49 @@ export type WireCyclePeaks = {
   sevenDay: WireCyclePeak[];
 };
 
+// Bridge V2 marker. V1 daemons omit it and never set rich/enriched fields.
+export const RICH_ROLLUP_SCHEMA_VERSION = 2 as const;
+
+// Layer A — per-day deterministic Entry-derived counts and breakdowns.
+// Always safe to share (counts + labels only; never first_user / final_agent
+// text). Project labels are filtered through `privateProjects` before being
+// included. See docs/superpowers/specs/2026-05-16-personal-to-team-bridge-design.md.
+export type RichDailyRollup = DailyRollup & {
+  projects: { project: string; agentTimeMs: number; sessions: number }[];
+  workingShapes: { shape: string; sessions: number; agentTimeMs: number }[];
+  concurrencyPeak: number;
+  parallelMinutes: number;
+  longAutonomous: { count: number; totalMin: number; maxSingleMin: number };
+  toolErrors: number;
+  skillsLoaded: { name: string; sessions: number }[];
+  subagentsDispatched: { type: string; count: number }[];
+  brainstormWarmupSessions: number;
+  planModeUsed: number;
+  prs: number;
+  commits: number;
+  pushes: number;
+};
+
+// Layer B — LLM-derived per-day fields. Already cached locally; pushing them
+// does not trigger fresh LLM work. Gated on `enrichmentOptIn` in TeamConfig.
+export type EnrichedDailyExtras = {
+  outcomeMix: Partial<Record<"shipped" | "partial" | "exploratory" | "blocked" | "trivial", number>>;
+  helpfulnessMix: Partial<Record<"essential" | "helpful" | "neutral" | "unhelpful", number>>;
+  goalMix: Partial<Record<string, number>>;
+};
+
 export type IngestPayload = {
   ingestId: string;
   observedAt: string;
+  // Set on V2+ payloads so the server can branch. Absent payloads are V1.
+  schemaVersion?: typeof RICH_ROLLUP_SCHEMA_VERSION;
   // Every field below is optional so the daemon can push whichever subset is
   // relevant on each tick. The server applies whatever's present.
   dailyRollup?: DailyRollup;
+  // Layer A — Entry-derived rollup; same day key as dailyRollup.
+  richRollup?: RichDailyRollup;
+  // Layer B — LLM-enriched extras, only when the member opted in.
+  enrichedExtras?: EnrichedDailyExtras;
   usageSnapshot?: WireUsageSnapshot;
   // Anthropic-detected tier ("pro"|"pro-max"|"pro-max-20x"|"custom"). Server
   // upserts memberships.plan_tier when this is set so admins don't have to

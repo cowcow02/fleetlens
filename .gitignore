@@ -15,3 +15,4 @@ pnpm-debug.log*
 .worktrees/
 .claude/
 .harness/
+.antigravitycli/

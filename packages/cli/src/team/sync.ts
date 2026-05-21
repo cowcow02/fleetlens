@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { readTeamConfig, writeTeamConfig, type TeamConfig } from "./config.js";
 import {
   buildIngestPayload,
+  buildRichBlocksForDay,
   buildRollupsForRange,
   pushToTeamServer,
   readLatestUsageSnapshotForWire,
+  sessionTouchesDay,
   type IngestPayload,
 } from "./push.js";
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
@@ -147,7 +149,7 @@ export async function runTeamSync(
         if (usageBackfill.sentSnapshots === 0) log("info", "team push: nothing to sync");
         return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
       }
-      const payload = buildIngestPayload(undefined, usageSnapshot, planTier, cyclePeaks);
+      const payload = buildIngestPayload({ usageSnapshot, planTier, cyclePeaks });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
         const errLine = `team push failed (${result.status})`;
@@ -181,17 +183,29 @@ export async function runTeamSync(
     let failedDay: string | undefined;
     let lastPushedDay: string | undefined;
 
+    const privateProjects = new Set(config.privateProjects ?? []);
+    const enrichmentOptIn = !!config.enrichmentOptIn;
+
     for (let i = 0; i < rollups.length; i++) {
       const rollup = rollups[i]!;
       const isLatest = i === rollups.length - 1;
-      const payload = buildIngestPayload(
+      const daySessions = sessions.filter((s) => sessionTouchesDay(s, rollup.day));
+      const richBlocks = buildRichBlocksForDay(
+        rollup.day,
+        daySessions,
+        privateProjects,
+        enrichmentOptIn,
+      );
+      const payload = buildIngestPayload({
         rollup,
-        isLatest ? usageSnapshot : undefined,
+        richExtras: richBlocks?.rich,
+        enrichedExtras: richBlocks?.enriched,
+        usageSnapshot: isLatest ? usageSnapshot : undefined,
         planTier,
         // Same rationale as usageSnapshot — current cycle data only on the
         // latest rollup so older days don't get tagged with today's peaks.
-        isLatest ? cyclePeaks : undefined,
-      );
+        cyclePeaks: isLatest ? cyclePeaks : undefined,
+      });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
         const errLine = `team push failed on ${rollup.day} (${result.status})`;

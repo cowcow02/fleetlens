@@ -63,6 +63,7 @@ export default async function GroupDetailPage({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <RangeTabs value={range} />
+          <a href={`/team/${slug}/groups/${group.slug}/insights`} className="btn">Insights →</a>
           <a href={`/team/${slug}/groups/${group.slug}/invite`} className="btn">+ Invite member</a>
         </div>
       </div>

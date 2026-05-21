@@ -13,7 +13,7 @@ export async function resetDb(): Promise<ReturnType<typeof getPool>> {
   await runMigrations();
   await pool.query(`
     TRUNCATE TABLE
-      events, daily_rollups, ingest_log, invites,
+      events, daily_rollups, rich_daily_rollups, ingest_log, invites,
       plan_utilization,
       group_members, groups,
       memberships, sessions, server_config,

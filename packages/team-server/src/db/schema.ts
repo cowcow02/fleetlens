@@ -243,6 +243,44 @@ export const planUtilization = pgTable(
   }),
 );
 
+export const richDailyRollups = pgTable(
+  "rich_daily_rollups",
+  {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id").notNull().references(() => memberships.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    agentTimeMs: bigint("agent_time_ms", { mode: "number" }).notNull().default(0),
+    sessions: integer("sessions").notNull().default(0),
+    prs: integer("prs").notNull().default(0),
+    commits: integer("commits").notNull().default(0),
+    pushes: integer("pushes").notNull().default(0),
+    concurrencyPeak: integer("concurrency_peak").notNull().default(0),
+    parallelMinutes: integer("parallel_minutes").notNull().default(0),
+    longAutoCount: integer("long_auto_count").notNull().default(0),
+    longAutoTotalMin: integer("long_auto_total_min").notNull().default(0),
+    longAutoMaxSingleMin: integer("long_auto_max_single_min").notNull().default(0),
+    toolErrors: integer("tool_errors").notNull().default(0),
+    brainstormWarmupSessions: integer("brainstorm_warmup_sessions").notNull().default(0),
+    planModeUsed: integer("plan_mode_used").notNull().default(0),
+    projects: jsonb("projects").notNull().default([]),
+    workingShapes: jsonb("working_shapes").notNull().default([]),
+    skillsLoaded: jsonb("skills_loaded").notNull().default([]),
+    subagentsDispatched: jsonb("subagents_dispatched").notNull().default([]),
+    outcomeMix: jsonb("outcome_mix"),
+    helpfulnessMix: jsonb("helpfulness_mix"),
+    goalMix: jsonb("goal_mix"),
+    tokensInput: bigint("tokens_input", { mode: "number" }).notNull().default(0),
+    tokensOutput: bigint("tokens_output", { mode: "number" }).notNull().default(0),
+    tokensCacheRead: bigint("tokens_cache_read", { mode: "number" }).notNull().default(0),
+    tokensCacheWrite: bigint("tokens_cache_write", { mode: "number" }).notNull().default(0),
+    ingestedAt: timestamp("ingested_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.membershipId, t.day] }),
+    teamDay: index("idx_rich_daily_rollups_team_day").on(t.teamId, sql`${t.day} DESC`),
+  }),
+);
+
 export const groups = pgTable(
   "groups",
   {

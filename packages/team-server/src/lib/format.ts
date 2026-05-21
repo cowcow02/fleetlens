@@ -11,6 +11,14 @@ export function formatTokens(n: number): string {
   return String(n);
 }
 
+export function formatDateLong(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+}
+
+export function formatDateDay(d: Date): string {
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+}
+
 export function timeAgo(date: string | null): string {
   if (!date) return "Never";
   const diff = Date.now() - new Date(date).getTime();

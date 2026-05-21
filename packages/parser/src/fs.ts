@@ -111,6 +111,8 @@ export {
 
 export {
   type DailyRollup,
+  type RichDailyRollup,
+  type EnrichedDailyExtras,
   type WireUsageWindow,
   type WireExtraUsage,
   type WireUsageSnapshot,
@@ -121,6 +123,7 @@ export {
   type ServerCommand,
   type CommandResult,
   type IngestResponse,
+  RICH_ROLLUP_SCHEMA_VERSION,
 } from "./team-wire.js";
 
 /* ================================================================= */

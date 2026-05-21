@@ -17,6 +17,7 @@ import {
   Radio,
   Settings,
   CalendarDays,
+  Users,
 } from "lucide-react";
 import { formatRelative, prettyProjectName } from "@/lib/format";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -223,6 +224,13 @@ export function Sidebar({
           icon={<Radio size={15} />}
         >
           Runs
+        </NavLink>
+        <NavLink
+          href="/team"
+          active={pathname === "/team" || pathname.startsWith("/team/")}
+          icon={<Users size={15} />}
+        >
+          Team
         </NavLink>
       </nav>
 

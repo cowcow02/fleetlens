@@ -69,7 +69,7 @@ async function runActivityBackfill(
   for (const rollup of rollups) {
     // Historical-only push: no live snapshot, no cyclePeaks, no planTier.
     // Those belong on the latest rollup that the regular sync attaches.
-    const payload = buildIngestPayload(rollup);
+    const payload = buildIngestPayload({ rollup });
     const result = await pushToTeamServer(config, payload);
     if (!result.ok) {
       return {
