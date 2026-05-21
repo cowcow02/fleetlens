@@ -21,6 +21,7 @@ import {
   type AgentMetadata,
   CODEX_METADATA,
   GEMINI_METADATA,
+  ANTIGRAVITY_METADATA,
 } from "./agent-metadata.js";
 import {
   type CalibrationEvent,
@@ -59,6 +60,13 @@ import {
   getGeminiSession as _getGeminiSession,
   clearGeminiCaches,
 } from "./gemini.js";
+
+import {
+  DEFAULT_ANTIGRAVITY_ROOT as _DEFAULT_ANTIGRAVITY_ROOT,
+  listAntigravitySessions as _listAntigravitySessions,
+  getAntigravitySession as _getAntigravitySession,
+  clearAntigravityCaches,
+} from "./antigravity.js";
 
 // ─── Re-exports (preserve the public @claude-lens/parser/fs surface) ───
 
@@ -101,6 +109,17 @@ export type {
   ListGeminiOptions,
   GetGeminiOptions,
 } from "./gemini.js";
+
+export {
+  DEFAULT_ANTIGRAVITY_ROOT,
+  listAntigravitySessions,
+  getAntigravitySession,
+  antigravitySessionLocalDay,
+} from "./antigravity.js";
+export type {
+  ListAntigravityOptions,
+  GetAntigravityOptions,
+} from "./antigravity.js";
 
 export {
   type TeamConfig,
@@ -160,6 +179,7 @@ export function clearCaches(): void {
   clearClaudeCodeCaches();
   clearCodexCaches();
   clearGeminiCaches();
+  clearAntigravityCaches();
 }
 
 /** Drop cached entries for a Claude Code file path. Called by the SSE
@@ -225,7 +245,18 @@ const geminiSource: AgentSource = {
   },
 };
 
-export const agentSources: AgentSource[] = [claudeCodeSource, codexSource, geminiSource];
+const antigravitySource: AgentSource = {
+  ...ANTIGRAVITY_METADATA,
+  defaultRoot: _DEFAULT_ANTIGRAVITY_ROOT,
+  async listSessions(opts) {
+    return _listAntigravitySessions(opts);
+  },
+  async getSession(id) {
+    return _getAntigravitySession(id);
+  },
+};
+
+export const agentSources: AgentSource[] = [claudeCodeSource, codexSource, geminiSource, antigravitySource];
 
 export function getAgentSource(kind: AgentKind): AgentSource | undefined {
   return agentSources.find((s) => s.kind === kind);
