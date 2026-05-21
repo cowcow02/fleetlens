@@ -35,11 +35,14 @@ export function LiveRefresher() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Track latest mtime per source so session updates don't starve
   // usage updates (and vice versa) — different files have different clocks.
-  const lastMtimeRef = useRef<Record<string, number>>({ session: 0, usage: 0 });
+  const lastMtimeRef = useRef<Record<string, number>>({ session: 0, usage: 0, team: 0 });
 
   const onUpdate = useCallback(
     (update: LiveUpdate) => {
-      const key = update.type === "usage-updated" ? "usage" : "session";
+      const key =
+        update.type === "usage-updated" ? "usage" :
+        update.type === "team-push" ? "team" :
+        "session";
       if (update.mtimeMs <= (lastMtimeRef.current[key] ?? 0)) return;
       lastMtimeRef.current[key] = update.mtimeMs;
       if (timerRef.current) clearTimeout(timerRef.current);

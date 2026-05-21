@@ -15,7 +15,7 @@ describe("loadRoster", () => {
       "INSERT INTO memberships (user_account_id, team_id, role) VALUES ($1,$2,'admin'),($3,$2,'member')",
       [u1.id, teamId, u2.id],
     );
-    const rows = await loadRoster(teamId, pool);
+    const rows = await loadRoster(teamId, 7, pool);
     expect(rows.length).toBe(2);
   });
 });
@@ -37,7 +37,7 @@ describe("loadGroupRoster", () => {
     )).rows[0].id;
     const g = await createGroup(teamId, "g", "G", u1.id, pool);
     await addGroupMember(g.id, m1, u1.id, pool);
-    const rows = await loadGroupRoster(g.id, pool);
+    const rows = await loadGroupRoster(g.id, 7, pool);
     expect(rows.map((r) => r.id)).toEqual([m1]);
     expect(rows.map((r) => r.id)).not.toContain(m2);
   });
@@ -59,7 +59,7 @@ describe("loadGroupRoster", () => {
     const g = await createGroup(teamId, "g", "G", u1.id, pool);
     await addGroupMember(g.id, m1, u1.id, pool);
     await addGroupMember(g.id, m2, u1.id, pool);
-    const rows = await loadGroupRoster(g.id, pool);
+    const rows = await loadGroupRoster(g.id, 7, pool);
     expect(rows.map((r) => r.id)).toEqual([m1]);
   });
 
@@ -87,7 +87,7 @@ describe("loadGroupRoster", () => {
     await setGroupMemberManager(g.id, m1, true, u1.id, pool);
     await addGroupMember(g.id, m2, u1.id, pool);
     await addGroupMember(g.id, m3, u1.id, pool);
-    const rows = await loadGroupRoster(g.id, pool);
+    const rows = await loadGroupRoster(g.id, 7, pool);
     expect(rows.map((r) => r.id)).toEqual([m1, m2, m3]);
   });
 });

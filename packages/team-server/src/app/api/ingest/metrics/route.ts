@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const result = await processIngest(body, membership.id, membership.teamId, pool);
-    return NextResponse.json(result, { status: result.deduplicated ? 202 : 200 });
+    // processIngest sets nextSyncAfter iff work happened. Pure replay omits
+    // it → 202; everything else → 200.
+    return NextResponse.json(result, { status: result.nextSyncAfter ? 200 : 202 });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return NextResponse.json({ error: "Validation failed" }, { status: 400 });

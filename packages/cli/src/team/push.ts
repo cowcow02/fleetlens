@@ -8,113 +8,34 @@ import {
   type DailyBucket,
   type SessionMeta,
 } from "@claude-lens/parser";
+import {
+  RICH_ROLLUP_SCHEMA_VERSION,
+  type DailyRollup,
+  type RichDailyRollup,
+  type EnrichedDailyExtras,
+  type WireUsageWindow,
+  type WireExtraUsage,
+  type WireUsageSnapshot,
+  type WireCyclePeak,
+  type WireCyclePeaks,
+  type IngestPayload,
+} from "@claude-lens/parser/fs";
 import type { Entry } from "@claude-lens/entries";
 import { listEntriesForDay } from "@claude-lens/entries/fs";
 import { latestClaudeCodeSnapshot } from "../usage/storage.js";
 import type { TeamConfig } from "./config.js";
 
-export const RICH_ROLLUP_SCHEMA_VERSION = 2 as const;
-
-export type DailyRollup = {
-  day: string;
-  agentTimeMs: number;
-  sessions: number;
-  toolCalls: number;
-  turns: number;
-  tokens: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-  };
-};
-
-export type WireUsageWindow = {
-  utilization: number | null;
-  resetsAt: string | null;
-};
-
-export type WireExtraUsage = {
-  isEnabled: boolean;
-  monthlyLimitUsd: number | null;
-  usedCreditsUsd: number | null;
-  utilization: number | null;
-};
-
-export type WireUsageSnapshot = {
-  capturedAt: string;
-  fiveHour: WireUsageWindow;
-  sevenDay: WireUsageWindow;
-  sevenDayOpus: WireUsageWindow | null;
-  sevenDaySonnet: WireUsageWindow | null;
-  sevenDayOauthApps: WireUsageWindow | null;
-  sevenDayCowork: WireUsageWindow | null;
-  extraUsage: WireExtraUsage | null;
-};
-
-export type WireCyclePeak = {
-  endsAt: string;
-  peakPct: number;
-  source: "real" | "predicted";
-  current: boolean;
-};
-
-export type WireCyclePeaks = {
-  fiveHour: WireCyclePeak[];
-  sevenDay: WireCyclePeak[];
-};
-
-// Layer A — per-day deterministic Entry-derived counts and breakdowns.
-// Always safe to share (counts + labels only; never first_user / final_agent
-// text). Project labels are filtered through `privateProjects` before being
-// included. See docs/superpowers/specs/2026-05-16-personal-to-team-bridge-design.md.
-export type RichDailyRollup = DailyRollup & {
-  projects: { project: string; agentTimeMs: number; sessions: number }[];
-  workingShapes: { shape: string; sessions: number; agentTimeMs: number }[];
-  concurrencyPeak: number;
-  parallelMinutes: number;
-  longAutonomous: { count: number; totalMin: number; maxSingleMin: number };
-  toolErrors: number;
-  skillsLoaded: { name: string; sessions: number }[];
-  subagentsDispatched: { type: string; count: number }[];
-  brainstormWarmupSessions: number;
-  planModeUsed: number;
-  prs: number;
-  commits: number;
-  pushes: number;
-};
-
-// Layer B — LLM-derived per-day fields. Already cached locally; pushing them
-// does not trigger fresh LLM work. Gated on `enrichmentOptIn` in TeamConfig.
-export type EnrichedDailyExtras = {
-  outcomeMix: Partial<Record<"shipped" | "partial" | "exploratory" | "blocked" | "trivial", number>>;
-  helpfulnessMix: Partial<Record<"essential" | "helpful" | "neutral" | "unhelpful", number>>;
-  goalMix: Partial<Record<string, number>>;
-};
-
-export type IngestPayload = {
-  ingestId: string;
-  observedAt: string;
-  // Set on V2+ payloads so server can branch. Absent payloads are V1.
-  schemaVersion?: typeof RICH_ROLLUP_SCHEMA_VERSION;
-  // Optional so the daemon can push tier/snapshot/cyclePeaks updates on
-  // idle days when there's no new daily activity to roll up. Server skips
-  // the daily_rollups upsert when missing but still applies the rest.
-  dailyRollup?: DailyRollup;
-  // Layer A — Entry-derived rollup; same day key as dailyRollup.
-  richRollup?: RichDailyRollup;
-  // Layer B — LLM-enriched extras, only when the member opted in.
-  enrichedExtras?: EnrichedDailyExtras;
-  usageSnapshot?: WireUsageSnapshot;
-  // Anthropic-detected tier ("pro"|"pro-max"|"pro-max-20x"|"custom"). Server
-  // upserts memberships.plan_tier when this is set so admins don't have to
-  // hand-pick a tier the daemon already knows.
-  planTier?: string;
-  // Per-cycle peak utilization, computed locally by the daemon using the
-  // SAME parser logic that drives the personal /usage trend strip. Pushing
-  // the computed outcome (rather than raw events) keeps a single source of
-  // truth and means team server never re-runs the math.
-  cyclePeaks?: WireCyclePeaks;
+export { RICH_ROLLUP_SCHEMA_VERSION };
+export type {
+  DailyRollup,
+  RichDailyRollup,
+  EnrichedDailyExtras,
+  WireUsageWindow,
+  WireExtraUsage,
+  WireUsageSnapshot,
+  WireCyclePeak,
+  WireCyclePeaks,
+  IngestPayload,
 };
 
 // Server only cares about a freshly-captured snapshot. A stale one would

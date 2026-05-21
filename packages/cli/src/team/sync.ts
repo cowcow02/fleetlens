@@ -9,6 +9,7 @@ import {
 } from "./push.js";
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
 import { runTeamBackfill, type BackfillOutcome } from "./backfill.js";
+import { writeLastPushSuccess, writeLastPushFailure } from "./last-push.js";
 import { getPlanTier } from "../usage/profile.js";
 import { cclensPath } from "@claude-lens/parser/fs";
 
@@ -90,10 +91,13 @@ export async function runTeamSync(
       const payload = buildIngestPayload({ usageSnapshot, planTier, cyclePeaks });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
-        log("warn", `team push (live-only) failed (${result.status}); queueing`);
+        const errLine = `team push failed (${result.status})`;
+        log("warn", `${errLine}; queueing`);
+        writeLastPushFailure(payload, errLine);
         enqueuePayload(payload);
         return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
+      writeLastPushSuccess(payload);
       // Try to drain any queued backlog while the server is reachable.
       let queuedDrained = 0;
       const backlog = dequeuePayloads() as IngestPayload[];
@@ -140,12 +144,15 @@ export async function runTeamSync(
       });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
-        log("warn", `team push failed on ${rollup.day} (${result.status}); queueing`);
+        const errLine = `team push failed on ${rollup.day} (${result.status})`;
+        log("warn", `${errLine}; queueing`);
+        writeLastPushFailure(payload, errLine);
         enqueuePayload(payload);
         queued++;
         failedDay = rollup.day;
         break;
       }
+      writeLastPushSuccess(payload);
       pushed++;
       lastPushedDay = rollup.day;
     }
@@ -179,6 +186,10 @@ export async function runTeamSync(
   } catch (err) {
     const message = (err as Error).message;
     log("warn", `team push error: ${message}`);
+    writeLastPushFailure(
+      { ingestId: "n/a", observedAt: new Date().toISOString() },
+      `team push error: ${message}`,
+    );
     return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, error: message };
   }
 }

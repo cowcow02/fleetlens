@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 
 type TeamRow = { id: string; name: string; slug: string; created_at: string };
 type MemberRow = {
@@ -29,6 +29,9 @@ export function SettingsPanel({
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
+  const [reactivateTokenById, setReactivateTokenById] = useState<Record<string, string>>({});
+  const [reactivateErrorById, setReactivateErrorById] = useState<Record<string, string>>({});
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
   function toggleGroup(id: string) {
     setSelectedGroupIds((prev) => (prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]));
@@ -67,6 +70,29 @@ export function SettingsPanel({
     if (!confirm("Revoke this member? They will lose access immediately.")) return;
     await fetch(`/api/team/members/${memberId}`, { method: "DELETE" });
     window.location.reload();
+  }
+
+  async function reactivateMember(member: MemberRow) {
+    setReactivateErrorById((p) => ({ ...p, [member.id]: "" }));
+    setReactivateTokenById((p) => ({ ...p, [member.id]: "" }));
+    setReactivatingId(member.id);
+    const res = await fetch(`/api/team/members/${member.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reactivate: true }),
+    });
+    setReactivatingId(null);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setReactivateErrorById((p) => ({ ...p, [member.id]: d.error || "Failed to reactivate" }));
+      return;
+    }
+    const data = await res.json();
+    if (data.deviceToken) {
+      setReactivateTokenById((p) => ({ ...p, [member.id]: data.deviceToken }));
+    } else {
+      window.location.reload();
+    }
   }
 
   return (
@@ -150,7 +176,7 @@ export function SettingsPanel({
           <span className="kicker">{members.filter((m) => !m.revoked_at).length} active</span>
         </div>
         <p style={{ marginTop: 12 }}>
-          <a href={`/team/${teamSlug}/settings/groups`}>Manage groups &rarr;</a>
+          <a href={`/team/${teamSlug}/groups`}>Manage groups &rarr;</a>
         </p>
         <table className="member-table">
           <thead>
@@ -164,23 +190,60 @@ export function SettingsPanel({
           </thead>
           <tbody>
             {members.map((m) => (
-              <tr key={m.id}>
-                <td>{m.display_name || <span style={{ color: "var(--mute)" }}>—</span>}</td>
-                <td className="mono" style={{ fontSize: 12, color: "var(--mute)" }}>{m.email || "—"}</td>
-                <td className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: m.role === "admin" ? "var(--accent)" : "var(--mute)" }}>
-                  {m.role}
-                </td>
-                <td>
-                  <span className={`status-badge ${m.revoked_at ? "revoked" : "active"}`}>
-                    {m.revoked_at ? "Revoked" : "Active"}
-                  </span>
-                </td>
-                <td style={{ textAlign: "right" }}>
-                  {!m.revoked_at && m.role !== "admin" && (
-                    <button onClick={() => revokeMember(m.id)} className="btn danger-ghost">Revoke</button>
-                  )}
-                </td>
-              </tr>
+              <React.Fragment key={m.id}>
+                <tr>
+                  <td>{m.display_name || <span style={{ color: "var(--mute)" }}>—</span>}</td>
+                  <td className="mono" style={{ fontSize: 12, color: "var(--mute)" }}>{m.email || "—"}</td>
+                  <td className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: m.role === "admin" ? "var(--accent)" : "var(--mute)" }}>
+                    {m.role}
+                  </td>
+                  <td>
+                    <span className={`status-badge ${m.revoked_at ? "revoked" : "active"}`}>
+                      {m.revoked_at ? "Revoked" : "Active"}
+                    </span>
+                  </td>
+                  <td style={{ textAlign: "right" }}>
+                    {!m.revoked_at && m.role !== "admin" && (
+                      <button onClick={() => revokeMember(m.id)} className="btn danger-ghost">Revoke</button>
+                    )}
+                    {m.revoked_at && (
+                      <button
+                        onClick={() => reactivateMember(m)}
+                        className="btn secondary"
+                        disabled={reactivatingId === m.id}
+                      >
+                        {reactivatingId === m.id ? "Reactivating…" : "Reactivate"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+                {(reactivateTokenById[m.id] || reactivateErrorById[m.id]) && (
+                  <tr>
+                    <td colSpan={5}>
+                      {reactivateErrorById[m.id] && (
+                        <div className="form-error">{reactivateErrorById[m.id]}</div>
+                      )}
+                      {reactivateTokenById[m.id] && (
+                        <div className="help-box">
+                          <p>
+                            {m.display_name || m.email || "This member"} is active again as <strong>{m.role}</strong>. Send them this device token if they need to re-pair their daemon (shown once):
+                          </p>
+                          <code className="help-example" style={{ userSelect: "all" }}>{`fleetlens team join ${typeof window !== "undefined" ? window.location.origin : ""} ${reactivateTokenById[m.id]}`}</code>
+                          <p className="help-note">
+                            <button
+                              className="btn ghost"
+                              style={{ padding: "2px 8px", fontSize: 12 }}
+                              onClick={() => window.location.reload()}
+                            >
+                              Done
+                            </button>
+                          </p>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

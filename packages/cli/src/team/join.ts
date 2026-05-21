@@ -33,6 +33,7 @@ export async function joinTeam(args: string[]) {
     memberId: data.membership.id,
     bearerToken,
     teamSlug: data.team.slug,
+    teamName: data.team.name,
     pairedAt: new Date().toISOString(),
   };
   writeTeamConfig(config);

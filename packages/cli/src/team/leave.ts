@@ -1,4 +1,5 @@
 import { readTeamConfig, clearTeamConfig } from "./config.js";
+import { clearLastPush } from "./last-push.js";
 
 export async function teamLeave() {
   const config = readTeamConfig();
@@ -17,5 +18,6 @@ export async function teamLeave() {
   } catch {}
 
   clearTeamConfig();
+  clearLastPush();
   console.log("Left team. Local data is unaffected.");
 }

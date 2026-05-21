@@ -65,6 +65,7 @@ import {
 export {
   DEFAULT_ROOT,
   decodeProjectName,
+  isFleetlensRuntimeDir,
   readJsonlFile,
   walkJsonlFiles,
   sessionIdFromFileName,
@@ -100,6 +101,27 @@ export type {
   ListGeminiOptions,
   GetGeminiOptions,
 } from "./gemini.js";
+
+export {
+  type TeamConfig,
+  readTeamConfig,
+  writeTeamConfig,
+  clearTeamConfig,
+} from "./team-config.js";
+
+export {
+  type DailyRollup,
+  type RichDailyRollup,
+  type EnrichedDailyExtras,
+  type WireUsageWindow,
+  type WireExtraUsage,
+  type WireUsageSnapshot,
+  type WireCyclePeak,
+  type WireCyclePeaks,
+  type IngestPayload,
+  type LastPushRecord,
+  RICH_ROLLUP_SCHEMA_VERSION,
+} from "./team-wire.js";
 
 /* ================================================================= */
 /*  State directory                                                  */

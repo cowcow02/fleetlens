@@ -58,10 +58,21 @@ export async function redeemInvite(
   try {
     await client.query("BEGIN");
     await client.query("UPDATE invites SET used_at = now() WHERE id = $1", [invite.id]);
+    // Bearer always rotates on conflict — admin issued a fresh invite, so any
+    // stale daemon token is the intended casualty. Role uses CASE so an active
+    // admin is never silently downgraded by a member-role invite, but a
+    // post-revoke rejoin still respects whatever role the new invite carries.
     const mRes = await client.query(
       `INSERT INTO memberships (user_account_id, team_id, role, bearer_token_hash)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (user_account_id, team_id) DO UPDATE SET revoked_at = NULL, bearer_token_hash = EXCLUDED.bearer_token_hash
+       ON CONFLICT (user_account_id, team_id) DO UPDATE SET
+         revoked_at = NULL,
+         bearer_token_hash = EXCLUDED.bearer_token_hash,
+         role = CASE
+           WHEN memberships.revoked_at IS NOT NULL THEN EXCLUDED.role
+           WHEN memberships.role = 'admin' THEN memberships.role
+           ELSE EXCLUDED.role
+         END
        RETURNING id`,
       [userAccountId, invite.team_id, invite.role, sha256(bearerToken)],
     );
@@ -99,4 +110,16 @@ export async function revokeMembership(membershipId: string, pool: pg.Pool): Pro
     "UPDATE memberships SET revoked_at = now(), bearer_token_hash = NULL WHERE id = $1",
     [membershipId]
   );
+}
+
+export async function reactivateMembership(
+  membershipId: string,
+  pool: pg.Pool,
+): Promise<string | null> {
+  const bearerToken = "bt_" + generateToken(32);
+  const res = await pool.query(
+    "UPDATE memberships SET revoked_at = NULL, bearer_token_hash = $1 WHERE id = $2 AND revoked_at IS NOT NULL",
+    [sha256(bearerToken), membershipId],
+  );
+  return res.rowCount ? bearerToken : null;
 }

@@ -23,7 +23,9 @@ import { formatRelative, prettyProjectName } from "@/lib/format";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UsageSidebar } from "@/components/usage-sidebar";
 import { ChangelogIcon } from "@/components/changelog-icon";
+import { TeamChip } from "@/components/team-chip";
 import type { UsageSnapshot } from "@/lib/usage-data";
+import type { TeamConnection } from "@/lib/team-data";
 
 export type ProjectRef = {
   projectDir: string;
@@ -62,12 +64,14 @@ export function Sidebar({
   currentUsage,
   version,
   latestChangelogVersion,
+  teamConnection,
 }: {
   projects: ProjectRef[];
   totalSessions: number;
   currentUsage: UsageSnapshot | null;
   version: string;
   latestChangelogVersion: string | null;
+  teamConnection: TeamConnection;
 }) {
   const pathname = usePathname();
   const [pins, setPins] = useState<Set<string>>(new Set());
@@ -279,6 +283,8 @@ export function Sidebar({
       </div>
 
       <UsageSidebar snapshot={currentUsage} />
+
+      <TeamChip connection={teamConnection} />
 
       <div
         style={{

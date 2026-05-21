@@ -4,7 +4,45 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
-## [0.8.1] — 2026-05-16
+## [0.8.5] — 2026-05-21
+
+### Changed
+- **`/team/<slug>/groups` is now self-maintainable.** The page absorbed everything from the old admin-only `/team/<slug>/settings/groups` (which is removed): create new groups, rename, delete, add/remove members, toggle the group-manager flag. The Groups link in `/settings` now points at `/groups` itself.
+- **Editorial redesign of the Groups page.** GROUP / NN eyebrow, italic-serif group names that are themselves links to the roster, slug pill, italic-numeral member/manager counts, prominent terracotta "Open roster →" CTA per card, `•••` overflow menu (Rename / Delete) instead of equal-weight buttons. Sidebar order changed to Roster / Plan / Groups / Settings.
+- **Create new group is a modal.** A `+ Add new group` button in the top-right of `/groups` opens a Compose modal: display name, slug (auto-derived from name until edited), and an optional searchable multi-pick of members to place at creation time. Each selected member gets a per-row ☆ Member / ★ Manager pill — tap to promote individuals.
+- **Invite-to-group is a modal.** Per-card `+ Invite someone` opens an inline invite modal with email + place-in-groups multi-select (source group locked-checked) + copyable result link. The old `/team/<slug>/groups/<g>/invite` page is kept for the non-admin manager path.
+- **Add members modal with per-row manager pick.** Per-card add affordance is a dashed `+ Add members · N available` button that opens a modal hosting the same picker + per-row ☆/★ toggle.
+- **Two-click confirm for removing a group member.** First × click morphs the button into a red `CONFIRM ×` pill with a soft pulse; auto-dismisses after 4 s. Group deletion still uses native confirm.
+- **Rolling 7/30/90-day roster windows.** Replaced the Monday-start week bucket with the same rolling `today + N−1 prior calendar days` cutoff used by the local dashboard, so 7d totals now match between the personal and team views. The team roster and group detail pages gain a `7D / 30D / 90D` toggle (`?range=` URL param, default `7d`); `/api/team/roster` honors the same parameter. Helpers renamed: `weekStartIso` → `rangeStartIso(days)`, `loadRoster(teamId, pool)` → `loadRoster(teamId, days, pool)`, `loadGroupRoster(groupId, pool)` → `loadGroupRoster(groupId, days, pool)`, `week_*` → `range_*`.
+- **Range toggle on the member Daily activity chart.** `/team/<slug>/members/<id>` gains the same `7D / 30D / 90D` segmented control, scoped to just the "Daily activity" chart + "Daily breakdown" table so admins can widen or narrow the per-day exploration without disturbing the cycle-anchored plan-fit block above. Default is `30D` on this page to match the plan-fit context; the 30-day header card stays pinned regardless of toggle, and its labels were renamed from "30-day engagement / agent time / sessions / tokens" to "Last 30 days · …" for clarity.
+
+### Fixed
+- **Back navigation no longer breaks Groups page interactivity.** Switched the in-app links on `/groups` from plain `<a href>` to `next/link` so the React tree stays hydrated when the user navigates `/groups → /groups/<slug> → back`. Previously the kebab menu and add-member control silently stopped responding until a hard refresh.
+- **Member chart range now agrees with the roster card.** `loadMemberRollups` was computing its cutoff from `Date.now() - days * 86400000` (UTC-anchored) while `loadRoster` / `loadGroupRoster` used `rangeStartIso` (local-midnight anchored). At noon UTC the two could land on different calendar dates, so the member chart could show one extra/fewer day than the roster card for the same selected range. Routed through `rangeStartIso` for a single cutoff calculation.
+- **Range toggle preserves scroll position.** `router.replace` defaulted to scrolling to top, which yanked the chart out from under the cursor that had just reached for the button. Passed `{ scroll: false }` since the toggle is a chart-zoom action, not a navigation.
+
+## [0.8.4] — 2026-05-21
+
+### Added
+- **Consolidated daemon→server ingest path.** `/api/ingest/metrics` now accepts an optional `snapshotHistory: WireUsageSnapshot[]` field, processed by the same `processIngest` handler as the rest of the daemon payload. The older `/api/ingest/usage-history` route remains as a thin shim around the consolidated handler for older CLIs. New CLIs (`fleetlens@0.10.5`+) route their backfill batches through `/api/ingest/metrics`, so deployments fronted by a path-allowlist proxy (IAP, WAF, Cloud Run / GLB path matcher) no longer need a separate allowlist entry for backfill — anything the daemon ever wants to forward rides on the one already-allowlisted path. Past incident: backfill silently 401'd at the proxy layer for ~3 weeks on one deployment because the new route was never added to the bypass list; the user-visible symptom was a "COLLECTING DATA" badge on the plan-utilization panel that never cleared.
+
+### Changed
+- **Snapshot-history writes are one round-trip per HTTP batch instead of 500.** `processIngest` now uses a single multi-row `INSERT ... ON CONFLICT DO NOTHING` for the snapshot batch (with intra-batch dedup on `captured_at` to sidestep PG's cardinality-violation rule). On managed-Postgres deployments with non-trivial RTT this is a several-seconds-per-batch win that also shortens the held-transaction window.
+
+## [0.8.3] — 2026-05-21
+
+### Fixed
+- **Stale "update available" banner after an upgrade.** `/admin/updates` could show "Team-server vX.Y.Z is available. You're running vX.Y.Z." immediately after an image upgrade and stay that way until the next scheduled check. `getStatus()` was reading `current_version` live from the running process but trusting the cached `update_available` boolean from the previous check. It now recomputes the flag against the live version using the same `semver.gt` rule as the scheduled check, so the banner clears on the next page load.
+
+## [0.8.2] — 2026-05-21
+
+### Fixed
+- **Re-inviting an existing user no longer 409s.** An admin can now send a fresh invite (e.g. promoting a member to admin) to someone who already has an account. The invitee uses their existing password to redeem; wrong password returns 401 with actionable copy. Previously the duplicate-email check rejected the signup attempt before the invite was redeemed.
+- **Role updates land on re-invite.** `redeemInvite`'s `ON CONFLICT` clause now updates `role` via a CASE: post-revoke rejoin respects the invite's role, active admins are never silently downgraded by a member-role invite, and member→admin upgrade works.
+- **Reactivate path for revoked members.** New admin-only `PATCH /api/team/members/[id] { reactivate: true }` flips `revoked_at` and mints a fresh device token. Rejected for already-active members so a stray PATCH can't silently rotate a working daemon's bearer token. UI: revoked rows in `/team/<slug>/settings` show a **Reactivate** button that inline-displays the new `fleetlens team join` command.
+
+### Healing previously-bugged state
+Existing stuck installations need no manual SQL — a previously-bugged "stuck" member just clicks their unused admin invite again; a revoked user takes one admin click to come back.
 
 ### Added
 - **Team groups & manager-scoped visibility.** Admins can create named groups (e.g., "Platform Squad", "Growth Team") and place members into them. A group member with `is_manager = true` becomes a manager of that group — they see only their group's members on the dashboard and can invite new people into groups they manage. Plain members continue to see only their own profile.

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getPool } from "../../../../../db/pool";
 import { validateSession } from "../../../../../lib/auth";
-import { loadMember, loadMemberRollups } from "../../../../../lib/queries";
+import { loadMember, loadMemberRollups, parseRange, RANGE_DAYS } from "../../../../../lib/queries";
 import {
   loadMemberPlanSummary,
   loadMembership7dCyclePeaks,
@@ -16,10 +16,17 @@ import { canSeeMember, loadManagedMemberIds } from "../../../../../lib/visibilit
 
 export default async function MemberPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string; id: string }>;
+  searchParams: Promise<{ range?: string }>;
 }) {
   const { slug, id } = await params;
+  const { range: rangeParam } = await searchParams;
+  // Default 30d on the member page so first-load semantics match the
+  // plan-fit header above (which is always 30d / cycle-anchored).
+  const range = parseRange(rangeParam, "30d");
+  const chartDays = RANGE_DAYS[range];
   const pool = getPool();
 
   const cookieStore = await cookies();
@@ -43,8 +50,17 @@ export default async function MemberPage({
   const managed = await loadManagedMemberIds(viewer.membershipId, pool);
   if (!canSeeMember(viewer, id, managed)) notFound();
 
-  const [rollups, planSummary, allCyclePeaks, currentCycle] = await Promise.all([
-    loadMemberRollups(member.team_id, id, 30, pool),
+  // Header card stays pinned at 30d (matches the plan-fit context above).
+  // The chart/table get whatever the user has selected in the toggle.
+  // When the toggle is on 30d, the loads are identical — skip the second
+  // query so we don't pay for the same scan twice.
+  const headerLoad = loadMemberRollups(member.team_id, id, 30, pool);
+  const chartLoad =
+    chartDays === 30 ? headerLoad : loadMemberRollups(member.team_id, id, chartDays, pool);
+
+  const [headerRollups, chartRollups, planSummary, allCyclePeaks, currentCycle] = await Promise.all([
+    headerLoad,
+    chartLoad,
     loadMemberPlanSummary(member.team_id, id, pool),
     loadMembership7dCyclePeaks(member.team_id, pool),
     loadMember7dCurrentCycle(member.team_id, id, pool),
@@ -54,9 +70,9 @@ export default async function MemberPage({
 
   // 30-day rollup totals — surfaced inline in the header card so admins
   // don't have to scroll to find "is this seat actually being used?"
-  const totalAgentMs = rollups.reduce((s, r) => s + Number(r.agent_time_ms), 0);
-  const totalSessions = rollups.reduce((s, r) => s + r.sessions, 0);
-  const totalTokens = rollups.reduce(
+  const totalAgentMs = headerRollups.reduce((s, r) => s + Number(r.agent_time_ms), 0);
+  const totalSessions = headerRollups.reduce((s, r) => s + r.sessions, 0);
+  const totalTokens = headerRollups.reduce(
     (s, r) =>
       s +
       Number(r.tokens_input) +
@@ -154,7 +170,9 @@ export default async function MemberPage({
         </div>
 
         {/* 30-day activity summary — only volume metrics now, since Plan
-            and Daemon moved up next to the role/joined block. */}
+            and Daemon moved up next to the role/joined block. Pinned at
+            30d to stay coherent with the plan-fit verdict below — the
+            chart further down has its own range toggle for exploration. */}
         <div
           style={{
             borderTop: "1px solid var(--rule)",
@@ -166,12 +184,12 @@ export default async function MemberPage({
           }}
         >
           <HeaderField
-            label="30-day engagement"
+            label="Last 30 days · engagement"
             value={`${planSummary.totalDaysObserved} active days`}
           />
-          <HeaderField label="30-day agent time" value={formatAgentTime(totalAgentMs)} />
-          <HeaderField label="30-day sessions" value={String(totalSessions)} />
-          <HeaderField label="30-day tokens" value={formatTokens(totalTokens)} />
+          <HeaderField label="Last 30 days · agent time" value={formatAgentTime(totalAgentMs)} />
+          <HeaderField label="Last 30 days · sessions" value={String(totalSessions)} />
+          <HeaderField label="Last 30 days · tokens" value={formatTokens(totalTokens)} />
         </div>
       </header>
 
@@ -183,7 +201,7 @@ export default async function MemberPage({
       />
 
       {/* ─── 3. DAILY ACTIVITY (per-day shape + drill-down table) ───── */}
-      <MemberProfile rollups={rollups} />
+      <MemberProfile rollups={chartRollups} range={range} />
     </>
   );
 }

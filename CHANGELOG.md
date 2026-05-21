@@ -4,6 +4,27 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.6] — 2026-05-21
+
+### Added
+- **Team-pairing visibility in the Personal Edition dashboard.** When you've paired with a Team Edition server (`fleetlens team join …`), the dashboard now surfaces what's syncing without you having to open a terminal. A sidebar chip with a health dot (green / amber / red — re-derived client-side every 30 s so it ages correctly even when the daemon stops) and a live-aging "synced N ago" label. A `/settings → Team connection` panel showing team metadata, a labeled last-push preview (Agent time / Session count / Tool call count / Turn count / Token total / Plan tier), an explicit "What does NOT leave your machine" block, and a "Sync now" button that spawns `fleetlens team sync` as a subprocess and renders its output inline. A first-run welcome banner on the overview after pairing, dismissable per pairing. The preview also includes a "Show raw JSON payload" disclosure that displays the literal `IngestPayload` from disk — verify byte-for-byte that no transcripts, prompts, or project content leave your machine. Solo users see no change.
+
+### Changed
+- **Wire-format types now live in `@claude-lens/parser`.** `IngestPayload`, `DailyRollup`, `LastPushRecord`, and the rest of the daemon→server wire shape moved out of `packages/cli/src/team/push.ts` so the CLI and the dashboard share a single canonical definition — no drift risk on future schema changes. The CLI's `team-config` module also moved to the parser (`@claude-lens/parser/fs`) for the same reason.
+
+## [0.10.5] — 2026-05-21
+
+### Changed
+- **Team backfill now rides the consolidated `/api/ingest/metrics` path.** Same endpoint as the daemon's regular 5-min push, just with the optional `snapshotHistory` field set. Removes the need for a separate path-allowlist entry on deployments fronted by a proxy (IAP, WAF, Cloud Run / GLB path matcher), and as a side-effect the old `/api/ingest/usage-history` route is now a thin deprecation shim. Requires `team-server v0.8.4+` — older servers will return 200 without a `snapshotHistory` result block, and the CLI aborts the backfill loudly rather than silently advancing the high-water mark.
+
+### Fixed
+- **Backfill no longer silently advances the high-water mark on an older team-server.** Previously, a server that didn't recognize `snapshotHistory` would return 200 (zod `passthrough()` swallows unknown fields), `runTeamSync` would persist `lastSyncedUsageSnapshotAt` as if all rows landed, and the dropped rows would never be retried after the server upgraded. Backfill now requires an explicit `snapshotHistory` result block in the response.
+
+## [0.10.4] — 2026-05-21
+
+### Fixed
+- **Fleetlens's own LLM runs no longer show up in the dashboard.** The tmux-driven runner records its enrichment / digest / `/ask` calls as real Claude Code transcripts under `~/.claude/projects/` (cwd `~/.cclens/runtime`), since tailing that transcript is how it reads the model's reply. Those self-generated sessions were surfacing as a `.cclens/runtime` project and inflating session, project, and token-calibration rollups. The tmux runner now deletes each transcript once the response is captured (kill-session before unlink so claude can't rewrite it, gated by `FLEETLENS_TMUX_KEEP_WRAPPER`), and the parser excludes the runtime project dir at the scan chokepoint as a safety net for any transcript that outlives cleanup.
+
 ## [0.10.3] — 2026-05-16
 
 ### Added

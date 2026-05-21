@@ -2,7 +2,12 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "../../../../db/pool";
 import { validateSession } from "../../../../lib/auth";
-import { listGroupsForTeam, listGroupsManagedBy } from "../../../../lib/groups";
+import {
+  listGroupsForTeam,
+  listGroupsManagedBy,
+  listGroupMembersByGroupForTeam,
+} from "../../../../lib/groups";
+import { GroupsManagerPanel } from "../../../../components/groups-manager-panel";
 
 export default async function GroupsListPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -19,36 +24,22 @@ export default async function GroupsListPage({ params }: { params: Promise<{ slu
   if (!m) redirect("/login");
 
   const isAdminOrStaff = session.user.is_staff || m.role === "admin";
-  const groups = isAdminOrStaff
-    ? await listGroupsForTeam(teamId, pool)
-    : await listGroupsManagedBy(m.id, pool);
 
-  // Plain members with no managed groups → not allowed here.
-  if (groups.length === 0 && !isAdminOrStaff) {
-    redirect(`/team/${slug}/members/${m.id}`);
-  }
-
-  return (
-    <>
-      <div className="section-head">
-        <div>
-          <h1><em>Groups</em></h1>
-          <div className="kicker" style={{ marginTop: 8 }}>
-            {isAdminOrStaff ? "All groups" : "Groups you manage"}
-            {" · "}
-            {groups.length} {groups.length === 1 ? "group" : "groups"}
+  if (!isAdminOrStaff) {
+    const managed = await listGroupsManagedBy(m.id, pool);
+    if (managed.length === 0) redirect(`/team/${slug}/members/${m.id}`);
+    return (
+      <>
+        <div className="section-head">
+          <div>
+            <h1><em>Groups</em></h1>
+            <div className="kicker" style={{ marginTop: 8 }}>
+              Groups you manage · {managed.length} {managed.length === 1 ? "group" : "groups"}
+            </div>
           </div>
         </div>
-      </div>
-      {groups.length === 0 ? (
-        <div className="kicker" style={{ marginTop: 16 }}>
-          No groups yet. {isAdminOrStaff && (
-            <a href={`/team/${slug}/settings/groups`}>Create one in settings →</a>
-          )}
-        </div>
-      ) : (
         <ul style={{ listStyle: "none", padding: 0 }}>
-          {groups.map((g) => (
+          {managed.map((g) => (
             <li
               key={g.id}
               style={{
@@ -74,7 +65,27 @@ export default async function GroupsListPage({ params }: { params: Promise<{ slu
             </li>
           ))}
         </ul>
-      )}
-    </>
+      </>
+    );
+  }
+
+  const groups = await listGroupsForTeam(teamId, pool);
+  const grouped = await listGroupMembersByGroupForTeam(teamId, pool);
+  const membersByGroup = groups.map((g) => ({ group: g, members: grouped.get(g.id) ?? [] }));
+
+  const allMembers = await pool.query(
+    `SELECT m.id, u.email, u.display_name
+     FROM memberships m JOIN user_accounts u ON u.id = m.user_account_id
+     WHERE m.team_id = $1 AND m.revoked_at IS NULL
+     ORDER BY u.email`,
+    [teamId],
+  );
+
+  return (
+    <GroupsManagerPanel
+      teamSlug={slug}
+      groups={membersByGroup}
+      allMembers={allMembers.rows}
+    />
   );
 }

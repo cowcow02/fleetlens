@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -68,10 +69,13 @@ jobs:
       - name: Build CLI
         run: pnpm -F fleetlens build
 
+      # OIDC trusted publishing needs npm >= 11.5.1; Node 20 ships npm 10.x.
+      - name: Upgrade npm for OIDC trusted publishing
+        run: npm install -g npm@latest
+
+      # Auth via OIDC trusted publisher (configured on npmjs.com), not a token.
       - name: Publish to npm
         run: npm publish packages/cli/ --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         run: gh release create ${{ github.ref_name }} --generate-notes

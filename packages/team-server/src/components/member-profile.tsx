@@ -1,17 +1,29 @@
 import { formatAgentTime, formatTokens } from "../lib/format";
-import type { RollupRow } from "../lib/queries";
+import type { RollupRow, RangeKey } from "../lib/queries";
+import { RangeTabs } from "./range-tabs";
 
-// 30-day day-by-day activity shape + drill-down table. Identity/role and
-// 30-day totals moved up into the page-level header so this component
-// stays focused on the per-day breakdown.
-export function MemberProfile({ rollups }: { rollups: RollupRow[] }) {
+// Day-by-day activity shape + drill-down table. Identity/role and the
+// 30-day plan-fit totals stay in the page-level header — this section
+// is the "explore the per-day shape" view, so the range toggle here is
+// scoped to the chart + table and doesn't disturb the plan block above.
+export function MemberProfile({
+  rollups,
+  range,
+}: {
+  rollups: RollupRow[];
+  range: RangeKey;
+}) {
   const maxDayMs = Math.max(...rollups.map((r) => Number(r.agent_time_ms)), 1);
+  const days = range === "7d" ? 7 : range === "30d" ? 30 : 90;
 
   return (
     <section style={{ marginTop: 24 }}>
-      <div className="subsection-head">
+      <div className="subsection-head" style={{ alignItems: "center" }}>
         <h2>Daily activity</h2>
-        <span className="kicker">30-day shape · hover any bar for that day's agent time</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="kicker">{days}-day shape · hover any bar for that day's agent time</span>
+          <RangeTabs value={range} />
+        </div>
       </div>
       <div className="activity-chart">
         {rollups.length === 0 && (

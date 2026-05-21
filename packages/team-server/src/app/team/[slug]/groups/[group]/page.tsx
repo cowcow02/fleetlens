@@ -3,15 +3,21 @@ import { redirect, notFound } from "next/navigation";
 import { getPool } from "../../../../../db/pool";
 import { validateSession } from "../../../../../lib/auth";
 import { loadGroupBySlug } from "../../../../../lib/groups";
-import { loadGroupRoster } from "../../../../../lib/queries";
+import { loadGroupRoster, parseRange, RANGE_DAYS } from "../../../../../lib/queries";
 import { RosterCard } from "../../../../../components/roster-card";
+import { RangeTabs } from "../../../../../components/range-tabs";
 
 export default async function GroupDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string; group: string }>;
+  searchParams: Promise<{ range?: string }>;
 }) {
   const { slug, group: groupSlug } = await params;
+  const { range: rangeParam } = await searchParams;
+  const range = parseRange(rangeParam);
+  const days = RANGE_DAYS[range];
   const pool = getPool();
   const cookieStore = await cookies();
   const token = cookieStore.get("fleetlens_session")?.value;
@@ -36,8 +42,8 @@ export default async function GroupDetailPage({
     if (!r.rowCount) notFound();
   }
 
-  const roster = await loadGroupRoster(group.id, pool);
-  const totalAgentMs = roster.reduce((sum, r) => sum + Number(r.week_agent_time_ms), 0);
+  const roster = await loadGroupRoster(group.id, days, pool);
+  const totalAgentMs = roster.reduce((sum, r) => sum + Number(r.range_agent_time_ms), 0);
   const managerCount = roster.filter((r) => r.is_manager).length;
 
   return (
@@ -46,6 +52,8 @@ export default async function GroupDetailPage({
         <div>
           <h1><em>{group.name}</em></h1>
           <div className="kicker" style={{ marginTop: 8 }}>
+            Last {days} days
+            {" · "}
             {roster.length} {roster.length === 1 ? "member" : "members"}
             {" · "}
             {managerCount} {managerCount === 1 ? "manager" : "managers"}
@@ -53,7 +61,8 @@ export default async function GroupDetailPage({
             {(totalAgentMs / 3600000).toFixed(1)}h combined agent time
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <RangeTabs value={range} />
           <a href={`/team/${slug}/groups/${group.slug}/insights`} className="btn">Insights →</a>
           <a href={`/team/${slug}/groups/${group.slug}/invite`} className="btn">+ Invite member</a>
         </div>
