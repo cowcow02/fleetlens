@@ -1,11 +1,15 @@
 import { readSettings } from "@claude-lens/entries/node";
 import { AiFeaturesForm } from "./ai-features-form";
+import { TeamConnectionSection } from "./team-connection-section";
 
 export default function SettingsPage() {
   const s = readSettings();
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-8">
       <h1 className="text-2xl font-semibold">Fleetlens Settings</h1>
+
+      <TeamConnectionSection />
+
       <section>
         <h2 className="text-lg font-medium mb-2">AI Features</h2>
         <p className="text-sm text-gray-500 mb-4">
