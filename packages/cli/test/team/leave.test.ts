@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeTeamConfig, type TeamConfig } from "../../src/team/config.js";
+import type { TeamConfig } from "../../src/team/config.js";
 
 const SAMPLE: TeamConfig = {
   serverUrl: "https://team.example.com",
@@ -25,13 +25,24 @@ vi.mock("../../src/team/config.js", async (importOriginal) => {
 
 describe("teamLeave", () => {
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+  let cclensDir: string;
+  let prevCclensHome: string | undefined;
 
   beforeEach(() => {
+    // Redirect cclensHome() to a temp dir so clearLastPush (unmocked, hits real disk)
+    // doesn't touch the user's real ~/.cclens during tests.
+    cclensDir = mkdtempSync(join(tmpdir(), "cclens-leave-"));
+    prevCclensHome = process.env.CCLENS_HOME;
+    process.env.CCLENS_HOME = cclensDir;
+
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.stubGlobal("fetch", vi.fn());
   });
 
   afterEach(() => {
+    if (prevCclensHome === undefined) delete process.env.CCLENS_HOME;
+    else process.env.CCLENS_HOME = prevCclensHome;
+    rmSync(cclensDir, { recursive: true, force: true });
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.resetAllMocks();
@@ -97,5 +108,39 @@ describe("teamLeave", () => {
 
     expect(clearTeamConfig).toHaveBeenCalledOnce();
     expect(consoleLogSpy).toHaveBeenCalledWith("Left team. Local data is unaffected.");
+  });
+
+  it("removes team-last-push.json so the stale-pairing artifact disappears", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(SAMPLE);
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+    } as Response);
+
+    // Pre-seed both files in the redirected ~/.cclens.
+    // writeTeamConfig is mocked (above) so we drop team.json directly to disk
+    // just to mirror the real "paired user leaves" state on the filesystem.
+    mkdirSync(cclensDir, { recursive: true });
+    writeFileSync(join(cclensDir, "team.json"), JSON.stringify(SAMPLE), { mode: 0o600 });
+    const lastPushPath = join(cclensDir, "team-last-push.json");
+    writeFileSync(
+      lastPushPath,
+      JSON.stringify({
+        pushedAt: "2026-05-20T12:00:00.000Z",
+        ok: true,
+        payload: { ingestId: "abc", observedAt: "2026-05-20T12:00:00.000Z" },
+      }),
+      { mode: 0o600 },
+    );
+    expect(existsSync(lastPushPath)).toBe(true);
+
+    const { teamLeave } = await import("../../src/team/leave.js");
+    await teamLeave();
+
+    // We don't bother asserting writeTeamConfig was called too — that's
+    // covered by the existing "calls leave endpoint and clears config" test.
+    // The new invariant is just that the last-push artifact is gone.
+    expect(existsSync(lastPushPath)).toBe(false);
   });
 });

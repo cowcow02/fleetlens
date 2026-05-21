@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { resetDb } from "../helpers/db.js";
 import { getPool } from "../../src/db/pool.js";
-import { weekStartIso, loadRoster, loadMemberRollups, loadMember } from "../../src/lib/queries.js";
+import { rangeStartIso, parseRange, loadRoster, loadMemberRollups, loadMember } from "../../src/lib/queries.js";
 import { createUserAccount } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
 import { createInvite, redeemInvite } from "../../src/lib/members.js";
@@ -32,78 +32,72 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe("weekStartIso", () => {
-  // The function sets local midnight and returns UTC ISO slice. We test
-  // relative day-of-week distance rather than absolute ISO dates to be
-  // timezone-agnostic.
-
+describe("rangeStartIso", () => {
+  // Tests "today + (days-1) prior calendar days" semantics. Local midnight
+  // → UTC ISO slice, so we use noon local to avoid timezone edge cases.
   function localNoon(year: number, month: number, day: number): Date {
-    // month is 1-indexed; noon local time avoids DST/UTC boundary issues
     return new Date(year, month - 1, day, 12, 0, 0);
   }
 
-  it("returns a string 6 characters shorter than a day ISO string (YYYY-MM-DD)", () => {
-    const result = weekStartIso(localNoon(2024, 1, 15));
+  it("returns YYYY-MM-DD", () => {
+    const result = rangeStartIso(7, localNoon(2024, 1, 15));
     expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it("Monday → same day returned", () => {
-    // 2024-01-15 is a Monday
+  it("7 days from a Monday → previous Tuesday (6 calendar days earlier)", () => {
     const inputMon = localNoon(2024, 1, 15);
-    const inputMonDay = inputMon.getDay(); // should be 1
-    expect(inputMonDay).toBe(1);
-    const result = weekStartIso(inputMon);
-    // The result should be at most 0 days before the input
+    const result = rangeStartIso(7, inputMon);
     const resultDate = new Date(result + "T12:00:00");
-    const diff = Math.round((inputMon.getTime() - resultDate.getTime()) / 86400000);
-    expect(diff).toBeGreaterThanOrEqual(0);
-    expect(diff).toBeLessThanOrEqual(1); // at most 1 day difference due to UTC offset
-  });
-
-  it("Wednesday → result is Monday (2 days earlier in local time)", () => {
-    // 2024-01-17 is a Wednesday
-    const inputWed = localNoon(2024, 1, 17);
-    expect(inputWed.getDay()).toBe(3); // Wednesday
-    const result = weekStartIso(inputWed);
-    // The Monday should be 2 local days before Wednesday
-    const expectedMonday = new Date(2024, 0, 15, 12, 0, 0); // 2024-01-15
-    const resultDate = new Date(result + "T12:00:00");
-    // They should be the same calendar day (allow 1 day for UTC offset)
-    const diff = Math.abs(expectedMonday.getTime() - resultDate.getTime());
-    expect(diff).toBeLessThanOrEqual(1.5 * 86400000); // within 1.5 days
-  });
-
-  it("Sunday → result is Monday of the previous week (6 days earlier)", () => {
-    // 2024-01-21 is a Sunday
-    const inputSun = localNoon(2024, 1, 21);
-    expect(inputSun.getDay()).toBe(0); // Sunday
-    const result = weekStartIso(inputSun);
-    // The returned date should be 6 days before Sunday
-    const resultDate = new Date(result + "T12:00:00");
-    const diffDays = Math.round((inputSun.getTime() - resultDate.getTime()) / 86400000);
-    // Between 5-7 days before
+    const diffDays = Math.round((inputMon.getTime() - resultDate.getTime()) / 86400000);
+    // Allow ±1 day for UTC offset
     expect(diffDays).toBeGreaterThanOrEqual(5);
     expect(diffDays).toBeLessThanOrEqual(7);
   });
 
-  it("Friday → result is Monday (4 days earlier in local time)", () => {
-    // 2024-01-19 is a Friday
-    const inputFri = localNoon(2024, 1, 19);
-    expect(inputFri.getDay()).toBe(5); // Friday
-    const result = weekStartIso(inputFri);
+  it("30 days → ~29 days earlier", () => {
+    const input = localNoon(2024, 3, 31);
+    const result = rangeStartIso(30, input);
     const resultDate = new Date(result + "T12:00:00");
-    const diffDays = Math.round((inputFri.getTime() - resultDate.getTime()) / 86400000);
-    expect(diffDays).toBeGreaterThanOrEqual(3);
-    expect(diffDays).toBeLessThanOrEqual(5);
+    const diffDays = Math.round((input.getTime() - resultDate.getTime()) / 86400000);
+    expect(diffDays).toBeGreaterThanOrEqual(28);
+    expect(diffDays).toBeLessThanOrEqual(30);
   });
 
-  it("defaults to today and returns a 10-char date string", () => {
-    const result = weekStartIso();
+  it("90 days → ~89 days earlier", () => {
+    const input = localNoon(2024, 6, 1);
+    const result = rangeStartIso(90, input);
+    const resultDate = new Date(result + "T12:00:00");
+    const diffDays = Math.round((input.getTime() - resultDate.getTime()) / 86400000);
+    expect(diffDays).toBeGreaterThanOrEqual(88);
+    expect(diffDays).toBeLessThanOrEqual(90);
+  });
+
+  it("defaults `now` to today", () => {
+    const result = rangeStartIso(7);
     expect(result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    // Result must be <= today
     const today = new Date();
     const resultDate = new Date(result + "T12:00:00");
     expect(resultDate.getTime()).toBeLessThanOrEqual(today.getTime() + 86400000);
+  });
+});
+
+describe("parseRange", () => {
+  it("accepts the three valid values", () => {
+    expect(parseRange("7d")).toBe("7d");
+    expect(parseRange("30d")).toBe("30d");
+    expect(parseRange("90d")).toBe("90d");
+  });
+
+  it("falls back to 7d by default for undefined or unknown values", () => {
+    expect(parseRange(undefined)).toBe("7d");
+    expect(parseRange("")).toBe("7d");
+    expect(parseRange("garbage")).toBe("7d");
+    expect(parseRange("365d")).toBe("7d");
+  });
+
+  it("honors the caller's fallback", () => {
+    expect(parseRange(undefined, "30d")).toBe("30d");
+    expect(parseRange("nope", "90d")).toBe("90d");
   });
 });
 
@@ -113,24 +107,24 @@ describe("loadRoster", () => {
     const { team: emptyTeam } = await createTeamWithAdmin("Empty Team", emptyAdmin.id, pool);
     // Revoke the admin so no active members
     await pool.query("UPDATE memberships SET revoked_at = now() WHERE team_id = $1", [emptyTeam.id]);
-    const roster = await loadRoster(emptyTeam.id, pool);
+    const roster = await loadRoster(emptyTeam.id, 7, pool);
     expect(roster).toHaveLength(0);
   });
 
   it("returns two rows for our two-member team", async () => {
-    const roster = await loadRoster(teamId, pool);
+    const roster = await loadRoster(teamId, 7, pool);
     expect(roster.length).toBe(2);
   });
 
   it("rows have the expected shape", async () => {
-    const roster = await loadRoster(teamId, pool);
+    const roster = await loadRoster(teamId, 7, pool);
     const row = roster[0];
     expect(typeof row.id).toBe("string");
     expect(typeof row.role).toBe("string");
-    expect(typeof row.week_sessions).toBe("number");
+    expect(typeof row.range_sessions).toBe("number");
   });
 
-  it("aggregates daily_rollups into week totals", async () => {
+  it("aggregates daily_rollups into range totals", async () => {
     const today = new Date().toISOString().slice(0, 10);
     await pool.query(`
       INSERT INTO daily_rollups (team_id, membership_id, day, agent_time_ms, sessions, tool_calls, turns,
@@ -138,10 +132,10 @@ describe("loadRoster", () => {
       VALUES ($1, $2, $3, 3600000, 2, 10, 4, 500, 300, 100, 50)
     `, [teamId, adminMembershipId, today]);
 
-    const roster = await loadRoster(teamId, pool);
+    const roster = await loadRoster(teamId, 7, pool);
     const adminRow = roster.find((r) => r.id === adminMembershipId);
-    expect(Number(adminRow!.week_sessions)).toBe(2);
-    expect(Number(adminRow!.week_agent_time_ms)).toBe(3600000);
+    expect(Number(adminRow!.range_sessions)).toBe(2);
+    expect(Number(adminRow!.range_agent_time_ms)).toBe(3600000);
   });
 });
 

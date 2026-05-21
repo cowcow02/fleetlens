@@ -30,7 +30,12 @@ export type LiveUsageUpdate = {
   mtimeMs: number;
 };
 
-export type LiveUpdate = LiveSessionUpdate | LiveUsageUpdate;
+export type LiveTeamPushUpdate = {
+  type: "team-push";
+  mtimeMs: number;
+};
+
+export type LiveUpdate = LiveSessionUpdate | LiveUsageUpdate | LiveTeamPushUpdate;
 
 type LiveEvent = LiveUpdate | { type: "heartbeat"; tsMs: number } | { type: "ready" };
 
@@ -52,7 +57,11 @@ export function useLiveEvents(
     es.onmessage = (e) => {
       try {
         const data: LiveEvent = JSON.parse(e.data);
-        if (data.type === "session-updated" || data.type === "usage-updated") {
+        if (
+          data.type === "session-updated" ||
+          data.type === "usage-updated" ||
+          data.type === "team-push"
+        ) {
           handlerRef.current(data);
         }
       } catch {

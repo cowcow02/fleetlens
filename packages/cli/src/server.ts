@@ -53,6 +53,7 @@ export async function startServer(opts: { port?: number } = {}): Promise<{ pid: 
       PORT: String(port),
       HOSTNAME: "localhost",
       CCLENS_DATA_DIR: dataDir,
+      FLEETLENS_CLI_BIN: process.argv[1],
     },
     cwd: appDir(),
   });

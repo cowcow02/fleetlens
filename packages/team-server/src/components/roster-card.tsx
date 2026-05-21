@@ -70,15 +70,15 @@ export function RosterCard({
       <div className="roster-card-stats">
         <div className="roster-card-stat">
           <span className="roster-card-stat-label">Agent</span>
-          <span className="roster-card-stat-value">{formatAgentTime(Number(member.week_agent_time_ms))}</span>
+          <span className="roster-card-stat-value">{formatAgentTime(Number(member.range_agent_time_ms))}</span>
         </div>
         <div className="roster-card-stat">
           <span className="roster-card-stat-label">Sessions</span>
-          <span className="roster-card-stat-value">{member.week_sessions}</span>
+          <span className="roster-card-stat-value">{member.range_sessions}</span>
         </div>
         <div className="roster-card-stat">
           <span className="roster-card-stat-label">Tokens</span>
-          <span className="roster-card-stat-value">{formatTokens(Number(member.week_tokens))}</span>
+          <span className="roster-card-stat-value">{formatTokens(Number(member.range_tokens))}</span>
         </div>
       </div>
     </a>
