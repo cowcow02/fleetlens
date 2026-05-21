@@ -4,6 +4,11 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.8.3] — 2026-05-21
+
+### Fixed
+- **Stale "update available" banner after an upgrade.** `/admin/updates` could show "Team-server vX.Y.Z is available. You're running vX.Y.Z." immediately after an image upgrade and stay that way until the next scheduled check. `getStatus()` was reading `current_version` live from the running process but trusting the cached `update_available` boolean from the previous check. It now recomputes the flag against the live version using the same `semver.gt` rule as the scheduled check, so the banner clears on the next page load.
+
 ## [0.8.2] — 2026-05-21
 
 ### Fixed
