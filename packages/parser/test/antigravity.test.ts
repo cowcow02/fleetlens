@@ -259,4 +259,134 @@ describe("antigravity parser", () => {
     expect(secondList[0]!.cwd).toBe("/Users/cowcow02/Repo/app-fixed");
     expect(secondList[0]!.projectName).toBe("/Users/cowcow02/Repo/app-fixed");
   });
+
+  it("handles missing history.jsonl entry correctly", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-no-history-"));
+    const sessionId = "ctx-no-history-123";
+    const transcriptFile = path.join(root, "brain", sessionId, ".system_generated", "logs", "transcript.jsonl");
+    await writeJsonl(transcriptFile, [
+      {
+        step_index: 0,
+        source: "USER_EXPLICIT",
+        type: "USER_INPUT",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:00Z",
+        content: "test session",
+      }
+    ]);
+
+    const list = await listAntigravitySessions({ root });
+    expect(list).toHaveLength(1);
+    expect(list[0]!.cwd).toBeUndefined();
+    expect(list[0]!.projectName).toBe(sessionId);
+  });
+
+  it("handles empty or malformed transcript files gracefully", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-malformed-"));
+    const sessionId = "ctx-malformed-123";
+    const transcriptFile = path.join(root, "brain", sessionId, ".system_generated", "logs", "transcript.jsonl");
+    
+    await writeRaw(transcriptFile, "malformed-json-line-1\n{invalid: true}\n");
+
+    const list = await listAntigravitySessions({ root });
+    expect(list).toHaveLength(1);
+    expect(list[0]!.id).toBe(sessionId);
+    expect(list[0]!.eventCount).toBe(0);
+    expect(list[0]!.model).toBeUndefined();
+  });
+
+  it("handles multiple model changes with last-write-wins behavior", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-multi-model-"));
+    const sessionId = "ctx-multi-model-123";
+    const transcriptFile = path.join(root, "brain", sessionId, ".system_generated", "logs", "transcript.jsonl");
+    await writeJsonl(transcriptFile, [
+      {
+        step_index: 0,
+        source: "USER_EXPLICIT",
+        type: "USER_INPUT",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:00Z",
+        content: "change model setting\n<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from None to Gemini 3.5 Flash.\n</USER_SETTINGS_CHANGE>",
+      },
+      {
+        step_index: 1,
+        source: "USER_EXPLICIT",
+        type: "USER_INPUT",
+        status: "DONE",
+        created_at: "2026-05-21T09:31:00Z",
+        content: "change model setting again\n<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from Gemini 3.5 Flash to Claude 3.5 Sonnet.\n</USER_SETTINGS_CHANGE>",
+      }
+    ]);
+
+    const list = await listAntigravitySessions({ root });
+    expect(list).toHaveLength(1);
+    expect(list[0]!.model).toBe("Claude 3.5 Sonnet");
+  });
+
+  it("extracts USER_INPUT text directly if no USER_REQUEST tag exists", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-no-tag-"));
+    const sessionId = "ctx-no-tag-123";
+    const transcriptFile = path.join(root, "brain", sessionId, ".system_generated", "logs", "transcript.jsonl");
+    await writeJsonl(transcriptFile, [
+      {
+        step_index: 0,
+        source: "USER_EXPLICIT",
+        type: "USER_INPUT",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:00Z",
+        content: "this is raw user prompt content directly",
+      }
+    ]);
+
+    const detail = await getAntigravitySession(sessionId, { root });
+    expect(detail).not.toBeNull();
+    const userEvent = detail!.events.find((e) => e.role === "user");
+    expect(userEvent).toBeDefined();
+    expect(userEvent!.preview).toBe("this is raw user prompt content directly");
+    expect(userEvent!.blocks[0]!.text).toBe("this is raw user prompt content directly");
+  });
+
+  it("does not consume pending tool calls when encountering ERROR_MESSAGE events", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-error-msg-"));
+    const sessionId = "ctx-error-msg-123";
+    const transcriptFile = path.join(root, "brain", sessionId, ".system_generated", "logs", "transcript.jsonl");
+    await writeJsonl(transcriptFile, [
+      {
+        step_index: 0,
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:00Z",
+        tool_calls: [{ name: "run_command", args: { CommandLine: "echo test" } }],
+      },
+      {
+        step_index: 1,
+        source: "MODEL",
+        type: "ERROR_MESSAGE",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:01Z",
+        error: "Rate limit reached for the current model session",
+      },
+      {
+        step_index: 2,
+        source: "MODEL",
+        type: "RUN_COMMAND",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:02Z",
+        content: "Command ran successfully output",
+      }
+    ]);
+
+    const detail = await getAntigravitySession(sessionId, { root });
+    expect(detail).not.toBeNull();
+    
+    const errorEvent = detail!.events.find((e) => e.rawType === "antigravity/error_message");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent!.role).toBe("meta");
+
+    const resultEvent = detail!.events.find((e) => e.role === "tool-result");
+    expect(resultEvent).toBeDefined();
+    expect(resultEvent!.toolUseId).toBe("tool-0-0");
+    expect(resultEvent!.toolResult).toBe("Command ran successfully output");
+  });
 });

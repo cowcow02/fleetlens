@@ -115,7 +115,7 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
 
   let firstTimestamp: string | undefined;
   let lastTimestamp: string | undefined;
-  let model: string = "Gemini 3.5 Flash";
+  let model: string | undefined;
   let toolCallCount = 0;
   let turnCount = 0;
   let firstUserPreview: string | undefined;
@@ -161,11 +161,9 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
   }
 
   for (const eventObj of parsedObjects) {
-
     const ts = eventObj.created_at || eventObj.timestamp;
 
     if (eventObj.type === "USER_INPUT") {
-      // Check for setting changes to extract model selection
       if (typeof eventObj.content === "string") {
         const matchNoNeed = eventObj.content.match(/Model Selection` from .*? to (.*?)\.\s*No need to/);
         if (matchNoNeed) {
@@ -243,7 +241,6 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
         });
       }
 
-      // Handle tool calls
       const toolCalls = eventObj.tool_calls || [];
       for (let cIdx = 0; cIdx < toolCalls.length; cIdx++) {
         const tc = toolCalls[cIdx];
@@ -269,8 +266,13 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
       continue;
     }
 
-    // Identify tool result
-    if (eventObj.source === "MODEL" && eventObj.type !== "PLANNER_RESPONSE") {
+    // Antigravity serializes tool results positionally in execution order, so we match them positionally using a queue.
+    if (
+      eventObj.source === "MODEL" &&
+      eventObj.type !== "PLANNER_RESPONSE" &&
+      eventObj.type !== "ERROR_MESSAGE" &&
+      pendingToolCalls.length > 0
+    ) {
       const matchedCall = pendingToolCalls.shift();
       const toolUseId = matchedCall ? matchedCall.id : `tool-${eventObj.step_index}-unknown`;
 
@@ -296,7 +298,6 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
       continue;
     }
 
-    // Other events (CONVERSATION_HISTORY, ERROR_MESSAGE, etc.)
     const text = eventObj.content || eventObj.error || "";
     pushEvent({
       index: idx++,
@@ -309,7 +310,6 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
     });
   }
 
-  // Compute offsets and gaps
   const startMs = firstTimestamp ? Date.parse(firstTimestamp) : undefined;
   if (startMs !== undefined && Number.isFinite(startMs)) {
     let prevMs: number | undefined;

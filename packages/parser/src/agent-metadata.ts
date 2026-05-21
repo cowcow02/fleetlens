@@ -57,7 +57,7 @@ export const GEMINI_METADATA: AgentMetadata = {
 export const ANTIGRAVITY_METADATA: AgentMetadata = {
   kind: "antigravity",
   displayName: "Antigravity",
-  shortLabel: "Antigravity",
+  shortLabel: "Agy",
   accentColor: "rgb(236, 72, 153)",
   iconChar: "⏃",
 };
