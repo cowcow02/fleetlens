@@ -55,8 +55,11 @@ beforeAll(async () => {
 
   // Set up member
   const member = await createUserAccount("team-member@example.com", "pass1234", "Team Member", {}, pool);
-  const { token } = await createInvite(teamId, admin.id, {}, pool);
+  const { inviteId, token } = await createInvite(teamId, admin.id, {}, pool);
   const redeemed = await redeemInvite(token, member.id, pool);
+  // Revoke the setup invite so it doesn't dedup-collide with later tests that
+  // create multi-use invites with the same default (member, no groups) config.
+  await pool.query("UPDATE invites SET revoked_at = now() WHERE id = $1", [inviteId]);
   memberMembershipId = redeemed!.membershipId;
   memberBearerToken = redeemed!.bearerToken;
   const memberSession = await createSession(member.id, pool);
@@ -668,8 +671,13 @@ describe("POST /api/team/invites — branch coverage", () => {
     expect(body.tokenPlaintext).toMatch(/^iv_/);
   });
 
-  it("creates an invite without expiresInDays (uses default 7) and non-admin role", async () => {
-    // This covers the expiresInDays ternary false branch and the role ternary false branch
+  it("creates an invite without expiresInDays (uses default) and non-admin role", async () => {
+    // This covers the expiresInDays ternary false branch and the role ternary false branch.
+    // Revoke any prior active (member, no-groups) invite first — dedup would otherwise 409.
+    await pool.query(
+      "UPDATE invites SET revoked_at = now() WHERE team_id = $1 AND email IS NULL AND revoked_at IS NULL AND role = 'member' AND coalesce(array_length(group_ids, 1), 0) = 0",
+      [teamId],
+    );
     const req = makeAuthedReq(
       `http://localhost/api/team/invites?team=${teamSlug}`,
       adminCookieToken,
