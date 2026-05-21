@@ -35,7 +35,10 @@ async function runActivityBackfill(
 
   const days = command.params.days;
   const todayMs = Date.now();
-  const targetDayMs = todayMs - days * 24 * 60 * 60 * 1000;
+  // "last N days" is inclusive of today: targetDay = today − (N − 1).
+  // buildRollupsForRange filters b.date >= targetDay, so days=30 yields
+  // exactly 30 calendar days (today + 29 prior), and days=1 yields today only.
+  const targetDayMs = todayMs - (days - 1) * 24 * 60 * 60 * 1000;
   const targetDay = toLocalDay(targetDayMs);
 
   log("info", `command ${command.id}: backfill-activity from ${targetDay} (${days} days)`);

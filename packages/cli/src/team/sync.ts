@@ -15,8 +15,12 @@ import { getPlanTier } from "../usage/profile.js";
 import { cclensPath } from "@claude-lens/parser/fs";
 
 // Process-scoped to prevent the same command from being dispatched twice
-// when a long backfill spans multiple sync ticks. Lost on daemon restart,
-// which is fine — the server will re-deliver and we'll start over.
+// when a long backfill spans multiple sync ticks (sync N+1 fires before
+// N's dispatch completes). Within a single sync, collectedCommands is a
+// Map keyed by id so the same pending command echoed in multiple push
+// legs (rollup loop + queue drain) is only dispatched once. Both layers
+// are needed: this Set survives across sync invocations, the Map does not.
+// Lost on daemon restart, which is fine — the server will re-deliver.
 const inFlightCommands = new Set<string>();
 
 const USAGE_LOG = cclensPath("usage.jsonl");
@@ -59,13 +63,21 @@ export async function runTeamSync(
       writeTeamConfig(nextConfig);
     };
 
-    const collectedCommands: ServerCommand[] = [];
+    // Keyed by command id so a command echoed in multiple push responses
+    // within this single sync is only collected (and dispatched) once.
+    const collectedCommands = new Map<string, ServerCommand>();
+    const collectCommands = (commands: ServerCommand[] | undefined): void => {
+      if (!commands) return;
+      for (const cmd of commands) {
+        if (!collectedCommands.has(cmd.id)) collectedCommands.set(cmd.id, cmd);
+      }
+    };
 
     const dispatchAndReport = async (): Promise<void> => {
       try {
-        if (collectedCommands.length === 0) return;
+        if (collectedCommands.size === 0) return;
         const results: CommandResult[] = [];
-        for (const cmd of collectedCommands) {
+        for (const cmd of collectedCommands.values()) {
           if (inFlightCommands.has(cmd.id)) continue;
           inFlightCommands.add(cmd.id);
           try {
@@ -145,9 +157,7 @@ export async function runTeamSync(
         return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
       writeLastPushSuccess(payload);
-      if (result.body?.commands && result.body.commands.length > 0) {
-        collectedCommands.push(...result.body.commands);
-      }
+      collectCommands(result.body?.commands);
       // Try to drain any queued backlog while the server is reachable.
       let queuedDrained = 0;
       const backlog = dequeuePayloads() as IngestPayload[];
@@ -157,9 +167,7 @@ export async function runTeamSync(
           for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
           break;
         }
-        if (qResult.body?.commands && qResult.body.commands.length > 0) {
-          collectedCommands.push(...qResult.body.commands);
-        }
+        collectCommands(qResult.body?.commands);
         queuedDrained++;
       }
       log("info", `team push ok: live-only (no new daily activity)` +
@@ -195,9 +203,7 @@ export async function runTeamSync(
         break;
       }
       writeLastPushSuccess(payload);
-      if (result.body?.commands && result.body.commands.length > 0) {
-        collectedCommands.push(...result.body.commands);
-      }
+      collectCommands(result.body?.commands);
       pushed++;
       lastPushedDay = rollup.day;
     }
@@ -217,9 +223,7 @@ export async function runTeamSync(
           for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
           break;
         }
-        if (qResult.body?.commands && qResult.body.commands.length > 0) {
-          collectedCommands.push(...qResult.body.commands);
-        }
+        collectCommands(qResult.body?.commands);
         queuedDrained++;
       }
     }

@@ -51,7 +51,7 @@ export const WireCyclePeaksSchema = z.object({
 const CommandResultSchema = z.object({
   id: z.string(),
   ok: z.boolean(),
-  completedAt: z.string(),
+  completedAt: z.string().datetime({ offset: true }),
   summary: z.record(z.unknown()).optional(),
   error: z.string().optional(),
 });

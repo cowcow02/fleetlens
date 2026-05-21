@@ -563,6 +563,56 @@ describe("runTeamSync", () => {
     expect(result.pushed).toBeGreaterThan(0);
   });
 
+  it("deduplicates the same command id echoed in multiple push responses within one sync", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    // Two sessions on two different days → buildRollupsForRange produces
+    // two rollups → the per-rollup loop fires two pushes. Both push responses
+    // echo the SAME pending command (server hasn't seen completion yet, so it
+    // re-delivers on every ingest). The dispatcher should only run it once.
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([
+      makeSession("2026-04-13"),
+      makeSession("2026-04-14"),
+    ]);
+
+    const { dequeuePayloads } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([]);
+
+    const DUP_COMMAND = {
+      ok: true,
+      commands: [{ id: "cmd_dup", type: "backfill-activity", params: { days: 1 } }],
+    };
+    // Default: every fetch succeeds, no commands.
+    vi.mocked(fetch).mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    }) as Response);
+    // First two fetches (the two per-rollup pushes) BOTH return the same command.
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => DUP_COMMAND } as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => DUP_COMMAND } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    const calls = vi.mocked(fetch).mock.calls;
+    const resultsCalls = calls.filter((c) => {
+      const init = c[1] as RequestInit | undefined;
+      if (!init?.body) return false;
+      const parsed = JSON.parse(String(init.body));
+      return Array.isArray(parsed.commandResults);
+    });
+    // Exactly one bare-results push, and it carries exactly one result for
+    // cmd_dup — even though the command was delivered twice.
+    expect(resultsCalls).toHaveLength(1);
+    const parsedBody = JSON.parse(String((resultsCalls[0]![1] as RequestInit).body));
+    expect(parsedBody.commandResults).toHaveLength(1);
+    expect(parsedBody.commandResults[0]).toMatchObject({ id: "cmd_dup", ok: true });
+  });
+
   it("persists usage-history high-water after successful backfill", async () => {
     const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
