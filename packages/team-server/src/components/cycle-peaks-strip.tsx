@@ -15,35 +15,72 @@ const SEVEN_DAYS_MS = 7 * 24 * 3_600_000;
 // amber. Striped fill = predicted from JSONL; dashed border = current.
 export function CyclePeaksStrip({
   cycles,
-  maxBars = 8,
+  maxBars = 4,
+  includeCurrent = true,
 }: {
   cycles: MembershipCyclePeak[];
   maxBars?: number;
+  includeCurrent?: boolean;
 }) {
-  if (cycles.length === 0) {
+  const filtered = includeCurrent ? cycles : cycles.filter((c) => !c.isCurrent);
+
+  if (filtered.length === 0) {
     return (
       <span style={{ color: "var(--mute)", fontSize: 11, fontStyle: "italic" }}>
-        no cycle data yet
+        {includeCurrent ? "no cycles yet" : "no completed cycles yet"}
       </span>
     );
   }
-  const visible = cycles.slice(-maxBars);
+
+  const visible = filtered.slice(-maxBars);
+
+  // Pad left with nulls to ensure a consistent, right-aligned maxBars grid structure
+  const padded = [
+    ...Array(Math.max(0, maxBars - visible.length)).fill(null),
+    ...visible,
+  ];
+
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
+        gridTemplateColumns: `repeat(${maxBars}, minmax(0, 1fr))`,
         gap: 4,
         alignItems: "end",
         minWidth: 0,
       }}
     >
-      {visible.map((c, i) => (
-        <CycleBar key={i} cycle={c} />
-      ))}
+      {padded.map((c, i) =>
+        c ? <CycleBar key={i} cycle={c} /> : <EmptyCycleBar key={i} />
+      )}
     </div>
   );
 }
+
+function EmptyCycleBar() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "stretch",
+        gap: 2,
+      }}
+    >
+      <div style={{ fontSize: 9, height: 11 }} />
+      <div
+        style={{
+          height: 36,
+          background: "var(--rule)",
+          borderRadius: 2,
+          opacity: 0.15,
+        }}
+      />
+      <div style={{ fontSize: 9, height: 11 }} />
+    </div>
+  );
+}
+
 
 function CycleBar({ cycle }: { cycle: MembershipCyclePeak }) {
   const pct = Math.max(0, Math.min(100, cycle.peakPct));

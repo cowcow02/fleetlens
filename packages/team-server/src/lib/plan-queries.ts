@@ -183,6 +183,64 @@ export async function loadMembership7dCyclePeaks(
   return out;
 }
 
+export async function loadTeam7dCurrentCycles(
+  teamId: string,
+  pool: pg.Pool,
+): Promise<Map<string, CurrentCycleData>> {
+  const res = await pool.query<{
+    membership_id: string;
+    captured_at: string;
+    seven_day_utilization: number;
+    seven_day_resets_at: string;
+    latest_resets_at: string;
+  }>(
+    `WITH latest_reset AS (
+      SELECT DISTINCT ON (membership_id)
+        membership_id,
+        seven_day_resets_at AS resets_at,
+        date_trunc('hour', seven_day_resets_at + interval '30 minutes') AS resets_at_hour
+      FROM plan_utilization
+      WHERE team_id = $1 AND seven_day_resets_at IS NOT NULL
+      ORDER BY membership_id, captured_at DESC
+    )
+    SELECT
+      pu.membership_id,
+      pu.captured_at,
+      pu.seven_day_utilization,
+      pu.seven_day_resets_at,
+      lr.resets_at AS latest_resets_at
+    FROM plan_utilization pu
+    JOIN latest_reset lr ON lr.membership_id = pu.membership_id
+      AND date_trunc('hour', pu.seven_day_resets_at + interval '30 minutes') = lr.resets_at_hour
+    WHERE pu.team_id = $1
+      AND pu.seven_day_utilization IS NOT NULL
+      AND pu.seven_day_resets_at IS NOT NULL
+    ORDER BY pu.membership_id, pu.captured_at ASC`,
+    [teamId],
+  );
+
+  const out = new Map<string, CurrentCycleData>();
+  for (const r of res.rows) {
+    const endMs = Date.parse(r.latest_resets_at);
+    const startMs = endMs - 7 * 86_400_000;
+    const capturedAt = new Date(r.captured_at);
+    const capturedMs = capturedAt.getTime();
+    if (capturedMs < startMs) continue;
+
+    let cycle = out.get(r.membership_id);
+    if (!cycle) {
+      cycle = { startMs, endMs, snapshots: [] };
+      out.set(r.membership_id, cycle);
+    }
+    cycle.snapshots.push({
+      capturedAt,
+      utilization: Number(r.seven_day_utilization),
+    });
+  }
+  return out;
+}
+
+
 export type CurrentCycleSnapshot = {
   capturedAt: Date;
   utilization: number;  // 0..100
