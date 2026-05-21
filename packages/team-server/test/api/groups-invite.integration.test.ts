@@ -7,6 +7,7 @@ import { createTeamWithAdmin } from "../../src/lib/teams.js";
 import { createInvite, redeemInvite } from "../../src/lib/members.js";
 import { createGroup, addGroupMember, setGroupMemberManager } from "../../src/lib/groups.js";
 import { POST as inviteGroupPOST } from "../../src/app/api/team/[slug]/groups/[group]/invite/route.js";
+import { POST as revokePOST } from "../../src/app/api/team/[slug]/invites/[id]/revoke/route.js";
 
 let pool: ReturnType<typeof getPool>;
 let teamSlug: string;
@@ -153,5 +154,78 @@ describe("manager invite API (POST /api/team/[slug]/groups/[group]/invite)", () 
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/not in this team/);
+  });
+
+  it("dedup: second invite into the same group set returns 409", async () => {
+    const first = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${managedGroupSlug}/invite`,
+      managerCookieToken,
+      { method: "POST", body: {} },
+    );
+    const r1 = await inviteGroupPOST(first, {
+      params: Promise.resolve({ slug: teamSlug, group: managedGroupSlug }),
+    });
+    expect(r1.status).toBe(201);
+    const { inviteId: firstId } = await r1.json();
+
+    const second = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${managedGroupSlug}/invite`,
+      managerCookieToken,
+      { method: "POST", body: {} },
+    );
+    const r2 = await inviteGroupPOST(second, {
+      params: Promise.resolve({ slug: teamSlug, group: managedGroupSlug }),
+    });
+    expect(r2.status).toBe(409);
+
+    // state accumulates across tests; revoke so the next default-config create doesn't dedup-collide
+    await pool.query("UPDATE invites SET revoked_at = now() WHERE id = $1", [firstId]);
+  });
+
+  it("manager can revoke a link whose group_ids is a subset of their managed groups", async () => {
+    const create = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/${managedGroupSlug}/invite`,
+      managerCookieToken,
+      { method: "POST", body: {} },
+    );
+    const { inviteId } = await (await inviteGroupPOST(create, {
+      params: Promise.resolve({ slug: teamSlug, group: managedGroupSlug }),
+    })).json();
+
+    const revoke = authedReq(
+      `http://localhost/api/team/${teamSlug}/invites/${inviteId}/revoke`,
+      managerCookieToken,
+      { method: "POST" },
+    );
+    const res = await revokePOST(revoke, {
+      params: Promise.resolve({ slug: teamSlug, id: inviteId }),
+    });
+    expect(res.status).toBe(200);
+
+    const row = await pool.query<{ revoked_at: string | null }>(
+      "SELECT revoked_at FROM invites WHERE id = $1",
+      [inviteId],
+    );
+    expect(row.rows[0].revoked_at).not.toBeNull();
+  });
+
+  it("manager cannot revoke a link that includes a group they don't manage", async () => {
+    const admin = authedReq(
+      `http://localhost/api/team/invites?team=${teamSlug}`,
+      adminCookieToken,
+      { method: "POST", body: { role: "member", groupIds: [managedGroupId, otherGroupId] } },
+    );
+    const { POST: adminInvitePOST } = await import("../../src/app/api/team/invites/route.js");
+    const { inviteId } = await (await adminInvitePOST(admin)).json();
+
+    const revoke = authedReq(
+      `http://localhost/api/team/${teamSlug}/invites/${inviteId}/revoke`,
+      managerCookieToken,
+      { method: "POST" },
+    );
+    const res = await revokePOST(revoke, {
+      params: Promise.resolve({ slug: teamSlug, id: inviteId }),
+    });
+    expect(res.status).toBe(403);
   });
 });
