@@ -129,15 +129,15 @@ export async function GET(request: Request) {
         console.error("[events] fs.watch failed:", e);
       }
 
-      // Watch ~/.cclens/usage.jsonl for daemon snapshot appends.
-      // Non-recursive — we only care about that one file.
-      let usageWatcher: ReturnType<typeof watch> | null = null;
+      // Combined to halve fs.watch noise — a single non-recursive watcher
+      // over ~/.cclens/ filters down to the two files we care about.
+      let cclensWatcher: ReturnType<typeof watch> | null = null;
       if (existsSync(USAGE_LOG_DIR)) {
         try {
-          usageWatcher = watch(USAGE_LOG_DIR, { persistent: false }, (_eventType, filename) => {
-            if (filename?.toString() !== USAGE_LOG_FILE) return;
-            // Debounce so a single append doesn't fire twice (write + metadata).
-            const key = "__usage__";
+          cclensWatcher = watch(USAGE_LOG_DIR, { persistent: false }, (_eventType, filename) => {
+            const name = filename?.toString();
+            if (name !== USAGE_LOG_FILE && name !== TEAM_LAST_PUSH_FILE) return;
+            const key = `__cclens__${name}`;
             const prev = pending.get(key);
             if (prev) clearTimeout(prev);
             pending.set(
@@ -146,45 +146,20 @@ export async function GET(request: Request) {
                 pending.delete(key);
                 if (closed) return;
                 try {
-                  const stat = await fs.stat(path.join(USAGE_LOG_DIR, USAGE_LOG_FILE));
-                  send({ type: "usage-updated", mtimeMs: stat.mtimeMs });
+                  const stat = await fs.stat(path.join(USAGE_LOG_DIR, name));
+                  if (name === USAGE_LOG_FILE) {
+                    send({ type: "usage-updated", mtimeMs: stat.mtimeMs });
+                  } else {
+                    send({ type: "team-push", mtimeMs: stat.mtimeMs });
+                  }
                 } catch {
-                  // File may have been deleted — silently drop.
+                  // file may have been deleted — silently drop
                 }
               }, DEBOUNCE_MS),
             );
           });
         } catch (e) {
-          console.error("[events] usage watch failed:", e);
-        }
-      }
-
-      // Watch ~/.cclens/team-last-push.json so the sidebar chip's
-      // "synced N ago" stays fresh after every daemon push.
-      let teamPushWatcher: ReturnType<typeof watch> | null = null;
-      if (existsSync(USAGE_LOG_DIR)) {
-        try {
-          teamPushWatcher = watch(USAGE_LOG_DIR, { persistent: false }, (_eventType, filename) => {
-            if (filename?.toString() !== TEAM_LAST_PUSH_FILE) return;
-            const key = "__team_push__";
-            const prev = pending.get(key);
-            if (prev) clearTimeout(prev);
-            pending.set(
-              key,
-              setTimeout(async () => {
-                pending.delete(key);
-                if (closed) return;
-                try {
-                  const stat = await fs.stat(path.join(USAGE_LOG_DIR, TEAM_LAST_PUSH_FILE));
-                  send({ type: "team-push", mtimeMs: stat.mtimeMs });
-                } catch {
-                  // file may have been deleted (team leave) — silently drop
-                }
-              }, DEBOUNCE_MS),
-            );
-          });
-        } catch (e) {
-          console.error("[events] team-push watch failed:", e);
+          console.error("[events] cclens watch failed:", e);
         }
       }
 
@@ -210,12 +185,7 @@ export async function GET(request: Request) {
           // ignore
         }
         try {
-          usageWatcher?.close();
-        } catch {
-          // ignore
-        }
-        try {
-          teamPushWatcher?.close();
+          cclensWatcher?.close();
         } catch {
           // ignore
         }
