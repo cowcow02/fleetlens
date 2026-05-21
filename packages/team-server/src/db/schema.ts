@@ -272,3 +272,26 @@ export const groupMembers = pgTable(
     managers: index("idx_group_members_managers").on(t.groupId).where(sql`${t.isManager} = true`),
   }),
 );
+
+export const memberCommands = pgTable(
+  "member_commands",
+  {
+    id: text("id").primaryKey(),
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id").notNull().references(() => memberships.id, { onDelete: "cascade" }),
+    commandType: text("command_type").notNull(),
+    params: jsonb("params").notNull().default(sql`'{}'::jsonb`),
+    issuedById: uuid("issued_by_id").notNull().references(() => userAccounts.id),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    result: jsonb("result"),
+  },
+  (t) => ({
+    pendingIdx: index("idx_member_commands_pending")
+      .on(t.membershipId, t.completedAt)
+      .where(sql`${t.completedAt} IS NULL`),
+    teamRecentIdx: index("idx_member_commands_team_recent")
+      .on(t.teamId, sql`${t.issuedAt} DESC`),
+  }),
+);

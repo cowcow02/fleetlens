@@ -46,6 +46,16 @@ export const WireCyclePeaksSchema = z.object({
   sevenDay: z.array(WireCyclePeakSchema).max(60),
 });
 
+// Daemon-reported outcome of a previously-delivered member command. Matches
+// the wire shape produced by the CLI side of the command channel.
+const CommandResultSchema = z.object({
+  id: z.string(),
+  ok: z.boolean(),
+  completedAt: z.string().datetime({ offset: true }),
+  summary: z.record(z.unknown()).optional(),
+  error: z.string().optional(),
+});
+
 // Cap per-request to keep transactions bounded; the daemon batches.
 export const UsageHistoryPayload = z.object({
   snapshots: z.array(UsageSnapshotSchema).min(1).max(1000),
@@ -84,6 +94,9 @@ export const IngestPayload = z.object({
   // key, so this stream is processed independently of the ingestId dedup
   // gate — retrying a batch with the same ingestId still applies new rows.
   snapshotHistory: z.array(UsageSnapshotSchema).max(1000).optional(),
+  // Outcome of commands the server previously handed to this daemon. Capped
+  // per request so a stuck daemon can't flood the ingest with stale results.
+  commandResults: z.array(CommandResultSchema).max(50).optional(),
 }).passthrough();
 
 export const ClaimPayload = z.object({
