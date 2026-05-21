@@ -17,11 +17,13 @@ export function SettingsPanel({
   members,
   teamSlug,
   groups,
+  allowedSignupDomains: _allowedSignupDomains,
 }: {
   team: TeamRow;
   members: MemberRow[];
   teamSlug: string;
   groups?: { id: string; slug: string; name: string }[];
+  allowedSignupDomains: string[];
 }) {
   const [teamName, setTeamName] = useState(team.name);
   const [saving, setSaving] = useState(false);
