@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPool } from "../../../../db/pool";
-import { createFirstOrSubsequentUser, createSession } from "../../../../lib/auth";
+import {
+  createFirstOrSubsequentUser,
+  createSession,
+  findUserByEmail,
+} from "../../../../lib/auth";
+import { verifyPassword } from "../../../../lib/password";
 import { createTeamWithAdmin } from "../../../../lib/teams";
 import { lookupInvite, redeemInvite } from "../../../../lib/members";
 import { instanceState, setConfig } from "../../../../lib/server-config";
@@ -65,16 +70,37 @@ export async function POST(req: NextRequest) {
   }
 
   let user;
-  let promotedToStaff;
+  let promotedToStaff = false;
   try {
     const created = await createFirstOrSubsequentUser(email, password, displayName, pool);
     user = created.user;
     promotedToStaff = created.promotedToStaff;
   } catch (err) {
-    if (err instanceof Error && /unique|duplicate/i.test(err.message)) {
+    if (!(err instanceof Error) || !/unique|duplicate/i.test(err.message)) {
+      throw err;
+    }
+    if (!invite) {
       return NextResponse.json({ error: "An account with this email already exists" }, { status: 409 });
     }
-    throw err;
+    // Require password match before letting redeemInvite upsert — without this,
+    // a leaked invite token would be a takeover primitive. Brute-force surface
+    // here is bounded by the 10/min/IP rate limit above + bcrypt's per-attempt cost.
+    const existing = await findUserByEmail(email, pool);
+    if (!existing || !verifyPassword(password, existing.password_hash)) {
+      return NextResponse.json(
+        {
+          error:
+            "An account with this email already exists. Use your existing password to redeem this invite, or sign in first.",
+        },
+        { status: 401 },
+      );
+    }
+    user = {
+      id: existing.id,
+      email: existing.email,
+      display_name: existing.display_name,
+      is_staff: existing.is_staff,
+    };
   }
 
   // `promotedToStaff` is the authoritative first-user signal — it's decided
