@@ -10,7 +10,7 @@ import { VariantFinalized } from "../../../../../../components/insights-variants
 import { VariantConnected } from "../../../../../../components/insights-variants/v5-connected";
 import { VariantTicketFlow } from "../../../../../../components/insights-variants/v6-ticket-flow";
 import { VariantBuilder } from "../../../../../../components/insights-variants/v7-builder";
-import { mockTeamInsightReport } from "../../mock-data";
+import { mockTeamInsightReport } from "../../../../../../lib/insights-mock-data";
 
 export const dynamic = "force-dynamic";
 

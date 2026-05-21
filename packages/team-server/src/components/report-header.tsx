@@ -1,3 +1,5 @@
+import { formatDateDay, formatDateLong } from "../lib/format";
+
 type ReportHeaderProps = {
   teamName: string;
   weekStart: Date;
@@ -9,16 +11,6 @@ type ReportHeaderProps = {
   roster?: string[];
 };
 
-function fmtDay(d: Date): string {
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
-}
-function fmtYear(d: Date): string {
-  return d.getFullYear().toString();
-}
-function fmtFull(d: Date): string {
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-}
-
 export function ReportHeader({
   teamName,
   weekStart,
@@ -29,11 +21,10 @@ export function ReportHeader({
   generatedAt,
   roster,
 }: ReportHeaderProps) {
-  const gen = generatedAt
-    ? typeof generatedAt === "string"
-      ? generatedAt
-      : fmtFull(generatedAt)
-    : null;
+  let gen: string | null = null;
+  if (generatedAt) {
+    gen = typeof generatedAt === "string" ? generatedAt : formatDateLong(generatedAt);
+  }
   const rosterLine = roster && roster.length > 0
     ? `${roster.slice(0, 5).join(" · ")}${roster.length > 5 ? ` · +${roster.length - 5}` : ""}`
     : null;
@@ -47,7 +38,7 @@ export function ReportHeader({
       </div>
       <h1 className="report-header-team">{teamName}</h1>
       <div className="report-header-period">
-        Week of {fmtDay(weekStart)} – {fmtDay(weekEnd)}, {fmtYear(weekEnd)}
+        Week of {formatDateDay(weekStart)} – {formatDateDay(weekEnd)}, {weekEnd.getFullYear()}
       </div>
       <div className="report-header-stats">
         <div className="report-header-stat">

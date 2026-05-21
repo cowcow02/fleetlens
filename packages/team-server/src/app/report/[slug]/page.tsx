@@ -4,7 +4,7 @@ import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { VariantBuilder } from "../../../components/insights-variants/v7-builder";
 import { ReportHeader } from "../../../components/report-header";
-import { mockTeamInsightReport } from "../../team/[slug]/insights/mock-data";
+import { mockTeamInsightReport } from "../../../lib/insights-mock-data";
 
 export const dynamic = "force-dynamic";
 

@@ -1,4 +1,4 @@
-import type { TeamInsightReport } from "./types";
+import type { TeamInsightReport } from "../app/team/[slug]/insights/types";
 
 const MEMBERS = ["Charlie", "Alice", "Bob", "Dana"];
 

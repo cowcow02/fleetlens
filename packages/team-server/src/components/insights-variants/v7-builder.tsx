@@ -45,6 +45,8 @@ const TIER_SYMBOL: Record<BlockTier, string> = {
 const COLUMN_COUNT = 4;
 const COLUMN_GAP_PX = 14;
 
+const ALL_BLOCK_IDS = BLOCK_CATALOG.map((b) => b.id);
+
 // Masonry row-track config: keep in sync with .builder-grid grid-auto-rows + row-gap.
 const ROW_TRACK_PX = 8;
 const ROW_GAP_PX = 14;
@@ -363,6 +365,49 @@ function SortableDivider({
   );
 }
 
+function renderExtraBody({
+  kind,
+  text,
+  editMode,
+  onTextChange,
+}: {
+  kind: "title" | "text";
+  text: string;
+  editMode: boolean;
+  onTextChange: (text: string) => void;
+}) {
+  if (editMode && kind === "title") {
+    return (
+      <input
+        type="text"
+        className="builder-extra-input builder-extra-title-input"
+        value={text}
+        onChange={(e) => onTextChange(e.target.value)}
+        onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        placeholder="Section title"
+      />
+    );
+  }
+  if (editMode) {
+    return (
+      <textarea
+        className="builder-extra-input builder-extra-text-input"
+        value={text}
+        onChange={(e) => onTextChange(e.target.value)}
+        onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        placeholder="Add some context for this section…"
+        rows={3}
+      />
+    );
+  }
+  if (kind === "title") {
+    return <h2 className="builder-extra-title-static">{text || "Section title"}</h2>;
+  }
+  return <p className="builder-extra-text-static">{text}</p>;
+}
+
 function SortableExtraText({
   id,
   kind,
@@ -405,7 +450,9 @@ function SortableExtraText({
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [width, editMode, text]);
+    // text-content changes are picked up by the ResizeObserver, no need to
+    // re-bind on every keystroke.
+  }, [width, editMode]);
 
   const style: React.CSSProperties = {
     gridColumn: `span ${width}`,
@@ -455,32 +502,7 @@ function SortableExtraText({
       data-width-label={widthLabel(width)}
       {...(editMode ? { ...attributes, ...listeners } : {})}
     >
-      {editMode ? (
-        kind === "title" ? (
-          <input
-            type="text"
-            className="builder-extra-input builder-extra-title-input"
-            value={text}
-            onChange={(e) => onTextChange(e.target.value)}
-            onPointerDown={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-            placeholder="Section title"
-          />
-        ) : (
-          <textarea
-            className="builder-extra-input builder-extra-text-input"
-            value={text}
-            onChange={(e) => onTextChange(e.target.value)}
-            onPointerDown={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-            placeholder="Add some context for this section…"
-            rows={3}
-          />
-        )
-      ) : (
-        kind === "title" ? <h2 className="builder-extra-title-static">{text || "Section title"}</h2>
-                         : <p className="builder-extra-text-static">{text}</p>
-      )}
+      {renderExtraBody({ kind, text, editMode, onTextChange })}
       {editMode && (
         <>
           <button
@@ -519,10 +541,9 @@ export function VariantBuilder({
   const urlInitial = useMemo(() => parseBlocksParam(blocksParam), [blocksParam]);
 
   const initialIds = urlInitial.length > 0 ? urlInitial : STARTER_BLOCKS;
-  const initialWidths = useMemo(() => defaultWidths(initialIds), [initialIds]);
-
+  // useState only reads its initializer once, so no useMemo needed.
   const [committedIds, setCommittedIds] = useState<string[]>(initialIds);
-  const [widths, setWidths] = useState<WidthMap>(initialWidths);
+  const [widths, setWidths] = useState<WidthMap>(() => defaultWidths(initialIds));
   const [extras, setExtras] = useState<ExtrasMap>({});
   const [hydrated, setHydrated] = useState(false);
   const [draftIds, setDraftIds] = useState<string[]>(initialIds);
@@ -588,12 +609,17 @@ export function VariantBuilder({
 
   useEffect(() => {
     if (!hydrated || typeof window === "undefined") return;
-    try {
-      const payload: PersistedState = { ids: committedIds, widths, extras };
-      window.localStorage.setItem(storageKey(slug), JSON.stringify(payload));
-    } catch {
-      // ignore
-    }
+    // Debounce so typing in a title/text widget or pointermove during a drag
+    // resize doesn't write to localStorage on every keystroke / move.
+    const handle = window.setTimeout(() => {
+      try {
+        const payload: PersistedState = { ids: committedIds, widths, extras };
+        window.localStorage.setItem(storageKey(slug), JSON.stringify(payload));
+      } catch {
+        // localStorage disabled or quota exceeded
+      }
+    }, 250);
+    return () => window.clearTimeout(handle);
   }, [committedIds, widths, extras, slug, hydrated]);
 
   function openSheet() {
@@ -616,7 +642,7 @@ export function VariantBuilder({
     setDraftIds(STARTER_BLOCKS);
   }
   function selectAll() {
-    setDraftIds(BLOCK_CATALOG.map((b) => b.id));
+    setDraftIds(ALL_BLOCK_IDS);
   }
   function clearAll() {
     setDraftIds([]);
@@ -667,6 +693,51 @@ export function VariantBuilder({
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
 
+  async function exportPdf() {
+    if (exporting) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const state = typeof window !== "undefined"
+        ? window.localStorage.getItem(storageKey(slug)) ?? ""
+        : "";
+      const res = await fetch(`/api/team/${encodeURIComponent(slug)}/insights/pdf?v=7`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state }),
+      });
+      if (!res.ok) {
+        const msg = await res.text().catch(() => "");
+        setExportError(
+          res.status === 401
+            ? "Session expired — refresh the page and sign in again."
+            : `PDF generation failed (${res.status}). ${msg.slice(0, 200)}`,
+        );
+        return;
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const fileMatch = disposition.match(/filename="([^"]+)"/);
+      const filename = fileMatch?.[1] ?? `${slug}-insight-report.pdf`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      // Browsers retain the download independently of the URL once click()
+      // returns synchronously, so we can revoke immediately.
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setExportError(`PDF export failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -699,48 +770,7 @@ export function VariantBuilder({
           type="button"
           className="builder-edit-button"
           disabled={exporting}
-          onClick={async () => {
-            if (exporting) return;
-            setExporting(true);
-            setExportError(null);
-            try {
-              const state = typeof window !== "undefined" ? window.localStorage.getItem(storageKey(slug)) ?? "" : "";
-              const res = await fetch(`/api/team/${encodeURIComponent(slug)}/insights/pdf?v=7`, {
-                method: "POST",
-                credentials: "include",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ state }),
-              });
-              if (!res.ok) {
-                const msg = await res.text().catch(() => "");
-                setExportError(
-                  res.status === 401
-                    ? "Session expired — refresh the page and sign in again."
-                    : `PDF generation failed (${res.status}). ${msg.slice(0, 200)}`,
-                );
-                return;
-              }
-              const blob = await res.blob();
-              const disposition = res.headers.get("content-disposition") ?? "";
-              const fileMatch = disposition.match(/filename="([^"]+)"/);
-              const filename = fileMatch?.[1] ?? `${slug}-insight-report.pdf`;
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = url;
-              a.download = filename;
-              a.rel = "noopener";
-              document.body.appendChild(a);
-              a.click();
-              setTimeout(() => {
-                a.remove();
-                URL.revokeObjectURL(url);
-              }, 30_000);
-            } catch (err) {
-              setExportError(`PDF export failed: ${err instanceof Error ? err.message : String(err)}`);
-            } finally {
-              setExporting(false);
-            }
-          }}
+          onClick={exportPdf}
           title="Render the dashboard server-side and download as PDF"
         >
           <span className="builder-customize-icon">{exporting ? "⌛" : "⤓"}</span>
@@ -932,7 +962,7 @@ export function VariantBuilder({
                           key={b.id}
                           className={`builder-block-chip${selected ? " selected" : ""}${isHovered ? " hovered" : ""}`}
                           onMouseEnter={() => setHovered(b.id)}
-                          onMouseLeave={() => setHovered((h) => (h === b.id ? null : h))}
+                          onMouseLeave={() => setHovered(null)}
                           onClick={() => toggleDraft(b.id)}
                         >
                           <div className="builder-block-chip-head">

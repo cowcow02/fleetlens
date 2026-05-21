@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mockTeamInsightReport } from "../../src/app/team/[slug]/insights/mock-data";
+import { mockTeamInsightReport } from "../../src/lib/insights-mock-data";
 
 describe("mockTeamInsightReport (maximal prototype)", () => {
   it("populates all 30 sections (A–DD) with non-trivial content", () => {

@@ -1,13 +1,13 @@
-import { NextRequest } from "next/server";
-import { cookies } from "next/headers";
+import { NextRequest, NextResponse } from "next/server";
 import { chromium, type BrowserContextOptions } from "playwright";
-import { getPool } from "../../../../../../db/pool";
-import { validateSession } from "../../../../../../lib/auth";
+import { requireTeamMembership } from "../../../../../../lib/route-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SESSION_COOKIE = "fleetlens_session";
+const BUILDER_STATE_KEY_PREFIX = "fleetlens-builder-v7:";
+const MAX_STATE_BYTES = 200_000;
 
 function baseUrl(req: NextRequest): string {
   const env = process.env.BASE_URL;
@@ -19,40 +19,35 @@ function baseUrl(req: NextRequest): string {
 
 async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>, builderState: string | null) {
   const { slug } = await slugParam;
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
-  if (!token) return new Response("Unauthorized", { status: 401 });
+  const auth = await requireTeamMembership(req, slug, { bySlug: true });
+  if (auth instanceof NextResponse) return auth;
 
-  const pool = getPool();
-  const session = await validateSession(token, pool);
-  if (!session) return new Response("Unauthorized", { status: 401 });
-
-  const teamRes = await pool.query("SELECT id FROM teams WHERE slug = $1", [slug]);
-  if (!teamRes.rowCount) return new Response("Team not found", { status: 404 });
-  const teamId = teamRes.rows[0].id;
-  const membership = session.memberships.find((m) => m.team_id === teamId);
-  if (!membership) return new Response("Forbidden", { status: 403 });
+  const token = req.cookies.get(SESSION_COOKIE)?.value;
+  if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const dashUrl = `${baseUrl(req)}/report/${encodeURIComponent(slug)}`;
+  const cookieDomain = new URL(baseUrl(req)).hostname;
+  const cookieSecure = baseUrl(req).startsWith("https:");
+
+  // A4 portrait at 96dpi: 794 × 1123 px (210 × 297 mm). Match the viewport
+  // exactly so there's no mismatch between layout width and PDF page width.
+  const ctxOpts: BrowserContextOptions = {
+    viewport: { width: 794, height: 1123 },
+    deviceScaleFactor: 2,
+  };
 
   const browser = await chromium.launch({ headless: true });
   try {
-    const cookieDomain = new URL(baseUrl(req)).hostname;
-    // A4 portrait at 96dpi: 794 × 1123 px (210 × 297 mm). Match the viewport
-    // exactly so there's no mismatch between layout width and PDF page width.
-    const ctxOpts: BrowserContextOptions = {
-      viewport: { width: 794, height: 1123 },
-      deviceScaleFactor: 2,
-    };
     const context = await browser.newContext(ctxOpts);
     await context.addCookies([
-      { name: SESSION_COOKIE, value: token, domain: cookieDomain, path: "/", httpOnly: true, secure: false, sameSite: "Lax" },
+      { name: SESSION_COOKIE, value: token, domain: cookieDomain, path: "/", httpOnly: true, secure: cookieSecure, sameSite: "Lax" },
     ]);
 
     const page = await context.newPage();
-    // Seed the user's localStorage layout before the dashboard hydrates.
+    // Must seed localStorage BEFORE goto — otherwise React hydrates with the
+    // starter preset and never re-reads the storage entry.
     if (builderState) {
-      const storageKey = `fleetlens-builder-v7:${slug}`;
+      const storageKey = `${BUILDER_STATE_KEY_PREFIX}${slug}`;
       await page.addInitScript(
         ([key, value]) => {
           try { window.localStorage.setItem(key, value); } catch {}
@@ -71,7 +66,6 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>, bu
       undefined,
       { timeout: 10_000 },
     );
-    await page.waitForTimeout(400);
     // Strip scrollbars + force the page background to extend to every edge so
     // the PDF capture has no gray gutter on the right (which is the browser's
     // default canvas color showing through where the scrollbar would have been).
@@ -102,14 +96,12 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>, bu
 
     const today = new Date().toISOString().slice(0, 10);
     const filename = `${slug}-insight-report-${today}.pdf`;
-    // Dev-only: mirror to /tmp so the PDF endpoint result is inspectable from
-    // tooling that can't read the user's Downloads folder.
     if (process.env.NODE_ENV !== "production") {
       try {
         const { writeFile } = await import("node:fs/promises");
         await writeFile(`/tmp/last-pdf-${slug}.pdf`, Buffer.from(pdf));
       } catch {
-        // ignore
+        // ignore — dev convenience only
       }
     }
     return new Response(new Uint8Array(pdf), {
@@ -138,14 +130,14 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: stri
   try {
     if (contentType.includes("application/json")) {
       const body = await req.json();
-      if (body && typeof body.state === "string" && body.state.length < 200_000) state = body.state;
+      if (body && typeof body.state === "string" && body.state.length < MAX_STATE_BYTES) state = body.state;
     } else if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
       const form = await req.formData();
       const raw = form.get("state");
-      if (typeof raw === "string" && raw.length < 200_000) state = raw;
+      if (typeof raw === "string" && raw.length < MAX_STATE_BYTES) state = raw;
     }
   } catch {
-    // ignore — no state provided
+    // ignore — no state provided, route will render starter layout
   }
   return handle(req, ctx.params, state);
 }
