@@ -8,6 +8,7 @@ import {
   type IngestPayload,
   type LastPushRecord,
 } from "@claude-lens/parser/fs";
+import { deriveHealth, type Health } from "./team-health";
 
 export type TeamConnection =
   | { paired: false }
@@ -19,13 +20,10 @@ export type TeamConnection =
         | { kind: "none" }
         | { kind: "ok"; at: string; payload: IngestPayload }
         | { kind: "error"; at: string; error: string; payload: IngestPayload };
-      health: "green" | "amber" | "red";
+      health: Health;
     };
 
 const LAST_PUSH_FILE = "team-last-push.json";
-
-const FRESH_MS = 15 * 60_000;
-const STALE_MS = 60 * 60_000;
 
 function readLastPush(): LastPushRecord | null {
   const path = join(cclensHome(), LAST_PUSH_FILE);
@@ -37,19 +35,21 @@ function readLastPush(): LastPushRecord | null {
   }
 }
 
-function deriveHealth(lastPush: LastPushRecord | null, nowMs: number = Date.now()): "green" | "amber" | "red" {
-  if (!lastPush) return "amber";
-  if (!lastPush.ok) return "red";
-  const ageMs = nowMs - Date.parse(lastPush.pushedAt);
-  if (Number.isNaN(ageMs) || ageMs > STALE_MS) return "red";
-  if (ageMs > FRESH_MS) return "amber";
-  return "green";
-}
-
 export function readTeamConnection(): TeamConnection {
   const config: TeamConfig | null = readTeamConfig();
   if (!config) return { paired: false };
   const lastPush = readLastPush();
+
+  const lastPushBlock = !lastPush
+    ? ({ kind: "none" } as const)
+    : lastPush.ok
+      ? ({ kind: "ok", at: lastPush.pushedAt, payload: lastPush.payload } as const)
+      : ({
+          kind: "error",
+          at: lastPush.pushedAt,
+          error: lastPush.error ?? "Unknown error",
+          payload: lastPush.payload,
+        } as const);
 
   return {
     paired: true,
@@ -62,11 +62,7 @@ export function readTeamConnection(): TeamConnection {
       role: null,
       pairedAt: config.pairedAt,
     },
-    lastPush: !lastPush
-      ? { kind: "none" }
-      : lastPush.ok
-        ? { kind: "ok", at: lastPush.pushedAt, payload: lastPush.payload }
-        : { kind: "error", at: lastPush.pushedAt, error: lastPush.error ?? "Unknown error", payload: lastPush.payload },
-    health: deriveHealth(lastPush),
+    lastPush: lastPushBlock,
+    health: deriveHealth(lastPushBlock),
   };
 }

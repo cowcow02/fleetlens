@@ -1,17 +1,35 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatRelative } from "@/lib/format";
 import type { TeamConnection } from "@/lib/team-data";
+import { deriveHealth, type Health } from "@/lib/team-health";
 
-const COLORS: Record<"green" | "amber" | "red", string> = {
+const COLORS: Record<Health, string> = {
   green: "var(--af-success, #10b981)",
   amber: "var(--af-warning, #f59e0b)",
   red: "var(--af-error, #ef4444)",
 };
 
+// Re-derive health every 30s so the dot ages from green → amber → red
+// even when no daemon push fires (e.g. daemon stopped, dashboard tab idle).
+// The relative-time label gets the same tick for free.
+const TICK_MS = 30_000;
+
 export function TeamChip({ connection }: { connection: TeamConnection }) {
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!connection.paired) return;
+    const id = setInterval(() => setNowMs(Date.now()), TICK_MS);
+    return () => clearInterval(id);
+  }, [connection.paired]);
+
   if (!connection.paired) return null;
 
-  const { team, lastPush, health } = connection;
+  const { team, lastPush } = connection;
+  const health = deriveHealth(lastPush, nowMs);
   const dotColor = COLORS[health];
 
   let timeLabel: string;
@@ -19,6 +37,9 @@ export function TeamChip({ connection }: { connection: TeamConnection }) {
   if (lastPush.kind === "none") {
     timeLabel = "waiting…";
     absoluteTime = "Daemon pushes every 5 minutes";
+  } else if (lastPush.kind === "error") {
+    timeLabel = `failed ${formatRelative(lastPush.at)}`;
+    absoluteTime = new Date(lastPush.at).toLocaleString();
   } else {
     timeLabel = `synced ${formatRelative(lastPush.at)}`;
     absoluteTime = new Date(lastPush.at).toLocaleString();
@@ -48,6 +69,7 @@ export function TeamChip({ connection }: { connection: TeamConnection }) {
     >
       <span
         aria-hidden
+        suppressHydrationWarning
         style={{
           width: 7,
           height: 7,
