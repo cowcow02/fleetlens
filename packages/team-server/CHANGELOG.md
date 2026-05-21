@@ -4,6 +4,23 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.8.5] — 2026-05-21
+
+### Changed
+- **`/team/<slug>/groups` is now self-maintainable.** The page absorbed everything from the old admin-only `/team/<slug>/settings/groups` (which is removed): create new groups, rename, delete, add/remove members, toggle the group-manager flag. The Groups link in `/settings` now points at `/groups` itself.
+- **Editorial redesign of the Groups page.** GROUP / NN eyebrow, italic-serif group names that are themselves links to the roster, slug pill, italic-numeral member/manager counts, prominent terracotta "Open roster →" CTA per card, `•••` overflow menu (Rename / Delete) instead of equal-weight buttons. Sidebar order changed to Roster / Plan / Groups / Settings.
+- **Create new group is a modal.** A `+ Add new group` button in the top-right of `/groups` opens a Compose modal: display name, slug (auto-derived from name until edited), and an optional searchable multi-pick of members to place at creation time. Each selected member gets a per-row ☆ Member / ★ Manager pill — tap to promote individuals.
+- **Invite-to-group is a modal.** Per-card `+ Invite someone` opens an inline invite modal with email + place-in-groups multi-select (source group locked-checked) + copyable result link. The old `/team/<slug>/groups/<g>/invite` page is kept for the non-admin manager path.
+- **Add members modal with per-row manager pick.** Per-card add affordance is a dashed `+ Add members · N available` button that opens a modal hosting the same picker + per-row ☆/★ toggle.
+- **Two-click confirm for removing a group member.** First × click morphs the button into a red `CONFIRM ×` pill with a soft pulse; auto-dismisses after 4 s. Group deletion still uses native confirm.
+- **Rolling 7/30/90-day roster windows.** Replaced the Monday-start week bucket with the same rolling `today + N−1 prior calendar days` cutoff used by the local dashboard, so 7d totals now match between the personal and team views. The team roster and group detail pages gain a `7D / 30D / 90D` toggle (`?range=` URL param, default `7d`); `/api/team/roster` honors the same parameter. Helpers renamed: `weekStartIso` → `rangeStartIso(days)`, `loadRoster(teamId, pool)` → `loadRoster(teamId, days, pool)`, `loadGroupRoster(groupId, pool)` → `loadGroupRoster(groupId, days, pool)`, `week_*` → `range_*`.
+- **Range toggle on the member Daily activity chart.** `/team/<slug>/members/<id>` gains the same `7D / 30D / 90D` segmented control, scoped to just the "Daily activity" chart + "Daily breakdown" table so admins can widen or narrow the per-day exploration without disturbing the cycle-anchored plan-fit block above. Default is `30D` on this page to match the plan-fit context; the 30-day header card stays pinned regardless of toggle, and its labels were renamed from "30-day engagement / agent time / sessions / tokens" to "Last 30 days · …" for clarity.
+
+### Fixed
+- **Back navigation no longer breaks Groups page interactivity.** Switched the in-app links on `/groups` from plain `<a href>` to `next/link` so the React tree stays hydrated when the user navigates `/groups → /groups/<slug> → back`. Previously the kebab menu and add-member control silently stopped responding until a hard refresh.
+- **Member chart range now agrees with the roster card.** `loadMemberRollups` was computing its cutoff from `Date.now() - days * 86400000` (UTC-anchored) while `loadRoster` / `loadGroupRoster` used `rangeStartIso` (local-midnight anchored). At noon UTC the two could land on different calendar dates, so the member chart could show one extra/fewer day than the roster card for the same selected range. Routed through `rangeStartIso` for a single cutoff calculation.
+- **Range toggle preserves scroll position.** `router.replace` defaulted to scrolling to top, which yanked the chart out from under the cursor that had just reached for the button. Passed `{ scroll: false }` since the toggle is a chart-zoom action, not a navigation.
+
 ## [0.8.4] — 2026-05-21
 
 ### Added
