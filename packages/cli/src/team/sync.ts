@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readTeamConfig, writeTeamConfig, type TeamConfig } from "./config.js";
 import {
   buildIngestPayload,
@@ -9,8 +10,14 @@ import {
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
 import { runTeamBackfill, type BackfillOutcome } from "./backfill.js";
 import { writeLastPushSuccess, writeLastPushFailure } from "./last-push.js";
+import { dispatchCommand, type ServerCommand, type CommandResult } from "./commands.js";
 import { getPlanTier } from "../usage/profile.js";
 import { cclensPath } from "@claude-lens/parser/fs";
+
+// Process-scoped to prevent the same command from being dispatched twice
+// when a long backfill spans multiple sync ticks. Lost on daemon restart,
+// which is fine — the server will re-deliver and we'll start over.
+const inFlightCommands = new Set<string>();
 
 const USAGE_LOG = cclensPath("usage.jsonl");
 const PROFILE_CACHE = cclensPath("profile.json");
@@ -50,6 +57,40 @@ export async function runTeamSync(
     const persistConfig = (patch: Partial<TeamConfig>) => {
       nextConfig = { ...nextConfig, ...patch };
       writeTeamConfig(nextConfig);
+    };
+
+    const collectedCommands: ServerCommand[] = [];
+
+    const dispatchAndReport = async (): Promise<void> => {
+      if (collectedCommands.length === 0) return;
+      const results: CommandResult[] = [];
+      for (const cmd of collectedCommands) {
+        if (inFlightCommands.has(cmd.id)) continue;
+        inFlightCommands.add(cmd.id);
+        try {
+          const result = await dispatchCommand(cmd, config, log);
+          results.push(result);
+        } finally {
+          inFlightCommands.delete(cmd.id);
+        }
+      }
+      if (results.length === 0) return;
+
+      // Bare-results push: no rollup/snapshot/tier/cyclePeaks, just commandResults
+      // so the server can mark the corresponding rows complete. Failure here is
+      // non-fatal — the server will re-deliver on the next sync via the same
+      // pending-commands query.
+      const resultsPayload: IngestPayload = {
+        ingestId: randomUUID(),
+        observedAt: new Date().toISOString(),
+        commandResults: results,
+      };
+      const r = await pushToTeamServer(config, resultsPayload);
+      if (!r.ok) {
+        log("warn", `team commandResults push failed (${r.status}); will retry on next sync`);
+      } else {
+        log("info", `team commandResults push ok: ${results.length} result${results.length === 1 ? "" : "s"}`);
+      }
     };
 
     const usageBackfill = await runTeamBackfill(log, USAGE_LOG, config, {
@@ -97,6 +138,9 @@ export async function runTeamSync(
         return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
       writeLastPushSuccess(payload);
+      if (result.body?.commands && result.body.commands.length > 0) {
+        collectedCommands.push(...result.body.commands);
+      }
       // Try to drain any queued backlog while the server is reachable.
       let queuedDrained = 0;
       const backlog = dequeuePayloads() as IngestPayload[];
@@ -106,10 +150,14 @@ export async function runTeamSync(
           for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
           break;
         }
+        if (qResult.body?.commands && qResult.body.commands.length > 0) {
+          collectedCommands.push(...qResult.body.commands);
+        }
         queuedDrained++;
       }
       log("info", `team push ok: live-only (no new daily activity)` +
         (queuedDrained ? `, ${queuedDrained} queued retried` : ""));
+      await dispatchAndReport();
       return { paired: true, pushed: 1, queued: 0, queuedDrained, usageBackfill };
     }
 
@@ -140,6 +188,9 @@ export async function runTeamSync(
         break;
       }
       writeLastPushSuccess(payload);
+      if (result.body?.commands && result.body.commands.length > 0) {
+        collectedCommands.push(...result.body.commands);
+      }
       pushed++;
       lastPushedDay = rollup.day;
     }
@@ -159,6 +210,9 @@ export async function runTeamSync(
           for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
           break;
         }
+        if (qResult.body?.commands && qResult.body.commands.length > 0) {
+          collectedCommands.push(...qResult.body.commands);
+        }
         queuedDrained++;
       }
     }
@@ -169,6 +223,7 @@ export async function runTeamSync(
         (queued ? `, ${queued} queued for retry` : ""));
     }
 
+    await dispatchAndReport();
     return { paired: true, pushed, queued, queuedDrained, usageBackfill, failedDay };
   } catch (err) {
     const message = (err as Error).message;

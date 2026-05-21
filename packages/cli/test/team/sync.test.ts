@@ -457,6 +457,70 @@ describe("runTeamSync", () => {
     expect(record.payload.dailyRollup?.day).toBe("2026-04-14");
   });
 
+  it("dispatches server-issued commands and pushes a bare-results payload", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    // No sessions → no rollups → live-only fast path (with hasLiveData false).
+    // But we want the live-only push to fire so the response delivers a
+    // command. So we make sure the live-only success branch runs by
+    // returning a session so the per-rollup path executes instead — easier
+    // to control because we know exactly which fetch call delivers the
+    // command response.
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    const { dequeuePayloads } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([]);
+
+    // First fetch: per-rollup push returns a command for the daemon to run.
+    // Second fetch: the backfill-activity dispatcher pushes a daily rollup
+    //   (listSessions returns the same fixture, so buildRollupsForRange will
+    //   produce at least one rollup since the targetDay is `today - 1`).
+    // Last fetch: the bare commandResults push.
+    // All subsequent fetches succeed without commands so we don't loop forever.
+    vi.mocked(fetch).mockImplementation(async () => {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true }),
+      } as Response;
+    });
+    // Only the FIRST call returns a command.
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        commands: [
+          { id: "cmd_test", type: "backfill-activity", params: { days: 1 } },
+        ],
+      }),
+    } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    // Find the call whose body contains commandResults — that's the bare
+    // results push.
+    const calls = vi.mocked(fetch).mock.calls;
+    const resultsCall = calls.find((c) => {
+      const init = c[1] as RequestInit | undefined;
+      if (!init?.body) return false;
+      const parsed = JSON.parse(String(init.body));
+      return Array.isArray(parsed.commandResults);
+    });
+    expect(resultsCall).toBeDefined();
+    const parsedBody = JSON.parse(String((resultsCall![1] as RequestInit).body));
+    expect(parsedBody.commandResults).toHaveLength(1);
+    expect(parsedBody.commandResults[0]).toMatchObject({
+      id: "cmd_test",
+      ok: true,
+    });
+    // `summary.pushed` should be present from the backfill-activity handler.
+    expect(parsedBody.commandResults[0].summary).toBeDefined();
+  });
+
   it("persists usage-history high-water after successful backfill", async () => {
     const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
