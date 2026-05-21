@@ -4,6 +4,14 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.10.5] — 2026-05-21
+
+### Changed
+- **Team backfill now rides the consolidated `/api/ingest/metrics` path.** Same endpoint as the daemon's regular 5-min push, just with the optional `snapshotHistory` field set. Removes the need for a separate path-allowlist entry on deployments fronted by a proxy (IAP, WAF, Cloud Run / GLB path matcher), and as a side-effect the old `/api/ingest/usage-history` route is now a thin deprecation shim. Requires `team-server v0.8.4+` — older servers will return 200 without a `snapshotHistory` result block, and the CLI aborts the backfill loudly rather than silently advancing the high-water mark.
+
+### Fixed
+- **Backfill no longer silently advances the high-water mark on an older team-server.** Previously, a server that didn't recognize `snapshotHistory` would return 200 (zod `passthrough()` swallows unknown fields), `runTeamSync` would persist `lastSyncedUsageSnapshotAt` as if all rows landed, and the dropped rows would never be retried after the server upgraded. Backfill now requires an explicit `snapshotHistory` result block in the response.
+
 ## [0.10.4] — 2026-05-21
 
 ### Fixed
