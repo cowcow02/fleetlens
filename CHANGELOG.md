@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.11.0] — 2026-05-21
+
+### Added
+- **Team-issued commands to the daemon.** When you've paired with a Team Edition server, a team admin can now queue a 30-day activity backfill against your daemon from the team dashboard. The daemon picks the command up on its next 5-minute sync and re-pushes the last 30 days of daily activity rollups (server upserts, fully idempotent). No member-side UI changes — the existing "last sync N ago" tick on `/settings → Team connection` is the only feedback signal. Commands ride piggyback on the existing `/api/ingest/metrics` response; no new connections, no new polling. The privacy boundary holds: the dispatcher's switch has a single case (`backfill-activity`) and only calls existing aggregate-push helpers, so commands can widen the time window but never change the data shape. No transcripts, prompts, or project content can leak through a command. Always-on when paired (pairing implies consent); no opt-out env var. Requires `team-server v0.9.0+` to actually receive any commands; older servers simply don't issue any (the additive `commandResults` field is ignored, no harm).
+
 ## [0.10.6] — 2026-05-21
 
 ### Added
