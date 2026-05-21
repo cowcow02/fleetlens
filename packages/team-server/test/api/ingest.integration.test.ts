@@ -110,6 +110,46 @@ describe("POST /api/ingest/metrics", () => {
     expect(res.status).toBe(400);
   });
 
+  it("processes snapshotHistory even when ingestId is deduplicated", async () => {
+    // The headline-payload dedup gate (ingest_log) MUST NOT short-circuit
+    // snapshotHistory processing — row-level dedup via captured_at handles
+    // the idempotency for the bulk path. This test is the load-bearing one
+    // for the "retried batch with same ingestId still applies new rows"
+    // invariant in IngestPayload's schema comment.
+    const snap = (capturedAt: string) => ({
+      capturedAt,
+      fiveHour: { utilization: 30, resetsAt: "2026-06-01T07:10:00+00:00" },
+      sevenDay: { utilization: 40, resetsAt: "2026-06-05T12:00:00+00:00" },
+      sevenDayOpus: null,
+      sevenDaySonnet: null,
+      sevenDayOauthApps: null,
+      sevenDayCowork: null,
+      extraUsage: null,
+    });
+    const sharedIngestId = `ingest-shared-${Math.random().toString(36).slice(2)}`;
+    const first = await POST(makeReq({
+      ingestId: sharedIngestId,
+      observedAt: new Date().toISOString(),
+      snapshotHistory: [snap("2026-06-01T01:00:00+00:00"), snap("2026-06-01T01:05:00+00:00")],
+    }, `Bearer ${bearerToken}`));
+    expect(first.status).toBe(200);
+    const firstBody = await first.json();
+    expect(firstBody.snapshotHistory).toEqual({ received: 2, inserted: 2, skipped: 0 });
+
+    // Replay with the SAME ingestId but DIFFERENT captured_at values. The
+    // headline ingest_log gate dedups (response carries deduplicated: true)
+    // but the new snapshots must still land.
+    const second = await POST(makeReq({
+      ingestId: sharedIngestId,
+      observedAt: new Date().toISOString(),
+      snapshotHistory: [snap("2026-06-01T01:10:00+00:00"), snap("2026-06-01T01:15:00+00:00")],
+    }, `Bearer ${bearerToken}`));
+    expect(second.status).toBe(200);
+    const secondBody = await second.json();
+    expect(secondBody.deduplicated).toBe(true);
+    expect(secondBody.snapshotHistory).toEqual({ received: 2, inserted: 2, skipped: 0 });
+  });
+
   it("accepts snapshotHistory and reports inserted/skipped counts", async () => {
     const snap = (capturedAt: string) => ({
       capturedAt,

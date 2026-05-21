@@ -211,6 +211,12 @@ async function upsertMembershipCyclePeaks(
 // snapshots through the consolidated /api/ingest/metrics path via
 // IngestPayload.snapshotHistory. Both flows ultimately run through
 // processIngest, so there's exactly one DB code path.
+//
+// Each legacy call gets a fresh random ingestId — the old route's contract
+// had no batch-level idempotency (it relied solely on captured_at uniqueness
+// at the row level), so ingest_log accumulates one no-purpose row per legacy
+// call until this route is removed. Acceptable for the transition window;
+// expected to bleed off as CLIs upgrade.
 export async function processUsageHistory(
   raw: unknown,
   membershipId: string,
@@ -229,7 +235,9 @@ export async function processUsageHistory(
     teamId,
     pool,
   );
-  const h = result.snapshotHistory ?? { received: snapshots.length, inserted: 0, skipped: snapshots.length };
+  // UsageHistoryPayload enforces snapshots.min(1), so processIngest always
+  // returns a snapshotHistory result block.
+  const h = result.snapshotHistory!;
   return { accepted: true, received: h.received, inserted: h.inserted, skipped: h.skipped };
 }
 

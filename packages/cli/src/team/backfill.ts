@@ -91,7 +91,18 @@ async function postBatch(
   const body = (await res.json().catch(() => ({}))) as {
     snapshotHistory?: { inserted?: number; skipped?: number };
   };
-  const h = body.snapshotHistory ?? {};
+  if (!body.snapshotHistory) {
+    // 200 OK but no snapshotHistory result block — the server is on an older
+    // image that doesn't know about the field. The schema's passthrough()
+    // silently swallowed the snapshots. Treating this as success would advance
+    // the HWM in runTeamSync and the rows would never be retried after the
+    // server upgrades. Throw so the outer loop aborts without persisting any
+    // progress.
+    throw new Error(
+      "team server accepted snapshotHistory but did not return a result block — older image, upgrade required",
+    );
+  }
+  const h = body.snapshotHistory;
   return {
     inserted: h.inserted ?? 0,
     skipped: h.skipped ?? 0,

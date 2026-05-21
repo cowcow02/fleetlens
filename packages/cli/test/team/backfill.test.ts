@@ -216,6 +216,31 @@ describe("runTeamBackfill", () => {
     }
   });
 
+  it("aborts without advancing the HWM when an older server returns 200 with no snapshotHistory block", async () => {
+    // Older team-server images don't recognize the snapshotHistory field;
+    // zod passthrough() swallows it and processIngest returns no
+    // snapshotHistory result. If the CLI treated this as success it would
+    // advance lastSyncedUsageSnapshotAt in runTeamSync and the rows would
+    // never be retried after the server is upgraded. Backfill must abort.
+    const usagePath = join(dir, "usage.jsonl");
+    writeFileSync(usagePath, snapshotLine("2026-04-29T02:58:41.717+00:00") + "\n", "utf8");
+
+    const originalFetch = global.fetch;
+    global.fetch = (async () =>
+      new Response(JSON.stringify({ accepted: true, nextSyncAfter: new Date().toISOString() }), {
+        status: 200,
+      })) as typeof fetch;
+
+    try {
+      const result = await runTeamBackfill(() => {}, usagePath, fakeConfig);
+      expect(result.error).toMatch(/snapshotHistory/i);
+      expect(result.insertedSnapshots).toBe(0);
+      expect(result.lastSnapshotAt).toBeUndefined();
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it("reports an error and stops on a server 4xx", async () => {
     const usagePath = join(dir, "usage.jsonl");
     writeFileSync(

@@ -18,7 +18,10 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const result = await processIngest(body, membership.id, membership.teamId, pool);
-    return NextResponse.json(result, { status: result.deduplicated ? 202 : 200 });
+    // 202 means pure replay (no work done). A dedup'd headline that still
+    // landed new snapshotHistory rows is HTTP 200 — actual writes happened.
+    const isPureReplay = result.deduplicated && (result.snapshotHistory?.inserted ?? 0) === 0;
+    return NextResponse.json(result, { status: isPureReplay ? 202 : 200 });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return NextResponse.json({ error: "Validation failed" }, { status: 400 });
