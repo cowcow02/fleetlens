@@ -24,6 +24,19 @@ function makePayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeSnap(capturedAt: string) {
+  return {
+    capturedAt,
+    fiveHour: { utilization: 30, resetsAt: "2026-06-01T07:10:00+00:00" },
+    sevenDay: { utilization: 40, resetsAt: "2026-06-05T12:00:00+00:00" },
+    sevenDayOpus: null,
+    sevenDaySonnet: null,
+    sevenDayOauthApps: null,
+    sevenDayCowork: null,
+    extraUsage: null,
+  };
+}
+
 function makeReq(body: unknown, authHeader?: string): NextRequest {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -111,38 +124,21 @@ describe("POST /api/ingest/metrics", () => {
   });
 
   it("processes snapshotHistory even when ingestId is deduplicated", async () => {
-    // The headline-payload dedup gate (ingest_log) MUST NOT short-circuit
-    // snapshotHistory processing — row-level dedup via captured_at handles
-    // the idempotency for the bulk path. This test is the load-bearing one
-    // for the "retried batch with same ingestId still applies new rows"
-    // invariant in IngestPayload's schema comment.
-    const snap = (capturedAt: string) => ({
-      capturedAt,
-      fiveHour: { utilization: 30, resetsAt: "2026-06-01T07:10:00+00:00" },
-      sevenDay: { utilization: 40, resetsAt: "2026-06-05T12:00:00+00:00" },
-      sevenDayOpus: null,
-      sevenDaySonnet: null,
-      sevenDayOauthApps: null,
-      sevenDayCowork: null,
-      extraUsage: null,
-    });
+    // Headline ingest_log dedup MUST NOT short-circuit snapshotHistory —
+    // row-level dedup via captured_at owns the idempotency for the bulk path.
     const sharedIngestId = `ingest-shared-${Math.random().toString(36).slice(2)}`;
     const first = await POST(makeReq({
       ingestId: sharedIngestId,
       observedAt: new Date().toISOString(),
-      snapshotHistory: [snap("2026-06-01T01:00:00+00:00"), snap("2026-06-01T01:05:00+00:00")],
+      snapshotHistory: [makeSnap("2026-06-01T01:00:00+00:00"), makeSnap("2026-06-01T01:05:00+00:00")],
     }, `Bearer ${bearerToken}`));
     expect(first.status).toBe(200);
-    const firstBody = await first.json();
-    expect(firstBody.snapshotHistory).toEqual({ received: 2, inserted: 2, skipped: 0 });
+    expect((await first.json()).snapshotHistory).toEqual({ received: 2, inserted: 2, skipped: 0 });
 
-    // Replay with the SAME ingestId but DIFFERENT captured_at values. The
-    // headline ingest_log gate dedups (response carries deduplicated: true)
-    // but the new snapshots must still land.
     const second = await POST(makeReq({
       ingestId: sharedIngestId,
       observedAt: new Date().toISOString(),
-      snapshotHistory: [snap("2026-06-01T01:10:00+00:00"), snap("2026-06-01T01:15:00+00:00")],
+      snapshotHistory: [makeSnap("2026-06-01T01:10:00+00:00"), makeSnap("2026-06-01T01:15:00+00:00")],
     }, `Bearer ${bearerToken}`));
     expect(second.status).toBe(200);
     const secondBody = await second.json();
@@ -151,34 +147,39 @@ describe("POST /api/ingest/metrics", () => {
   });
 
   it("accepts snapshotHistory and reports inserted/skipped counts", async () => {
-    const snap = (capturedAt: string) => ({
-      capturedAt,
-      fiveHour: { utilization: 30, resetsAt: "2026-05-21T07:10:00+00:00" },
-      sevenDay: { utilization: 40, resetsAt: "2026-05-25T12:00:00+00:00" },
-      sevenDayOpus: null,
-      sevenDaySonnet: null,
-      sevenDayOauthApps: null,
-      sevenDayCowork: null,
-      extraUsage: null,
-    });
     const payload = {
       ingestId: `ingest-${Math.random().toString(36).slice(2)}`,
       observedAt: new Date().toISOString(),
       snapshotHistory: [
-        snap("2026-05-21T01:00:00+00:00"),
-        snap("2026-05-21T01:05:00+00:00"),
-        snap("2026-05-21T01:10:00+00:00"),
+        makeSnap("2026-05-21T01:00:00+00:00"),
+        makeSnap("2026-05-21T01:05:00+00:00"),
+        makeSnap("2026-05-21T01:10:00+00:00"),
       ],
     };
-    const req = makeReq(payload, `Bearer ${bearerToken}`);
-    const res = await POST(req);
+    const res = await POST(makeReq(payload, `Bearer ${bearerToken}`));
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.snapshotHistory).toEqual({ received: 3, inserted: 3, skipped: 0 });
+    expect((await res.json()).snapshotHistory).toEqual({ received: 3, inserted: 3, skipped: 0 });
 
-    // Re-send the same batch — captured_at unique key dedups all three rows.
+    // Re-send the same batch with a fresh ingestId — captured_at unique key
+    // dedups all three rows.
     const replay = await POST(makeReq({ ...payload, ingestId: `ingest-${Math.random().toString(36).slice(2)}` }, `Bearer ${bearerToken}`));
-    const replayBody = await replay.json();
-    expect(replayBody.snapshotHistory).toEqual({ received: 3, inserted: 0, skipped: 3 });
+    expect((await replay.json()).snapshotHistory).toEqual({ received: 3, inserted: 0, skipped: 3 });
+  });
+
+  it("collapses intra-batch duplicate captured_at values", async () => {
+    // PG raises a cardinality violation if a single INSERT ... ON CONFLICT
+    // proposes two rows for the same conflict target. The multi-row insert
+    // helper has to dedupe by captured_at before sending.
+    const dupTs = "2026-06-15T03:00:00+00:00";
+    const payload = {
+      ingestId: `ingest-dup-${Math.random().toString(36).slice(2)}`,
+      observedAt: new Date().toISOString(),
+      snapshotHistory: [makeSnap(dupTs), makeSnap(dupTs), makeSnap("2026-06-15T03:05:00+00:00")],
+    };
+    const res = await POST(makeReq(payload, `Bearer ${bearerToken}`));
+    expect(res.status).toBe(200);
+    // received counts what the caller sent; inserted is unique rows that
+    // actually landed (2 unique captured_at, both new).
+    expect((await res.json()).snapshotHistory).toEqual({ received: 3, inserted: 2, skipped: 1 });
   });
 });

@@ -24,7 +24,6 @@ export async function processIngest(
 
   let dedupHit!: boolean;
   let historyInserted = 0;
-  const historySize = payload.snapshotHistory?.length ?? 0;
 
   const client = await p.connect();
   try {
@@ -105,59 +104,72 @@ export async function processIngest(
     broadcastEvent(teamId, "roster-updated", { membershipId });
   }
 
+  // nextSyncAfter is the 200-vs-202 signal at the HTTP layer: present iff
+  // actual work happened. A dedup'd headline that still landed history rows
+  // counts as work; a pure replay (no history work) doesn't.
   const result: IngestResult = { accepted: true };
-  if (dedupHit && historyInserted === 0) {
-    result.deduplicated = true;
-  } else {
+  if (dedupHit) result.deduplicated = true;
+  if (!dedupHit || historyInserted > 0) {
     result.nextSyncAfter = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    if (dedupHit) result.deduplicated = true;
   }
-  if (historySize > 0) {
+  if (payload.snapshotHistory?.length) {
+    const received = payload.snapshotHistory.length;
     result.snapshotHistory = {
-      received: historySize,
+      received,
       inserted: historyInserted,
-      skipped: historySize - historyInserted,
+      skipped: received - historyInserted,
     };
   }
   return result;
 }
 
+// Multi-row INSERT with ON CONFLICT DO NOTHING — one round-trip per batch
+// instead of one per snapshot. Intra-batch duplicate captured_at values are
+// collapsed first because PG raises a cardinality violation if a single
+// statement proposes two rows that hit the same conflict target.
 async function insertPlanUtilizationSnapshots(
   client: pg.PoolClient,
   teamId: string,
   membershipId: string,
   snapshots: UsageSnapshot[],
 ): Promise<number> {
-  let inserted = 0;
-  for (const u of snapshots) {
-    const res = await client.query(
-      `INSERT INTO plan_utilization (
-         team_id, membership_id, captured_at,
-         five_hour_utilization, five_hour_resets_at,
-         seven_day_utilization, seven_day_resets_at,
-         seven_day_opus_utilization, seven_day_sonnet_utilization,
-         seven_day_oauth_apps_utilization, seven_day_cowork_utilization,
-         extra_usage_enabled, extra_usage_monthly_limit_usd,
-         extra_usage_used_credits_usd, extra_usage_utilization
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-       ON CONFLICT (team_id, membership_id, captured_at) DO NOTHING`,
-      [
-        teamId, membershipId, u.capturedAt,
-        u.fiveHour.utilization, u.fiveHour.resetsAt,
-        u.sevenDay.utilization, u.sevenDay.resetsAt,
-        u.sevenDayOpus?.utilization ?? null,
-        u.sevenDaySonnet?.utilization ?? null,
-        u.sevenDayOauthApps?.utilization ?? null,
-        u.sevenDayCowork?.utilization ?? null,
-        u.extraUsage?.isEnabled ?? false,
-        u.extraUsage?.monthlyLimitUsd ?? null,
-        u.extraUsage?.usedCreditsUsd ?? null,
-        u.extraUsage?.utilization ?? null,
-      ],
+  const unique = Array.from(new Map(snapshots.map((s) => [s.capturedAt, s])).values());
+  if (unique.length === 0) return 0;
+
+  const placeholders: string[] = [];
+  const values: unknown[] = [];
+  for (const u of unique) {
+    const base = values.length;
+    const ph = Array.from({ length: 15 }, (_, i) => `$${base + i + 1}`).join(",");
+    placeholders.push(`(${ph})`);
+    values.push(
+      teamId, membershipId, u.capturedAt,
+      u.fiveHour.utilization, u.fiveHour.resetsAt,
+      u.sevenDay.utilization, u.sevenDay.resetsAt,
+      u.sevenDayOpus?.utilization ?? null,
+      u.sevenDaySonnet?.utilization ?? null,
+      u.sevenDayOauthApps?.utilization ?? null,
+      u.sevenDayCowork?.utilization ?? null,
+      u.extraUsage?.isEnabled ?? false,
+      u.extraUsage?.monthlyLimitUsd ?? null,
+      u.extraUsage?.usedCreditsUsd ?? null,
+      u.extraUsage?.utilization ?? null,
     );
-    if (res.rowCount === 1) inserted++;
   }
-  return inserted;
+  const res = await client.query(
+    `INSERT INTO plan_utilization (
+       team_id, membership_id, captured_at,
+       five_hour_utilization, five_hour_resets_at,
+       seven_day_utilization, seven_day_resets_at,
+       seven_day_opus_utilization, seven_day_sonnet_utilization,
+       seven_day_oauth_apps_utilization, seven_day_cowork_utilization,
+       extra_usage_enabled, extra_usage_monthly_limit_usd,
+       extra_usage_used_credits_usd, extra_usage_utilization
+     ) VALUES ${placeholders.join(",")}
+     ON CONFLICT (team_id, membership_id, captured_at) DO NOTHING`,
+    values,
+  );
+  return res.rowCount ?? 0;
 }
 
 // Upsert per-cycle peak utilization values computed by the daemon. We
