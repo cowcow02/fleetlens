@@ -114,6 +114,10 @@ export type IngestPayload = {
   // Server dedups at the row level via captured_at, so retries on the same
   // ingestId still apply new rows.
   snapshotHistory?: WireUsageSnapshot[];
+  // Reports completion of server-issued commands the daemon executed since
+  // the previous push. Server marks corresponding rows in `member_commands`
+  // as completed. See docs/superpowers/specs/2026-05-21-team-issued-commands-design.md.
+  commandResults?: CommandResult[];
 };
 
 export type LastPushRecord = {
@@ -121,4 +125,24 @@ export type LastPushRecord = {
   ok: boolean;
   payload: IngestPayload;
   error?: string;
+};
+
+// Commands issued by the team server, embedded in /api/ingest/metrics
+// responses. Daemon parses, dispatches via the switch in
+// packages/cli/src/team/commands.ts, reports back via `commandResults`
+// on the next push. See docs/superpowers/specs/2026-05-21-team-issued-commands-design.md.
+export type ServerCommand =
+  | { id: string; type: "backfill-activity"; params: { days: number } };
+
+export type CommandResult =
+  | { id: string; ok: true; completedAt: string; summary?: Record<string, unknown> }
+  | { id: string; ok: false; completedAt: string; error: string };
+
+// Typed shape of the server's /api/ingest/metrics response. Fields are
+// optional because the server may add new ones over time; callers should
+// tolerate missing fields.
+export type IngestResponse = {
+  ok?: boolean;
+  snapshotHistory?: { inserted: number; skipped: number };
+  commands?: ServerCommand[];
 };

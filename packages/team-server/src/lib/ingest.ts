@@ -4,6 +4,7 @@ import { getPool } from "../db/pool";
 import { IngestPayload, UsageHistoryPayload, type UsageSnapshot } from "./zod-schemas";
 import { refreshMembershipWeeklyUtilization } from "./scheduler";
 import { broadcastEvent } from "./sse";
+import { processCommandResults, fetchPendingCommands, type PendingCommand } from "./member-commands";
 
 export type SnapshotHistoryResult = { received: number; inserted: number; skipped: number };
 export type IngestResult = {
@@ -11,6 +12,7 @@ export type IngestResult = {
   deduplicated?: boolean;
   nextSyncAfter?: string;
   snapshotHistory?: SnapshotHistoryResult;
+  commands?: PendingCommand[];
 };
 
 export async function processIngest(
@@ -176,6 +178,14 @@ export async function processIngest(
     broadcastEvent(teamId, "roster-updated", { membershipId });
   }
 
+  // Command channel: drain daemon-reported results, then hand back any
+  // pending commands. Runs on both dedupe-replay and active-work paths so a
+  // daemon retry still picks up work queued in the interim.
+  if (payload.commandResults && payload.commandResults.length > 0) {
+    await processCommandResults(p, membershipId, payload.commandResults);
+  }
+  const commands = await fetchPendingCommands(p, membershipId);
+
   // nextSyncAfter is the 200-vs-202 signal at the HTTP layer: present iff
   // actual work happened. A dedup'd headline that still landed history rows
   // counts as work; a pure replay (no history work) doesn't.
@@ -192,6 +202,7 @@ export async function processIngest(
       skipped: received - historyInserted,
     };
   }
+  if (commands.length > 0) result.commands = commands;
   return result;
 }
 

@@ -19,6 +19,9 @@ import {
   type WireCyclePeak,
   type WireCyclePeaks,
   type IngestPayload,
+  type IngestResponse,
+  type ServerCommand,
+  type CommandResult,
 } from "@claude-lens/parser/fs";
 import type { Entry } from "@claude-lens/entries";
 import { listEntriesForDay } from "@claude-lens/entries/fs";
@@ -36,6 +39,9 @@ export type {
   WireCyclePeak,
   WireCyclePeaks,
   IngestPayload,
+  IngestResponse,
+  ServerCommand,
+  CommandResult,
 };
 
 // Server only cares about a freshly-captured snapshot. A stale one would
@@ -317,7 +323,7 @@ export function buildIngestPayload(inputs: IngestPayloadInputs): IngestPayload {
 export async function pushToTeamServer(
   config: TeamConfig,
   payload: IngestPayload,
-): Promise<{ ok: boolean; status: number; body: unknown }> {
+): Promise<{ ok: boolean; status: number; body: IngestResponse | null }> {
   const res = await fetch(`${config.serverUrl}/api/ingest/metrics`, {
     method: "POST",
     signal: AbortSignal.timeout(POST_TIMEOUT_MS),
@@ -327,6 +333,6 @@ export async function pushToTeamServer(
     },
     body: JSON.stringify(payload),
   });
-  const body = await res.json().catch(() => null);
+  const body = await res.json().catch(() => null) as IngestResponse | null;
   return { ok: res.ok, status: res.status, body };
 }

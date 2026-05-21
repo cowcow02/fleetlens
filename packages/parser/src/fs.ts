@@ -120,6 +120,9 @@ export {
   type WireCyclePeaks,
   type IngestPayload,
   type LastPushRecord,
+  type ServerCommand,
+  type CommandResult,
+  type IngestResponse,
   RICH_ROLLUP_SCHEMA_VERSION,
 } from "./team-wire.js";
 

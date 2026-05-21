@@ -13,6 +13,7 @@ import { formatAgentTime, formatTokens } from "../../../../../lib/format";
 import { MemberProfile } from "../../../../../components/member-profile";
 import { MemberPlanBlock } from "../../../../../components/member-plan-block";
 import { canSeeMember, loadManagedMemberIds } from "../../../../../lib/visibility";
+import { RequestBackfillButton } from "./request-backfill-button";
 
 export default async function MemberPage({
   params,
@@ -67,6 +68,9 @@ export default async function MemberPage({
   ]);
   const cyclePeaks = allCyclePeaks.get(id) ?? [];
   const canSeeRoster = myMembership.role === "admin";
+  // Mirrors the auth gate on POST /api/admin/members/[id]/commands —
+  // staff OR an admin in the target's team can issue commands.
+  const isAdminOrStaff = session.user.is_staff || myMembership.role === "admin";
 
   // 30-day rollup totals — surfaced inline in the header card so admins
   // don't have to scroll to find "is this seat actually being used?"
@@ -193,14 +197,34 @@ export default async function MemberPage({
         </div>
       </header>
 
-      {/* ─── 2. PLAN MATCH (verdict + cycle trend + throttling) ─────── */}
+      {/* ─── 2. ADMIN ACTIONS (only for staff or team admins) ───────── */}
+      {isAdminOrStaff && (
+        <section
+          style={{
+            padding: "16px 22px",
+            background: "var(--paper)",
+            border: "1px solid var(--rule)",
+            marginBottom: 18,
+          }}
+        >
+          <div
+            className="kicker"
+            style={{ marginBottom: 10, color: "var(--mute)" }}
+          >
+            ADMIN ACTIONS
+          </div>
+          <RequestBackfillButton membershipId={id} />
+        </section>
+      )}
+
+      {/* ─── 3. PLAN MATCH (verdict + cycle trend + throttling) ─────── */}
       <MemberPlanBlock
         summary={planSummary}
         cyclePeaks={cyclePeaks}
         currentCycle={currentCycle}
       />
 
-      {/* ─── 3. DAILY ACTIVITY (per-day shape + drill-down table) ───── */}
+      {/* ─── 4. DAILY ACTIVITY (per-day shape + drill-down table) ───── */}
       <MemberProfile rollups={chartRollups} range={range} />
     </>
   );

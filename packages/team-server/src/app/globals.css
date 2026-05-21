@@ -746,6 +746,567 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
 }
 .modal button { width: 100%; }
 
+/* Form modal — same shell as .modal but without the credential-reveal badge,
+   sized for inputs, and with bottom-aligned action buttons. */
+.modal--form { padding: 32px 36px 28px; }
+.modal--form::before { content: none; }
+.modal--form h2 { font-size: 30px; margin-bottom: 6px; }
+.modal--form .modal-subtitle {
+  color: var(--mute);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-family: "JetBrains Mono", monospace;
+  margin-bottom: 24px;
+}
+.modal--form .modal-field { margin-bottom: 16px; }
+.modal--form .modal-field > label {
+  display: block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 6px;
+}
+.modal--form .modal-field input[type="text"],
+.modal--form .modal-field input[type="number"],
+.modal--form .modal-field input[type="email"],
+.modal--form .modal-field select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  font-size: 14px;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--ink);
+}
+.modal--form .modal-field input[type="number"] { max-width: 140px; }
+.modal--form .modal-field .field-hint {
+  font-size: 11px;
+  color: var(--mute);
+  margin-top: 6px;
+}
+.modal--form .group-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  max-height: 180px;
+  overflow-y: auto;
+}
+.modal--form .group-chip {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 80ms, color 80ms, border-color 80ms;
+}
+.modal--form .group-chip:hover:not(:disabled) { border-color: var(--ink); }
+.modal--form .group-chip.selected {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.modal--form .group-chip.locked {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.modal--form .group-chip > span[aria-hidden] {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.modal--form .group-chip.selected > span[aria-hidden] { opacity: 1; }
+.modal--form .modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+.modal--form .modal-actions .btn { width: auto; min-width: 100px; padding: 10px 20px; }
+.modal--form .modal-error {
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 16px;
+}
+
+/* Inline text-link button — used inside dense tables where boxed buttons
+   would create a visual ticker effect. Underline appears on hover so the
+   interactivity stays discoverable without a permanent border. */
+.btn-link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+  cursor: pointer;
+  text-decoration: none;
+  transition: color 120ms;
+}
+.btn-link:hover:not(:disabled) {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-link:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-link.is-danger { color: var(--danger); }
+.btn-link.is-danger:hover:not(:disabled) { color: var(--danger); }
+.btn-link.is-success {
+  color: var(--positive);
+  animation: btn-link-pulse 320ms ease-out;
+}
+@keyframes btn-link-pulse {
+  0% { transform: scale(0.92); opacity: 0.4; }
+  60% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Confirm modal — narrower, message-focused */
+.modal--confirm { padding: 32px 36px 28px; max-width: 440px; }
+.modal--confirm::before { content: none; }
+.modal--confirm h2 { font-size: 26px; margin-bottom: 6px; }
+.modal--confirm .modal-body {
+  color: var(--mute);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 12px 0 24px;
+}
+.modal--confirm .modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+.modal--confirm .modal-actions .btn { width: auto; min-width: 100px; padding: 10px 20px; }
+
+/* Modal variants for non-credential dialogs (compose/invite) — from master */
+.modal.compose, .modal.invite { padding: 36px 40px 32px; }
+.modal.invite { max-width: 600px; }
+.modal.compose::before {
+  content: "COMPOSE · NEW GROUP";
+  background: var(--accent);
+  color: var(--paper);
+}
+.modal.invite::before {
+  content: "INVITE · NEW MEMBER";
+  background: var(--accent);
+  color: var(--paper);
+}
+.modal.members { padding: 36px 40px 32px; max-width: 600px; }
+.modal.members::before {
+  content: "ADD MEMBERS";
+  background: var(--accent);
+  color: var(--paper);
+}
+.modal.compose button, .modal.invite button, .modal.members button { width: auto; }
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--mute);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+}
+.modal-close:hover { color: var(--ink); background: var(--rule-soft); }
+.modal-head { margin-bottom: 22px; padding-right: 32px; }
+.modal-head h2 { margin: 0 0 6px; font-size: 30px; }
+.modal-head .lede { color: var(--mute); font-size: 13px; line-height: 1.5; margin: 0; }
+.modal-body { display: flex; flex-direction: column; gap: 14px; }
+.modal-field { display: flex; flex-direction: column; gap: 5px; }
+.modal-field > label {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.modal-field input {
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.modal-field input:focus { border-color: var(--accent); background: #fff; }
+.modal-field input::placeholder { color: var(--mute-soft); }
+.modal-field .hint { font-size: 11px; color: var(--mute); font-style: italic; }
+.modal-groups {
+  border: 1px solid var(--rule);
+  padding: 12px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  background: var(--paper);
+}
+.modal-groups label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.modal-groups label.locked { color: var(--mute); cursor: default; }
+.modal-groups input { accent-color: var(--accent); }
+.modal-groups .locked-tag {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--mute);
+  text-transform: uppercase;
+}
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--rule);
+}
+.modal-footer button {
+  padding: 10px 18px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.modal-footer .cancel {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid var(--rule);
+}
+.modal-footer .cancel:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.modal-footer .primary {
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+}
+.modal-footer .primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+.modal-footer .primary:disabled { opacity: 0.45; cursor: not-allowed; }
+.modal-link-box {
+  margin-top: 4px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-left: 2px solid var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  word-break: break-all;
+  color: var(--ink);
+  max-height: 100px;
+  overflow: auto;
+}
+.modal-copy-row { display: flex; gap: 8px; align-items: stretch; }
+.modal-copy-row .modal-link-box { flex: 1; margin: 0; }
+.modal-copy-btn {
+  padding: 0 16px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  border: 1px solid var(--ink);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.modal-copy-btn:hover { background: var(--accent); border-color: var(--accent); }
+.modal-copy-btn.copied { background: var(--positive); border-color: var(--positive); }
+
+/* Top-right CTA in section-head */
+.section-head-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  border: 1px solid var(--ink);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.section-head-cta:hover { background: var(--accent); border-color: var(--accent); }
+.section-head-cta .plus { font-size: 14px; font-weight: 500; }
+
+/* Group card name as link */
+a.group-card-name {
+  display: inline-block;
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  cursor: pointer;
+}
+a.group-card-name:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* Open roster — primary accent CTA */
+.group-cta-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 22px;
+  background: var(--accent);
+  color: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  border: 1px solid var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, transform 0.18s;
+}
+.group-cta-primary:hover { background: var(--ink); border-color: var(--ink); }
+.group-cta-primary .arrow { display: inline-block; transition: transform 0.18s; }
+.group-cta-primary:hover .arrow { transform: translateX(4px); }
+
+.group-card-actions-secondary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.group-card-actions-secondary button {
+  color: var(--ink-soft);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.15s;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-family: inherit;
+  font-size: inherit;
+}
+.group-card-actions-secondary button:hover { color: var(--accent); }
+.group-card-actions-secondary .sep { color: var(--rule); }
+
+/* Member picker (searchable multi-select) — used inside modals */
+.member-picker { display: flex; flex-direction: column; gap: 8px; }
+.member-picker-search {
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.member-picker-search:focus { border-color: var(--accent); background: #fff; }
+.member-picker-search::placeholder { color: var(--mute-soft); }
+.member-picker-list {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.member-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule-soft);
+  transition: background 0.1s;
+}
+.member-picker-row:last-child { border-bottom: none; }
+.member-picker-row:hover { background: var(--bg); }
+.member-picker-row-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  cursor: pointer;
+}
+.member-picker-row input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.member-picker-row .avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--ink-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1;
+  border: 1px solid var(--rule);
+  flex: 0 0 auto;
+}
+.member-picker-row.checked .avatar {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.member-picker-row .identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.member-picker-row .name {
+  font-size: 13px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-picker-row .email {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10.5px;
+  color: var(--mute);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.member-picker-row .role-toggle {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border: 1px solid var(--rule);
+  color: var(--mute);
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+.member-picker-row .role-toggle .star { margin-right: 5px; opacity: 0.55; }
+.member-picker-row .role-toggle:hover { color: var(--accent); border-color: var(--accent); }
+.member-picker-row .role-toggle:hover .star { opacity: 1; }
+.member-picker-row .role-toggle.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.member-picker-row .role-toggle.active .star { opacity: 1; }
+.member-picker-empty {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--mute);
+  padding: 22px;
+  text-align: center;
+}
+.member-picker-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+.member-picker-footer .selected-count { color: var(--accent); }
+.member-picker-footer button {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.member-picker-footer button:hover { color: var(--ink); }
+.member-picker-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.member-picker-toggle input[type="checkbox"] { accent-color: var(--accent); }
+
+/* Confirm-remove pill */
+.group-row-remove.confirming {
+  width: auto;
+  padding: 0 14px;
+  height: 28px;
+  border-color: var(--danger);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  animation: confirm-pulse 1.2s ease-in-out infinite;
+}
+.group-row-remove.confirming:hover {
+  background: var(--danger);
+  color: var(--paper);
+  border-color: var(--danger);
+  animation: none;
+}
+@keyframes confirm-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 25%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 0%, transparent); }
+}
 /* Modal variants for non-credential dialogs (compose/invite) */
 .modal.compose, .modal.invite { padding: 36px 40px 32px; }
 .modal.invite { max-width: 600px; }

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readTeamConfig, writeTeamConfig, type TeamConfig } from "./config.js";
 import {
   buildIngestPayload,
@@ -11,8 +12,18 @@ import {
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
 import { runTeamBackfill, type BackfillOutcome } from "./backfill.js";
 import { writeLastPushSuccess, writeLastPushFailure } from "./last-push.js";
+import { dispatchCommand, type ServerCommand, type CommandResult } from "./commands.js";
 import { getPlanTier } from "../usage/profile.js";
 import { cclensPath } from "@claude-lens/parser/fs";
+
+// Process-scoped to prevent the same command from being dispatched twice
+// when a long backfill spans multiple sync ticks (sync N+1 fires before
+// N's dispatch completes). Within a single sync, collectedCommands is a
+// Map keyed by id so the same pending command echoed in multiple push
+// legs (rollup loop + queue drain) is only dispatched once. Both layers
+// are needed: this Set survives across sync invocations, the Map does not.
+// Lost on daemon restart, which is fine — the server will re-deliver.
+const inFlightCommands = new Set<string>();
 
 const USAGE_LOG = cclensPath("usage.jsonl");
 const PROFILE_CACHE = cclensPath("profile.json");
@@ -52,6 +63,55 @@ export async function runTeamSync(
     const persistConfig = (patch: Partial<TeamConfig>) => {
       nextConfig = { ...nextConfig, ...patch };
       writeTeamConfig(nextConfig);
+    };
+
+    // Keyed by command id so a command echoed in multiple push responses
+    // within this single sync is only collected (and dispatched) once.
+    const collectedCommands = new Map<string, ServerCommand>();
+    const collectCommands = (commands: ServerCommand[] | undefined): void => {
+      if (!commands) return;
+      for (const cmd of commands) {
+        if (!collectedCommands.has(cmd.id)) collectedCommands.set(cmd.id, cmd);
+      }
+    };
+
+    const dispatchAndReport = async (): Promise<void> => {
+      try {
+        if (collectedCommands.size === 0) return;
+        const results: CommandResult[] = [];
+        for (const cmd of collectedCommands.values()) {
+          if (inFlightCommands.has(cmd.id)) continue;
+          inFlightCommands.add(cmd.id);
+          try {
+            const result = await dispatchCommand(cmd, config, log);
+            results.push(result);
+          } finally {
+            inFlightCommands.delete(cmd.id);
+          }
+        }
+        if (results.length === 0) return;
+
+        // Bare-results push: no rollup/snapshot/tier/cyclePeaks, just commandResults
+        // so the server can mark the corresponding rows complete. Failure here is
+        // non-fatal — the server will re-deliver on the next sync via the same
+        // pending-commands query.
+        const resultsPayload: IngestPayload = {
+          ingestId: randomUUID(),
+          observedAt: new Date().toISOString(),
+          commandResults: results,
+        };
+        const r = await pushToTeamServer(config, resultsPayload);
+        if (!r.ok) {
+          log("warn", `team commandResults push failed (${r.status}); will retry on next sync`);
+        } else {
+          log("info", `team commandResults push ok: ${results.length} result${results.length === 1 ? "" : "s"}`);
+        }
+      } catch (err) {
+        // Dispatcher errors must not reverse the main sync outcome. The server
+        // re-delivers pending commands on the next sync, and any partially-pushed
+        // backfill is idempotent on the server side (daily_rollups upsert).
+        log("warn", `team command dispatch error: ${(err as Error).message}`);
+      }
     };
 
     const usageBackfill = await runTeamBackfill(log, USAGE_LOG, config, {
@@ -99,6 +159,7 @@ export async function runTeamSync(
         return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
       writeLastPushSuccess(payload);
+      collectCommands(result.body?.commands);
       // Try to drain any queued backlog while the server is reachable.
       let queuedDrained = 0;
       const backlog = dequeuePayloads() as IngestPayload[];
@@ -108,10 +169,12 @@ export async function runTeamSync(
           for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
           break;
         }
+        collectCommands(qResult.body?.commands);
         queuedDrained++;
       }
       log("info", `team push ok: live-only (no new daily activity)` +
         (queuedDrained ? `, ${queuedDrained} queued retried` : ""));
+      await dispatchAndReport();
       return { paired: true, pushed: 1, queued: 0, queuedDrained, usageBackfill };
     }
 
@@ -154,6 +217,7 @@ export async function runTeamSync(
         break;
       }
       writeLastPushSuccess(payload);
+      collectCommands(result.body?.commands);
       pushed++;
       lastPushedDay = rollup.day;
     }
@@ -173,6 +237,7 @@ export async function runTeamSync(
           for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
           break;
         }
+        collectCommands(qResult.body?.commands);
         queuedDrained++;
       }
     }
@@ -183,6 +248,7 @@ export async function runTeamSync(
         (queued ? `, ${queued} queued for retry` : ""));
     }
 
+    await dispatchAndReport();
     return { paired: true, pushed, queued, queuedDrained, usageBackfill, failedDay };
   } catch (err) {
     const message = (err as Error).message;

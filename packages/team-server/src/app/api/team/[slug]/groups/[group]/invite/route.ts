@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireTeamMembership, requireGroupManager } from "../../../../../../../lib/route-helpers";
+import {
+  requireTeamMembership,
+  requireGroupManager,
+  serverBaseUrl,
+} from "../../../../../../../lib/route-helpers";
 import { listGroupsManagedBy } from "../../../../../../../lib/groups";
 import { createInvite } from "../../../../../../../lib/members";
+import { checkActiveInviteConflict, parseInviteOpts } from "../../../../../../../lib/invites";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string; group: string }> }) {
   const { slug, group } = await params;
@@ -20,7 +25,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
   const allGroupIds = Array.from(new Set([gr.id, ...extras]));
 
   if (ctx.user.is_staff || ctx.membership.role === "admin") {
-    // Admin/staff: bypass the manager check, but still confirm all groups belong to this team.
     if (extras.length > 0) {
       const r = await ctx.pool.query(
         "SELECT id FROM groups WHERE id = ANY($1::uuid[]) AND team_id = $2",
@@ -31,7 +35,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
       }
     }
   } else {
-    // Manager: every requested group must be one they manage.
     const managed = await listGroupsManagedBy(ctx.membership.id, ctx.pool);
     const managedSet = new Set(managed.map((m) => m.id));
     if (!allGroupIds.every((g) => managedSet.has(g))) {
@@ -39,19 +42,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     }
   }
 
+  const { email, label, expiresInDays } = parseInviteOpts(body);
+
+  if (!email) {
+    const conflict = await checkActiveInviteConflict(
+      ctx.membership.team_id,
+      "member",
+      allGroupIds,
+      ctx.pool,
+    );
+    if (conflict) return conflict;
+  }
+
   const result = await createInvite(
     ctx.membership.team_id,
     ctx.user.id,
-    { role: "member", email: typeof body.email === "string" ? body.email : undefined, groupIds: allGroupIds },
+    { role: "member", email, groupIds: allGroupIds, label, expiresInDays },
     ctx.pool,
   );
 
-  const host = req.headers.get("host") || "";
-  const proto = req.headers.get("x-forwarded-proto") || "https";
-  const serverBaseUrl = process.env.BASE_URL || `${proto}://${host}`;
   return NextResponse.json({
     inviteId: result.inviteId,
-    joinUrl: `${serverBaseUrl}/signup?invite=${result.token}`,
+    joinUrl: `${serverBaseUrl(req)}/signup?invite=${result.token}`,
     tokenPlaintext: result.token,
     expiresAt: result.expiresAt,
   }, { status: 201 });
