@@ -108,6 +108,7 @@ describe("joinTeam", () => {
     expect(call.bearerToken).toBe("tok_good");
     expect(call.memberId).toBe("mem_abc");
     expect(call.teamSlug).toBe("acme");
+    expect(call.teamName).toBe("Acme Inc");
 
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining("Acme Inc"),
