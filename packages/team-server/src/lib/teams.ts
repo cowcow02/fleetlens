@@ -48,3 +48,43 @@ export async function createTeamWithAdmin(
     client.release();
   }
 }
+
+const DOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
+
+// Normalise + validate a comma-separated user input into a sorted, deduplicated
+// list of lowercase domains. Strips leading `@` and surrounding whitespace.
+// Throws when any entry is malformed so route handlers can return 400.
+export function parseAllowedDomains(input: string | string[]): string[] {
+  const raw = Array.isArray(input) ? input : input.split(",");
+  const cleaned: string[] = [];
+  for (const item of raw) {
+    const v = item.trim().replace(/^@/, "").toLowerCase();
+    if (!v) continue;
+    if (!DOMAIN_RE.test(v)) throw new Error(`Invalid domain: ${v}`);
+    if (!cleaned.includes(v)) cleaned.push(v);
+  }
+  cleaned.sort();
+  return cleaned;
+}
+
+export async function getAllowedSignupDomains(
+  teamId: string,
+  pool: pg.Pool,
+): Promise<string[]> {
+  const res = await pool.query<{ allowed_signup_domains: string[] }>(
+    "SELECT allowed_signup_domains FROM teams WHERE id = $1",
+    [teamId],
+  );
+  return res.rowCount ? res.rows[0].allowed_signup_domains : [];
+}
+
+export async function setAllowedSignupDomains(
+  teamId: string,
+  domains: string[],
+  pool: pg.Pool,
+): Promise<void> {
+  await pool.query(
+    "UPDATE teams SET allowed_signup_domains = $1 WHERE id = $2",
+    [domains, teamId],
+  );
+}
