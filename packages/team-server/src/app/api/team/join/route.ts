@@ -4,6 +4,7 @@ import { lookupInvite, redeemInvite } from "../../../../lib/members";
 import { authenticate } from "../../../../lib/auth";
 import { denySignupForTeamDomain } from "../../../../lib/teams";
 import { rateLimit, clientKey } from "../../../../lib/rate-limit";
+import { serverBaseUrl } from "../../../../lib/route-helpers";
 
 export async function POST(req: NextRequest) {
   const rl = rateLimit(`join:${clientKey(req)}`, 20, 60_000);
@@ -42,14 +43,11 @@ export async function POST(req: NextRequest) {
   }
 
   const slugRes = await pool.query("SELECT slug FROM teams WHERE id = $1", [redeemed.teamId]);
-  const host = req.headers.get("host") || "";
-  const proto = req.headers.get("x-forwarded-proto") || "https";
-  const serverBaseUrl = process.env.BASE_URL || `${proto}://${host}`;
 
   return NextResponse.json({
     member: { id: redeemed.membershipId, email: user.email, displayName: user.display_name, role: "member" },
     bearerToken: redeemed.bearerToken,
     teamSlug: slugRes.rows[0]?.slug,
-    serverBaseUrl,
+    serverBaseUrl: serverBaseUrl(req),
   }, { status: 201 });
 }

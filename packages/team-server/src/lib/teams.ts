@@ -69,8 +69,11 @@ export async function getAllowedSignupDomains(
   teamId: string,
   pool: pg.Pool,
 ): Promise<string[]> {
+  // cardinality(...) > 0 skips the SELECT when the team has no allowlist
+  // configured (the common case) so signup / join stay on the auth hot path
+  // without a wasted round-trip.
   const res = await pool.query<{ allowed_signup_domains: string[] }>(
-    "SELECT allowed_signup_domains FROM teams WHERE id = $1",
+    "SELECT allowed_signup_domains FROM teams WHERE id = $1 AND cardinality(allowed_signup_domains) > 0",
     [teamId],
   );
   return res.rowCount ? res.rows[0].allowed_signup_domains : [];

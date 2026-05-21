@@ -1,4 +1,43 @@
 import type pg from "pg";
+import { NextResponse } from "next/server";
+
+export const INVITE_CONFLICT_ERROR =
+  "An active link already exists for this configuration. Revoke it first.";
+
+// Body shape for the two invite POST endpoints. Returns sanitised values
+// with the API contract enforced: expiresInDays is clamped to [1, 365] and
+// defaults to 90; label is trimmed; email is preserved as-is for downstream
+// case-folding in createInvite. Role parsing is left to the caller because
+// admin and group-manager routes differ on whether admin role is allowed.
+export function parseInviteOpts(body: unknown): {
+  email?: string;
+  label?: string;
+  expiresInDays: number;
+} {
+  const b = (body ?? {}) as Record<string, unknown>;
+  const email = typeof b.email === "string" ? b.email : undefined;
+  const label = typeof b.label === "string" && b.label.trim() ? b.label.trim() : undefined;
+  const expiresInDays =
+    typeof b.expiresInDays === "number"
+      ? Math.min(365, Math.max(1, Math.floor(b.expiresInDays)))
+      : 90;
+  return { email, label, expiresInDays };
+}
+
+// Dedup precheck used by both invite POST routes. Returns the 409 response
+// if a matching active multi-use invite already exists, or null when the
+// caller may proceed with creation.
+export async function checkActiveInviteConflict(
+  teamId: string,
+  role: "admin" | "member",
+  groupIds: string[],
+  pool: pg.Pool,
+): Promise<NextResponse | null> {
+  const existing = await findActiveInviteByConfig(teamId, role, groupIds, pool);
+  return existing
+    ? NextResponse.json({ error: INVITE_CONFLICT_ERROR }, { status: 409 })
+    : null;
+}
 
 export type ActiveInviteRow = {
   id: string;
@@ -43,30 +82,29 @@ export async function listActiveInvites(
   return res.rows;
 }
 
-function isSubset(needle: string[], haystack: Set<string>): boolean {
-  for (const id of needle) if (!haystack.has(id)) return false;
+// Manager-scope visibility / mutation rule, shared by the list filter and
+// the revoke route. Admin-role invites are admin-only regardless of group
+// match — otherwise a manager of group X could copy the plaintext token of
+// an admin-role link scoped to {X} and self-elevate. Team-default invites
+// (`group_ids = []`) are also admin-only for the same reason. Admin/staff
+// callers bypass this gate upstream.
+export function isInviteInManagerScope(
+  invite: { role: "admin" | "member"; group_ids: string[] },
+  managedGroupIds: Iterable<string>,
+): boolean {
+  if (invite.role === "admin") return false;
+  if (invite.group_ids.length === 0) return false;
+  const managed = managedGroupIds instanceof Set ? managedGroupIds : new Set(managedGroupIds);
+  for (const id of invite.group_ids) if (!managed.has(id)) return false;
   return true;
 }
 
-// Group managers see only **member-role** invites whose every group_id is one
-// they manage AND which target at least one group. Admin-role invites are
-// admin-only regardless of scope — otherwise a manager of group X could copy
-// the plaintext token of an admin-role link scoped to {X} and self-elevate.
-// The empty-group_ids case (team-default invite) is also admin-only for the
-// same reason: such invites can carry the admin role and their token is
-// visible in the list response. Admin/staff callers bypass this filter
-// entirely upstream.
 export function filterInvitesByManagerScope(
   invites: ActiveInviteRow[],
   managedGroupIds: string[],
 ): ActiveInviteRow[] {
   const managed = new Set(managedGroupIds);
-  return invites.filter(
-    (inv) =>
-      inv.role !== "admin" &&
-      inv.group_ids.length > 0 &&
-      isSubset(inv.group_ids, managed),
-  );
+  return invites.filter((inv) => isInviteInManagerScope(inv, managed));
 }
 
 export async function findActiveInviteByConfig(

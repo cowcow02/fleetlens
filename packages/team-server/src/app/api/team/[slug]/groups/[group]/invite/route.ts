@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireTeamMembership, requireGroupManager } from "../../../../../../../lib/route-helpers";
+import {
+  requireTeamMembership,
+  requireGroupManager,
+  serverBaseUrl,
+} from "../../../../../../../lib/route-helpers";
 import { listGroupsManagedBy } from "../../../../../../../lib/groups";
 import { createInvite } from "../../../../../../../lib/members";
-import { findActiveInviteByConfig } from "../../../../../../../lib/invites";
+import { checkActiveInviteConflict, parseInviteOpts } from "../../../../../../../lib/invites";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string; group: string }> }) {
   const { slug, group } = await params;
@@ -38,25 +42,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     }
   }
 
-  const email = typeof body.email === "string" ? body.email : undefined;
-  const label = typeof body.label === "string" && body.label.trim() ? body.label.trim() : undefined;
-  const expiresInDays = typeof body.expiresInDays === "number"
-    ? Math.min(365, Math.max(1, Math.floor(body.expiresInDays)))
-    : 90;
+  const { email, label, expiresInDays } = parseInviteOpts(body);
 
   if (!email) {
-    const existing = await findActiveInviteByConfig(
+    const conflict = await checkActiveInviteConflict(
       ctx.membership.team_id,
       "member",
       allGroupIds,
       ctx.pool,
     );
-    if (existing) {
-      return NextResponse.json(
-        { error: "An active link already exists for this configuration. Revoke it first." },
-        { status: 409 },
-      );
-    }
+    if (conflict) return conflict;
   }
 
   const result = await createInvite(
@@ -66,12 +61,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ slu
     ctx.pool,
   );
 
-  const host = req.headers.get("host") || "";
-  const proto = req.headers.get("x-forwarded-proto") || "https";
-  const serverBaseUrl = process.env.BASE_URL || `${proto}://${host}`;
   return NextResponse.json({
     inviteId: result.inviteId,
-    joinUrl: `${serverBaseUrl}/signup?invite=${result.token}`,
+    joinUrl: `${serverBaseUrl(req)}/signup?invite=${result.token}`,
     tokenPlaintext: result.token,
     expiresAt: result.expiresAt,
   }, { status: 201 });

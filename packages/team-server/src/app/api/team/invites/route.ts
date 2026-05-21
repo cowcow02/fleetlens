@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireTeamMembership, requireAdmin } from "../../../../lib/route-helpers";
+import { requireTeamMembership, requireAdmin, serverBaseUrl } from "../../../../lib/route-helpers";
 import { createInvite } from "../../../../lib/members";
-import { findActiveInviteByConfig } from "../../../../lib/invites";
+import { checkActiveInviteConflict, parseInviteOpts } from "../../../../lib/invites";
 
 export async function POST(req: NextRequest) {
   const slug = req.nextUrl.searchParams.get("team");
@@ -30,49 +30,30 @@ export async function POST(req: NextRequest) {
   }
 
   const role: "admin" | "member" = body?.role === "admin" ? "admin" : "member";
-  const email = typeof body?.email === "string" ? body.email : undefined;
   const resolvedGroupIds = Array.isArray(groupIds) ? groupIds : [];
-  const expiresInDays = typeof body?.expiresInDays === "number"
-    ? Math.min(365, Math.max(1, Math.floor(body.expiresInDays)))
-    : 90;
-  const label = typeof body?.label === "string" && body.label.trim() ? body.label.trim() : undefined;
+  const { email, label, expiresInDays } = parseInviteOpts(body);
 
-  // Dedup only applies to multi-use (no-email) share links. Single-use
-  // email-scoped invites can coexist freely.
+  // Dedup only applies to multi-use (no-email) share links.
   if (!email) {
-    const existing = await findActiveInviteByConfig(
+    const conflict = await checkActiveInviteConflict(
       ctx.membership.team_id,
       role,
       resolvedGroupIds,
       ctx.pool,
     );
-    if (existing) {
-      return NextResponse.json(
-        { error: "An active link already exists for this configuration. Revoke it first." },
-        { status: 409 },
-      );
-    }
+    if (conflict) return conflict;
   }
 
   const result = await createInvite(
     ctx.membership.team_id,
     ctx.user.id,
-    {
-      email,
-      role,
-      expiresInDays,
-      groupIds: resolvedGroupIds,
-      label,
-    },
+    { email, role, expiresInDays, groupIds: resolvedGroupIds, label },
     ctx.pool,
   );
 
-  const host = req.headers.get("host") || "";
-  const proto = req.headers.get("x-forwarded-proto") || "https";
-  const serverBaseUrl = process.env.BASE_URL || `${proto}://${host}`;
   return NextResponse.json({
     inviteId: result.inviteId,
-    joinUrl: `${serverBaseUrl}/signup?invite=${result.token}`,
+    joinUrl: `${serverBaseUrl(req)}/signup?invite=${result.token}`,
     tokenPlaintext: result.token,
     expiresAt: result.expiresAt,
   }, { status: 201 });

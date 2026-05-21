@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireTeamMembership } from "../../../../../../../lib/route-helpers";
-import { getInviteForAuthz, revokeInvite } from "../../../../../../../lib/invites";
+import { getInviteForAuthz, isInviteInManagerScope, revokeInvite } from "../../../../../../../lib/invites";
 import { listGroupsManagedBy } from "../../../../../../../lib/groups";
 
 export async function POST(
@@ -18,15 +18,8 @@ export async function POST(
 
   const isAdminOrStaff = ctx.user.is_staff || ctx.membership.role === "admin";
   if (!isAdminOrStaff) {
-    // Manager can only revoke **member-role** invites whose group_ids is a
-    // non-empty subset of theirs. Admin-role invites are admin-only at every
-    // surface (mirrors filterInvitesByManagerScope).
-    if (invite.role === "admin") {
-      return NextResponse.json({ error: "Not allowed" }, { status: 403 });
-    }
     const managed = await listGroupsManagedBy(ctx.membership.id, ctx.pool);
-    const managedSet = new Set(managed.map((g) => g.id));
-    if (invite.group_ids.length === 0 || !invite.group_ids.every((g) => managedSet.has(g))) {
+    if (!isInviteInManagerScope(invite, managed.map((g) => g.id))) {
       return NextResponse.json({ error: "Not allowed" }, { status: 403 });
     }
   }
