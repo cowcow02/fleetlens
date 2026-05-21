@@ -65,6 +65,7 @@ import {
 export {
   DEFAULT_ROOT,
   decodeProjectName,
+  isFleetlensRuntimeDir,
   readJsonlFile,
   walkJsonlFiles,
   sessionIdFromFileName,
