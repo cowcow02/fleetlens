@@ -146,4 +146,117 @@ describe("antigravity parser", () => {
     expect(toolResultEvent!.toolUseId).toBe("tool-2-0");
     expect(toolResultEvent!.toolResult).toBe('{"name":"package.json","isDir":false}');
   });
+
+  it("deduplicates replayed records by step_index with last-write-wins", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-dedup-"));
+    const sessionId = "ctx-dedup-123";
+    
+    // Write history
+    const historyFile = path.join(root, "history.jsonl");
+    await writeJsonl(historyFile, [{ conversationId: sessionId, workspace: "/Users/cowcow02/Repo/app" }]);
+
+    // Write transcript with duplicate step_index
+    const transcriptFile = path.join(root, "brain", sessionId, ".system_generated", "logs", "transcript.jsonl");
+    const lines = [
+      {
+        step_index: 0,
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        status: "RUNNING",
+        created_at: "2026-05-21T09:30:00Z",
+        content: "Drafting response...",
+      },
+      {
+        step_index: 0, // Duplicate step_index with later status and final content
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:01Z",
+        content: "Final response content.",
+      }
+    ];
+    await writeJsonl(transcriptFile, lines);
+
+    const detail = await getAntigravitySession(sessionId, { root });
+    expect(detail).not.toBeNull();
+    const agentEvents = detail!.events.filter((e) => e.role === "agent");
+    // Should be exactly 1 agent event due to deduplication, not 2
+    expect(agentEvents).toHaveLength(1);
+    expect(agentEvents[0]!.preview).toBe("Final response content.");
+  });
+
+  it("handles status: CANCELED as an error in tool result events", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-canceled-"));
+    const sessionId = "ctx-canceled-123";
+    
+    // Write history
+    const historyFile = path.join(root, "history.jsonl");
+    await writeJsonl(historyFile, [{ conversationId: sessionId, workspace: "/Users/cowcow02/Repo/app" }]);
+
+    // Write transcript with a canceled tool run
+    const transcriptFile = path.join(root, "brain", sessionId, ".system_generated", "logs", "transcript.jsonl");
+    const lines = [
+      {
+        step_index: 0,
+        source: "MODEL",
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:00Z",
+        tool_calls: [{ name: "run_command", args: { CommandLine: "sleep 10" } }],
+      },
+      {
+        step_index: 1,
+        source: "MODEL",
+        type: "RUN_COMMAND",
+        status: "CANCELED",
+        created_at: "2026-05-21T09:30:02Z",
+        content: "Command was aborted by user",
+      }
+    ];
+    await writeJsonl(transcriptFile, lines);
+
+    const detail = await getAntigravitySession(sessionId, { root });
+    expect(detail).not.toBeNull();
+    const toolResults = detail!.events.filter((e) => e.role === "tool-result");
+    expect(toolResults).toHaveLength(1);
+    const block = toolResults[0]!.blocks[0];
+    expect(block.type).toBe("tool_result");
+    if (block.type === "tool_result") {
+      expect(block.is_error).toBe(true);
+    }
+  });
+
+  it("invalidates cache when CWD changes in history.jsonl", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "antigravity-cache-"));
+    const sessionId = "ctx-cache-123";
+    
+    const historyFile = path.join(root, "history.jsonl");
+    // Initially, no CWD mapping written
+    await writeJsonl(historyFile, []);
+
+    const transcriptFile = path.join(root, "brain", sessionId, ".system_generated", "logs", "transcript.jsonl");
+    await writeJsonl(transcriptFile, [
+      {
+        step_index: 0,
+        source: "USER_EXPLICIT",
+        type: "USER_INPUT",
+        status: "DONE",
+        created_at: "2026-05-21T09:30:00Z",
+        content: "hello",
+      }
+    ]);
+
+    // 1. Read first time — should fall back to uuid as project name and undefined cwd
+    const firstList = await listAntigravitySessions({ root });
+    expect(firstList[0]!.cwd).toBeUndefined();
+    expect(firstList[0]!.projectName).toBe(sessionId);
+
+    // 2. Write CWD mapping to history.jsonl
+    await writeJsonl(historyFile, [{ conversationId: sessionId, workspace: "/Users/cowcow02/Repo/app-fixed" }]);
+
+    // 3. Read second time — cache must invalidate and fetch the updated mapping
+    const secondList = await listAntigravitySessions({ root });
+    expect(secondList[0]!.cwd).toBe("/Users/cowcow02/Repo/app-fixed");
+    expect(secondList[0]!.projectName).toBe("/Users/cowcow02/Repo/app-fixed");
+  });
 });

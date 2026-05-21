@@ -137,15 +137,30 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
 
   const pendingToolCalls: Array<{ id: string; name: string }> = [];
 
+  const parsedObjects: any[] = [];
+  const indexMap = new Map<number, number>();
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let eventObj: any;
     try {
-      eventObj = JSON.parse(trimmed);
+      const obj = JSON.parse(trimmed);
+      const stepIdx = obj.step_index;
+      if (typeof stepIdx === "number") {
+        if (indexMap.has(stepIdx)) {
+          parsedObjects[indexMap.get(stepIdx)!] = obj;
+        } else {
+          indexMap.set(stepIdx, parsedObjects.length);
+          parsedObjects.push(obj);
+        }
+      } else {
+        parsedObjects.push(obj);
+      }
     } catch {
-      continue;
+      // Skip malformed lines
     }
+  }
+
+  for (const eventObj of parsedObjects) {
 
     const ts = eventObj.created_at || eventObj.timestamp;
 
@@ -260,7 +275,7 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
       const toolUseId = matchedCall ? matchedCall.id : `tool-${eventObj.step_index}-unknown`;
 
       const contentStr = typeof eventObj.content === "string" ? eventObj.content : JSON.stringify(eventObj.content || "");
-      const isError = eventObj.status === "ERROR" || eventObj.status === "FAILED" || !!eventObj.error;
+      const isError = eventObj.status === "ERROR" || eventObj.status === "FAILED" || eventObj.status === "CANCELED" || !!eventObj.error;
 
       pushEvent({
         index: idx++,
@@ -370,8 +385,8 @@ function computeActiveSegments(tsMs: number[]): { startMs: number; endMs: number
 /*  Caching                                                          */
 /* ================================================================= */
 
-type MetaEntry = { meta: SessionMeta; mtimeMs: number; sizeBytes: number };
-type DetailEntry = { detail: SessionDetail; mtimeMs: number; sizeBytes: number };
+type MetaEntry = { meta: SessionMeta; mtimeMs: number; sizeBytes: number; cwd?: string };
+type DetailEntry = { detail: SessionDetail; mtimeMs: number; sizeBytes: number; cwd?: string };
 const metaCache = new Map<string, MetaEntry>();
 const detailCache = new Map<string, DetailEntry>();
 
@@ -389,7 +404,12 @@ export async function listAntigravitySessions(opts: ListAntigravityOptions = {})
   const out: SessionMeta[] = [];
   for (const file of files) {
     const cached = metaCache.get(file.filePath);
-    if (cached && cached.mtimeMs === file.mtimeMs && cached.sizeBytes === file.sizeBytes) {
+    if (
+      cached &&
+      cached.mtimeMs === file.mtimeMs &&
+      cached.sizeBytes === file.sizeBytes &&
+      cached.cwd === file.cwd
+    ) {
       out.push(cached.meta);
       continue;
     }
@@ -399,6 +419,7 @@ export async function listAntigravitySessions(opts: ListAntigravityOptions = {})
         meta,
         mtimeMs: file.mtimeMs,
         sizeBytes: file.sizeBytes,
+        cwd: file.cwd,
       });
       out.push(meta);
     } catch {
@@ -427,7 +448,12 @@ export async function getAntigravitySession(
   }
   if (!chosen) return null;
   const cached = detailCache.get(chosen.filePath);
-  if (cached && cached.mtimeMs === chosen.mtimeMs && cached.sizeBytes === chosen.sizeBytes) {
+  if (
+    cached &&
+    cached.mtimeMs === chosen.mtimeMs &&
+    cached.sizeBytes === chosen.sizeBytes &&
+    cached.cwd === chosen.cwd
+  ) {
     return cached.detail;
   }
   const { meta, events } = await parseSession(chosen);
@@ -436,6 +462,7 @@ export async function getAntigravitySession(
     detail,
     mtimeMs: chosen.mtimeMs,
     sizeBytes: chosen.sizeBytes,
+    cwd: chosen.cwd,
   });
   return detail;
 }
