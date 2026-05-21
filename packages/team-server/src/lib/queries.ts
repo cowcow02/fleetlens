@@ -1,5 +1,15 @@
 import type pg from "pg";
 
+export type RangeKey = "7d" | "30d" | "90d";
+
+export const RANGE_DAYS: Record<RangeKey, number> = { "7d": 7, "30d": 30, "90d": 90 };
+
+export function parseRange(value: string | string[] | undefined): RangeKey {
+  const v = Array.isArray(value) ? value[0] : value;
+  if (v === "7d" || v === "30d" || v === "90d") return v;
+  return "7d";
+}
+
 export type RosterRow = {
   id: string;
   email: string | null;
@@ -7,11 +17,11 @@ export type RosterRow = {
   role: string;
   joined_at: string;
   last_seen_at: string | null;
-  week_agent_time_ms: string;
-  week_sessions: number;
-  week_tool_calls: number;
-  week_turns: number;
-  week_tokens: string;
+  range_agent_time_ms: string;
+  range_sessions: number;
+  range_tool_calls: number;
+  range_turns: number;
+  range_tokens: string;
 };
 
 export type MemberRow = {
@@ -36,31 +46,32 @@ export type RollupRow = {
   tokens_cache_write: string;
 };
 
-export function weekStartIso(now = new Date()): string {
-  const dayOfWeek = now.getDay();
-  const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + mondayOffset);
-  monday.setHours(0, 0, 0, 0);
-  return monday.toISOString().slice(0, 10);
+// Matches apps/web/lib/date-range.ts cutoffMs(): "last N local calendar days"
+// = today + (N-1) prior days. Rolling, not calendar-bounded — keeps the team
+// dashboard's 7d total comparable to the local dashboard's 7d total.
+export function rangeStartIso(days: number, now = new Date()): string {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - (days - 1));
+  return d.toISOString().slice(0, 10);
 }
 
-export async function loadRoster(teamId: string, pool: pg.Pool): Promise<RosterRow[]> {
+export async function loadRoster(teamId: string, days: number, pool: pg.Pool): Promise<RosterRow[]> {
   const res = await pool.query(`
     SELECT
       m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at,
-      COALESCE(SUM(r.agent_time_ms), 0)::bigint AS week_agent_time_ms,
-      COALESCE(SUM(r.sessions), 0)::int AS week_sessions,
-      COALESCE(SUM(r.tool_calls), 0)::int AS week_tool_calls,
-      COALESCE(SUM(r.turns), 0)::int AS week_turns,
-      COALESCE(SUM(r.tokens_input + r.tokens_output + r.tokens_cache_read + r.tokens_cache_write), 0)::bigint AS week_tokens
+      COALESCE(SUM(r.agent_time_ms), 0)::bigint AS range_agent_time_ms,
+      COALESCE(SUM(r.sessions), 0)::int AS range_sessions,
+      COALESCE(SUM(r.tool_calls), 0)::int AS range_tool_calls,
+      COALESCE(SUM(r.turns), 0)::int AS range_turns,
+      COALESCE(SUM(r.tokens_input + r.tokens_output + r.tokens_cache_read + r.tokens_cache_write), 0)::bigint AS range_tokens
     FROM memberships m
     JOIN user_accounts u ON u.id = m.user_account_id
     LEFT JOIN daily_rollups r ON r.membership_id = m.id AND r.team_id = m.team_id AND r.day >= $2
     WHERE m.team_id = $1 AND m.revoked_at IS NULL
     GROUP BY m.id, u.email, u.display_name
     ORDER BY m.last_seen_at DESC NULLS LAST
-  `, [teamId, weekStartIso()]);
+  `, [teamId, rangeStartIso(days)]);
   return res.rows;
 }
 
@@ -93,16 +104,16 @@ export async function loadMember(membershipId: string, pool: pg.Pool): Promise<M
 
 export type GroupRosterRow = RosterRow & { is_manager: boolean };
 
-export async function loadGroupRoster(groupId: string, pool: pg.Pool): Promise<GroupRosterRow[]> {
+export async function loadGroupRoster(groupId: string, days: number, pool: pg.Pool): Promise<GroupRosterRow[]> {
   const res = await pool.query<GroupRosterRow>(`
     SELECT
       m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at,
       gm.is_manager,
-      COALESCE(SUM(r.agent_time_ms), 0)::bigint AS week_agent_time_ms,
-      COALESCE(SUM(r.sessions), 0)::int AS week_sessions,
-      COALESCE(SUM(r.tool_calls), 0)::int AS week_tool_calls,
-      COALESCE(SUM(r.turns), 0)::int AS week_turns,
-      COALESCE(SUM(r.tokens_input + r.tokens_output + r.tokens_cache_read + r.tokens_cache_write), 0)::bigint AS week_tokens
+      COALESCE(SUM(r.agent_time_ms), 0)::bigint AS range_agent_time_ms,
+      COALESCE(SUM(r.sessions), 0)::int AS range_sessions,
+      COALESCE(SUM(r.tool_calls), 0)::int AS range_tool_calls,
+      COALESCE(SUM(r.turns), 0)::int AS range_turns,
+      COALESCE(SUM(r.tokens_input + r.tokens_output + r.tokens_cache_read + r.tokens_cache_write), 0)::bigint AS range_tokens
     FROM group_members gm
     JOIN memberships m ON m.id = gm.membership_id
     JOIN user_accounts u ON u.id = m.user_account_id
@@ -110,7 +121,7 @@ export async function loadGroupRoster(groupId: string, pool: pg.Pool): Promise<G
     WHERE gm.group_id = $1 AND m.revoked_at IS NULL
     GROUP BY m.id, u.email, u.display_name, gm.is_manager
     ORDER BY gm.is_manager DESC, m.last_seen_at DESC NULLS LAST
-  `, [groupId, weekStartIso()]);
+  `, [groupId, rangeStartIso(days)]);
   return res.rows;
 }
 

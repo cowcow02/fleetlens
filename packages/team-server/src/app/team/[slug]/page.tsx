@@ -3,12 +3,27 @@ import { redirect } from "next/navigation";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { listGroupsManagedBy } from "../../../lib/groups";
-import { loadRoster, loadMemberGroupAffiliations } from "../../../lib/queries";
+import {
+  loadRoster,
+  loadMemberGroupAffiliations,
+  parseRange,
+  RANGE_DAYS,
+} from "../../../lib/queries";
 import { RosterCard } from "../../../components/roster-card";
 import { LiveRefresher } from "../../../components/live-refresher";
+import { RangeTabs } from "../../../components/range-tabs";
 
-export default async function RosterPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function RosterPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ range?: string }>;
+}) {
   const { slug } = await params;
+  const { range: rangeParam } = await searchParams;
+  const range = parseRange(rangeParam);
+  const days = RANGE_DAYS[range];
   const pool = getPool();
 
   const cookieStore = await cookies();
@@ -34,13 +49,10 @@ export default async function RosterPage({ params }: { params: Promise<{ slug: s
     redirect(`/team/${slug}/members/${myMembership.id}`);
   }
 
-  const roster = await loadRoster(teamId, pool);
+  const roster = await loadRoster(teamId, days, pool);
   const affiliations = await loadMemberGroupAffiliations(teamId, pool);
-  const totalAgentMs = roster.reduce((sum, m) => sum + Number(m.week_agent_time_ms), 0);
+  const totalAgentMs = roster.reduce((sum, m) => sum + Number(m.range_agent_time_ms), 0);
   const totalHours = (totalAgentMs / 3600000).toFixed(1);
-
-  const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
 
   return (
     <>
@@ -48,14 +60,17 @@ export default async function RosterPage({ params }: { params: Promise<{ slug: s
         <div>
           <h1>The <em>Roster</em></h1>
           <div className="kicker" style={{ marginTop: 8 }}>
-            Week of {weekStart.toLocaleDateString("en-US", { month: "long", day: "numeric" }).toUpperCase()}
+            Last {days} days
             {" · "}
             {roster.length} {roster.length === 1 ? "member" : "members"}
             {" · "}
             {totalHours}h combined agent time
           </div>
         </div>
-        <div className="kicker">Live · updates via SSE</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <RangeTabs value={range} />
+          <div className="kicker">Live · updates via SSE</div>
+        </div>
       </div>
       <div className="roster-grid">
         {roster.map((m) => (
