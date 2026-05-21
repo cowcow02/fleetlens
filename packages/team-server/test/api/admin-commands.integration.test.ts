@@ -204,6 +204,37 @@ describe("POST /api/admin/members/[id]/commands", () => {
     expect(count.rows[0].c).toBe("1");
   });
 
+  it("returns 201 for a staff caller with no membership in the target team", async () => {
+    // Target team owned by adminA; staff caller has NO membership in it.
+    // Spec contract: staff bypass the team-admin check.
+    const adminA = await makeUser("adminStaffBypass@example.com");
+    const { team } = await createTeamWithAdmin("Team Staff Bypass", adminA.id, pool);
+    const targetUser = await makeUser("targetStaffBypass@example.com");
+    const targetMembershipId = await addMember(team.id, targetUser.id, "member");
+
+    const staff = await makeStaffUser("staff@example.com");
+
+    const req = makeReq(url(targetMembershipId), staff.cookie, {
+      type: "backfill-activity",
+      params: { days: 30 },
+    });
+    const res = await POST(req, { params: Promise.resolve({ id: targetMembershipId }) });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; command_type: string; params: { days: number } };
+    expect(body.id).toMatch(/^cmd_/);
+    expect(body.command_type).toBe("backfill-activity");
+    expect(body.params).toEqual({ days: 30 });
+
+    const row = await pool.query<{ team_id: string; membership_id: string; issued_by_id: string }>(
+      "SELECT team_id, membership_id, issued_by_id FROM member_commands WHERE id = $1",
+      [body.id],
+    );
+    expect(row.rowCount).toBe(1);
+    expect(row.rows[0].team_id).toBe(team.id);
+    expect(row.rows[0].membership_id).toBe(targetMembershipId);
+    expect(row.rows[0].issued_by_id).toBe(staff.id);
+  });
+
   it("returns 201 with a NEW id when the same type is enqueued with different params", async () => {
     const admin = await makeUser("admin6@example.com");
     const { team } = await createTeamWithAdmin("Team F", admin.id, pool);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { requireSession, requireTeamMembership, requireAdmin } from "../../../../../../lib/route-helpers";
+import { requireSession } from "../../../../../../lib/route-helpers";
 import { loadMember } from "../../../../../../lib/queries";
 
 // Single discriminated union mirrors ServerCommand in
@@ -26,10 +26,15 @@ export async function POST(
   const member = await loadMember(membershipId, session.pool);
   if (!member) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const ctx = await requireTeamMembership(req, member.team_id);
-  if (ctx instanceof NextResponse) return ctx;
-  const adminErr = requireAdmin(ctx);
-  if (adminErr) return adminErr;
+  // Staff bypass the team-admin check entirely; otherwise the caller must be
+  // an admin in the target's team. Mirrors requireGroupManager in
+  // route-helpers.ts.
+  if (!session.user.is_staff) {
+    const membership = session.memberships.find((m) => m.team_id === member.team_id);
+    if (!membership || membership.role !== "admin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   const parsed = BodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
