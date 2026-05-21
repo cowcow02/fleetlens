@@ -204,7 +204,7 @@ describe("POST /api/ingest/metrics — member command channel", () => {
     await pool.query("DELETE FROM member_commands WHERE membership_id = $1", [membershipId]);
 
     const cmdId = `cmd-${Math.random().toString(36).slice(2)}`;
-    await enqueueCommand(cmdId, "backfill_history", { days: 90 });
+    await enqueueCommand(cmdId, "backfill-activity", { days: 90 });
 
     // 1) First ingest: command is delivered in response.
     const first = await POST(makeReq(makePayload(), `Bearer ${bearerToken}`));
@@ -214,7 +214,7 @@ describe("POST /api/ingest/metrics — member command channel", () => {
     expect(firstBody.commands).toHaveLength(1);
     expect(firstBody.commands[0]).toEqual({
       id: cmdId,
-      type: "backfill_history",
+      type: "backfill-activity",
       params: { days: 90 },
     });
 
@@ -250,7 +250,7 @@ describe("POST /api/ingest/metrics — member command channel", () => {
   it("does not overwrite a previously-completed command if a stale result is replayed", async () => {
     await pool.query("DELETE FROM member_commands WHERE membership_id = $1", [membershipId]);
     const cmdId = `cmd-${Math.random().toString(36).slice(2)}`;
-    await enqueueCommand(cmdId, "backfill_history", {});
+    await enqueueCommand(cmdId, "backfill-activity", {});
 
     // Pre-complete the row with a success record.
     const firstCompletedAt = "2026-05-20T10:00:00.000Z";
@@ -284,7 +284,7 @@ describe("POST /api/ingest/metrics — member command channel", () => {
 
     // Now enqueue a command and replay the same ingestId.
     const cmdId = `cmd-${Math.random().toString(36).slice(2)}`;
-    await enqueueCommand(cmdId, "backfill_history", { days: 7 });
+    await enqueueCommand(cmdId, "backfill-activity", { days: 7 });
 
     const replay = await POST(makeReq(payload, `Bearer ${bearerToken}`));
     // Dedup replay returns 202; commands should still ride along.
