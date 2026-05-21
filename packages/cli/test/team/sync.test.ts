@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { SessionMeta } from "@claude-lens/parser";
 import type { TeamConfig } from "../../src/team/config.js";
+import type { LastPushRecord } from "../../src/team/last-push.js";
 
 // ---------- helpers ----------
 
@@ -88,7 +89,16 @@ const CONFIG: TeamConfig = {
 };
 
 describe("runTeamSync", () => {
+  let cclensDir: string;
+  let prevCclensHome: string | undefined;
+
   beforeEach(async () => {
+    // Redirect cclensHome() to a temp dir so writeLastPush{Success,Failure}
+    // don't pollute the user's real ~/.cclens during tests.
+    cclensDir = mkdtempSync(join(tmpdir(), "cclens-sync-"));
+    prevCclensHome = process.env.CCLENS_HOME;
+    process.env.CCLENS_HOME = cclensDir;
+
     vi.stubGlobal("fetch", vi.fn());
     const { runTeamBackfill } = await import("../../src/team/backfill.js");
     vi.mocked(runTeamBackfill).mockResolvedValue({
@@ -101,6 +111,9 @@ describe("runTeamSync", () => {
   });
 
   afterEach(() => {
+    if (prevCclensHome === undefined) delete process.env.CCLENS_HOME;
+    else process.env.CCLENS_HOME = prevCclensHome;
+    rmSync(cclensDir, { recursive: true, force: true });
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.resetAllMocks();
@@ -390,6 +403,58 @@ describe("runTeamSync", () => {
       expect.any(Object),
       { sinceCapturedAt: "2026-04-20T01:00:00.000Z" },
     );
+  });
+
+  it("writes team-last-push.json with ok:true after a successful per-rollup push", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    const { dequeuePayloads } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([]);
+
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ received: true }),
+    } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    const path = join(cclensDir, "team-last-push.json");
+    expect(existsSync(path)).toBe(true);
+    const record: LastPushRecord = JSON.parse(readFileSync(path, "utf8"));
+    expect(record.ok).toBe(true);
+    expect(record.error).toBeUndefined();
+    expect(record.payload.dailyRollup?.day).toBe("2026-04-14");
+    expect(Number.isFinite(Date.parse(record.pushedAt))).toBe(true);
+  });
+
+  it("writes team-last-push.json with ok:false and status in error after a 401 failure", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "unauthorized" }),
+    } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    const path = join(cclensDir, "team-last-push.json");
+    expect(existsSync(path)).toBe(true);
+    const record: LastPushRecord = JSON.parse(readFileSync(path, "utf8"));
+    expect(record.ok).toBe(false);
+    expect(record.error).toContain("401");
+    expect(record.payload.dailyRollup?.day).toBe("2026-04-14");
   });
 
   it("persists usage-history high-water after successful backfill", async () => {

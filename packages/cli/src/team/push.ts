@@ -1,77 +1,25 @@
 import { randomUUID } from "node:crypto";
 import { dailyActivity, sessionDay, type DailyBucket, type SessionMeta } from "@claude-lens/parser";
+import type {
+  DailyRollup,
+  WireUsageWindow,
+  WireExtraUsage,
+  WireUsageSnapshot,
+  WireCyclePeak,
+  WireCyclePeaks,
+  IngestPayload,
+} from "@claude-lens/parser/fs";
 import { latestClaudeCodeSnapshot } from "../usage/storage.js";
 import type { TeamConfig } from "./config.js";
 
-export type DailyRollup = {
-  day: string;
-  agentTimeMs: number;
-  sessions: number;
-  toolCalls: number;
-  turns: number;
-  tokens: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-  };
-};
-
-export type WireUsageWindow = {
-  utilization: number | null;
-  resetsAt: string | null;
-};
-
-export type WireExtraUsage = {
-  isEnabled: boolean;
-  monthlyLimitUsd: number | null;
-  usedCreditsUsd: number | null;
-  utilization: number | null;
-};
-
-export type WireUsageSnapshot = {
-  capturedAt: string;
-  fiveHour: WireUsageWindow;
-  sevenDay: WireUsageWindow;
-  sevenDayOpus: WireUsageWindow | null;
-  sevenDaySonnet: WireUsageWindow | null;
-  sevenDayOauthApps: WireUsageWindow | null;
-  sevenDayCowork: WireUsageWindow | null;
-  extraUsage: WireExtraUsage | null;
-};
-
-export type WireCyclePeak = {
-  endsAt: string;
-  peakPct: number;
-  source: "real" | "predicted";
-  current: boolean;
-};
-
-export type WireCyclePeaks = {
-  fiveHour: WireCyclePeak[];
-  sevenDay: WireCyclePeak[];
-};
-
-export type IngestPayload = {
-  ingestId: string;
-  observedAt: string;
-  // Every field below is optional so the daemon can push whichever subset is
-  // relevant on each tick. The server applies whatever's present.
-  dailyRollup?: DailyRollup;
-  usageSnapshot?: WireUsageSnapshot;
-  // Anthropic-detected tier ("pro"|"pro-max"|"pro-max-20x"|"custom"). Server
-  // upserts memberships.plan_tier when this is set so admins don't have to
-  // hand-pick a tier the daemon already knows.
-  planTier?: string;
-  // Per-cycle peak utilization, computed locally by the daemon using the
-  // SAME parser logic that drives the personal /usage trend strip. Pushing
-  // the computed outcome (rather than raw events) keeps a single source of
-  // truth and means team server never re-runs the math.
-  cyclePeaks?: WireCyclePeaks;
-  // Bulk historical snapshot batch (formerly POST /api/ingest/usage-history).
-  // Server dedups at the row level via captured_at, so retries on the same
-  // ingestId still apply new rows.
-  snapshotHistory?: WireUsageSnapshot[];
+export type {
+  DailyRollup,
+  WireUsageWindow,
+  WireExtraUsage,
+  WireUsageSnapshot,
+  WireCyclePeak,
+  WireCyclePeaks,
+  IngestPayload,
 };
 
 // Server only cares about a freshly-captured snapshot. A stale one would

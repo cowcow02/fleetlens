@@ -11,6 +11,7 @@ import { JobQueueWidget } from "@/components/job-queue-widget";
 import { listProjects, walkJsonlFiles } from "@claude-lens/parser/fs";
 import { listSessions } from "@/lib/data";
 import { latestUsageSnapshot } from "@/lib/usage-data";
+import { readTeamConnection } from "@/lib/team-data";
 import { buildEntriesIndex } from "@/lib/entries-index";
 import { LATEST_VERSION as LATEST_CHANGELOG_VERSION } from "@/lib/changelog";
 import pkg from "../package.json" with { type: "json" };
@@ -35,6 +36,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const recentSessions = allSessions.slice(0, 20);
   const totalSessions = allSessions.length;
   const currentUsage = latestUsageSnapshot();
+  const teamConnection = readTeamConnection();
 
   // Project to the minimal shape the widget needs so we don't ship
   // megabytes of SessionMeta (especially activeSegments) to the client.
@@ -87,6 +89,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             currentUsage={currentUsage}
             version={pkg.version}
             latestChangelogVersion={LATEST_CHANGELOG_VERSION}
+            teamConnection={teamConnection}
           />
           <main
             style={{
