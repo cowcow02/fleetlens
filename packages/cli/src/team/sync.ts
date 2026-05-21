@@ -5,6 +5,7 @@ import {
   buildRollupsForRange,
   pushToTeamServer,
   readLatestUsageSnapshotForWire,
+  sessionTouchesDay,
   type IngestPayload,
 } from "./push.js";
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
@@ -44,7 +45,7 @@ export async function runTeamSync(
 
   try {
     const { listSessions, loadCalibrationCurve } = await import("@claude-lens/parser/fs");
-    const { toLocalDay, sessionDay } = await import("@claude-lens/parser");
+    const { toLocalDay } = await import("@claude-lens/parser");
     const today = toLocalDay(Date.now());
     let nextConfig: TeamConfig = { ...config };
 
@@ -125,7 +126,7 @@ export async function runTeamSync(
     for (let i = 0; i < rollups.length; i++) {
       const rollup = rollups[i]!;
       const isLatest = i === rollups.length - 1;
-      const daySessions = sessions.filter((s) => sessionDay(s) === rollup.day);
+      const daySessions = sessions.filter((s) => sessionTouchesDay(s, rollup.day));
       const richBlocks = buildRichBlocksForDay(
         rollup.day,
         daySessions,

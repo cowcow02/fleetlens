@@ -54,5 +54,5 @@ export default async function TeamInsightsPage({
     skills,
     shapes,
   };
-  return <LiveInsights data={data} />;
+  return <LiveInsights data={data} slug={slug} />;
 }

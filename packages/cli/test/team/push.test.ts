@@ -454,6 +454,37 @@ describe("buildRichRollupBlocks", () => {
     expect(names).toContain("/Users/x/Repo/fleetlens");
     expect(names).not.toContain("/Users/x/Repo/topeka");
   });
+
+  it("clips a cross-midnight session to each touched day", () => {
+    const dayA = "2026-05-12";
+    const dayB = "2026-05-13";
+    // 23:00 local Day A → 01:00 local Day B = 60 min on each side.
+    const startMs = new Date(2026, 4, 12, 23, 0, 0, 0).getTime();
+    const endMs = new Date(2026, 4, 13, 1, 0, 0, 0).getTime();
+    const cross: SessionMeta = {
+      ...s1,
+      id: "sx",
+      projectName: "/Users/x/Repo/fleetlens",
+      projectDir: "users-x-Repo-fleetlens",
+      firstTimestamp: new Date(startMs).toISOString(),
+      activeSegments: [{ startMs, endMs }],
+    };
+    const entries: Entry[] = [
+      makeEntry({ session_id: "sx", local_day: dayA, project: "/Users/x/Repo/fleetlens" }),
+      makeEntry({ session_id: "sx", local_day: dayB, project: "/Users/x/Repo/fleetlens" }),
+    ];
+
+    const a = buildRichRollupBlocks(dayA, [cross], entries, new Set());
+    const b = buildRichRollupBlocks(dayB, [cross], entries, new Set());
+    const aProj = a.projects.find((p) => p.project === "/Users/x/Repo/fleetlens");
+    const bProj = b.projects.find((p) => p.project === "/Users/x/Repo/fleetlens");
+    expect(aProj?.agentTimeMs).toBe(60 * 60_000);
+    expect(bProj?.agentTimeMs).toBe(60 * 60_000);
+    // Each side counts the session once because its clipped segments exist
+    // on both days — matching `dailyActivity`'s per-day sessions field.
+    expect(aProj?.sessions).toBe(1);
+    expect(bProj?.sessions).toBe(1);
+  });
 });
 
 describe("buildEnrichedExtras", () => {

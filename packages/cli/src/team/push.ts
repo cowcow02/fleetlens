@@ -114,27 +114,71 @@ export function buildRollupsForRange(sessions: SessionMeta[], sinceDay?: string)
     }));
 }
 
+// Bounds of a local-time YYYY-MM-DD as [startMs, endMs).
+function dayBoundsMs(day: string): { startMs: number; endMs: number } {
+  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
+  return {
+    startMs: new Date(y, m - 1, d, 0, 0, 0, 0).getTime(),
+    endMs: new Date(y, m - 1, d + 1, 0, 0, 0, 0).getTime(),
+  };
+}
+
+function clipSegmentsToDay(
+  segments: { startMs: number; endMs: number }[] | undefined,
+  bounds: { startMs: number; endMs: number },
+): { startMs: number; endMs: number }[] {
+  if (!segments || segments.length === 0) return [];
+  const out: { startMs: number; endMs: number }[] = [];
+  for (const seg of segments) {
+    const s = Math.max(seg.startMs, bounds.startMs);
+    const e = Math.min(seg.endMs, bounds.endMs);
+    if (e > s) out.push({ startMs: s, endMs: e });
+  }
+  return out;
+}
+
+export function sessionTouchesDay(s: SessionMeta, day: string): boolean {
+  const bounds = dayBoundsMs(day);
+  if (s.activeSegments && s.activeSegments.length > 0) {
+    return s.activeSegments.some((seg) => seg.endMs > bounds.startMs && seg.startMs < bounds.endMs);
+  }
+  return sessionDay(s) === day;
+}
+
 // Compute per-day rich rollup blocks from raw sessions + cached Entries.
 // Sessions provide the parallelism-burst math; Entries provide the Entry-
 // derived counts, working_shape, skills, subagents. `privateProjects`
 // filters project labels out of the projects[] breakdown.
+//
+// `daySessions` should include every session whose active segments touch
+// `day`, not just sessions that started on it — cross-midnight sessions
+// contribute clipped agent-time to both calendar days, matching the
+// headline `dailyRollup.agentTimeMs` semantics in `dailyActivity`.
 export function buildRichRollupBlocks(
   day: string,
   daySessions: SessionMeta[],
   entries: Entry[],
   privateProjects: ReadonlySet<string>,
 ): Omit<RichDailyRollup, keyof DailyRollup> {
-  const bursts = computeBurstsFromSessions(daySessions);
+  const bounds = dayBoundsMs(day);
+  const clippedSessions: SessionMeta[] = [];
+  for (const s of daySessions) {
+    const clipped = clipSegmentsToDay(s.activeSegments, bounds);
+    if (clipped.length === 0) continue;
+    clippedSessions.push({ ...s, activeSegments: clipped });
+  }
+
+  const bursts = computeBurstsFromSessions(clippedSessions);
   const stats = summarizeBursts(bursts);
 
   const projects = new Map<string, { agentTimeMs: number; sessions: number }>();
-  for (const s of daySessions) {
+  for (const s of clippedSessions) {
     // Canonical project is computed from the human-readable cwd path, NOT the
     // raw `~/.claude/projects/<encoded>` directory — matching the Entry's
     // `project` field that build.ts derives via the same call.
     const name = canonicalProjectName(s.projectName);
     if (privateProjects.has(name)) continue;
-    const ms = (s.activeSegments ?? []).reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
+    const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
     const cur = projects.get(name) ?? { agentTimeMs: 0, sessions: 0 };
     cur.agentTimeMs += ms;
     cur.sessions += 1;

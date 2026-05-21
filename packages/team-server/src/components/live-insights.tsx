@@ -32,7 +32,7 @@ function shapeLabel(shape: string): string {
   return shape.replace(/-/g, " ");
 }
 
-export function LiveInsights({ data }: { data: LiveInsightsData }) {
+export function LiveInsights({ data, slug }: { data: LiveInsightsData; slug: string }) {
   const { scopeLabel, weekMonday, pulse, projects, skills, shapes } = data;
   const weekStart = new Date(`${weekMonday}T12:00:00`);
   const weekEnd = new Date(weekStart);
@@ -177,7 +177,7 @@ export function LiveInsights({ data }: { data: LiveInsightsData }) {
             <code>rich_daily_rollups</code>. Other catalog blocks (case studies,
             DORA, ticket flow, member fingerprints) require Phase-2 per-session
             detail or external integrations and remain mock-only on the{" "}
-            <a href="?v=7">block-builder reference</a>.
+            <a href={`/team/${encodeURIComponent(slug)}/insights/preview`}>block-builder reference</a>.
           </section>
         </>
       )}

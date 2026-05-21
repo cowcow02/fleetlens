@@ -61,5 +61,5 @@ export default async function GroupInsightsPage({
     skills,
     shapes,
   };
-  return <LiveInsights data={data} />;
+  return <LiveInsights data={data} slug={slug} />;
 }
