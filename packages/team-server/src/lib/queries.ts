@@ -4,10 +4,13 @@ export type RangeKey = "7d" | "30d" | "90d";
 
 export const RANGE_DAYS: Record<RangeKey, number> = { "7d": 7, "30d": 30, "90d": 90 };
 
-export function parseRange(value: string | string[] | undefined): RangeKey {
+export function parseRange(
+  value: string | string[] | undefined,
+  fallback: RangeKey = "7d",
+): RangeKey {
   const v = Array.isArray(value) ? value[0] : value;
   if (v === "7d" || v === "30d" || v === "90d") return v;
-  return "7d";
+  return fallback;
 }
 
 export type RosterRow = {

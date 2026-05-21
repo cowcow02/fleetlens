@@ -17,10 +17,8 @@ export function RangeTabs({ value }: { value: RangeKey }) {
   function select(next: RangeKey) {
     if (next === value) return;
     const sp = new URLSearchParams(params?.toString() ?? "");
-    if (next === "7d") sp.delete("range");
-    else sp.set("range", next);
-    const q = sp.toString();
-    router.replace(q ? `${pathname}?${q}` : pathname);
+    sp.set("range", next);
+    router.replace(`${pathname}?${sp.toString()}`);
   }
 
   return (
