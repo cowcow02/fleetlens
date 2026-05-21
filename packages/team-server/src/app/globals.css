@@ -746,6 +746,131 @@ table.data tbody tr:hover td { background: var(--rule-soft); }
 }
 .modal button { width: 100%; }
 
+/* Form modal — same shell as .modal but without the credential-reveal badge,
+   sized for inputs, and with bottom-aligned action buttons. */
+.modal--form { padding: 32px 36px 28px; }
+.modal--form::before { content: none; }
+.modal--form h2 { font-size: 30px; margin-bottom: 6px; }
+.modal--form .modal-subtitle {
+  color: var(--mute);
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-family: "JetBrains Mono", monospace;
+  margin-bottom: 24px;
+}
+.modal--form .modal-field { margin-bottom: 16px; }
+.modal--form .modal-field > label {
+  display: block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 6px;
+}
+.modal--form .modal-field input[type="text"],
+.modal--form .modal-field input[type="number"],
+.modal--form .modal-field input[type="email"],
+.modal--form .modal-field select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  font-size: 14px;
+  font-family: "JetBrains Mono", monospace;
+  color: var(--ink);
+}
+.modal--form .modal-field input[type="number"] { max-width: 140px; }
+.modal--form .modal-field .field-hint {
+  font-size: 11px;
+  color: var(--mute);
+  margin-top: 6px;
+}
+.modal--form .group-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  max-height: 180px;
+  overflow-y: auto;
+}
+.modal--form .group-chip {
+  display: inline-flex;
+  width: auto;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--ink);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 80ms, color 80ms, border-color 80ms;
+}
+.modal--form .group-chip:hover:not(:disabled) { border-color: var(--ink); }
+.modal--form .group-chip.selected {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.modal--form .group-chip.locked {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.modal--form .group-chip > span[aria-hidden] {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.modal--form .group-chip.selected > span[aria-hidden] { opacity: 1; }
+.modal--form .modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+.modal--form .modal-actions .btn { width: auto; min-width: 100px; padding: 10px 20px; }
+.modal--form .modal-error {
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: 16px;
+}
+
+/* Confirm modal — narrower, message-focused */
+.modal--confirm { padding: 32px 36px 28px; max-width: 440px; }
+.modal--confirm::before { content: none; }
+.modal--confirm h2 { font-size: 26px; margin-bottom: 6px; }
+.modal--confirm .modal-body {
+  color: var(--mute);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 12px 0 24px;
+}
+.modal--confirm .modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding-top: 20px;
+  border-top: 1px solid var(--rule);
+}
+.modal--confirm .modal-actions .btn { width: auto; min-width: 100px; padding: 10px 20px; }
+
 /* Utility */
 .text-mute { color: var(--mute); }
 .page-footer {

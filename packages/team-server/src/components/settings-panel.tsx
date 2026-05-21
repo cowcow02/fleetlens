@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { type ActiveInvite, formatExpiresIn } from "./invite-shared";
+import { InviteLinkModal, type InviteLinkValues } from "./invite-link-modal";
+import { ConfirmModal } from "./confirm-modal";
 
 type TeamRow = { id: string; name: string; slug: string; created_at: string };
 type MemberRow = {
@@ -34,13 +36,11 @@ export function SettingsPanel({
   // Active invite links
   const [invites, setInvites] = useState<ActiveInvite[] | null>(null);
   const [invitesError, setInvitesError] = useState<string | null>(null);
-  const [newLinkRole, setNewLinkRole] = useState<"admin" | "member">("member");
-  const [newLinkLabel, setNewLinkLabel] = useState("");
-  const [newLinkGroupIds, setNewLinkGroupIds] = useState<string[]>([]);
-  const [newLinkExpiresDays, setNewLinkExpiresDays] = useState(90);
-  const [newLinkBusy, setNewLinkBusy] = useState(false);
-  const [newLinkError, setNewLinkError] = useState<string | null>(null);
   const [showNewLink, setShowNewLink] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<ActiveInvite | null>(null);
+  const [revokeBusy, setRevokeBusy] = useState(false);
+  const [revokeMemberTarget, setRevokeMemberTarget] = useState<MemberRow | null>(null);
+  const [revokeMemberBusy, setRevokeMemberBusy] = useState(false);
 
   // Sign-up policy
   const [domainsInput, setDomainsInput] = useState(allowedSignupDomains.join(", "));
@@ -69,35 +69,18 @@ export function SettingsPanel({
     setInvites(d.invites ?? []);
   }
 
-  function toggleNewLinkGroup(id: string) {
-    setNewLinkGroupIds((prev) =>
-      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id],
-    );
-  }
-
-  async function createInviteLink() {
-    setNewLinkError(null);
-    setNewLinkBusy(true);
+  async function createInviteLink(values: InviteLinkValues): Promise<string | null> {
     const res = await fetch(`/api/team/invites?team=${teamSlug}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        role: newLinkRole,
-        groupIds: newLinkGroupIds,
-        label: newLinkLabel.trim() || undefined,
-        expiresInDays: newLinkExpiresDays,
-      }),
+      body: JSON.stringify(values),
     });
-    setNewLinkBusy(false);
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      setNewLinkError(d.error || `HTTP ${res.status}`);
-      return;
+      return d.error || `HTTP ${res.status}`;
     }
-    setNewLinkLabel("");
-    setNewLinkGroupIds([]);
-    setShowNewLink(false);
     await refreshInvites();
+    return null;
   }
 
   async function copyLink(joinUrl: string | null) {
@@ -109,14 +92,16 @@ export function SettingsPanel({
     }
   }
 
-  async function revokeLink(inviteId: string) {
-    if (!confirm("Revoke this invite link? It will stop working immediately.")) return;
-    const res = await fetch(`/api/team/${teamSlug}/invites/${inviteId}/revoke`, { method: "POST" });
+  async function confirmRevokeLink() {
+    if (!revokeTarget) return;
+    setRevokeBusy(true);
+    const res = await fetch(`/api/team/${teamSlug}/invites/${revokeTarget.id}/revoke`, { method: "POST" });
+    setRevokeBusy(false);
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      alert(d.error || "Failed to revoke");
-      return;
+      setInvitesError(d.error || "Failed to revoke");
     }
+    setRevokeTarget(null);
     await refreshInvites();
   }
 
@@ -150,9 +135,10 @@ export function SettingsPanel({
     setDomainsMessage("Saved.");
   }
 
-  async function revokeMember(memberId: string) {
-    if (!confirm("Revoke this member? They will lose access immediately.")) return;
-    await fetch(`/api/team/members/${memberId}`, { method: "DELETE" });
+  async function confirmRevokeMember() {
+    if (!revokeMemberTarget) return;
+    setRevokeMemberBusy(true);
+    await fetch(`/api/team/members/${revokeMemberTarget.id}`, { method: "DELETE" });
     window.location.reload();
   }
 
@@ -237,7 +223,7 @@ export function SettingsPanel({
                   <td>{inv.redemptionCount}</td>
                   <td style={{ textAlign: "right" }}>
                     <button onClick={() => copyLink(inv.joinUrl)} className="btn ghost" style={{ marginRight: 6 }} disabled={!inv.joinUrl}>Copy</button>
-                    <button onClick={() => revokeLink(inv.id)} className="btn danger-ghost">Revoke</button>
+                    <button onClick={() => setRevokeTarget(inv)} className="btn danger-ghost">Revoke</button>
                   </td>
                 </tr>
               ))}
@@ -246,55 +232,7 @@ export function SettingsPanel({
         )}
 
         <div style={{ marginTop: 16 }}>
-          {!showNewLink ? (
-            <button className="btn" onClick={() => setShowNewLink(true)}>+ New link</button>
-          ) : (
-            <div className="help-box" style={{ padding: 12 }}>
-              <div className="form-group" style={{ marginBottom: 10 }}>
-                <label>Label (optional)</label>
-                <input value={newLinkLabel} onChange={(e) => setNewLinkLabel(e.target.value)} placeholder="Q2 hires" />
-              </div>
-              <div className="form-group" style={{ marginBottom: 10 }}>
-                <label>Role</label>
-                <select value={newLinkRole} onChange={(e) => setNewLinkRole(e.target.value as "admin" | "member")}>
-                  <option value="member">Member</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              {groups && groups.length > 0 && (
-                <fieldset style={{ border: "1px solid var(--rule)", padding: "10px 12px", margin: "0 0 10px 0" }}>
-                  <legend className="mono" style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--mute)", padding: "0 6px" }}>
-                    PLACE IN GROUPS (OPTIONAL)
-                  </legend>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                    {groups.map((g) => (
-                      <label key={g.id} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13 }}>
-                        <input type="checkbox" checked={newLinkGroupIds.includes(g.id)} onChange={() => toggleNewLinkGroup(g.id)} />
-                        {g.name}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              )}
-              <div className="form-group" style={{ marginBottom: 10 }}>
-                <label>Expires in (days)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={365}
-                  value={newLinkExpiresDays}
-                  onChange={(e) => setNewLinkExpiresDays(Math.max(1, Math.min(365, Number(e.target.value) || 90)))}
-                />
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={createInviteLink} disabled={newLinkBusy} className="btn">
-                  {newLinkBusy ? "Creating…" : "Create link"}
-                </button>
-                <button onClick={() => { setShowNewLink(false); setNewLinkError(null); }} className="btn ghost">Cancel</button>
-              </div>
-              {newLinkError && <div className="form-error" style={{ marginTop: 10 }}>{newLinkError}</div>}
-            </div>
-          )}
+          <button className="btn" onClick={() => setShowNewLink(true)}>+ New link</button>
         </div>
       </section>
 
@@ -360,7 +298,7 @@ export function SettingsPanel({
                   </td>
                   <td style={{ textAlign: "right" }}>
                     {!m.revoked_at && m.role !== "admin" && (
-                      <button onClick={() => revokeMember(m.id)} className="btn danger-ghost">Revoke</button>
+                      <button onClick={() => setRevokeMemberTarget(m)} className="btn danger-ghost">Revoke</button>
                     )}
                     {m.revoked_at && (
                       <button
@@ -404,6 +342,44 @@ export function SettingsPanel({
           </tbody>
         </table>
       </section>
+
+      <InviteLinkModal
+        open={showNewLink}
+        groups={groups ?? []}
+        allowRoleChoice={true}
+        onClose={() => setShowNewLink(false)}
+        onSubmit={createInviteLink}
+      />
+
+      <ConfirmModal
+        open={revokeTarget !== null}
+        title="Revoke invite link?"
+        body={
+          revokeTarget
+            ? `"${revokeTarget.label ?? "(default)"}" will stop working immediately. Anyone who hasn't redeemed it yet will be locked out.`
+            : ""
+        }
+        confirmLabel="Revoke link"
+        danger
+        busy={revokeBusy}
+        onConfirm={confirmRevokeLink}
+        onCancel={() => setRevokeTarget(null)}
+      />
+
+      <ConfirmModal
+        open={revokeMemberTarget !== null}
+        title="Revoke member?"
+        body={
+          revokeMemberTarget
+            ? `${revokeMemberTarget.display_name || revokeMemberTarget.email || "This member"} will lose access immediately. You can reactivate them later.`
+            : ""
+        }
+        confirmLabel="Revoke member"
+        danger
+        busy={revokeMemberBusy}
+        onConfirm={confirmRevokeMember}
+        onCancel={() => setRevokeMemberTarget(null)}
+      />
     </div>
   );
 }

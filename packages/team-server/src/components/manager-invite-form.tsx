@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { type ActiveInvite, formatExpiresIn } from "./invite-shared";
+import { InviteLinkModal, type InviteLinkValues } from "./invite-link-modal";
+import { ConfirmModal } from "./confirm-modal";
 
 export function ManagerInviteForm({
   teamSlug,
@@ -15,12 +17,9 @@ export function ManagerInviteForm({
 }) {
   const [invites, setInvites] = useState<ActiveInvite[] | null>(null);
   const [invitesError, setInvitesError] = useState<string | null>(null);
-
-  const [label, setLabel] = useState("");
-  const [selected, setSelected] = useState<string[]>([preselectedGroupId]);
-  const [expiresDays, setExpiresDays] = useState(90);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [showNewLink, setShowNewLink] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<ActiveInvite | null>(null);
+  const [revokeBusy, setRevokeBusy] = useState(false);
 
   useEffect(() => {
     refresh();
@@ -51,51 +50,35 @@ export function ManagerInviteForm({
     }
   }
 
-  async function revokeLink(inviteId: string) {
-    if (!confirm("Revoke this invite link? It will stop working immediately.")) return;
-    const res = await fetch(`/api/team/${teamSlug}/invites/${inviteId}/revoke`, { method: "POST" });
+  async function createInviteLink(values: InviteLinkValues): Promise<string | null> {
+    const res = await fetch(`/api/team/${teamSlug}/groups/${groupSlug}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        label: values.label,
+        groupIds: values.groupIds,
+        expiresInDays: values.expiresInDays,
+      }),
+    });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      alert(d.error || "Failed to revoke");
-      return;
+      return d.error || `HTTP ${res.status}`;
     }
     await refresh();
+    return null;
   }
 
-  async function submit() {
-    setError(null);
-    if (selected.length === 0) {
-      setError("Pick at least one group");
-      return;
+  async function confirmRevoke() {
+    if (!revokeTarget) return;
+    setRevokeBusy(true);
+    const res = await fetch(`/api/team/${teamSlug}/invites/${revokeTarget.id}/revoke`, { method: "POST" });
+    setRevokeBusy(false);
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setInvitesError(d.error || "Failed to revoke");
     }
-    setBusy(true);
-    try {
-      const r = await fetch(`/api/team/${teamSlug}/groups/${groupSlug}/invite`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          label: label.trim() || undefined,
-          groupIds: selected,
-          expiresInDays: expiresDays,
-        }),
-      });
-      if (!r.ok) {
-        const body = await r.json().catch(() => ({}));
-        setError(body.error ?? `HTTP ${r.status}`);
-        return;
-      }
-      setLabel("");
-      setSelected([preselectedGroupId]);
-      await refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function toggle(id: string) {
-    setSelected((cur) =>
-      cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id],
-    );
+    setRevokeTarget(null);
+    await refresh();
   }
 
   return (
@@ -130,8 +113,17 @@ export function ManagerInviteForm({
                 <td>{formatExpiresIn(inv.expiresAt)}</td>
                 <td>{inv.redemptionCount}</td>
                 <td style={{ textAlign: "right" }}>
-                  <button onClick={() => copyLink(inv.joinUrl)} className="btn ghost" style={{ marginRight: 6 }} disabled={!inv.joinUrl}>Copy</button>
-                  <button onClick={() => revokeLink(inv.id)} className="btn danger-ghost">Revoke</button>
+                  <button
+                    onClick={() => copyLink(inv.joinUrl)}
+                    className="btn ghost"
+                    style={{ marginRight: 6 }}
+                    disabled={!inv.joinUrl}
+                  >
+                    Copy
+                  </button>
+                  <button onClick={() => setRevokeTarget(inv)} className="btn danger-ghost">
+                    Revoke
+                  </button>
                 </td>
               </tr>
             ))}
@@ -139,82 +131,35 @@ export function ManagerInviteForm({
         </table>
       )}
 
-      <h3 style={{ marginTop: 24 }}>+ New link</h3>
-
-      <div className="form-group" style={{ maxWidth: 520, marginBottom: 10 }}>
-        <label htmlFor="invite-label">Label (optional)</label>
-        <input
-          id="invite-label"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="Q2 hires"
-        />
+      <div style={{ marginTop: 16 }}>
+        <button className="btn" onClick={() => setShowNewLink(true)}>
+          + New link
+        </button>
       </div>
 
-      <fieldset
-        style={{
-          border: "1px solid var(--rule)",
-          padding: "10px 12px",
-          margin: "0 0 10px 0",
-          maxWidth: 520,
-        }}
-      >
-        <legend
-          className="mono"
-          style={{ fontSize: 11, letterSpacing: "0.1em", color: "var(--mute)", padding: "0 6px" }}
-        >
-          PLACE IN GROUPS
-        </legend>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {availableGroups.map((g) => (
-            <label
-              key={g.id}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 13,
-                opacity: g.id === preselectedGroupId ? 0.7 : 1,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={selected.includes(g.id)}
-                disabled={g.id === preselectedGroupId}
-                onChange={() => toggle(g.id)}
-              />
-              {g.name}
-              {g.id === preselectedGroupId && (
-                <span className="mono" style={{ fontSize: 9, letterSpacing: "0.14em", color: "var(--mute)" }}>
-                  · LOCKED
-                </span>
-              )}
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <InviteLinkModal
+        open={showNewLink}
+        groups={availableGroups}
+        lockedGroupId={preselectedGroupId}
+        allowRoleChoice={false}
+        onClose={() => setShowNewLink(false)}
+        onSubmit={createInviteLink}
+      />
 
-      <div className="form-group" style={{ maxWidth: 240, marginBottom: 10 }}>
-        <label htmlFor="expires-days">Expires in (days)</label>
-        <input
-          id="expires-days"
-          type="number"
-          min={1}
-          max={365}
-          value={expiresDays}
-          onChange={(e) => setExpiresDays(Math.max(1, Math.min(365, Number(e.target.value) || 90)))}
-        />
-      </div>
-
-      <button onClick={submit} disabled={busy} className="btn">
-        {busy ? "Creating…" : "Create link"}
-      </button>
-
-      {error && (
-        <div className="form-error" style={{ marginTop: 16, maxWidth: 520 }}>
-          {error}
-        </div>
-      )}
+      <ConfirmModal
+        open={revokeTarget !== null}
+        title="Revoke invite link?"
+        body={
+          revokeTarget
+            ? `"${revokeTarget.label ?? "(default)"}" will stop working immediately. Anyone who hasn't redeemed it yet will be locked out.`
+            : ""
+        }
+        confirmLabel="Revoke link"
+        danger
+        busy={revokeBusy}
+        onConfirm={confirmRevoke}
+        onCancel={() => setRevokeTarget(null)}
+      />
     </section>
   );
 }
