@@ -1,5 +1,5 @@
 import { readTeamConnection } from "@/lib/team-data";
-import { formatRelative } from "@/lib/format";
+import { formatRelative, formatDuration, formatTokens } from "@/lib/format";
 import { ForceSyncButton } from "./force-sync-button";
 
 const HEALTH_COLORS = {
@@ -7,18 +7,6 @@ const HEALTH_COLORS = {
   amber: "var(--af-warning, #f59e0b)",
   red: "var(--af-error, #ef4444)",
 } as const;
-
-function formatAgentTime(ms: number): string {
-  const hours = Math.floor(ms / 3_600_000);
-  const minutes = Math.floor((ms % 3_600_000) / 60_000);
-  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
-  return String(n);
-}
 
 export function TeamConnectionSection() {
   const conn = readTeamConnection();
@@ -61,7 +49,7 @@ export function TeamConnectionSection() {
           {lastPush.payload.dailyRollup && (
             <div>
               <strong>{lastPush.payload.dailyRollup.day}:</strong>{" "}
-              {formatAgentTime(lastPush.payload.dailyRollup.agentTimeMs)} agent time ·{" "}
+              {formatDuration(lastPush.payload.dailyRollup.agentTimeMs)} agent time ·{" "}
               {lastPush.payload.dailyRollup.sessions} sessions ·{" "}
               {lastPush.payload.dailyRollup.toolCalls} tool calls ·{" "}
               {lastPush.payload.dailyRollup.turns} turns ·{" "}
