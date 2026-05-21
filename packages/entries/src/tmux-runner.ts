@@ -356,15 +356,10 @@ function cleanup(
   sessionName: string,
   transcriptPath?: string,
 ): void {
-  // Kill the tmux session (and the claude inside it) before touching the
-  // transcript, so claude can't rewrite the file after we delete it.
+  // Kill claude before unlinking its transcript so it can't rewrite the file.
   try { spawnSync(tmuxBin, ["kill-session", "-t", sessionName], { stdio: "ignore" }); } catch {}
   if (process.env.FLEETLENS_TMUX_KEEP_WRAPPER !== "1") {
-    // Delete the session transcript Claude Code wrote for this run. We've
-    // already extracted the response by the time cleanup runs, so the JSONL
-    // is disposable — and we don't want our own LLM runs surfacing in the
-    // dashboard. The parser's runtime-dir filter is the safety net for any
-    // transcript that outlives cleanup (crash, KEEP_WRAPPER, etc).
+    // Drop the transcript so our own LLM runs don't surface in the dashboard.
     if (transcriptPath) {
       try { unlinkSync(transcriptPath); } catch {}
     }

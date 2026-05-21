@@ -37,19 +37,12 @@ export function decodeProjectName(dir: string): string {
   return "/" + dir.slice(1).replace(/-/g, "/");
 }
 
-/** Claude Code encodes a cwd into its `~/.claude/projects/` dir name by
- *  replacing every `/` and `.` with `-`. Lossy (so decode can't recover the
- *  `.`), but deterministic — enough to recognize a known cwd's dir. */
+/** Encode a cwd into its `~/.claude/projects/` dir name (every `/` and `.` → `-`). */
 function encodeProjectDir(cwd: string): string {
   return cwd.replace(/[/.]/g, "-");
 }
 
-/** Fleetlens runs its own perception/digest LLM calls through a tmux session
- *  whose cwd is `~/.cclens/runtime` (see packages/entries tmux-runner). Those
- *  land as real Claude Code transcripts. Exclude them everywhere so our own
- *  runs never pollute sessions, project rollups, or token calibration. The
- *  tmux runner also deletes each transcript post-read; this is the safety net
- *  for any that linger (crash before cleanup, KEEP_WRAPPER debugging, etc). */
+// Fleetlens's own tmux LLM runs — must match runtimeCwd() in tmux-runner.ts.
 const FLEETLENS_RUNTIME_PROJECT_DIR = encodeProjectDir(
   path.join(os.homedir(), ".cclens", "runtime"),
 );
