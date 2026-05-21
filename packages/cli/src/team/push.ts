@@ -55,9 +55,8 @@ export type WireCyclePeaks = {
 export type IngestPayload = {
   ingestId: string;
   observedAt: string;
-  // Optional so the daemon can push tier/snapshot/cyclePeaks updates on
-  // idle days when there's no new daily activity to roll up. Server skips
-  // the daily_rollups upsert when missing but still applies the rest.
+  // Every field below is optional so the daemon can push whichever subset is
+  // relevant on each tick. The server applies whatever's present.
   dailyRollup?: DailyRollup;
   usageSnapshot?: WireUsageSnapshot;
   // Anthropic-detected tier ("pro"|"pro-max"|"pro-max-20x"|"custom"). Server
@@ -69,6 +68,10 @@ export type IngestPayload = {
   // the computed outcome (rather than raw events) keeps a single source of
   // truth and means team server never re-runs the math.
   cyclePeaks?: WireCyclePeaks;
+  // Bulk historical snapshot batch (formerly POST /api/ingest/usage-history).
+  // Server dedups at the row level via captured_at, so retries on the same
+  // ingestId still apply new rows.
+  snapshotHistory?: WireUsageSnapshot[];
 };
 
 // Server only cares about a freshly-captured snapshot. A stale one would

@@ -1,7 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { readSnapshots } from "../usage/storage.js";
 import type { UsageSnapshot } from "../usage/api.js";
 import { readTeamConfig, type TeamConfig } from "./config.js";
-import type { WireUsageSnapshot, WireUsageWindow } from "./push.js";
+import { pushToTeamServer, type IngestPayload, type WireUsageSnapshot, type WireUsageWindow } from "./push.js";
 import { getPlanTier } from "../usage/profile.js";
 import { cclensPath } from "@claude-lens/parser/fs";
 
@@ -11,7 +12,6 @@ const PROFILE_CACHE = cclensPath("profile.json");
 // Server caps each batch (zod schema). Stay safely under so a few extra
 // header bytes don't tip a payload over.
 const BATCH_SIZE = 500;
-const POST_TIMEOUT_MS = 15_000;
 
 type LogFn = (level: "info" | "warn", message: string) => void;
 const noopLog: LogFn = () => {};
@@ -66,23 +66,30 @@ async function postBatch(
   snapshots: WireUsageSnapshot[],
   planTier?: string,
 ): Promise<{ inserted: number; skipped: number; status: number }> {
-  const res = await fetch(`${config.serverUrl}/api/ingest/usage-history`, {
-    method: "POST",
-    signal: AbortSignal.timeout(POST_TIMEOUT_MS),
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.bearerToken}`,
-    },
-    body: JSON.stringify({ snapshots, ...(planTier ? { planTier } : {}) }),
-  });
-  if (!res.ok) {
-    return { inserted: 0, skipped: snapshots.length, status: res.status };
+  const payload: IngestPayload = {
+    ingestId: `backfill-${randomUUID()}`,
+    observedAt: new Date().toISOString(),
+    snapshotHistory: snapshots,
+    ...(planTier ? { planTier } : {}),
+  };
+  const result = await pushToTeamServer(config, payload);
+  if (!result.ok) {
+    return { inserted: 0, skipped: snapshots.length, status: result.status };
   }
-  const body = (await res.json().catch(() => ({}))) as { inserted?: number; skipped?: number };
+  const body = result.body as { snapshotHistory?: { inserted?: number; skipped?: number } } | null;
+  if (!body?.snapshotHistory) {
+    // 200 OK but no snapshotHistory result — older server image silently
+    // dropped the field via zod passthrough. Throw so the outer loop aborts
+    // without advancing lastSyncedUsageSnapshotAt, otherwise the rows would
+    // never be retried after the server upgrades.
+    throw new Error(
+      "team server accepted snapshotHistory but did not return a result block — older image, upgrade required",
+    );
+  }
   return {
-    inserted: body.inserted ?? 0,
-    skipped: body.skipped ?? 0,
-    status: res.status,
+    inserted: body.snapshotHistory.inserted ?? 0,
+    skipped: body.snapshotHistory.skipped ?? 0,
+    status: result.status,
   };
 }
 
