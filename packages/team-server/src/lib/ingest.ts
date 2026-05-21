@@ -22,7 +22,7 @@ export async function processIngest(
   const p = pool || getPool();
   const payload = IngestPayload.parse(raw);
 
-  let dedupHit = false;
+  let dedupHit!: boolean;
   let historyInserted = 0;
   const historySize = payload.snapshotHistory?.length ?? 0;
 
