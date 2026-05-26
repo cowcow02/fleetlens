@@ -34,6 +34,53 @@ function fmtPct(x: number): string {
   return `${Math.round(x * 100)}%`;
 }
 
+function cornerLabel(c: RiskTrianglePosition["dominant_corner"]): string {
+  return c === "polish_without_check"
+    ? "polish-without-check"
+    : c === "iterate_without_verify"
+      ? "iterate-without-verify"
+      : c === "verify_without_iterate"
+        ? "verify-without-iterate"
+        : "balanced";
+}
+
+function headlineProse(report: TeamFluencyReport, delta: number): React.ReactNode {
+  // Pick the two strongest axes (most engineers demonstrating)
+  const top = [...report.distribution].sort((a, b) => b.demonstrated - a.demonstrated).slice(0, 2);
+  const topAxisName = (id: typeof top[number]["axis"]) => FLUENCY_AXIS_BY_ID[id].title.toLowerCase();
+  const corner = cornerLabel(report.risk_triangle.dominant_corner);
+  const cornerRow = report.distribution.find((r) => {
+    if (report.risk_triangle.dominant_corner === "polish_without_check") return r.axis === "Di2";
+    if (report.risk_triangle.dominant_corner === "iterate_without_verify") return r.axis === "Di2";
+    if (report.risk_triangle.dominant_corner === "verify_without_iterate") return r.axis === "De4";
+    return r.axis === "D1";
+  });
+  const cornerGap = cornerRow ? cornerRow.total - cornerRow.demonstrated : 0;
+  const cornerGapText = !cornerRow
+    ? "the data is still settling"
+    : cornerGap === 0
+      ? `every engineer has the proximal axis covered — drift here is shape-level, not axis-level`
+      : `${cornerGap} of ${cornerRow.total} engineers still need to land this consistently`;
+
+  const sign = delta >= 0 ? "+" : "";
+  const movementWord = delta >= 0 ? "up" : "down";
+  return (
+    <>
+      Your team&apos;s collective AI-collaboration practice is {movementWord}{" "}
+      <em style={{ color: "var(--accent)" }}>{sign}{delta.toFixed(1)}</em>{report.team_score.prev_value !== undefined ? " over last week" : ""}
+      {top.length > 0 ? (
+        <>
+          {", anchored by "}
+          <em>{topAxisName(top[0].axis)}</em>
+          {top[1] ? <> and <em>{topAxisName(top[1].axis)}</em></> : null}
+          {" diffusing across the team. "}
+        </>
+      ) : ". "}
+      The remaining risk corner is <em>{corner}</em>: {cornerGapText}.
+    </>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Headline                                                            */
 /* ------------------------------------------------------------------ */
@@ -83,11 +130,7 @@ export function FluencyHeadline({ report }: { report: TeamFluencyReport }) {
               maxWidth: 740,
             }}
           >
-            Your team&apos;s collective AI-collaboration practice is up{" "}
-            <em style={{ color: "var(--accent)" }}>+{delta.toFixed(1)}</em> over last week, driven by{" "}
-            <em>plan-gating</em> and <em>iterative refinement</em> diffusing across the team. The remaining
-            risk corner is <em>polish-without-check</em>: 4 of 8 engineers still merge polished Claude output
-            without a verify step.
+            {headlineProse(report, delta)}
           </p>
         </div>
         <div

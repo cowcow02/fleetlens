@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Fluency } from "@claude-lens/entries";
 import { getPool } from "../../../../db/pool";
 import { validateSession } from "../../../../lib/auth";
+import { readLatestTeamAggregate } from "../../../../lib/fluency-aggregate";
 import {
   DiffusionBlock,
   DistributionBlock,
@@ -52,13 +53,30 @@ export default async function TeamFluencyPage({
     teamName = "Kipwise Engineering";
   }
 
-  const baseReport = Fluency.TEAM_FLUENCY_REPORT;
-  // Adopt the browsed team's name / slug so the prototype renders at-home
-  // inside whichever team the URL points at.
-  const report = { ...baseReport, team_name: teamName, team_slug: slug };
+  // Real path: latest aggregate from DB. Try this whether demo mode is on or
+  // not — if real scorecards exist for this team, we want to show them. Demo
+  // mode only relaxes the auth gate; the data layer always prefers real over
+  // mock.
+  let report: Fluency.TeamFluencyReport | null = null;
+  const pool = getPool();
+  const teamIdRes = await pool.query<{ id: string }>(
+    "SELECT id FROM teams WHERE slug = $1",
+    [slug],
+  ).catch(() => ({ rows: [] as Array<{ id: string }> }));
+  const teamId = teamIdRes.rows[0]?.id;
+  if (teamId) {
+    report = await readLatestTeamAggregate(teamId, null, pool).catch(() => null);
+  }
+  let isMock = false;
+  if (!report) {
+    isMock = true;
+    const base = Fluency.TEAM_FLUENCY_REPORT;
+    report = { ...base, team_name: teamName, team_slug: slug };
+  }
 
   return (
     <>
+      {isMock && <DemoBanner />}
       <FluencyHeadline report={report} />
       <DistributionBlock rows={report.distribution} />
       <TeamRiskTriangle position={report.risk_triangle} prev={report.risk_triangle.prev} />
@@ -69,5 +87,25 @@ export default async function TeamFluencyPage({
       <NormProposalBlock proposal={report.norm_proposal} />
       <PrivacyStrip />
     </>
+  );
+}
+
+function DemoBanner() {
+  return (
+    <div
+      style={{
+        marginBottom: 18,
+        padding: "12px 16px",
+        background: "var(--accent-soft)",
+        border: "1px solid var(--accent)",
+        borderRadius: 2,
+        fontSize: 13,
+        color: "var(--ink)",
+      }}
+    >
+      <strong>Showing the prototype mock data.</strong> No member has pushed a fluency scorecard
+      to this team yet. Once a paired CLI runs <code>fleetlens fluency --push</code>, this page
+      renders the live team aggregate.
+    </div>
   );
 }

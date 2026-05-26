@@ -45,6 +45,11 @@ async function main() {
       await digest(args.slice(1));
       break;
     }
+    case "fluency": {
+      const { fluency } = await import("./commands/fluency.js");
+      await fluency(args.slice(1));
+      break;
+    }
     case "daemon": {
       const { daemon } = await import("./commands/daemon.js");
       await daemon(args.slice(1));
@@ -83,6 +88,7 @@ Terminal:
   digest day   [--date D|--yesterday|--today] [--json]    Day digest
   digest week  [--week D|--last-week|--this-week] [--json]   Week digest
   digest month [--month YYYY-MM|--last-month|--this-month] [--json]  Month digest
+  fluency [--week D|--this-week|--last-week] [--json] [--push]   AI Fluency scorecard for the ISO week
   runs [--watch] [--json] [--since 24h]      Live LLM call activity + token spend
 
 Advanced:
