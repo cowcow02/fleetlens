@@ -15,6 +15,7 @@ export * from "./prompts/digest-week.js";
 export * from "./prompts/digest-month.js";
 export * from "./digest-week-pipeline.js";
 export * from "./digest-month-pipeline.js";
+export { runClaudeSubprocess, type RunSubprocessArgs } from "./llm-runner.js";
 export {
   runClaudeUnderTmux,
   tmuxRunnerAvailable,

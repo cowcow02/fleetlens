@@ -7,6 +7,7 @@ import {
   GrowthCallout,
   RiskTriangle,
 } from "@/components/fluency-report";
+import { FluencyTabs } from "@/components/fluency-tabs";
 import { buildScorecardForWeek } from "@/lib/fluency-data";
 import { currentWeekMonday } from "@/lib/entries";
 
@@ -31,6 +32,7 @@ export default async function FluencyPage() {
   const isMock = real === null;
   return (
     <div className="flu-page">
+      <FluencyTabs />
       {isMock && <DemoBanner />}
       <FluencyHeadline card={card} />
       <FluencySurfaceMix mix={card.surface_mix} />
