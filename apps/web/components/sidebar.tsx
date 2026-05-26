@@ -219,6 +219,14 @@ export function Sidebar({
           Insights
         </NavLink>
         <NavLink
+          href="/fluency"
+          active={pathname === "/fluency"}
+          icon={<Gauge size={15} />}
+          trailing="new"
+        >
+          Fluency
+        </NavLink>
+        <NavLink
           href="/runs"
           active={pathname === "/runs" || pathname.startsWith("/runs/")}
           icon={<Radio size={15} />}

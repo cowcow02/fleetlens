@@ -18,6 +18,10 @@
     "./node": {
       "types": "./dist/node.d.ts",
       "import": "./dist/node.js"
+    },
+    "./fluency": {
+      "types": "./dist/fluency/index.d.ts",
+      "import": "./dist/fluency/index.js"
     }
   },
   "files": [

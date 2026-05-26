@@ -19,25 +19,44 @@ export default async function TeamLayout({
   const cookieStore = await cookies();
   const token = cookieStore.get("fleetlens_session")?.value;
   const session = token ? await validateSession(token, pool) : null;
-  if (!session) redirect("/login");
+  const demo = process.env.FLEETLENS_FLUENCY_DEMO === "1";
+  if (!session && !demo) redirect("/login");
 
-  const teamRes = await pool.query("SELECT id, name, created_at FROM teams WHERE slug = $1", [slug]);
-  if (!teamRes.rowCount) notFound();
-  const team = teamRes.rows[0];
+  let team: { id: string; name: string; created_at: Date };
+  let myMembership: { id: string; team_id: string; role: string } | null = null;
+  if (session) {
+    const teamRes = await pool.query("SELECT id, name, created_at FROM teams WHERE slug = $1", [slug]);
+    if (!teamRes.rowCount) notFound();
+    team = teamRes.rows[0];
+    const m = session.memberships.find((mm) => mm.team_id === team.id);
+    if (!m && !demo) redirect("/login");
+    if (m) myMembership = { id: m.id, team_id: m.team_id, role: m.role };
+  } else {
+    // Demo path: synthesise a stub team + admin membership so the rest of the layout renders.
+    team = { id: "demo-team", name: "Kipwise Engineering", created_at: new Date("2026-01-01") };
+    myMembership = { id: "demo-member", team_id: team.id, role: "admin" };
+  }
 
-  const myMembership = session.memberships.find((m) => m.team_id === team.id);
-  if (!myMembership) redirect("/login");
-
-  const memberCount = await pool.query(
-    "SELECT COUNT(*)::int AS n FROM memberships WHERE revoked_at IS NULL AND team_id = $1",
-    [team.id]
-  );
-  const state = await instanceState(pool);
+  let memberCountN = 8;
+  let stateAllowMultipleTeams = false;
+  let isStaff = false;
+  let userEmail = "demo@kipwise.com";
+  if (session) {
+    const memberCount = await pool.query(
+      "SELECT COUNT(*)::int AS n FROM memberships WHERE revoked_at IS NULL AND team_id = $1",
+      [team.id]
+    );
+    memberCountN = memberCount.rows[0].n;
+    const state = await instanceState(pool);
+    stateAllowMultipleTeams = state.allowMultipleTeams;
+    isStaff = session.user.is_staff;
+    userEmail = session.user.email;
+  }
   const created = new Date(team.created_at);
   const issueNum = String(Math.floor((Date.now() - created.getTime()) / (7 * 24 * 3600 * 1000)) + 1).padStart(2, "0");
-  const isAdmin = myMembership.role === "admin";
-  const isAdminOrStaff = isAdmin || session.user.is_staff;
-  const managedCount = isAdminOrStaff ? 1 : (await listGroupsManagedBy(myMembership.id, pool)).length;
+  const isAdmin = myMembership!.role === "admin";
+  const isAdminOrStaff = isAdmin || isStaff;
+  const managedCount = isAdminOrStaff || !session ? 1 : (await listGroupsManagedBy(myMembership!.id, pool)).length;
   const showGroups = isAdminOrStaff || managedCount > 0;
 
   return (
@@ -51,7 +70,7 @@ export default async function TeamLayout({
           <span className="dot">·</span>
           <span className="mono">{team.name.toUpperCase()}</span>
           <span className="dot">·</span>
-          <span className="mono">{memberCount.rows[0].n} ACTIVE</span>
+          <span className="mono">{memberCountN} ACTIVE</span>
         </div>
       </header>
       <div className="shell">
@@ -60,16 +79,19 @@ export default async function TeamLayout({
           {isAdmin ? (
             <a href={`/team/${slug}`}>Roster <span className="mono">01</span></a>
           ) : (
-            <a href={`/team/${slug}/members/${myMembership.id}`}>My profile <span className="mono">01</span></a>
+            <a href={`/team/${slug}/members/${myMembership!.id}`}>My profile <span className="mono">01</span></a>
           )}
           {isAdmin && <a href={`/team/${slug}/plan`}>Plan <span className="mono">02</span></a>}
           {showGroups && (
             <a href={`/team/${slug}/groups`}>Groups <span className="mono">{isAdmin ? "03" : "02"}</span></a>
           )}
-          {isAdmin && <a href={`/team/${slug}/settings`}>Settings <span className="mono">04</span></a>}
-          {state.allowMultipleTeams && <a href="/teams/new">+ New team</a>}
+          <a href={`/team/${slug}/fluency`}>
+            Fluency <span className="mono">{isAdmin ? (showGroups ? "04" : "03") : (showGroups ? "03" : "02")}</span>
+          </a>
+          {isAdmin && <a href={`/team/${slug}/settings`}>Settings <span className="mono">05</span></a>}
+          {stateAllowMultipleTeams && <a href="/teams/new">+ New team</a>}
 
-          {session.user.is_staff && (
+          {isStaff && (
             <>
               <div className="shell-nav-label">Server admin</div>
               <a href="/admin/updates">Updates</a>
@@ -80,7 +102,7 @@ export default async function TeamLayout({
           <div className="shell-nav-label">Account</div>
           <a href={`/team/${slug}/me`}>My account · pair CLI</a>
 
-          <NavFooter email={session.user.email} />
+          <NavFooter email={userEmail} />
         </nav>
         <main className="shell-main">{children}</main>
       </div>
