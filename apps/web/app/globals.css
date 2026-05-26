@@ -157,6 +157,190 @@ input::placeholder {
   background: var(--af-surface-elevated);
 }
 
+/* ────────────────────────────────────────────────────────────────── */
+/*  Responsive layout                                                  */
+/* ────────────────────────────────────────────────────────────────── */
+
+/* Mobile top bar — present in DOM at all widths but only displayed below
+ * the 900px breakpoint. Brand on the left, hamburger on the right. */
+.mobile-topbar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  /* The root layout wrapper sets height: 100vh + display: flex (row).
+   * Force it to column so sidebar sits above content (or hidden, see
+   * .sl-sidebar rule below). */
+  body > div[style*="display:flex"],
+  body > div[style*="display: flex"] {
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: 100vh;
+  }
+  body > div[style*="display:flex"] > main,
+  body > div[style*="display: flex"] > main {
+    overflow: visible !important;
+    min-height: 0 !important;
+  }
+
+  /* Hide the desktop sidebar; show the mobile top bar instead. */
+  aside.sl-sidebar { display: none !important; }
+  .sl-sidebar-mobile-open aside.sl-sidebar {
+    display: flex !important;
+    position: fixed;
+    inset: 48px 0 0 0;
+    z-index: 60;
+    height: calc(100vh - 48px) !important;
+  }
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    height: 48px;
+    background: var(--background);
+    border-bottom: 1px solid var(--af-border-subtle);
+    position: sticky;
+    top: 0;
+    /* Above the drawer + backdrop so the close button stays tappable. */
+    z-index: 70;
+  }
+  .mobile-topbar-brand {
+    font-weight: 600;
+    font-size: 15px;
+    letter-spacing: -0.01em;
+    color: var(--af-text);
+  }
+  .mobile-topbar-brand em {
+    font-style: normal;
+    color: var(--af-accent);
+  }
+  .mobile-topbar-menu {
+    background: none;
+    border: 1px solid var(--af-border-subtle);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--af-text);
+  }
+  /* Backdrop when drawer is open. Purely visual — pointer-events:none lets
+   * taps on it pass through to the JS outside-click handler that closes the
+   * drawer. Must sit below the topbar so the menu button stays tappable. */
+  .sl-sidebar-mobile-open::before {
+    content: "";
+    position: fixed;
+    inset: 48px 0 0 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 55;
+    pointer-events: none;
+  }
+}
+@media (min-width: 901px) {
+  .mobile-topbar { display: none !important; }
+}
+
+/* Floating widgets (live sessions, job queue) take valuable space and can
+ * overlap interactive content on small screens — hide on mobile. */
+@media (max-width: 900px) {
+  .sl-floating-widget { display: none !important; }
+}
+
+/* ────────────────────────────────────────────────────────────────── */
+/*  Fluency page responsive                                            */
+/* ────────────────────────────────────────────────────────────────── */
+
+.flu-page {
+  padding: 24px 32px 80px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.flu-headline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
+  padding: 24px 0 28px;
+  border-bottom: 1px solid var(--af-border-subtle);
+}
+.flu-headline h1 {
+  font-size: 28px;
+}
+.flu-score {
+  background: var(--af-surface);
+  border: 1px solid var(--af-border-subtle);
+  border-radius: 12px;
+  padding: 18px 22px;
+  min-width: 200px;
+  text-align: right;
+}
+.flu-axis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.flu-risk-grid {
+  display: grid;
+  grid-template-columns: 340px 1fr;
+  gap: 28px;
+  align-items: center;
+}
+.flu-growth-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .flu-page {
+    padding: 16px 14px 60px;
+  }
+  .flu-headline {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 16px 0 18px;
+  }
+  .flu-headline h1 {
+    font-size: 22px !important;
+    line-height: 1.2 !important;
+  }
+  .flu-headline-summary {
+    font-size: 14px !important;
+  }
+  .flu-score {
+    width: 100%;
+    text-align: left;
+    padding: 14px 16px;
+    min-width: 0;
+  }
+  .flu-score-value {
+    font-size: 30px !important;
+  }
+  .flu-axis-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .flu-pillar-head h2 {
+    font-size: 16px !important;
+  }
+  .flu-risk-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .flu-risk-svg {
+    width: 100% !important;
+    max-width: 360px;
+    height: auto !important;
+    display: block;
+    margin: 0 auto;
+  }
+  .flu-growth-grid {
+    grid-template-columns: 1fr;
+  }
+  .flu-surface-section {
+    margin-top: 14px !important;
+  }
+}
+
 /* =============================================
    Component styles (af-* and sl-*)
    ============================================= */

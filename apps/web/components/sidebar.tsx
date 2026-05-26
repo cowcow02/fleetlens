@@ -104,6 +104,7 @@ export function Sidebar({
 
   return (
     <aside
+      className="sl-sidebar"
       style={{
         width: 260,
         flexShrink: 0,

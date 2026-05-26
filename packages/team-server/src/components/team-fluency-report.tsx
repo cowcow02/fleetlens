@@ -110,38 +110,13 @@ export function FluencyHeadline({ report }: { report: TeamFluencyReport }) {
         <div className="kicker">v{report.schema_version} · prototype data</div>
       </div>
 
-      <section
-        style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) auto",
-          gap: 32,
-          alignItems: "start",
-          marginBottom: 36,
-        }}
-      >
+      <section className="tflu-headline-row">
         <div>
-          <p
-            style={{
-              fontFamily: "Instrument Serif, serif",
-              fontSize: 24,
-              lineHeight: 1.4,
-              letterSpacing: "-0.01em",
-              margin: 0,
-              maxWidth: 740,
-            }}
-          >
+          <p className="tflu-headline-prose">
             {headlineProse(report, delta)}
           </p>
         </div>
-        <div
-          style={{
-            border: "1px solid var(--ink)",
-            background: "var(--paper)",
-            padding: "22px 24px",
-            minWidth: 220,
-            textAlign: "right",
-          }}
-        >
+        <div className="tflu-headline-score">
           <div className="pulse-tile-label" style={{ margin: 0 }}>Team score</div>
           <div
             style={{
@@ -214,17 +189,8 @@ function AxisRow({ axis, row }: { axis: FluencyAxisMeta; row: FluencyAxisDistrib
   const dDelta = row.demonstrated_prev !== undefined ? row.demonstrated - row.demonstrated_prev : undefined;
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "140px 1fr 240px",
-        gap: 18,
-        alignItems: "center",
-        padding: "10px 0",
-        borderBottom: "1px solid var(--rule-soft)",
-      }}
-    >
-      <div>
+    <div className="tflu-axis-row">
+      <div className="tflu-axis-row-axis">
         <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "var(--mute)" }}>{axis.id}</div>
         <div style={{ fontSize: 14, fontWeight: 500, color: "var(--ink)" }}>{axis.title}</div>
       </div>
@@ -241,7 +207,7 @@ function AxisRow({ axis, row }: { axis: FluencyAxisMeta; row: FluencyAxisDistrib
           <span>{axis.observable}</span>
         </div>
       </div>
-      <div style={{ textAlign: "right", fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--ink-soft)" }}>
+      <div className="tflu-axis-row-meta" style={{ textAlign: "right", fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--ink-soft)" }}>
         <div>
           <span style={{ color: "var(--positive)" }}>●</span> {row.demonstrated}
           <span style={{ color: "var(--warning)", marginLeft: 14 }}>◐</span> {row.partial}
@@ -302,8 +268,15 @@ export function TeamRiskTriangle({
         Three failure modes derived from Anthropic&apos;s February 2026 finding that polished outputs reduce critical
         checking. Movement toward the centre = balanced practice maturing. Drift toward a corner = the relevant risk increasing.
       </p>
-      <div style={{ display: "grid", gridTemplateColumns: `${w + 30}px 1fr`, gap: 32, alignItems: "center" }}>
-        <svg width={w} height={h} style={{ overflow: "visible" }}>
+      <div className="tflu-risk-row">
+        <svg
+          className="tflu-risk-svg"
+          width={w}
+          height={h}
+          viewBox={`0 0 ${w} ${h}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ overflow: "visible" }}
+        >
           <polygon
             points={`${top.x},${top.y} ${bl.x},${bl.y} ${br.x},${br.y}`}
             fill="var(--paper)"

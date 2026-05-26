@@ -30,7 +30,7 @@ export default async function FluencyPage() {
   const card = real ?? Fluency.PERSONAL_SCORECARD_CHARLIE;
   const isMock = real === null;
   return (
-    <div style={{ padding: "24px 32px 80px", maxWidth: 1200, margin: "0 auto" }}>
+    <div className="flu-page">
       {isMock && <DemoBanner />}
       <FluencyHeadline card={card} />
       <FluencySurfaceMix mix={card.surface_mix} />

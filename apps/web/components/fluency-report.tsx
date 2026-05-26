@@ -71,16 +71,7 @@ export function FluencyHeadline({ card }: { card: FluencyScorecard }) {
     : "first scored week";
 
   return (
-    <header
-      style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 1fr) auto",
-        gap: 24,
-        alignItems: "start",
-        padding: "24px 0 28px",
-        borderBottom: "1px solid var(--af-border-subtle)",
-      }}
-    >
+    <header className="flu-headline">
       <div>
         <div
           style={{
@@ -95,7 +86,6 @@ export function FluencyHeadline({ card }: { card: FluencyScorecard }) {
         </div>
         <h1
           style={{
-            fontSize: 28,
             fontWeight: 600,
             letterSpacing: "-0.02em",
             margin: 0,
@@ -105,6 +95,7 @@ export function FluencyHeadline({ card }: { card: FluencyScorecard }) {
           How you&apos;re collaborating with your agents this week, {card.member_name.split(" ")[0]}.
         </h1>
         <p
+          className="flu-headline-summary"
           style={{
             margin: "14px 0 0",
             fontSize: 15,
@@ -116,16 +107,7 @@ export function FluencyHeadline({ card }: { card: FluencyScorecard }) {
           {card.summary}
         </p>
       </div>
-      <div
-        style={{
-          background: "var(--af-surface)",
-          border: "1px solid var(--af-border-subtle)",
-          borderRadius: 12,
-          padding: "18px 22px",
-          minWidth: 200,
-          textAlign: "right",
-        }}
-      >
+      <div className="flu-score">
         <div
           style={{
             fontSize: 10,
@@ -137,6 +119,7 @@ export function FluencyHeadline({ card }: { card: FluencyScorecard }) {
           Fluency score
         </div>
         <div
+          className="flu-score-value"
           style={{
             fontSize: 38,
             fontWeight: 600,
@@ -175,7 +158,7 @@ export function FluencySurfaceMix({
     .filter(([, v]) => v > 0)
     .sort((a, b) => b[1] - a[1]);
   return (
-    <section style={{ margin: "20px 0 4px" }}>
+    <section className="flu-surface-section" style={{ margin: "20px 0 4px" }}>
       <div
         style={{
           fontSize: 11,
@@ -447,11 +430,13 @@ export function FluencyAxisGrid({
         return (
           <div key={pillar} style={{ marginBottom: 28 }}>
             <div
+              className="flu-pillar-head"
               style={{
                 display: "flex",
                 alignItems: "baseline",
                 gap: 12,
                 marginBottom: 14,
+                flexWrap: "wrap",
               }}
             >
               <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0, letterSpacing: "-0.01em" }}>
@@ -461,13 +446,7 @@ export function FluencyAxisGrid({
                 {PILLAR_BLURB[pillar]}
               </span>
             </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                gap: 12,
-              }}
-            >
+            <div className="flu-axis-grid">
               {axes.map((axis) => {
                 const obs = byAxis.get(axis.id);
                 if (!obs) return null;
@@ -549,8 +528,15 @@ export function RiskTriangle({
         Anthropic&apos;s research found polished output reduces critical checking. The triangle shows your tendency to
         drift toward one of three failure modes. Movement toward the centre = balanced practice.
       </p>
-      <div style={{ display: "grid", gridTemplateColumns: `${w}px 1fr`, gap: 28, alignItems: "center" }}>
-        <svg width={w} height={h} style={{ overflow: "visible" }}>
+      <div className="flu-risk-grid">
+        <svg
+          className="flu-risk-svg"
+          width={w}
+          height={h}
+          viewBox={`0 0 ${w} ${h}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ overflow: "visible" }}
+        >
           <polygon
             points={`${top.x},${top.y} ${bl.x},${bl.y} ${br.x},${br.y}`}
             fill="var(--background)"
@@ -665,14 +651,7 @@ export function GrowthCallout({ card }: { card: FluencyScorecard }) {
   const growth = FLUENCY_AXIS_BY_ID[card.growth_axis];
   const strength = FLUENCY_AXIS_BY_ID[card.strength_axis];
   return (
-    <section
-      style={{
-        marginTop: 32,
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 16,
-      }}
-    >
+    <section className="flu-growth-grid" style={{ marginTop: 32 }}>
       <Callout
         tone="success"
         kicker="Strength to keep"

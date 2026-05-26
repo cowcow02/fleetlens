@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { Sidebar } from "@/components/sidebar";
+import { MobileTopbar } from "@/components/mobile-topbar";
 import { LiveRefresher } from "@/components/live-refresher";
 import {
   LiveSessionsWidget,
@@ -20,6 +21,12 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Fleetlens",
   description: "Multi-agent fleet analytics — local-only dashboard for Claude Code, Codex, and other coding-agent sessions.",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover" as const,
 };
 
 export const dynamic = "force-dynamic";
@@ -77,6 +84,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" data-theme={theme} suppressHydrationWarning>
       <body>
         <LiveRefresher />
+        <MobileTopbar />
         <div
           style={{
             display: "flex",

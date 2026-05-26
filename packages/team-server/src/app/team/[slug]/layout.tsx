@@ -5,6 +5,7 @@ import { validateSession } from "../../../lib/auth";
 import { instanceState } from "../../../lib/server-config";
 import { listGroupsManagedBy } from "../../../lib/groups";
 import { NavFooter } from "../../../components/nav-footer";
+import { TeamMobileTopbar } from "../../../components/mobile-topbar";
 
 export default async function TeamLayout({
   children,
@@ -61,6 +62,7 @@ export default async function TeamLayout({
 
   return (
     <>
+      <TeamMobileTopbar />
       <header className="masthead">
         <div className="masthead-logo">Fleet<em>lens</em></div>
         <div className="masthead-meta">

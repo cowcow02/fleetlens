@@ -81,6 +81,7 @@ export function JobQueueWidget() {
 
   return (
     <div
+      className="sl-floating-widget"
       style={{
         position: "fixed",
         // Sit to the LEFT of the live-sessions widget pill (~110px).

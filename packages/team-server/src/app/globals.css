@@ -7825,3 +7825,188 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
   .group-card-name { font-size: 34px; }
   .group-card-name-input { font-size: 34px; }
 }
+
+/* ──────────────────────────────────────────────────────────────────── */
+/*  Team-edition responsive shell + fluency page                        */
+/* ──────────────────────────────────────────────────────────────────── */
+
+.ts-mobile-topbar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  height: 48px;
+  background: var(--paper);
+  border-bottom: 1px solid var(--ink);
+  position: sticky;
+  top: 0;
+  /* Above the drawer + backdrop so the close button stays tappable. */
+  z-index: 70;
+}
+.ts-mobile-topbar-brand {
+  font-family: "Instrument Serif", serif;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.ts-mobile-topbar-brand em {
+  font-style: italic;
+  color: var(--accent);
+}
+.ts-mobile-topbar-menu {
+  border: 1px solid var(--ink-soft);
+  background: var(--paper);
+  border-radius: 2px;
+  padding: 6px 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+}
+
+@media (max-width: 900px) {
+  html, body {
+    overflow: auto;
+    height: auto;
+  }
+  body {
+    background-image: none;
+  }
+  .ts-mobile-topbar { display: flex; }
+  .masthead {
+    flex-wrap: wrap;
+    padding: 12px 16px !important;
+    row-gap: 6px;
+  }
+  .masthead-logo { display: none; }
+  .masthead-meta {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    font-size: 10px;
+  }
+  .masthead-meta .dot { display: none; }
+  .shell {
+    grid-template-columns: 1fr !important;
+    overflow: visible;
+  }
+  .shell-nav {
+    display: none;
+    border-right: none;
+    border-bottom: 1px solid var(--ink);
+    padding: 14px 16px 18px;
+  }
+  body.ts-mobile-open .shell-nav {
+    display: flex;
+    position: fixed;
+    inset: 48px 0 0 0;
+    background: var(--paper);
+    z-index: 60;
+    overflow-y: auto;
+  }
+  body.ts-mobile-open::before {
+    content: "";
+    position: fixed;
+    inset: 48px 0 0 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 55;
+    pointer-events: none;
+  }
+  .shell-main {
+    padding: 16px 14px 60px !important;
+  }
+  .section-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .section-head h1 {
+    font-size: 28px !important;
+  }
+  .subsection-head h2 {
+    font-size: 18px !important;
+  }
+}
+@media (min-width: 901px) {
+  .ts-mobile-topbar { display: none !important; }
+}
+
+/* Fluency-page-specific responsive */
+.tflu-headline-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 32px;
+  align-items: start;
+  margin-bottom: 36px;
+}
+.tflu-headline-prose {
+  font-family: "Instrument Serif", serif;
+  font-size: 24px;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  margin: 0;
+  max-width: 740px;
+}
+.tflu-headline-score {
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  padding: 22px 24px;
+  min-width: 220px;
+  text-align: right;
+}
+.tflu-axis-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 240px;
+  gap: 18px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.tflu-axis-row-axis {
+  /* container for axis title + axis id */
+}
+.tflu-risk-row {
+  display: grid;
+  grid-template-columns: 410px 1fr;
+  gap: 32px;
+  align-items: center;
+}
+.tflu-risk-svg {
+  width: 380px;
+  height: 320px;
+}
+
+@media (max-width: 900px) {
+  .tflu-headline-row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .tflu-headline-prose {
+    font-size: 19px;
+    line-height: 1.4;
+  }
+  .tflu-headline-score {
+    text-align: left;
+    padding: 16px 18px;
+    min-width: 0;
+  }
+  .tflu-axis-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 12px 0 14px;
+  }
+  .tflu-axis-row-meta {
+    text-align: left !important;
+  }
+  .tflu-risk-row {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .tflu-risk-svg {
+    width: 100% !important;
+    max-width: 380px;
+    height: auto !important;
+    display: block;
+    margin: 0 auto;
+  }
+}

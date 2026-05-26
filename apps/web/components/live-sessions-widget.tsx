@@ -114,6 +114,7 @@ export function LiveSessionsWidget({
 
   return (
     <div
+      className="sl-floating-widget"
       style={{
         position: "fixed",
         right: 20,
