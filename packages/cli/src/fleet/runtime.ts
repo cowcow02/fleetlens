@@ -21,7 +21,18 @@ import {
 } from "@claude-lens/parser/analytics";
 import type { SessionMeta, AgentKind } from "@claude-lens/parser";
 
-export const RUNTIME_INFO_PROTOCOL_VERSION = 1;
+/**
+ * Bumped from 1 → 2 when we added `sessions` to the wire payload. v1 peers
+ * still answer getInfo with the old shape (no sessions field); v2 receivers
+ * default sessions to [] when missing, which means the merge layer just
+ * shows v1 peers as "no remote sessions visible" without breaking anything.
+ */
+export const RUNTIME_INFO_PROTOCOL_VERSION = 2;
+
+/** Max sessions per peer we put on the wire each refresh. Caps payload at
+ *  roughly 200 * ~1.5 KB = 300 KB per peer per minute. The dashboard never
+ *  shows more than ~50 rows on a page anyway. */
+export const REMOTE_SESSIONS_CAP = 200;
 
 export type RuntimeProjectSummary = {
   name: string;
@@ -47,9 +58,22 @@ export type RuntimeStats = {
   lastActivityAt?: string;
 };
 
+/**
+ * Per-session payload shared over the wire. A subset of SessionMeta —
+ * fields that contain conversation content (firstUserPreview /
+ * lastUserPreview / lastAgentPreview) are stripped. filePath is also
+ * stripped because the receiver's filesystem doesn't have it. The result
+ * is enough for /sessions list rendering and analytics rollups but
+ * doesn't expose transcript content.
+ */
+export type WireSessionMeta = Omit<
+  SessionMeta,
+  "filePath" | "firstUserPreview" | "lastUserPreview" | "lastAgentPreview"
+>;
+
 export type RuntimeInfo = {
   /** Wire-format version so we can evolve the payload without bricking peers. */
-  protocol: typeof RUNTIME_INFO_PROTOCOL_VERSION;
+  protocol: number;
   /** Short device id (e.g. "VR1C-N2VA-YPPG"). "local" for the self-runtime. */
   deviceId: string;
   /** Fleetlens-assigned 32-byte public key in hex. Empty for the local runtime. */
@@ -62,6 +86,10 @@ export type RuntimeInfo = {
   agentSources: RuntimeAgentSourceSummary[];
   /** Top N projects by recent activity, capped to keep payload small. */
   recentProjects: RuntimeProjectSummary[];
+  /** Recent session metadata for cross-runtime lists. Capped at
+   *  REMOTE_SESSIONS_CAP and sorted by lastTimestamp desc. Transcripts
+   *  are NOT shipped — only metadata + activeSegments. */
+  sessions: WireSessionMeta[];
   /** Only set on remote runtimes — null for the local self-runtime. */
   connection: {
     since: string;
@@ -112,6 +140,7 @@ export async function computeLocalRuntimeInfo(opts: {
   );
 
   const recentProjects = computeRecentProjects(allSessions, day7Ago, topProjects);
+  const sessions = buildWireSessions(allSessions, REMOTE_SESSIONS_CAP);
 
   return {
     protocol: RUNTIME_INFO_PROTOCOL_VERSION,
@@ -124,9 +153,36 @@ export async function computeLocalRuntimeInfo(opts: {
     stats,
     agentSources: agentSourceSummaries,
     recentProjects,
+    sessions,
     connection: null,
     capturedAt: new Date().toISOString(),
   };
+}
+
+function buildWireSessions(
+  sessions: SessionMeta[],
+  cap: number,
+): WireSessionMeta[] {
+  // Most-recent first; trims to cap before stripping preview fields so
+  // the cost is proportional to cap, not the full session list.
+  return sessions
+    .slice()
+    .sort((a, b) => sessionEndMs(b) - sessionEndMs(a))
+    .slice(0, cap)
+    .map((s) => {
+      const {
+        filePath: _filePath,
+        firstUserPreview: _fup,
+        lastUserPreview: _lup,
+        lastAgentPreview: _lap,
+        ...rest
+      } = s;
+      void _filePath;
+      void _fup;
+      void _lup;
+      void _lap;
+      return rest;
+    });
 }
 
 async function safeListSessions(source: AgentSource): Promise<SessionMeta[]> {

@@ -117,6 +117,16 @@ export type AgentKind = string;
 export type SessionMeta = {
   /** Source agent. Defaults to "claude-code" for legacy callers. */
   agent?: AgentKind;
+  /** Optional runtime attribution. Set to "local" for sessions read from
+   *  this machine's filesystem; set to the remote peer's deviceId for
+   *  sessions surfaced from another fleet member. Undefined behaves like
+   *  "local" so callers that don't care about the fleet feature stay
+   *  unchanged. */
+  runtimeId?: string;
+  /** Human label for the runtime — peer's fleet label or "this machine". */
+  runtimeLabel?: string;
+  /** Hostname of the runtime — surfaced in tooltips. */
+  runtimeHostname?: string;
   /** URL-safe id — the session UUID, derived from the file name */
   id: string;
   /** absolute path to the JSONL file */

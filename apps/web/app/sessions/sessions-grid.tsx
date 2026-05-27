@@ -16,6 +16,7 @@ import {
 import { Search, Wrench, MessagesSquare, Clock } from "lucide-react";
 import { LiveBadge } from "@/components/live-badge";
 import { TeamBadge } from "@/components/team-badge";
+import { RuntimeBadge } from "@/components/runtime-badge";
 import { AgentBadge } from "@/components/agent-badge";
 import { DataTable, type Column } from "@/components/data-table";
 import { useViewToggle } from "@/components/view-toggle";
@@ -258,6 +259,11 @@ const sessionTableColumns: Column<SessionRow>[] = [
           </span>
           <TeamBadge session={r.session} />
           <AgentBadge agent={r.session.agent} />
+          <RuntimeBadge
+            runtimeId={r.session.runtimeId}
+            runtimeLabel={r.session.runtimeLabel}
+            runtimeHostname={r.session.runtimeHostname}
+          />
         </div>
         <div
           style={{

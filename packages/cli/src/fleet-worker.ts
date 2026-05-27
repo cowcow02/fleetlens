@@ -397,6 +397,7 @@ function stubRuntimeFromConnection(c: LiveConnection): RuntimeInfo {
     },
     agentSources: [],
     recentProjects: [],
+    sessions: [],
     connection: { since: c.since, lastSeen: c.lastSeen },
     capturedAt: new Date().toISOString(),
   };

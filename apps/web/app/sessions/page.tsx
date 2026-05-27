@@ -1,8 +1,13 @@
 import { homedir } from "node:os";
-import { listSessions } from "@/lib/data";
+import {
+  listSessions,
+  listRuntimeFilterOptions,
+  filterByRuntime,
+} from "@/lib/data";
 import { buildEntriesIndex } from "@/lib/entries-index";
 import { agentSources } from "@claude-lens/parser/fs";
 import { SessionsGrid, type SessionRow } from "./sessions-grid";
+import { RuntimeFilterBar } from "@/components/runtime-filter-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +20,15 @@ const codeStyle = {
   borderRadius: 4,
 } as const;
 
-export default async function SessionsPage() {
-  const [sessions, index] = await Promise.all([listSessions(), buildEntriesIndex()]);
+export default async function SessionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ runtime?: string }>;
+}) {
+  const sp = await searchParams;
+  const [allSessions, index] = await Promise.all([listSessions(), buildEntriesIndex()]);
+  const runtimeOptions = listRuntimeFilterOptions();
+  const sessions = filterByRuntime(allSessions, sp.runtime);
 
   const rows: SessionRow[] = sessions.map((s) => {
     const entries = index.bySession.get(s.id) ?? [];
@@ -33,6 +45,10 @@ export default async function SessionsPage() {
     };
   });
 
+  const remoteCount = sessions.filter(
+    (s) => s.runtimeId && s.runtimeId !== "local",
+  ).length;
+
   return (
     <div style={{ maxWidth: 1280, padding: "32px 40px" }}>
       <header style={{ marginBottom: 20 }}>
@@ -40,7 +56,14 @@ export default async function SessionsPage() {
           All sessions
         </h1>
         <p style={{ fontSize: 13, color: "var(--af-text-secondary)", marginTop: 4 }}>
-          {sessions.length} session{sessions.length === 1 ? "" : "s"} across{" "}
+          {sessions.length} session{sessions.length === 1 ? "" : "s"}
+          {remoteCount > 0 && (
+            <>
+              {" "}— including {remoteCount} from fleet peer
+              {remoteCount === 1 ? "" : "s"}
+            </>
+          )}{" "}
+          across{" "}
           {agentSources.map((source, i) => (
             <span key={source.kind}>
               {i > 0 && " + "}
@@ -53,6 +76,11 @@ export default async function SessionsPage() {
           ))}
         </p>
       </header>
+      <RuntimeFilterBar
+        options={runtimeOptions}
+        current={sp.runtime}
+        basePath="/sessions"
+      />
       <SessionsGrid rows={rows} />
     </div>
   );

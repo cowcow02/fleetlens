@@ -38,6 +38,20 @@ export type RuntimeStats = {
   lastActivityAt?: string;
 };
 
+/** Structurally equivalent to WireSessionMeta in @claude-lens/parser, but
+ *  duplicated here as a loose `unknown`-safe shape so the web app doesn't
+ *  hard-depend on the parser's full SessionMeta type for cross-runtime
+ *  data. Pages cast to SessionMeta downstream after re-stamping the
+ *  runtime fields. */
+export type WireSessionRecord = Record<string, unknown> & {
+  id: string;
+  sessionId?: string;
+  projectName?: string;
+  projectDir?: string;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+};
+
 export type RuntimeInfo = {
   protocol: number;
   deviceId: string;
@@ -49,6 +63,9 @@ export type RuntimeInfo = {
   stats: RuntimeStats;
   agentSources: RuntimeAgentSourceSummary[];
   recentProjects: RuntimeProjectSummary[];
+  /** Lightweight session metadata from the source machine — present on
+   *  protocol >= 2. Missing on stub cards and on older builds. */
+  sessions?: WireSessionRecord[];
   connection: { since: string; lastSeen: string } | null;
   capturedAt: string;
 };
