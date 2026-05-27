@@ -15,8 +15,7 @@ import { startDaemonSilent } from "./daemon.js";
 export async function start(args: string[]): Promise<void> {
   const portFlag = args.indexOf("--port");
   const port = portFlag !== -1 ? parseInt(args[portFlag + 1], 10) : undefined;
-  // Browser auto-launch is opt-in: --open. The legacy --no-open flag is
-  // still accepted (it's now the default) so existing scripts keep working.
+  // --open opts into browser launch; --no-open is silently accepted as a no-op for backward compat.
   const open = args.includes("--open");
   const noDaemon = args.includes("--no-daemon");
 

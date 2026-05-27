@@ -1,18 +1,7 @@
 import { getServerStatus, startServer, openBrowser } from "../server.js";
 
-/**
- * `fleetlens web [page] [--open]` — print the dashboard URL (and start the
- * server first if it's not already running). Pass `--open` to also launch
- * the URL in your browser; the legacy `--no-open` flag is still accepted as
- * a no-op since "don't open" is now the default.
- *
- * Examples:
- *   fleetlens web                      → http://localhost:3321/
- *   fleetlens web usage                → http://localhost:3321/usage
- *   fleetlens web sessions             → http://localhost:3321/sessions
- *   fleetlens web usage --open         → start server, print URL, open browser
- */
 export async function web(args: string[]): Promise<void> {
+  // --open opts into browser launch; --no-open is silently accepted as a no-op for backward compat.
   const open = args.includes("--open");
   const positional = args.filter((a) => !a.startsWith("--"));
   const rawPath = positional[0] ?? "";
@@ -26,7 +15,7 @@ export async function web(args: string[]): Promise<void> {
       console.log(`Opening ${url}`);
       openBrowser(url);
     } else {
-      console.log(`Dashboard ready at ${url}`);
+      console.log(`Dashboard ready at ${url} (re-run with --open to launch it automatically).`);
     }
     return;
   }
@@ -36,7 +25,11 @@ export async function web(args: string[]): Promise<void> {
     const result = await startServer({});
     const url = `http://localhost:${result.port}${path}`;
     console.log(`fleetlens running on ${url} (PID ${result.pid})`);
-    if (open) openBrowser(url);
+    if (open) {
+      openBrowser(url);
+    } else {
+      console.log(`Open ${url} in your browser, or re-run with --open to launch it automatically.`);
+    }
   } catch (err) {
     console.error(`Failed to start: ${(err as Error).message}`);
     process.exit(1);
