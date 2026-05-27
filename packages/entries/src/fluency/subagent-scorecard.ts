@@ -289,7 +289,7 @@ const PILLAR_BY_ID: Record<SubagentIndicatorId, "Delegation" | "Description" | "
 
 const RATING_VALUE: Record<SubagentRating, number> = { "+": 1.0, "~": 0.5, "-": 0.0 };
 
-const AXIS_LINE_RE = /^\[([+~\-])\]\s+([A-Za-z][A-Za-z ]+?)\s*(?:—|--|-)\s*(.*)$/;
+const AXIS_LINE_RE = /^\[([+~-])\]\s+([A-Za-z][A-Za-z ]+?)\s*(?:—|--|-)\s*(.*)$/;
 const QUOTE_LINE_RE = /^\s*"(.+?)"\s+\[cc\]\s+session\s+([a-f0-9]{4,16})\s+@\s+([\d-]{8,10})\s*$/i;
 
 function pickBlock(text: string, start: string, end: string): string | null {
