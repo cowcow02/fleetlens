@@ -1261,6 +1261,41 @@ export type MaturityEvidence = {
     | "ended_in_ship";
 };
 
+// Concrete numerical snapshots that anchor the portrait — surface the
+// signals the classifier actually used, in a form an eng lead can audit
+// without reading prose. Lifted directly from the trial-run audit: every
+// number here is independently verifiable from rich_daily_rollups +
+// day_artifact_signals queries.
+
+export type CadenceSnapshot = {
+  // Trailing-30d active days and the cadence ratio (active / total window).
+  active_days_30d: number;
+  active_days_7d: number;
+  cadence_pct_30d: number;  // active_days_30d / 30 × 100, rounded
+  sessions_30d: number;
+  sessions_7d: number;
+  sessions_per_active_day_avg: number;  // sessions_30d / max(active_days_30d, 1)
+};
+
+export type BreadthSnapshot = {
+  distinct_projects_30d: number;
+  distinct_projects_7d: number;
+  distinct_skills_30d: number;
+  distinct_subagent_kinds_30d: number;
+};
+
+export type HarnessBreakdown = {
+  // Per-category file authorship counts (trailing 30d).
+  skills_authored_30d: number;
+  subagents_authored_30d: number;
+  slash_commands_authored_30d: number;
+  // CLAUDE.md is captured as net line delta only (commits, not file count).
+  claudemd_line_delta_30d: number;
+  // Cross-member adoption — count of this member's authored artifacts that
+  // appear in another member's load history. From team_skill_catalog.
+  cross_member_adopters_30d: number;
+};
+
 export type MemberMaturityPortrait = {
   member: string;
   level: MaturityLevel;
@@ -1270,6 +1305,10 @@ export type MemberMaturityPortrait = {
   near_miss_paths: MaturityPath[];
   // 2-3 sentence portrait. LLM-authored in production; templated in this build.
   qualitative_summary: string;
+  // Concrete numeric snapshots — rendered as stat strips, audit-friendly.
+  cadence: CadenceSnapshot;
+  breadth: BreadthSnapshot;
+  harness: HarnessBreakdown;
   // Observed actions, partitioned by kind so the widget can render them in
   // separate sections. "decisive" + "supporting" justify the level; "near-miss"
   // shows growth edges; "style" is descriptive context and NEVER grades.

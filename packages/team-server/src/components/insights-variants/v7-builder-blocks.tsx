@@ -185,98 +185,196 @@ const V8_BLOCKS: DashboardBlock[] = [
         <>
           <div className="portrait-preamble muted" style={{ marginBottom: 12, fontSize: 13, lineHeight: 1.5 }}>
             Each member is placed on the slide-7 ladder by reading their trailing-30d
-            interactions. The portrait says <em>what we observed them doing</em>, not
-            how much they used the agent. Style observations (verbosity, plan-mode,
-            etc.) are shown for context but never grade the level.
+            interactions. Numbers below are pulled directly from <code>rich_daily_rollups</code>,{" "}
+            <code>day_artifact_signals</code>, and <code>team_skill_catalog</code> — every value is
+            auditable. Style observations are shown for context but never grade the level.
           </div>
           <div className="portrait-stack">
-            {portraits.map((p) => (
-              <div key={p.member} className="portrait-card">
-                <header className="portrait-card-head">
-                  <div>
-                    <div className="portrait-card-name">{p.member}</div>
-                    {p.trend && (
-                      <div className="portrait-card-trend muted">
-                        {p.trend === "ascending"
-                          ? "↗ ascending vs prior month"
-                          : p.trend === "stable"
-                            ? "→ stable vs prior month"
-                            : "↘ declining vs prior month"}
-                      </div>
-                    )}
-                  </div>
-                  <div className="portrait-card-level-block">
-                    <span
-                      className="portrait-card-level"
-                      style={{ color: MATURITY_COLORS[p.level] }}
-                    >
-                      {p.level}
-                    </span>{" "}
-                    <span className="portrait-card-level-label">
-                      {MATURITY_LABELS[p.level]}
-                    </span>
-                  </div>
-                </header>
-
-                <p className="portrait-card-summary">{p.qualitative_summary}</p>
-
-                {p.qualifying_paths.length > 0 && (
-                  <div className="portrait-paths">
-                    <span className="portrait-paths-label">Qualified via:</span>
-                    {p.qualifying_paths.map((path) => (
-                      <span key={path} className="portrait-path-chip qualifying">
-                        {MATURITY_PATH_LABELS[path]}
-                      </span>
-                    ))}
-                    {p.near_miss_paths.map((path) => (
-                      <span key={path} className="portrait-path-chip near-miss">
-                        ⊘ {MATURITY_PATH_LABELS[path]}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {(["decisive", "supporting", "near-miss"] as MaturityEvidenceKind[]).map(
-                  (kind) => {
-                    const items = p.evidence.filter((e) => e.kind === kind);
-                    if (items.length === 0) return null;
-                    return (
-                      <div key={kind} className={`portrait-evidence portrait-evidence-${kind}`}>
-                        <div className="portrait-evidence-label">
-                          {EVIDENCE_KIND_LABELS[kind]} observations
+            {portraits.map((p) => {
+              const { cadence: c, breadth: b, harness: h } = p;
+              const harnessFilesTotal =
+                h.skills_authored_30d + h.subagents_authored_30d + h.slash_commands_authored_30d;
+              return (
+                <div key={p.member} className="portrait-card">
+                  <header className="portrait-card-head">
+                    <div>
+                      <div className="portrait-card-name">{p.member}</div>
+                      {p.trend && (
+                        <div className="portrait-card-trend muted">
+                          {p.trend === "ascending"
+                            ? "↗ ascending vs last week"
+                            : p.trend === "stable"
+                              ? "→ stable vs last week"
+                              : "↘ declining vs last week"}
                         </div>
-                        <ul className="portrait-evidence-list">
-                          {items.map((e, i) => (
-                            <li key={i}>
-                              <span className="portrait-evidence-glyph">
-                                {EVIDENCE_GLYPH[kind]}
-                              </span>
-                              <span>{e.text}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  },
-                )}
-
-                {p.style_observations.length > 0 && (
-                  <div className="portrait-evidence portrait-evidence-style">
-                    <div className="portrait-evidence-label">
-                      Working-style observations <span className="muted">(not used for grading)</span>
+                      )}
                     </div>
-                    <ul className="portrait-evidence-list">
-                      {p.style_observations.map((s, i) => (
-                        <li key={i}>
-                          <span className="portrait-evidence-glyph">·</span>
-                          <span>{s}</span>
-                        </li>
-                      ))}
-                    </ul>
+                    <div className="portrait-card-level-block">
+                      <span
+                        className="portrait-card-level"
+                        style={{ color: MATURITY_COLORS[p.level] }}
+                      >
+                        {p.level}
+                      </span>{" "}
+                      <span className="portrait-card-level-label">
+                        {MATURITY_LABELS[p.level]}
+                      </span>
+                    </div>
+                  </header>
+
+                  <p className="portrait-card-summary">{p.qualitative_summary}</p>
+
+                  {/* Three-column stat strip — the concrete signals that drove the level */}
+                  <div className="portrait-stats">
+                    <div className="portrait-stat-col">
+                      <div className="portrait-stat-label">Cadence</div>
+                      <div className="portrait-stat-primary">
+                        {c.active_days_30d}/30 <span className="portrait-stat-unit">active ({c.cadence_pct_30d}%)</span>
+                      </div>
+                      <div className="portrait-stat-line">
+                        {c.active_days_7d}/7 this week
+                      </div>
+                      <div className="portrait-stat-line">
+                        {c.sessions_30d} sessions · 30d
+                      </div>
+                      <div className="portrait-stat-line muted">
+                        {c.sessions_per_active_day_avg}/day avg
+                      </div>
+                    </div>
+                    <div className="portrait-stat-col">
+                      <div className="portrait-stat-label">Breadth</div>
+                      <div className="portrait-stat-primary">
+                        {b.distinct_projects_30d} <span className="portrait-stat-unit">projects · 30d</span>
+                      </div>
+                      <div className="portrait-stat-line">
+                        {b.distinct_skills_30d} distinct skills
+                      </div>
+                      <div className="portrait-stat-line">
+                        {b.distinct_subagent_kinds_30d} sub-agent kind{b.distinct_subagent_kinds_30d === 1 ? "" : "s"}
+                      </div>
+                      <div className="portrait-stat-line muted">
+                        {b.distinct_projects_7d} project{b.distinct_projects_7d === 1 ? "" : "s"} this week
+                      </div>
+                    </div>
+                    <div className="portrait-stat-col">
+                      <div className="portrait-stat-label">Harness authorship</div>
+                      <div className="portrait-stat-primary">
+                        {harnessFilesTotal} <span className="portrait-stat-unit">file{harnessFilesTotal === 1 ? "" : "s"} authored</span>
+                      </div>
+                      <div className="portrait-stat-line">
+                        {h.claudemd_line_delta_30d > 0 ? "+" : ""}{h.claudemd_line_delta_30d} lines · CLAUDE.md
+                      </div>
+                      <div className="portrait-stat-line">
+                        {h.cross_member_adopters_30d} cross-member adopter{h.cross_member_adopters_30d === 1 ? "" : "s"}
+                      </div>
+                      <div className="portrait-stat-line muted">
+                        {h.skills_authored_30d}s · {h.subagents_authored_30d}a · {h.slash_commands_authored_30d}c
+                        <span title="skills · sub-agents · slash-commands"> ⓘ</span>
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+
+                  {/* Harness category breakdown — only shown when there's actual harness contribution */}
+                  {harnessFilesTotal > 0 || h.claudemd_line_delta_30d !== 0 ? (
+                    <div className="portrait-harness-grid">
+                      <div className="portrait-harness-label">Harness category · 30 days</div>
+                      <table className="portrait-harness-table">
+                        <tbody>
+                          {h.skills_authored_30d > 0 && (
+                            <tr>
+                              <td className="portrait-harness-cat">User-authored skills</td>
+                              <td className="portrait-harness-val">{h.skills_authored_30d} file{h.skills_authored_30d === 1 ? "" : "s"} authored</td>
+                            </tr>
+                          )}
+                          {h.subagents_authored_30d > 0 && (
+                            <tr>
+                              <td className="portrait-harness-cat">Custom sub-agents</td>
+                              <td className="portrait-harness-val">{h.subagents_authored_30d} file{h.subagents_authored_30d === 1 ? "" : "s"} authored</td>
+                            </tr>
+                          )}
+                          {h.slash_commands_authored_30d > 0 && (
+                            <tr>
+                              <td className="portrait-harness-cat">Slash commands</td>
+                              <td className="portrait-harness-val">{h.slash_commands_authored_30d} file{h.slash_commands_authored_30d === 1 ? "" : "s"} authored</td>
+                            </tr>
+                          )}
+                          {h.claudemd_line_delta_30d !== 0 && (
+                            <tr>
+                              <td className="portrait-harness-cat">CLAUDE.md / AGENTS.md edits</td>
+                              <td className="portrait-harness-val">{h.claudemd_line_delta_30d > 0 ? "+" : ""}{h.claudemd_line_delta_30d} lines net</td>
+                            </tr>
+                          )}
+                          {h.cross_member_adopters_30d > 0 && (
+                            <tr className="portrait-harness-row-emphasis">
+                              <td className="portrait-harness-cat">Adopted by other members</td>
+                              <td className="portrait-harness-val">{h.cross_member_adopters_30d} teammate{h.cross_member_adopters_30d === 1 ? "" : "s"} loaded these</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+
+                  {p.qualifying_paths.length > 0 && (
+                    <div className="portrait-paths">
+                      <span className="portrait-paths-label">Why this level:</span>
+                      {p.qualifying_paths.map((path) => (
+                        <span key={path} className="portrait-path-chip qualifying">
+                          {MATURITY_PATH_LABELS[path]}
+                        </span>
+                      ))}
+                      {p.near_miss_paths.map((path) => (
+                        <span key={path} className="portrait-path-chip near-miss">
+                          ⊘ {MATURITY_PATH_LABELS[path]}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Decisive + supporting + near-miss observations remain — they
+                      now read as captions next to the concrete numbers above */}
+                  {(["decisive", "supporting", "near-miss"] as MaturityEvidenceKind[]).map(
+                    (kind) => {
+                      const items = p.evidence.filter((e) => e.kind === kind);
+                      if (items.length === 0) return null;
+                      return (
+                        <div key={kind} className={`portrait-evidence portrait-evidence-${kind}`}>
+                          <div className="portrait-evidence-label">
+                            {EVIDENCE_KIND_LABELS[kind]} observations
+                          </div>
+                          <ul className="portrait-evidence-list">
+                            {items.map((e, i) => (
+                              <li key={i}>
+                                <span className="portrait-evidence-glyph">
+                                  {EVIDENCE_GLYPH[kind]}
+                                </span>
+                                <span>{e.text}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    },
+                  )}
+
+                  {p.style_observations.length > 0 && (
+                    <div className="portrait-evidence portrait-evidence-style">
+                      <div className="portrait-evidence-label">
+                        Working-style observations <span className="muted">(not used for grading)</span>
+                      </div>
+                      <ul className="portrait-evidence-list">
+                        {p.style_observations.map((s, i) => (
+                          <li key={i}>
+                            <span className="portrait-evidence-glyph">·</span>
+                            <span>{s}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </>
       );

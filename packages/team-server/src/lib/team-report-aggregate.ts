@@ -1,5 +1,8 @@
 import type pg from "pg";
 import type {
+  BreadthSnapshot,
+  CadenceSnapshot,
+  HarnessBreakdown,
   LiveExtras,
   MaturityEvidence,
   MaturityLevel,
@@ -485,6 +488,8 @@ export async function buildTeamInsightReport(
         id: string; display_name: string; agent_time_ms_curr: string; sessions_curr: number;
         active_days_curr: number; prs_curr: number; subagents_curr: number;
         active_days_prev: number; sessions_prev: number; projects_curr: number; skills_curr: number;
+        active_days_30d: number; sessions_30d: number;
+        distinct_projects_30d: number; distinct_skills_30d: number; distinct_subagents_30d: number;
       }> }
     : await pool.query<{
         id: string;
@@ -498,8 +503,45 @@ export async function buildTeamInsightReport(
         sessions_prev: number;
         projects_curr: number;
         skills_curr: number;
+        active_days_30d: number;
+        sessions_30d: number;
+        distinct_projects_30d: number;
+        distinct_skills_30d: number;
+        distinct_subagents_30d: number;
       }>(
-        `WITH window_rows AS (
+        // 30d-window CTE produces breadth counters (distinct projects / skills
+        // / sub-agent kinds rolled up across the trailing 30 days), separate
+        // from the this-week-vs-last-week numeric block which still drives
+        // the headline tiles. Both share the same memberships filter.
+        `WITH window_30d AS (
+           SELECT r.membership_id, r.day, r.agent_time_ms, r.sessions,
+                  r.projects, r.skills_loaded, r.subagents_dispatched
+           FROM rich_daily_rollups r
+           WHERE r.team_id = $1
+             AND r.membership_id = ANY($2::uuid[])
+             AND r.day >= ($3::date - INTERVAL '30 days')::date
+             AND r.day < $5::date
+         ),
+         per_member_30d AS (
+           SELECT membership_id,
+                  COALESCE(SUM(sessions), 0)::int AS sessions_30d,
+                  COUNT(*) FILTER (WHERE agent_time_ms > 0)::int AS active_days_30d,
+                  COALESCE((SELECT COUNT(DISTINCT p->>'project')
+                            FROM window_30d w2
+                            CROSS JOIN LATERAL jsonb_array_elements(w2.projects) p
+                            WHERE w2.membership_id = w.membership_id), 0)::int AS distinct_projects_30d,
+                  COALESCE((SELECT COUNT(DISTINCT s->>'name')
+                            FROM window_30d w2
+                            CROSS JOIN LATERAL jsonb_array_elements(w2.skills_loaded) s
+                            WHERE w2.membership_id = w.membership_id), 0)::int AS distinct_skills_30d,
+                  COALESCE((SELECT COUNT(DISTINCT s->>'type')
+                            FROM window_30d w2
+                            CROSS JOIN LATERAL jsonb_array_elements(w2.subagents_dispatched) s
+                            WHERE w2.membership_id = w.membership_id), 0)::int AS distinct_subagents_30d
+           FROM window_30d w
+           GROUP BY membership_id
+         ),
+         window_rows AS (
            SELECT m.id AS membership_id,
                   COALESCE(NULLIF(ua.display_name, ''), split_part(ua.email, '@', 1)) AS display_name,
                   r.day, r.agent_time_ms, r.sessions, r.prs,
@@ -516,18 +558,24 @@ export async function buildTeamInsightReport(
              AND m.id = ANY($2::uuid[])
              AND m.revoked_at IS NULL
          )
-         SELECT membership_id AS id, display_name,
-                COALESCE(SUM(CASE WHEN NOT is_prev THEN agent_time_ms ELSE 0 END), 0)::text AS agent_time_ms_curr,
-                COALESCE(SUM(CASE WHEN NOT is_prev THEN sessions ELSE 0 END), 0)::int AS sessions_curr,
-                COUNT(*) FILTER (WHERE NOT is_prev AND agent_time_ms > 0)::int AS active_days_curr,
-                COALESCE(SUM(CASE WHEN NOT is_prev THEN prs ELSE 0 END), 0)::int AS prs_curr,
-                COALESCE(MAX(CASE WHEN NOT is_prev THEN subagent_kinds ELSE 0 END), 0)::int AS subagents_curr,
-                COUNT(*) FILTER (WHERE is_prev AND agent_time_ms > 0)::int AS active_days_prev,
-                COALESCE(SUM(CASE WHEN is_prev THEN sessions ELSE 0 END), 0)::int AS sessions_prev,
-                COALESCE(MAX(CASE WHEN NOT is_prev THEN project_count ELSE 0 END), 0)::int AS projects_curr,
-                COALESCE(MAX(CASE WHEN NOT is_prev THEN skill_count ELSE 0 END), 0)::int AS skills_curr
-         FROM window_rows
-         GROUP BY membership_id, display_name
+         SELECT wr.membership_id AS id, wr.display_name,
+                COALESCE(SUM(CASE WHEN NOT wr.is_prev THEN wr.agent_time_ms ELSE 0 END), 0)::text AS agent_time_ms_curr,
+                COALESCE(SUM(CASE WHEN NOT wr.is_prev THEN wr.sessions ELSE 0 END), 0)::int AS sessions_curr,
+                COUNT(*) FILTER (WHERE NOT wr.is_prev AND wr.agent_time_ms > 0)::int AS active_days_curr,
+                COALESCE(SUM(CASE WHEN NOT wr.is_prev THEN wr.prs ELSE 0 END), 0)::int AS prs_curr,
+                COALESCE(MAX(CASE WHEN NOT wr.is_prev THEN wr.subagent_kinds ELSE 0 END), 0)::int AS subagents_curr,
+                COUNT(*) FILTER (WHERE wr.is_prev AND wr.agent_time_ms > 0)::int AS active_days_prev,
+                COALESCE(SUM(CASE WHEN wr.is_prev THEN wr.sessions ELSE 0 END), 0)::int AS sessions_prev,
+                COALESCE(MAX(CASE WHEN NOT wr.is_prev THEN wr.project_count ELSE 0 END), 0)::int AS projects_curr,
+                COALESCE(MAX(CASE WHEN NOT wr.is_prev THEN wr.skill_count ELSE 0 END), 0)::int AS skills_curr,
+                COALESCE(MAX(pm.active_days_30d), 0)::int AS active_days_30d,
+                COALESCE(MAX(pm.sessions_30d), 0)::int AS sessions_30d,
+                COALESCE(MAX(pm.distinct_projects_30d), 0)::int AS distinct_projects_30d,
+                COALESCE(MAX(pm.distinct_skills_30d), 0)::int AS distinct_skills_30d,
+                COALESCE(MAX(pm.distinct_subagents_30d), 0)::int AS distinct_subagents_30d
+         FROM window_rows wr
+         LEFT JOIN per_member_30d pm ON pm.membership_id = wr.membership_id
+         GROUP BY wr.membership_id, wr.display_name
          ORDER BY agent_time_ms_curr DESC`,
         [teamId, memberIds, weekMonday, prevMonday, weekEndExclusive(weekMonday)],
       );
@@ -1055,12 +1103,40 @@ export async function buildTeamInsightReport(
       else trend = "stable";
     }
 
+    const cadence: CadenceSnapshot = {
+      active_days_30d: row.active_days_30d,
+      active_days_7d: activeDays,
+      cadence_pct_30d: Math.round((row.active_days_30d / 30) * 100),
+      sessions_30d: row.sessions_30d,
+      sessions_7d: sessionsCurr,
+      sessions_per_active_day_avg:
+        row.active_days_30d === 0 ? 0 : Number((row.sessions_30d / row.active_days_30d).toFixed(1)),
+    };
+
+    const breadth: BreadthSnapshot = {
+      distinct_projects_30d: row.distinct_projects_30d,
+      distinct_projects_7d: row.projects_curr,
+      distinct_skills_30d: row.distinct_skills_30d,
+      distinct_subagent_kinds_30d: row.distinct_subagents_30d,
+    };
+
+    const harness: HarnessBreakdown = {
+      skills_authored_30d: skillsAuthored,
+      subagents_authored_30d: subagentsAuthored,
+      slash_commands_authored_30d: slashCommandsAuthored,
+      claudemd_line_delta_30d: claudemdLineDelta,
+      cross_member_adopters_30d: coachedAdoptionCount,
+    };
+
     return {
       member,
       level,
       qualifying_paths,
       near_miss_paths,
       qualitative_summary,
+      cadence,
+      breadth,
+      harness,
       evidence,
       style_observations,
       ...(trend && { trend }),
