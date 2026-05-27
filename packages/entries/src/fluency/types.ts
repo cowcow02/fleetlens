@@ -146,9 +146,15 @@ export const PILLAR_BLURB: Record<FluencyPillar, string> = {
  * quotes harvested from their JSONL.
  */
 export type FluencyEvidence = {
-  /** Verbatim, ≤150 chars, with the same hard-truncate semantics
-   *  as Anthropic's scorecard. Longer originals get `…` appended. */
+  /** ≤150 chars. When `kind === "verbatim"` this is text the user actually
+   *  typed (truncated at a word boundary with `…` if longer). When `kind
+   *  === "derived"` this is a templated signal description and SHOULD NOT
+   *  be rendered as a quote — the renderer styles these differently. */
   quote: string;
+  /** Distinguishes user-typed text from observer-generated commentary.
+   *  Optional for backward compat with pre-refactor scorecards — readers
+   *  treat undefined as "verbatim" since that was the old default. */
+  kind?: "verbatim" | "derived";
   /** Local date the evidence came from. */
   date: string;
   /** Which agent surfaced it. */
@@ -157,6 +163,11 @@ export type FluencyEvidence = {
   session_id: string;
   /** Optional: project name for context. */
   project?: string;
+  /** 0-based index of the user turn this evidence came from
+   *  (0 = first_user, 1 = first user_instruction, etc.). Powers the
+   *  `/sessions/<id>#turn-N` deep link. Absent when the evidence is
+   *  derived from a non-user signal (subagent dispatch, tool count). */
+  turn_index?: number;
 };
 
 export type AgentSourceKey = "claude-code" | "codex" | "gemini" | "opencode" | "other";

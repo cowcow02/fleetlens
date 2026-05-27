@@ -133,6 +133,36 @@ export function SessionView({
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+
+  // Deep-link target: /sessions/<id>#turn-N — scroll to the Nth user event
+  // (0 = first user message, 1 = second, etc.). Set by the fluency report's
+  // verbatim evidence quotes so the reader can jump straight to the source.
+  const turnSeekRef = useRef<number | null>(null);
+  useEffect(() => {
+    const parseTurnHash = (): number | null => {
+      const h = window.location.hash.replace("#", "");
+      const m = h.match(/^turn-(\d+)$/);
+      return m ? parseInt(m[1], 10) : null;
+    };
+    const initial = parseTurnHash();
+    if (initial !== null) {
+      // Force the transcript tab so the row exists in the DOM.
+      setTabRaw("transcript");
+      turnSeekRef.current = initial;
+    }
+    const onHash = () => {
+      const n = parseTurnHash();
+      if (n !== null) {
+        setTabRaw("transcript");
+        turnSeekRef.current = n;
+        // Re-trigger the scroll effect by writing a state hook below.
+        setScrollTick((x) => x + 1);
+      }
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [session.sessionId]);
+  const [scrollTick, setScrollTick] = useState(0);
   // Team tab — playhead (set by TeamTable as the user scrolls) and seek
   // target (set by TeamMinimap clicks). Hoisted to session-view so the
   // sticky-header TeamMinimap and the body's TeamTable share the same
@@ -281,6 +311,35 @@ export function SessionView({
     () => (teammateCount === 0 ? events : events.filter((e) => !e.teammateMessage)),
     [events, teammateCount],
   );
+
+  // Resolve any pending #turn-N hash to a concrete event index + scroll
+  // there. Runs after visibleEvents are available AND on every scrollTick
+  // bump from the hashchange listener.
+  useEffect(() => {
+    const n = turnSeekRef.current;
+    if (n === null) return;
+    if (tab !== "transcript") return;
+    const userEvents = visibleEvents.filter((e) => e.role === "user");
+    const target = userEvents[n];
+    if (!target) {
+      turnSeekRef.current = null;
+      return;
+    }
+    // Wait two frames so the row mounts + rowRefs populates.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = rowRefs.current[target.index];
+        if (el) {
+          el.scrollIntoView({ block: "start", behavior: "auto" });
+          // Brief visual ping so the reader knows where they landed.
+          el.classList.add("flu-turn-target");
+          setTimeout(() => el.classList.remove("flu-turn-target"), 1800);
+        }
+        turnSeekRef.current = null;
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleEvents, scrollTick, tab]);
 
   // A session is "live" if its last event was within 45 seconds.
   const isSessionLive = (() => {

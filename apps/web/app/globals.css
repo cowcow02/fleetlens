@@ -641,3 +641,19 @@ input::placeholder {
     margin-top: 4px !important;
   }
 }
+
+/* Hover state for clickable evidence quotes — subtle border emphasis. */
+.flu-evidence-quote:hover {
+  border-left-color: var(--af-accent-hover) !important;
+  background: var(--af-accent-subtle) !important;
+}
+
+/* Deep-link landing flash: brief highlight when the session view scrolls
+ * to a turn via /sessions/<id>#turn-N. */
+.flu-turn-target {
+  animation: flu-turn-flash 1.6s ease-out;
+}
+@keyframes flu-turn-flash {
+  0%   { background: var(--af-accent-subtle); box-shadow: 0 0 0 2px var(--af-accent); }
+  100% { background: transparent; box-shadow: 0 0 0 0 transparent; }
+}

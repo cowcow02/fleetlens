@@ -723,7 +723,93 @@ function AxisRowV2({
 }
 
 function EvidenceQuoteV2({ ev }: { ev: FluencyEvidence }) {
-  return (
+  // Honest split: user-typed text renders as a quote; observer-generated
+  // commentary renders as a labelled signal so the reader never confuses
+  // the two.
+  const isDerived = ev.kind === "derived";
+
+  const meta = (
+    <div
+      style={{
+        marginTop: 5,
+        fontSize: 10.5,
+        color: "var(--af-text-tertiary)",
+        fontFamily: "var(--font-mono)",
+        display: "flex",
+        gap: 6,
+        alignItems: "center",
+        flexWrap: "wrap",
+      }}
+    >
+      <span>
+        {AGENT_SOURCE_LABEL[ev.source].toLowerCase().replace(/\s+/g, "")} · {ev.date} · {ev.session_id.slice(0, 8)}
+        {ev.project ? ` · ${ev.project}` : ""}
+        {ev.turn_index !== undefined && ` · turn ${ev.turn_index}`}
+      </span>
+      {!isDerived && ev.turn_index !== undefined && (
+        <span style={{ color: "var(--af-accent)" }}>↗ jump to turn</span>
+      )}
+    </div>
+  );
+
+  if (isDerived) {
+    // Derived signal — NOT a quote. No quote marks, no italic, no clickable
+    // turn link. A small mono chip on the left labels it as observer-generated.
+    return (
+      <div
+        style={{
+          padding: "8px 14px",
+          background: "var(--af-info-subtle)",
+          border: "1px dashed var(--af-info)",
+          borderRadius: 6,
+          display: "grid",
+          gridTemplateColumns: "auto minmax(0, 1fr)",
+          gap: 10,
+          alignItems: "start",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 9,
+            letterSpacing: "0.16em",
+            textTransform: "uppercase",
+            color: "var(--af-info)",
+            fontFamily: "var(--font-mono)",
+            fontWeight: 700,
+            padding: "1px 6px",
+            border: "1px solid var(--af-info)",
+            borderRadius: 4,
+            whiteSpace: "nowrap",
+            lineHeight: 1.5,
+          }}
+        >
+          derived signal
+        </span>
+        <div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--af-text)" }}>
+            {ev.quote}
+          </div>
+          {meta}
+        </div>
+      </div>
+    );
+  }
+
+  // Verbatim quote — italic, leftrule, quote marks. Wrapped in a deep
+  // link to the exact user turn if the observer captured a turn_index.
+  const turnHash = ev.turn_index !== undefined ? `#turn-${ev.turn_index}` : "";
+  const href = `/sessions/${ev.session_id}${turnHash}`;
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <a
+      href={href}
+      style={{ textDecoration: "none", color: "inherit", display: "block" }}
+      title="Open the source session and scroll to this turn"
+    >
+      {children}
+    </a>
+  );
+
+  const body = (
     <blockquote
       style={{
         margin: 0,
@@ -731,24 +817,18 @@ function EvidenceQuoteV2({ ev }: { ev: FluencyEvidence }) {
         borderLeft: "2px solid var(--af-accent)",
         background: "var(--background)",
         borderRadius: "0 6px 6px 0",
+        transition: "border-left-color 0.12s, background 0.12s",
       }}
+      className="flu-evidence-quote"
     >
       <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--af-text)", fontStyle: "italic" }}>
         &ldquo;{ev.quote}&rdquo;
       </div>
-      <div
-        style={{
-          marginTop: 5,
-          fontSize: 10.5,
-          color: "var(--af-text-tertiary)",
-          fontFamily: "var(--font-mono)",
-        }}
-      >
-        {AGENT_SOURCE_LABEL[ev.source].toLowerCase().replace(/\s+/g, "")} · {ev.date} · {ev.session_id.slice(0, 8)}
-        {ev.project ? ` · ${ev.project}` : ""}
-      </div>
+      {meta}
     </blockquote>
   );
+
+  return <Wrapper>{body}</Wrapper>;
 }
 
 /* ------------------------------------------------------------------ */
