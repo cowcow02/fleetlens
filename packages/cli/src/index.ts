@@ -60,6 +60,11 @@ async function main() {
       await runs(args.slice(1));
       break;
     }
+    case "fleet": {
+      const { fleet } = await import("./commands/fleet.js");
+      await fleet(args.slice(1));
+      break;
+    }
     case "version":
     case "--version":
     case "-v":
@@ -95,6 +100,15 @@ Team:
   team status                       Show team pairing state
   team leave                        Unpair from team server
   team logs                         Show team-related daemon logs
+
+Fleet (peer-to-peer multi-daemon, experimental):
+  fleet init [--label N]            Create a fleet on this machine, print join code
+  fleet join <code> [--label N]     Join an existing fleet from another machine
+  fleet code                        Show this fleet's join code
+  fleet status                      Show device id, worker state, connected peers
+  fleet start | stop | logs         Manage the fleet swarm worker
+  fleet peers                       Show all peers this machine has ever seen
+  fleet leave                       Remove fleet configuration from this machine
 
   version                           Print version`);
       break;

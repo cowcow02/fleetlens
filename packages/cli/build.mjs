@@ -16,6 +16,27 @@ const shared = {
   alias: { "server-only": "./src/server-only-stub.js" },
 };
 
+// Hyperswarm pulls native modules (sodium-native, udx-native) and CJS-only
+// deps that esbuild cannot meaningfully bundle. Leave them external — npm
+// resolves them at runtime from node_modules adjacent to dist/.
+const fleetWorkerExternals = [
+  "hyperswarm",
+  "hyperdht",
+  "dht-rpc",
+  "b4a",
+  "sodium-native",
+  "sodium-universal",
+  "udx-native",
+  "hypercore-crypto",
+  "streamx",
+  "bare-events",
+  "safety-catch",
+  "shuffled-priority-queue",
+  "unslab",
+  "compact-encoding",
+  "xache",
+];
+
 const entries = [
   {
     ...shared,
@@ -27,6 +48,12 @@ const entries = [
     ...shared,
     entryPoints: ["src/daemon-worker.ts"],
     outfile: "dist/daemon-worker.js",
+  },
+  {
+    ...shared,
+    entryPoints: ["src/fleet-worker.ts"],
+    outfile: "dist/fleet-worker.js",
+    external: [...shared.external, ...fleetWorkerExternals],
   },
 ];
 

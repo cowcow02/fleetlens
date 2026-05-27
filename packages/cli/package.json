@@ -37,5 +37,9 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "b4a": "^1.8.1",
+    "hyperswarm": "^4.17.0"
   }
 }
