@@ -62,7 +62,7 @@ export default async function InsightsPreview({
         generatedAt={r.generated_at}
         roster={r.cross_edition.roster.map((m) => m.display_name)}
       />
-      <VariantBuilder r={r} slug={slug} blocksParam={sp?.blocks} />
+      <VariantBuilder r={r} slug={slug} blocksParam={sp?.blocks} pdfSource="preview" />
     </>
   );
 }

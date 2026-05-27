@@ -532,11 +532,13 @@ export function VariantBuilder({
   slug,
   blocksParam,
   pdfMode = false,
+  pdfSource = "live",
 }: {
   r: TeamInsightReport;
   slug: string;
   blocksParam: string | undefined;
   pdfMode?: boolean;
+  pdfSource?: "live" | "preview";
 }) {
   const urlInitial = useMemo(() => parseBlocksParam(blocksParam), [blocksParam]);
 
@@ -705,7 +707,7 @@ export function VariantBuilder({
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state }),
+        body: JSON.stringify({ state, source: pdfSource }),
       });
       if (!res.ok) {
         const msg = await res.text().catch(() => "");

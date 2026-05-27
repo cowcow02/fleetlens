@@ -2,28 +2,26 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "../../../../db/pool";
 import { validateSession } from "../../../../lib/auth";
-import {
-  isoMondayOf,
-  perProjectTimeWoW,
-  skillUsageWeek,
-  teamPulseWeek,
-  workingShapeDistribution,
-} from "../../../../lib/insights-aggregate";
-import { LiveInsights, type LiveInsightsData } from "../../../../components/live-insights";
+import { isoMondayOf } from "../../../../lib/insights-aggregate";
+import { buildTeamInsightReport, LIVE_STARTER_BLOCKS_V8 } from "../../../../lib/team-report-aggregate";
+import { VariantBuilder } from "../../../../components/insights-variants/v7-builder";
+import { ReportHeader } from "../../../../components/report-header";
 
 export const dynamic = "force-dynamic";
 
 // /team/[slug]/insights serves the live-data dashboard backed by
-// rich_daily_rollups. The v7 mock report and earlier prototype variants now
-// live under /team/[slug]/insights/preview (prime) and
-// /team/[slug]/insights/preview/archive (v0–v6 reference) so this page stays
-// focused on real data.
+// rich_daily_rollups, rendered through the v7 VariantBuilder so eng leads get
+// the same UI/UX they saw on /insights/preview but populated with real
+// week-over-week aggregates.
 export default async function TeamInsightsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ slug: string }>;
+  searchParams: Promise<{ blocks?: string }>;
 }) {
   const { slug } = await params;
+  const sp = await searchParams;
 
   const pool = getPool();
   const cookieStore = await cookies();
@@ -38,21 +36,39 @@ export default async function TeamInsightsPage({
   const myMembership = session.memberships.find((m) => m.team_id === teamId);
   if (!myMembership) redirect("/login");
 
+  const memberCountRes = await pool.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM memberships WHERE team_id = $1 AND revoked_at IS NULL",
+    [teamId],
+  );
+  const membersTotal = Number(memberCountRes.rows[0]?.count ?? 0);
+
   const weekMonday = isoMondayOf(new Date());
-  const scope = { kind: "team-wide" as const };
-  const [pulse, projects, skills, shapes] = await Promise.all([
-    teamPulseWeek(teamId, scope, weekMonday, pool),
-    perProjectTimeWoW(teamId, scope, weekMonday, pool, { limit: 12 }),
-    skillUsageWeek(teamId, scope, weekMonday, pool, { limit: 20 }),
-    workingShapeDistribution(teamId, scope, weekMonday, pool),
-  ]);
-  const data: LiveInsightsData = {
-    scopeLabel: `All of ${teamName}`,
+  const report = await buildTeamInsightReport(
+    teamId,
+    { kind: "team-wide" },
+    pool,
+    { teamSlug: slug, teamName, membersTotal },
     weekMonday,
-    pulse,
-    projects,
-    skills,
-    shapes,
-  };
-  return <LiveInsights data={data} slug={slug} />;
+  );
+
+  const weekDate = new Date(`${report.week_monday}T12:00:00`);
+  const weekEnd = new Date(weekDate);
+  weekEnd.setDate(weekDate.getDate() + 6);
+  const blocksParam = sp?.blocks ?? LIVE_STARTER_BLOCKS_V8.join(",");
+
+  return (
+    <>
+      <ReportHeader
+        teamName={teamName}
+        weekStart={weekDate}
+        weekEnd={weekEnd}
+        activeCount={report.cross_edition.roster.length}
+        memberTotal={membersTotal}
+        agentHours={report.volume.agent_hours_total}
+        generatedAt={new Date(report.generated_at)}
+        roster={report.cross_edition.roster.map((m) => m.display_name)}
+      />
+      <VariantBuilder r={report} slug={slug} blocksParam={blocksParam} />
+    </>
+  );
 }

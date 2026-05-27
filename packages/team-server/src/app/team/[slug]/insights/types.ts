@@ -1202,6 +1202,141 @@ export type CaseStudy = {
   };
 };
 
+// ─── Maturity-portrait types (v9 — qualitative observation model) ───────
+//
+// These types model the output of a perception-layer LLM pass that reads each
+// member's trailing-30d conversations and tags observable interaction actions
+// per session. The portrait that lands here is the *consequence* of those
+// session-level tags being summarized into a member-level claim.
+//
+// The session-level extraction belongs in packages/entries/src/types.ts
+// (alongside EntrySignals). The shape is committed below as documentation;
+// runtime extraction lands when we wire the LLM pass.
+//
+//   // Per-session action tags (target: packages/entries/src/types.ts)
+//   type SessionActionTags = {
+//     framing: "question" | "directive" | "brief" | "plan";
+//     brought_context: boolean;
+//     iteration_rounds: number;
+//     course_corrections: number;
+//     cross_session_ref: boolean;
+//     meta_discussion: boolean;
+//     artifact_authored: null | "claudemd" | "skill" | "subagent" | "slash-cmd" | "doc";
+//     intent_category: "code-gen" | "review" | "debug" | "docs" | "planning" | "research" | "other";
+//     ended_in_ship: boolean;
+//   };
+
+export type MaturityPath =
+  // L4 paths (any one path qualifies; matches slide 7's "OR" wording)
+  | "L4-builds"        // authored a skill / CLAUDE.md / sub-agent / slash-cmd
+  | "L4-coaches"       // authored an artifact that another member adopted
+  | "L4-orchestrates"  // parallel dispatch bursts + multi-subagent breadth
+  // L3 paths
+  | "L3-daily-active"
+  | "L3-multi-workflow"
+  | "L3-orchestration-habit"
+  // L2 path
+  | "L2-settled-pattern"
+  // L1 path
+  | "L1-exploring";
+
+export type MaturityEvidenceKind = "decisive" | "supporting" | "near-miss" | "style";
+
+export type MaturityEvidence = {
+  kind: MaturityEvidenceKind;
+  text: string;
+  // The action-tag count or signal that fired this observation, when applicable.
+  // Used by the widget to show "X of Y sessions" in the evidence row.
+  count?: number;
+  // Reference to the underlying session-level tag that produced this evidence.
+  source_tag?:
+    | "artifact_authored"
+    | "intent_category"
+    | "iteration_rounds"
+    | "course_corrections"
+    | "cross_session_ref"
+    | "meta_discussion"
+    | "framing"
+    | "brought_context"
+    | "ended_in_ship";
+};
+
+export type MemberMaturityPortrait = {
+  member: string;
+  level: MaturityLevel;
+  // Which OR-paths the member qualified through. Multiple paths can fire.
+  qualifying_paths: MaturityPath[];
+  // Paths the member is one observable shy of — surfaces growth edges.
+  near_miss_paths: MaturityPath[];
+  // 2-3 sentence portrait. LLM-authored in production; templated in this build.
+  qualitative_summary: string;
+  // Observed actions, partitioned by kind so the widget can render them in
+  // separate sections. "decisive" + "supporting" justify the level; "near-miss"
+  // shows growth edges; "style" is descriptive context and NEVER grades.
+  evidence: MaturityEvidence[];
+  // Style observations — surfaced as context but explicitly not used for the
+  // level claim. Examples: prompt verbosity, plan-mode usage, etc.
+  style_observations: string[];
+  // Comparison vs prior month, when available.
+  trend?: "ascending" | "stable" | "descending";
+};
+
+// ─── Live extras (v8 clean starter — framework-aligned KPIs) ─────────────
+
+// Maturity ladder per slide 7 of Q2-2026 Adoption Framework. The framework's
+// signature concept: more useful than a single "active user" count because it
+// captures progression, not frequency.
+export type MaturityLevel = "L0" | "L1" | "L2" | "L3" | "L4";
+
+export type MaturityMemberClassification = {
+  member: string;
+  level: MaturityLevel;
+  // Short human-readable cue ("daily active · 3 projects") so the eng lead
+  // can see why someone landed where they did.
+  evidence: string;
+};
+
+export type LiveMaturityMix = {
+  // Distribution counts must sum to members_total. L0 = unaware (no activity),
+  // L4 = multiplier (builds shared skills / dispatches subagents).
+  distribution: Record<MaturityLevel, number>;
+  classifications: MaturityMemberClassification[];
+};
+
+export type LiveActiveRate = {
+  members_total: number;
+  active_7d: number;
+  active_7d_prev: number;
+  active_30d: number; // active in this week OR previous week
+};
+
+export type LivePrsShipped = {
+  current: number;
+  last_week: number;
+  per_active_engineer: number;
+  per_active_engineer_last_week: number;
+};
+
+export type LivePlanModeAdoption = {
+  // Total plan-mode sessions across the team this week.
+  sessions: number;
+  sessions_last_week: number;
+  // Adopters = members with ≥1 plan-mode session this week.
+  adopters: number;
+  adoption_pct: number; // adopters / active_7d × 100
+};
+
+export type LiveExtras = {
+  active_rate: LiveActiveRate;
+  maturity_mix: LiveMaturityMix;
+  prs_shipped: LivePrsShipped;
+  plan_mode: LivePlanModeAdoption;
+  data_freshness: string; // ISO timestamp of the most recent ingest in window
+  // v9 — per-member qualitative portraits. Sorted by maturity level descending
+  // so the eng lead's eye lands on multipliers first.
+  member_portraits?: MemberMaturityPortrait[];
+};
+
 // ─── The whole report ─────────────────────────────────────────────────────
 
 export type TeamInsightReport = {
@@ -1242,4 +1377,8 @@ export type TeamInsightReport = {
   cross_edition: CrossEditionStats;
 
   variants: VariantsPayload;
+
+  // v8 clean-starter additions. Optional so existing mock data + tests keep
+  // working without churn; live widgets render an empty state when absent.
+  live_extras?: LiveExtras;
 };

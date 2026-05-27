@@ -1,7 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { TeamInsightReport } from "../../app/team/[slug]/insights/types";
+import type {
+  MaturityEvidenceKind,
+  MaturityLevel,
+  MaturityPath,
+  TeamInsightReport,
+} from "../../app/team/[slug]/insights/types";
 import { CaseStudyCard } from "./v2-case-studies";
 import { FingerprintsSection } from "./v1-fingerprints";
 import { TrajectoriesSection } from "./v2-trajectories";
@@ -86,9 +91,322 @@ function sparkline(values: number[]): string {
 
 const PURPOSE_COLORS = ["var(--accent)", "var(--positive)", "var(--warning)", "#6b3aa3", "#2a6f97", "var(--ink-soft)"];
 
+// ─── v8 framework-aligned widgets (Q2-2026 Adoption Framework, slide 5) ──
+
+const MATURITY_LABELS: Record<MaturityLevel, string> = {
+  L0: "Unaware",
+  L1: "Curious",
+  L2: "Regular",
+  L3: "Integrated",
+  L4: "Multiplier",
+};
+
+const MATURITY_COLORS: Record<MaturityLevel, string> = {
+  L0: "var(--ink-soft)",
+  L1: "#a07b3a",
+  L2: "#c98a3a",
+  L3: "var(--accent)",
+  L4: "var(--positive)",
+};
+
+const MATURITY_PATH_LABELS: Record<MaturityPath, string> = {
+  "L4-builds": "Builds shared toolchain",
+  "L4-coaches": "Coaches teammates",
+  "L4-orchestrates": "Orchestrates at scale",
+  "L3-daily-active": "Daily active",
+  "L3-multi-workflow": "Multiple workflows",
+  "L3-orchestration-habit": "Orchestration habit",
+  "L2-settled-pattern": "Settled patterns",
+  "L1-exploring": "Exploring",
+};
+
+const EVIDENCE_KIND_LABELS: Record<MaturityEvidenceKind, string> = {
+  decisive: "Decisive",
+  supporting: "Supporting",
+  "near-miss": "Growth edge",
+  style: "Style",
+};
+
+const EVIDENCE_GLYPH: Record<MaturityEvidenceKind, string> = {
+  decisive: "✓",
+  supporting: "✓",
+  "near-miss": "⊘",
+  style: "·",
+};
+
+const V8_BLOCKS: DashboardBlock[] = [
+  {
+    id: "live-active-rate",
+    title: "Active rate · 7-day · 30-day",
+    short_description: "% of seats active this week and trailing month",
+    category: "activity",
+    tier: "deterministic",
+    source_version: "v8",
+    defaultW: 2,
+    render: (r) => {
+      const a = r.live_extras?.active_rate;
+      if (!a) return <div className="live-empty-row">Active-rate data not in this report.</div>;
+      const pct7 = a.members_total === 0 ? 0 : Math.round((a.active_7d / a.members_total) * 100);
+      const pct30 = a.members_total === 0 ? 0 : Math.round((a.active_30d / a.members_total) * 100);
+      const delta7 = a.active_7d - a.active_7d_prev;
+      return (
+        <div className="wow-tile-row">
+          <div className="wow-tile">
+            <div className="wow-tile-label">7-day active</div>
+            <div className="wow-tile-value">{pct7}%</div>
+            <div className={`wow-tile-delta ${delta7 >= 0 ? "positive" : "negative"}`}>
+              {a.active_7d}/{a.members_total} members · {delta7 >= 0 ? "+" : ""}{delta7} vs last wk
+            </div>
+          </div>
+          <div className="wow-tile">
+            <div className="wow-tile-label">30-day active</div>
+            <div className="wow-tile-value">{pct30}%</div>
+            <div className="wow-tile-sub">{a.active_30d}/{a.members_total} have used in trailing month</div>
+          </div>
+        </div>
+      );
+    },
+  },
+  {
+    id: "live-member-portraits",
+    title: "Adoption maturity · per-member portraits",
+    short_description:
+      "Qualitative L0-L4 portrait per member — observed actions, qualifying paths, growth edges. Style signals shown separately, never used to grade.",
+    category: "people",
+    tier: "llm-enriched",
+    source_version: "v9",
+    defaultW: 4,
+    render: (r) => {
+      const portraits = r.live_extras?.member_portraits;
+      if (!portraits || portraits.length === 0) {
+        return <div className="live-empty-row">No member portraits in this report.</div>;
+      }
+      return (
+        <>
+          <div className="portrait-preamble muted" style={{ marginBottom: 12, fontSize: 13, lineHeight: 1.5 }}>
+            Each member is placed on the slide-7 ladder by reading their trailing-30d
+            interactions. The portrait says <em>what we observed them doing</em>, not
+            how much they used the agent. Style observations (verbosity, plan-mode,
+            etc.) are shown for context but never grade the level.
+          </div>
+          <div className="portrait-stack">
+            {portraits.map((p) => (
+              <div key={p.member} className="portrait-card">
+                <header className="portrait-card-head">
+                  <div>
+                    <div className="portrait-card-name">{p.member}</div>
+                    {p.trend && (
+                      <div className="portrait-card-trend muted">
+                        {p.trend === "ascending"
+                          ? "↗ ascending vs prior month"
+                          : p.trend === "stable"
+                            ? "→ stable vs prior month"
+                            : "↘ declining vs prior month"}
+                      </div>
+                    )}
+                  </div>
+                  <div className="portrait-card-level-block">
+                    <span
+                      className="portrait-card-level"
+                      style={{ color: MATURITY_COLORS[p.level] }}
+                    >
+                      {p.level}
+                    </span>{" "}
+                    <span className="portrait-card-level-label">
+                      {MATURITY_LABELS[p.level]}
+                    </span>
+                  </div>
+                </header>
+
+                <p className="portrait-card-summary">{p.qualitative_summary}</p>
+
+                {p.qualifying_paths.length > 0 && (
+                  <div className="portrait-paths">
+                    <span className="portrait-paths-label">Qualified via:</span>
+                    {p.qualifying_paths.map((path) => (
+                      <span key={path} className="portrait-path-chip qualifying">
+                        {MATURITY_PATH_LABELS[path]}
+                      </span>
+                    ))}
+                    {p.near_miss_paths.map((path) => (
+                      <span key={path} className="portrait-path-chip near-miss">
+                        ⊘ {MATURITY_PATH_LABELS[path]}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {(["decisive", "supporting", "near-miss"] as MaturityEvidenceKind[]).map(
+                  (kind) => {
+                    const items = p.evidence.filter((e) => e.kind === kind);
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={kind} className={`portrait-evidence portrait-evidence-${kind}`}>
+                        <div className="portrait-evidence-label">
+                          {EVIDENCE_KIND_LABELS[kind]} observations
+                        </div>
+                        <ul className="portrait-evidence-list">
+                          {items.map((e, i) => (
+                            <li key={i}>
+                              <span className="portrait-evidence-glyph">
+                                {EVIDENCE_GLYPH[kind]}
+                              </span>
+                              <span>{e.text}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    );
+                  },
+                )}
+
+                {p.style_observations.length > 0 && (
+                  <div className="portrait-evidence portrait-evidence-style">
+                    <div className="portrait-evidence-label">
+                      Working-style observations <span className="muted">(not used for grading)</span>
+                    </div>
+                    <ul className="portrait-evidence-list">
+                      {p.style_observations.map((s, i) => (
+                        <li key={i}>
+                          <span className="portrait-evidence-glyph">·</span>
+                          <span>{s}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      );
+    },
+  },
+  {
+    id: "live-maturity-mix",
+    title: "Adoption maturity · L0–L4 mix",
+    short_description: "Q2-2026 Adoption Framework signature ladder — count per maturity level",
+    category: "growth",
+    tier: "deterministic",
+    source_version: "v8",
+    defaultW: 4,
+    render: (r) => {
+      const m = r.live_extras?.maturity_mix;
+      if (!m) return <div className="live-empty-row">Maturity classification not in this report.</div>;
+      const total = (Object.values(m.distribution) as number[]).reduce((s, n) => s + n, 0);
+      const levels: MaturityLevel[] = ["L0", "L1", "L2", "L3", "L4"];
+      return (
+        <>
+          <div className="delegation-depth-bar" style={{ marginBottom: 12 }}>
+            {levels.map((lvl) => {
+              const count = m.distribution[lvl] ?? 0;
+              const pct = total === 0 ? 0 : (count / total) * 100;
+              if (pct === 0) return null;
+              return (
+                <div
+                  key={lvl}
+                  className="delegation-depth-seg"
+                  style={{ width: `${pct}%`, background: MATURITY_COLORS[lvl] }}
+                  title={`${lvl} ${MATURITY_LABELS[lvl]}: ${count}`}
+                >
+                  {lvl} · {count}
+                </div>
+              );
+            })}
+          </div>
+          <table className="wow-table" style={{ marginTop: 6 }}>
+            <thead>
+              <tr><th>Member</th><th>Level</th><th>Evidence</th></tr>
+            </thead>
+            <tbody>
+              {m.classifications.map((c) => (
+                <tr key={c.member}>
+                  <td className="proj-name">{c.member}</td>
+                  <td>
+                    <span style={{ color: MATURITY_COLORS[c.level], fontWeight: 600 }}>
+                      {c.level}
+                    </span>{" "}
+                    <span className="muted">{MATURITY_LABELS[c.level]}</span>
+                  </td>
+                  <td className="muted">{c.evidence}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      );
+    },
+  },
+  {
+    id: "live-prs-shipped",
+    title: "PRs shipped · WoW + per active engineer",
+    short_description: "Throughput signal — total PRs and rate per active engineer this week",
+    category: "outcomes",
+    tier: "deterministic",
+    source_version: "v8",
+    defaultW: 2,
+    render: (r) => {
+      const p = r.live_extras?.prs_shipped;
+      if (!p) return <div className="live-empty-row">PR data not in this report.</div>;
+      const delta = p.current - p.last_week;
+      const ppe = p.per_active_engineer.toFixed(1);
+      const ppeDelta = p.per_active_engineer - p.per_active_engineer_last_week;
+      return (
+        <div className="wow-tile-row">
+          <div className="wow-tile">
+            <div className="wow-tile-label">PRs shipped</div>
+            <div className="wow-tile-value">{p.current}</div>
+            <div className={`wow-tile-delta ${delta >= 0 ? "positive" : "negative"}`}>
+              {delta >= 0 ? "+" : ""}{delta} vs last wk ({p.last_week})
+            </div>
+          </div>
+          <div className="wow-tile">
+            <div className="wow-tile-label">Per active engineer</div>
+            <div className="wow-tile-value">{ppe}</div>
+            <div className={`wow-tile-delta ${ppeDelta >= 0 ? "positive" : "negative"}`}>
+              {ppeDelta >= 0 ? "+" : ""}{ppeDelta.toFixed(1)} vs last wk
+            </div>
+          </div>
+        </div>
+      );
+    },
+  },
+  {
+    id: "live-plan-mode",
+    title: "Plan-mode adoption",
+    short_description: "Share of active members using plan-mode this week",
+    category: "harness",
+    tier: "deterministic",
+    source_version: "v8",
+    defaultW: 2,
+    render: (r) => {
+      const pm = r.live_extras?.plan_mode;
+      if (!pm) return <div className="live-empty-row">Plan-mode data not in this report.</div>;
+      const sessionDelta = pm.sessions - pm.sessions_last_week;
+      return (
+        <div className="wow-tile-row">
+          <div className="wow-tile">
+            <div className="wow-tile-label">Plan-mode adopters</div>
+            <div className="wow-tile-value">{pm.adoption_pct}%</div>
+            <div className="wow-tile-sub">{pm.adopters} of active members used plan-mode this week</div>
+          </div>
+          <div className="wow-tile">
+            <div className="wow-tile-label">Plan-mode sessions</div>
+            <div className="wow-tile-value">{pm.sessions}</div>
+            <div className={`wow-tile-delta ${sessionDelta >= 0 ? "positive" : "negative"}`}>
+              {sessionDelta >= 0 ? "+" : ""}{sessionDelta} vs last wk
+            </div>
+          </div>
+        </div>
+      );
+    },
+  },
+];
+
 // ─── BLOCK CATALOG ───────────────────────────────────────────────────────
 
 export const BLOCK_CATALOG: DashboardBlock[] = [
+  ...V8_BLOCKS,
   // === ACTIVITY ===
   {
     id: "team-pulse-wow",
