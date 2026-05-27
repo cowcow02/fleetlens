@@ -22,7 +22,7 @@ import {
   FLUENCY_AXIS_BY_ID,
   FLUENCY_SCHEMA_VERSION,
 } from "./types.js";
-import { observeEntry, buildAxisObservation } from "./observe.js";
+import { observeEntry, buildAxisObservation, filterMultiTurnEntries } from "./observe.js";
 
 const RATING_VALUE: Record<FluencyRating, number> = {
   "+": 1.0,
@@ -55,7 +55,11 @@ export function buildFluencyScorecard(input: {
   /** Optional last-window scorecard for the +/- delta line. */
   prev?: FluencyScorecard | null;
 }): FluencyScorecard {
-  const entryObs = input.entries.map(observeEntry);
+  // Drop entries whose session has <2 total turns — connectivity probes,
+  // one-shot programmatic prompts, and other no-conversation sessions
+  // don't carry fluency signal and would inflate denominators with noise.
+  const entries = filterMultiTurnEntries(input.entries);
+  const entryObs = entries.map(observeEntry);
 
   const observations: FluencyAxisObservation[] = FLUENCY_AXES.map((a) =>
     buildAxisObservation(entryObs, a.id),
@@ -76,7 +80,7 @@ export function buildFluencyScorecard(input: {
 
   const strength_axis = pickAxis(observations, "+");
   const growth_axis = pickAxis(observations, "-", "~");
-  const surface_mix = computeSurfaceMix(input.entries);
+  const surface_mix = computeSurfaceMix(entries);
   const risk_triangle = computeRiskTriangle(entryObs);
   const summary = buildSummary({
     name: input.member_name,

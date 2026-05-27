@@ -20,6 +20,7 @@
  */
 
 import type { Entry } from "../types.js";
+import { filterMultiTurnEntries } from "./observe.js";
 
 export const SUBAGENT_FLUENCY_INDICATORS = [
   { id: "clarifies_goals",     pillar: "Delegation",  title: "Clarifies goals" },
@@ -96,8 +97,14 @@ export function buildUserCorpus(input: {
   window_end: string;
   entries: Entry[];
 }): { markdown: string; sessions: number; user_turns: number; truncated: boolean } {
+  // Drop single-turn-session entries before feeding the LLM. Connectivity
+  // probes ("hi", "say pong"), programmatic invocations (SLICE FACTS / DAY
+  // FACTS / Conductor's system_instructions), and other no-conversation
+  // sessions are noise for fluency scoring — they'd consume corpus budget
+  // without giving the model anything to judge intent against.
+  const filtered = filterMultiTurnEntries(input.entries);
   // Sort entries chronologically by start
-  const sorted = [...input.entries].sort((a, b) => a.start_iso.localeCompare(b.start_iso));
+  const sorted = [...filtered].sort((a, b) => a.start_iso.localeCompare(b.start_iso));
   const lines: string[] = [];
   lines.push(`# AI Fluency Scorecard — user message corpus`);
   lines.push(`# Member: ${input.member_name}`);

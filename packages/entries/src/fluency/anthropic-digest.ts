@@ -21,6 +21,7 @@ import {
   aggregateAnthropicAxis,
   observeEntryAnthropic,
 } from "./anthropic-axes.js";
+import { filterMultiTurnEntries } from "./observe.js";
 import {
   buildAnthropicUserPrompt,
   ANTHROPIC_SUMMARY_SYSTEM_PROMPT,
@@ -64,8 +65,14 @@ export type BuildAnthropicScorecardInput = {
 export async function buildAnthropicScorecard(
   input: BuildAnthropicScorecardInput,
 ): Promise<AnthropicScorecard> {
+  // Drop single-turn-session entries — connectivity probes and one-shot
+  // programmatic prompts (SLICE FACTS, DAY FACTS, Conductor's injected
+  // system_instructions, etc.) don't carry fluency signal. See
+  // filterMultiTurnEntries for the session-level definition.
+  const entries = filterMultiTurnEntries(input.entries);
+
   // 1. Per-entry observations
-  const entryObs = input.entries.map((e) => observeEntryAnthropic(e));
+  const entryObs = entries.map((e) => observeEntryAnthropic(e));
 
   // 2. Aggregate to one observation per axis
   const observations: AnthropicAxisObservation[] = ANTHROPIC_AXES.map((axis) => {
@@ -85,15 +92,15 @@ export async function buildAnthropicScorecard(
     observations[observations.length - 1].axis;
 
   // 5. Feature usage (Claude Code surface)
-  const features = computeFeatureUsage(input.entries);
+  const features = computeFeatureUsage(entries);
 
   // 6. Surface mix (always [cc] on Fleetlens; agent breakdown inside)
-  const surfaces = { cc: input.entries.length, chat: 0, cowork: 0 };
-  const agent_breakdown = computeAgentBreakdown(input.entries);
+  const surfaces = { cc: entries.length, chat: 0, cowork: 0 };
+  const agent_breakdown = computeAgentBreakdown(entries);
 
   // 7. Window summary
   const window_summary = {
-    sessions_total: input.entries.length,
+    sessions_total: entries.length,
     by_surface: surfaces,
   };
 

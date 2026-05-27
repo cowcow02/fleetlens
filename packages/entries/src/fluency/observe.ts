@@ -30,6 +30,27 @@ function clipQuote(s: string): string {
   return trimmed.length > MAX_QUOTE ? `${trimmed.slice(0, MAX_QUOTE - 1)}…` : trimmed;
 }
 
+/** Minimum turns a session must have (summed across its entries) for any
+ *  of its entries to feed the fluency observers. Filters out connectivity
+ *  probes ("hi", "say pong"), one-shot programmatic invocations
+ *  (Fleetlens's own SLICE FACTS / DAY FACTS enrichment prompts, Conductor's
+ *  injected system_instructions), and other single-message sessions that
+ *  don't carry fluency signal. Threshold = 2: a real session is one with
+ *  at least one follow-up. */
+const MIN_SESSION_TURNS = 2;
+
+/** Drop entries whose SESSION (summed across its day-slices) has fewer than
+ *  MIN_SESSION_TURNS total turns. Operates at session-level, not entry
+ *  level, so a long session that crosses a day boundary still contributes
+ *  the cross-day entry even if that entry's own turn_count is 1. */
+export function filterMultiTurnEntries<T extends Entry>(entries: T[]): T[] {
+  const totals = new Map<string, number>();
+  for (const e of entries) {
+    totals.set(e.session_id, (totals.get(e.session_id) ?? 0) + e.numbers.turn_count);
+  }
+  return entries.filter((e) => (totals.get(e.session_id) ?? 0) >= MIN_SESSION_TURNS);
+}
+
 function agentSource(agent: Entry["agent"]): AgentSourceKey {
   switch (agent) {
     case "claude-code":
