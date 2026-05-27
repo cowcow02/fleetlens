@@ -18,6 +18,8 @@ import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
 import { createRequire } from "node:module";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { getAnySession } from "@claude-lens/parser/fs";
 
 import {
   CONNECTIONS_FILE,
@@ -244,6 +246,19 @@ async function onConnection(conn: HyperswarmConnection, _info: unknown): Promise
         });
         return info;
       }
+      case "getSessionDetail": {
+        // Lazy fetch: peer wants to read the full conversation of one
+        // session. We parse it from this machine's local JSONL and ship
+        // the SessionDetail back. Across the user's own fleet, this is
+        // the same data they'd see on /sessions/[id] here.
+        const sessionId = (params as { sessionId?: string } | null)?.sessionId;
+        if (!sessionId || typeof sessionId !== "string") {
+          throw new Error("getSessionDetail requires { sessionId }");
+        }
+        const detail = await getAnySession(sessionId);
+        if (!detail) return { found: false as const };
+        return { found: true as const, detail };
+      }
       default:
         throw new Error(`unknown method: ${method}`);
     }
@@ -405,6 +420,114 @@ function stubRuntimeFromConnection(c: LiveConnection): RuntimeInfo {
 setTimeout(() => void refreshRuntimes(), RUNTIMES_FIRST_REFRESH_MS);
 setInterval(() => void refreshRuntimes(), RUNTIMES_REFRESH_MS);
 
+// ---------------------------------------------------------------------------
+// Localhost HTTP shim so the web process can ask the worker to fan out
+// per-peer RPC calls. Binds to 127.0.0.1 ONLY — never expose this through
+// cloudflared / a public reverse proxy.
+//
+//   GET /peer/<deviceId>/session/<sessionId>
+//     → 200 SessionDetail JSON  | 404 if peer not connected or session missing
+//
+// Bounded LRU keeps repeat fetches cheap (flipping tabs, navigating back).
+// Transcripts are never written to disk by this layer — cache lives in
+// process memory and dies with the worker.
+// ---------------------------------------------------------------------------
+const SHIM_PORT = Number(process.env.FLEETLENS_FLEET_SHIM_PORT ?? 3322);
+const SHIM_CACHE_MAX = 20;
+const SHIM_CACHE_TTL_MS = 60_000;
+
+type DetailCacheEntry = { fetchedAt: number; payload: unknown };
+const detailCache = new Map<string, DetailCacheEntry>();
+
+function cacheGet(key: string): unknown | null {
+  const entry = detailCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > SHIM_CACHE_TTL_MS) {
+    detailCache.delete(key);
+    return null;
+  }
+  // LRU touch
+  detailCache.delete(key);
+  detailCache.set(key, entry);
+  return entry.payload;
+}
+
+function cacheSet(key: string, payload: unknown): void {
+  detailCache.set(key, { fetchedAt: Date.now(), payload });
+  while (detailCache.size > SHIM_CACHE_MAX) {
+    const oldest = detailCache.keys().next().value;
+    if (oldest === undefined) break;
+    detailCache.delete(oldest);
+  }
+}
+
+async function handleShimRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  const url = new URL(req.url ?? "/", "http://127.0.0.1");
+  // /peer/<deviceId>/session/<sessionId>
+  const match = url.pathname.match(/^\/peer\/([A-Za-z0-9-]+)\/session\/([^/]+)$/);
+  if (!match) {
+    res.statusCode = 404;
+    res.end("not found");
+    return;
+  }
+  const [, deviceId, sessionIdRaw] = match;
+  const sessionId = decodeURIComponent(sessionIdRaw);
+  const cacheKey = `${deviceId}:${sessionId}`;
+  const cached = cacheGet(cacheKey);
+  if (cached !== null) {
+    res.setHeader("content-type", "application/json");
+    res.setHeader("x-fleet-shim-cache", "hit");
+    res.end(JSON.stringify(cached));
+    return;
+  }
+  const conn = [...live.values()].find((c) => c.deviceId === deviceId);
+  if (!conn || !conn.rpc) {
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: "peer not connected", deviceId }));
+    return;
+  }
+  try {
+    const reply = await conn.rpc.call(
+      "getSessionDetail",
+      { sessionId },
+      15_000,
+    );
+    const r = reply as { found?: boolean; detail?: unknown };
+    if (!r?.found) {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: "session not found on peer", sessionId }));
+      return;
+    }
+    cacheSet(cacheKey, r.detail);
+    res.setHeader("content-type", "application/json");
+    res.setHeader("x-fleet-shim-cache", "miss");
+    res.end(JSON.stringify(r.detail));
+  } catch (err) {
+    res.statusCode = 502;
+    res.end(JSON.stringify({ error: (err as Error).message }));
+  }
+}
+
+const shim = createServer((req, res) => {
+  void handleShimRequest(req, res).catch((err) => {
+    try {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: (err as Error).message }));
+    } catch {
+      /* socket gone */
+    }
+  });
+});
+shim.listen(SHIM_PORT, "127.0.0.1", () => {
+  log("info", `fleet shim listening on http://127.0.0.1:${SHIM_PORT}`);
+});
+shim.on("error", (err: Error) => {
+  log("warn", `fleet shim error: ${err.message}`);
+});
+
 log(
   "info",
   `fleet worker started (pid=${process.pid}, device=${myDeviceId}, hostname=${myHostname})`,
@@ -416,6 +539,7 @@ async function shutdown(signal: string): Promise<void> {
     for (const c of live.values()) c.rpc?.close();
     live.clear();
     flushConnections();
+    shim.close();
     await swarm.destroy();
   } catch (err) {
     log("warn", `shutdown error: ${(err as Error).message}`);

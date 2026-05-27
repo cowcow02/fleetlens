@@ -35,8 +35,58 @@ export const listSessions = cache(async (): Promise<SessionMeta[]> => {
   return [...local, ...remote];
 });
 
+/**
+ * Per-session detail loader. Tries the local filesystem first; falls back
+ * to the fleet worker's localhost shim if a remote peer owns this id.
+ *
+ * Remote sessions go through ~/.cclens/fleet/runtimes.json to find the
+ * owning runtime, then http://127.0.0.1:<FLEETLENS_FLEET_SHIM_PORT>/peer/
+ * <deviceId>/session/<id>. The shim handles the actual swarm RPC.
+ *
+ * The shim listens on 127.0.0.1 only — it cannot be reached from outside
+ * this machine, so even if the web is exposed via cloudflared the remote
+ * fetch path is still bounded to a same-host worker.
+ */
 export const getSession = cache(async (id: string) => {
-  return getAnySession(id);
+  const local = await getAnySession(id);
+  if (local) return local;
+
+  // Look up which peer owns this session id.
+  const state = readFleetState();
+  if (!state.configured || !state.snapshot) return null;
+  const owningRuntime = (state.snapshot.runtimes as RuntimeInfo[]).find(
+    (rt) =>
+      !rt.isLocal &&
+      Array.isArray(rt.sessions) &&
+      rt.sessions.some((s) => s.id === id),
+  );
+  if (!owningRuntime) return null;
+
+  const shimPort = Number(process.env.FLEETLENS_FLEET_SHIM_PORT ?? 3322);
+  const url = `http://127.0.0.1:${shimPort}/peer/${encodeURIComponent(
+    owningRuntime.deviceId,
+  )}/session/${encodeURIComponent(id)}`;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const detail = (await resp.json()) as Awaited<ReturnType<typeof getAnySession>>;
+    if (!detail) return null;
+    // Stamp runtime attribution onto the SessionDetail itself (SessionDetail
+    // extends SessionMeta, fields live at the top level — not under .meta)
+    // so the UI banner can show "this session lives on <peer>" without an
+    // extra lookup.
+    return {
+      ...detail,
+      runtimeId: owningRuntime.deviceId,
+      runtimeLabel: owningRuntime.label ?? owningRuntime.deviceId,
+      runtimeHostname: owningRuntime.hostname,
+    };
+  } catch {
+    return null;
+  }
 });
 
 /**

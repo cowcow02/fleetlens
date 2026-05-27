@@ -7,6 +7,7 @@ import {
   type TimelineData,
 } from "./team-tab/adapter";
 import { SessionView } from "./session-view";
+import { RemoteSessionBanner } from "@/components/remote-session-banner";
 
 export const dynamic = "force-dynamic";
 
@@ -54,12 +55,22 @@ export default async function SessionDetailPage({
     events: session.events.map((e) => ({ ...e, raw: undefined })),
   };
 
+  const isRemote = !!session.runtimeId && session.runtimeId !== "local";
+
   return (
-    <SessionView
-      session={stripped}
-      team={teamProps}
-      teamLead={teamLeadInfo}
-      entries={entries}
-    />
+    <>
+      {isRemote && (
+        <RemoteSessionBanner
+          runtimeLabel={session.runtimeLabel}
+          runtimeHostname={session.runtimeHostname}
+        />
+      )}
+      <SessionView
+        session={stripped}
+        team={teamProps}
+        teamLead={teamLeadInfo}
+        entries={entries}
+      />
+    </>
   );
 }
