@@ -113,6 +113,7 @@ export {
   type DailyRollup,
   type RichDailyRollup,
   type EnrichedDailyExtras,
+  type DayArtifactSignals,
   type WireUsageWindow,
   type WireExtraUsage,
   type WireUsageSnapshot,
