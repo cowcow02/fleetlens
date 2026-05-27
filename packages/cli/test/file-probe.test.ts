@@ -58,15 +58,25 @@ describe("file-probe", () => {
     execFileSync("git", ["add", "."], { cwd: projectDir });
     execFileSync("git", ["commit", "-m", "extend", "--no-gpg-sign"], { cwd: projectDir });
 
-    const today = new Date().toISOString().slice(0, 10);
+    // Compute the day from the commit's own timestamp rather than wall clock
+    // so the test isn't TZ-dependent — the probe reads %cs which is the
+    // committer's local-TZ date and we need to match it.
+    const day = execFileSync("git", ["log", "-1", "--format=%cs"], { cwd: projectDir, encoding: "utf8" }).trim();
     const result = probeArtifactSignals({
       extraRoots: [projectDir],
-      day: today,
+      day,
       authorEmail: "probe-test@example.com",
     });
-    expect(result).not.toBeNull();
+    if (result === null) {
+      const debug = execFileSync(
+        "git",
+        ["log", "--numstat", "--format=COMMIT %cs %ae"],
+        { cwd: projectDir, encoding: "utf8" },
+      );
+      throw new Error("probe returned null; git log output was:\n" + debug);
+    }
     // Initial 1 line + 2 added lines = +3 lines net for the day.
-    expect(result!.claudemdLineDelta).toBeGreaterThanOrEqual(3);
+    expect(result.claudemdLineDelta).toBeGreaterThanOrEqual(3);
   });
 
   it("returns null for an entirely idle day (no authoring, no edits)", () => {
