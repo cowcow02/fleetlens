@@ -1,5 +1,5 @@
 import pg from "pg";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { getPool } from "../db/pool";
 import { IngestPayload, UsageHistoryPayload, type UsageSnapshot } from "./zod-schemas";
 import { refreshMembershipWeeklyUtilization } from "./scheduler";
@@ -451,11 +451,10 @@ async function reconcileTeamSkillCatalog(
   }
 }
 
-// Stable hash for matching skill identity across members. Importing crypto
-// here so the file's other helpers don't grow a top-level dependency.
+// Stable hash for matching skill identity across members. Matches the
+// truncation the personal-edition probe uses so server-side reconciliation
+// joins cleanly against shipped path_hash values.
 function hashStable(s: string): string {
-  // Lazily required — Node's crypto is fine here.
-  const { createHash } = require("node:crypto");
   return createHash("sha256").update(s).digest("hex").slice(0, 32);
 }
 
