@@ -606,3 +606,38 @@ input::placeholder {
     text-align: left !important;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────── */
+/*  Fluency v2 hero — stack on mobile                                  */
+/* ────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  .flu-hero-row {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+  .flu-hero-name {
+    font-size: 38px !important;
+  }
+  .flu-hero-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  .flu-hero-pills > div {
+    justify-content: flex-start;
+  }
+  .flu-axis-row-v2 {
+    grid-template-columns: 24px auto 1fr !important;
+    gap: 10px !important;
+    padding: 10px 12px 12px !important;
+  }
+  /* surface chips drop below the axis content on narrow screens */
+  .flu-axis-row-v2 > *:last-child {
+    grid-column: 2 / -1 !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+    padding-top: 0 !important;
+    margin-top: 4px !important;
+  }
+}

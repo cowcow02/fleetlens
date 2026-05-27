@@ -1,12 +1,13 @@
 import { Fluency } from "@claude-lens/entries";
 import {
-  FluencyAxisGrid,
   FluencyFooter,
-  FluencyHeadline,
-  FluencySurfaceMix,
   GrowthCallout,
   RiskTriangle,
 } from "@/components/fluency-report";
+import {
+  FluencyDetailSections,
+  FluencyHeroV2,
+} from "@/components/fluency-report-v2";
 import { FluencyTabs } from "@/components/fluency-tabs";
 import { buildScorecardForWeek } from "@/lib/fluency-data";
 import { currentWeekMonday } from "@/lib/entries";
@@ -34,13 +35,8 @@ export default async function FluencyPage() {
     <div className="flu-page">
       <FluencyTabs />
       {isMock && <DemoBanner />}
-      <FluencyHeadline card={card} />
-      <FluencySurfaceMix mix={card.surface_mix} />
-      <FluencyAxisGrid
-        observations={card.observations}
-        strengthAxis={card.strength_axis}
-        growthAxis={card.growth_axis}
-      />
+      <FluencyHeroV2 card={card} />
+      <FluencyDetailSections card={card} />
       <RiskTriangle position={card.risk_triangle} />
       <GrowthCallout card={card} />
       <FluencyFooter schemaVersion={card.schema_version} />
