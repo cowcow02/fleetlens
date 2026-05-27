@@ -7,3 +7,4 @@ export * from "./anthropic-axes.js";
 export * from "./anthropic-digest.js";
 export * from "./anthropic-prompt.js";
 export * from "./subagent-scorecard.js";
+export * from "./subagent-pipeline.js";

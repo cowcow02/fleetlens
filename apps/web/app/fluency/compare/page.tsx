@@ -2,8 +2,9 @@ import { Fluency } from "@claude-lens/entries";
 import Link from "next/link";
 import {
   buildAnthropicScorecard30d,
-  buildSubagentScorecard30d,
   listEntriesLast30Days,
+  readSubagentCache,
+  subagentCacheKey,
 } from "@/lib/fluency-data";
 import { FluencyTabs } from "@/components/fluency-tabs";
 import { FluencyCompare } from "@/components/fluency-compare";
@@ -26,12 +27,11 @@ export const runtime = "nodejs";
 export default async function FluencyComparePage({
   searchParams,
 }: {
-  searchParams: Promise<{ llm?: string; subagent?: string; refresh?: string }>;
+  searchParams: Promise<{ llm?: string; subagent?: string }>;
 }) {
   const sp = await searchParams;
   const useLlm = sp.llm !== "0";
   const useSubagent = sp.subagent === "1";
-  const forceRefresh = sp.refresh === "1";
 
   const { entries, windowEnd } = listEntriesLast30Days();
 
@@ -54,20 +54,28 @@ export default async function FluencyComparePage({
     entries,
   });
 
-  // Run the two LLM-touching scorecards in parallel when both are requested.
-  const [anthropic, subagent] = await Promise.all([
-    buildAnthropicScorecard30d({ id: "local", name: "you" }, { useLlm }),
-    useSubagent ? buildSubagentScorecard30d({ id: "local", name: "you" }, { forceRefresh }) : Promise.resolve(null),
-  ]);
+  // Anthropic-style still runs server-side (regex per-axis + optional ~3s
+  // LLM summary). The subagent lane never runs server-side — it's a pure
+  // client component that GETs the cache and POSTs to /api/fluency/subagent
+  // for a fresh run streamed as SSE.
+  const anthropic = await buildAnthropicScorecard30d({ id: "local", name: "you" }, { useLlm });
+
+  const subagentInitial = useSubagent
+    ? (() => {
+        const key = subagentCacheKey({ id: "local", name: "you" });
+        return key ? readSubagentCache(key.cachePath) : null;
+      })()
+    : null;
 
   return (
     <div className="flu-page">
       <FluencyTabs />
-      <SubagentLaneBanner enabled={useSubagent} succeeded={!!subagent} entryCount={entries.length} />
+      <SubagentLaneBanner enabled={useSubagent} entryCount={entries.length} />
       <FluencyCompare
         fleetlens={fleetlens}
         anthropic={anthropic}
-        subagent={subagent}
+        useSubagent={useSubagent}
+        initialSubagent={subagentInitial}
         windowEnd={windowEnd}
         entryCount={entries.length}
       />
@@ -75,64 +83,45 @@ export default async function FluencyComparePage({
   );
 }
 
-function SubagentLaneBanner({ enabled, succeeded, entryCount }: { enabled: boolean; succeeded: boolean; entryCount: number }) {
-  if (!enabled) {
-    return (
-      <div
+function SubagentLaneBanner({ enabled, entryCount }: { enabled: boolean; entryCount: number }) {
+  if (enabled) return null;
+  return (
+    <div
+      style={{
+        marginBottom: 14,
+        padding: "10px 14px",
+        background: "var(--af-info-subtle)",
+        border: "1px solid var(--af-info)",
+        borderRadius: 8,
+        fontSize: 12.5,
+        color: "var(--af-text)",
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        gap: 12,
+        flexWrap: "wrap",
+      }}
+    >
+      <span>
+        <strong>Two-lane view.</strong> Add the third &ldquo;Subagent-LLM&rdquo; lane to see
+        how a Claude run scoring from raw turns ({entryCount} sessions) compares. Streams
+        progress live; result is cached so the page is instant on every reload.
+      </span>
+      <Link
+        href="?subagent=1"
         style={{
-          marginBottom: 14,
-          padding: "10px 14px",
-          background: "var(--af-info-subtle)",
-          border: "1px solid var(--af-info)",
-          borderRadius: 8,
-          fontSize: 12.5,
-          color: "var(--af-text)",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          flexWrap: "wrap",
+          padding: "4px 10px",
+          background: "var(--af-info)",
+          color: "white",
+          borderRadius: 6,
+          fontWeight: 600,
+          fontSize: 12,
+          textDecoration: "none",
+          whiteSpace: "nowrap",
         }}
       >
-        <span>
-          <strong>Two-lane view.</strong> Add the third &ldquo;Subagent-LLM&rdquo; lane to see
-          how a Claude run scoring from raw turns ({entryCount} sessions) compares — costs ~$0.01.
-        </span>
-        <Link
-          href="?subagent=1"
-          style={{
-            padding: "4px 10px",
-            background: "var(--af-info)",
-            color: "white",
-            borderRadius: 6,
-            fontWeight: 600,
-            fontSize: 12,
-            textDecoration: "none",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Run subagent →
-        </Link>
-      </div>
-    );
-  }
-  if (!succeeded) {
-    return (
-      <div
-        style={{
-          marginBottom: 14,
-          padding: "10px 14px",
-          background: "var(--af-warning-subtle)",
-          border: "1px solid var(--af-warning)",
-          borderRadius: 8,
-          fontSize: 12.5,
-        }}
-      >
-        <strong>Subagent lane failed.</strong> The <code>claude</code> CLI may not be
-        on PATH, or the model returned output that didn&apos;t match the marker schema.
-        Falling back to two-lane view.
-      </div>
-    );
-  }
-  return null;
+        Add subagent lane →
+      </Link>
+    </div>
+  );
 }

@@ -122,14 +122,14 @@ export async function buildAnthropicScorecard30d(
  *  re-fire the ~$0.01 LLM call on every page render. */
 const SUBAGENT_CACHE_DIR = join(homedir(), ".cclens", "fluency-subagent");
 
-function subagentCachePath(memberId: string, windowEnd: string, corpusHash: string): string {
+export function subagentCachePath(memberId: string, windowEnd: string, corpusHash: string): string {
   if (!existsSync(SUBAGENT_CACHE_DIR)) {
     try { mkdirSync(SUBAGENT_CACHE_DIR, { recursive: true }); } catch { /* race ok */ }
   }
   return join(SUBAGENT_CACHE_DIR, `${memberId}__${windowEnd}__${corpusHash}.json`);
 }
 
-function readSubagentCache(path: string): Fluency.SubagentScorecard | null {
+export function readSubagentCache(path: string): Fluency.SubagentScorecard | null {
   try {
     if (!existsSync(path)) return null;
     return JSON.parse(readFileSync(path, "utf8")) as Fluency.SubagentScorecard;
@@ -138,8 +138,31 @@ function readSubagentCache(path: string): Fluency.SubagentScorecard | null {
   }
 }
 
-function writeSubagentCache(path: string, sc: Fluency.SubagentScorecard): void {
+export function writeSubagentCache(path: string, sc: Fluency.SubagentScorecard): void {
   try { writeFileSync(path, JSON.stringify(sc, null, 2)); } catch { /* non-fatal */ }
+}
+
+/** Compute the cache key info for the current 30-day window. Used by both
+ *  the compare page (server component) and the API route (GET/POST). */
+export function subagentCacheKey(
+  member: { id: string; name: string },
+): { entries: Entry[]; windowEnd: string; corpusHash: string; cachePath: string; corpus: ReturnType<typeof Fluency.buildUserCorpus> } | null {
+  const { entries, windowEnd } = listEntriesLast30Days();
+  if (entries.length === 0) return null;
+  const corpus = Fluency.buildUserCorpus({
+    member_name: member.name,
+    window_end: windowEnd,
+    entries,
+  });
+  if (corpus.user_turns === 0) return null;
+  const corpusHash = createHash("sha256").update(corpus.markdown).digest("hex").slice(0, 16);
+  return {
+    entries,
+    windowEnd,
+    corpusHash,
+    cachePath: subagentCachePath(member.id, windowEnd, corpusHash),
+    corpus,
+  };
 }
 
 /** Build the SubagentScorecard by handing the raw user-message corpus to

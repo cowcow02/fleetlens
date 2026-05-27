@@ -8,6 +8,7 @@
  */
 
 import { Fluency } from "@claude-lens/entries";
+import { SubagentLaneClient } from "./subagent-lane-client";
 type FluencyScorecard = Fluency.FluencyScorecard;
 type AnthropicScorecard = Fluency.AnthropicScorecard;
 type SubagentScorecard = Fluency.SubagentScorecard;
@@ -47,17 +48,19 @@ const AXIS_MAP: Array<{ fl: FluencyAxisId | null; anth: AnthropicAxisId | null; 
 export function FluencyCompare({
   fleetlens,
   anthropic,
-  subagent,
+  useSubagent,
+  initialSubagent,
   windowEnd,
   entryCount,
 }: {
   fleetlens: FluencyScorecard;
   anthropic: AnthropicScorecard | null;
-  subagent?: SubagentScorecard | null;
+  useSubagent?: boolean;
+  initialSubagent?: SubagentScorecard | null;
   windowEnd: string;
   entryCount: number;
 }) {
-  const cols = subagent ? 3 : 2;
+  const cols = useSubagent ? 3 : 2;
   return (
     <>
       <header
@@ -143,29 +146,10 @@ export function FluencyCompare({
               : []
           }
         />
-        {subagent && (
-          <ScoreCard
-            title="Subagent-LLM"
-            subtitle={`2 / 6 / 3 · pure LLM · ${subagent.corpus_user_turns} turns / ${subagent.corpus_sessions} sessions`}
-            score={subagent.score.numerator}
-            max={11}
-            summary={subagent.summary}
-            rows={subagent.axes.map((a) => ({
-              id: a.id,
-              title: a.title,
-              rating: a.rating as FluencyRating,
-              evidence: a.evidence[0]?.quote ?? null,
-            }))}
-            footer={
-              subagent.llm
-                ? `Model: ${subagent.llm.model}${subagent.llm.cost_usd !== null ? ` · ~$${subagent.llm.cost_usd.toFixed(4)}` : ""}`
-                : null
-            }
-          />
-        )}
+        {useSubagent && <SubagentLaneClient initialScorecard={initialSubagent ?? undefined} />}
       </section>
 
-      {subagent && <SubagentInsights subagent={subagent} />}
+      {initialSubagent && <SubagentInsights subagent={initialSubagent} />}
       <DiffStrip fleetlens={fleetlens} anthropic={anthropic} />
     </>
   );
