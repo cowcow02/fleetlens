@@ -177,11 +177,15 @@ function scanEdited(
 
 /** Compute the net line delta to CLAUDE.md authored by this member on `day`.
  *  Uses `git log --numstat` filtered by author email; returns 0 outside a
- *  git repo or when the file doesn't exist. */
+ *  git repo or when the file doesn't exist.
+ *
+ *  Date filtering happens in JS by parsing the committer's short-date
+ *  (`%cs` → YYYY-MM-DD in commit's own timezone) rather than passing
+ *  `--since`/`--until` to git — that path is timezone-sensitive and breaks
+ *  on CI runners where the runner's TZ differs from the commit's. */
 function claudemdLineDelta(extraRoots: string[], authorEmail: string | undefined, day: string): number {
   if (!authorEmail) return 0;
   let delta = 0;
-  // Scan each provided root + the user-home location.
   const candidates: string[] = [];
   for (const e of extraRoots) {
     const f = resolve(e, "CLAUDE.md");
@@ -193,24 +197,20 @@ function claudemdLineDelta(extraRoots: string[], authorEmail: string | undefined
     try {
       const out = execFileSync(
         "git",
-        [
-          "log",
-          `--author=${authorEmail}`,
-          `--since=${day}T00:00:00`,
-          `--until=${day}T23:59:59`,
-          "--numstat",
-          "--format=",
-          "--",
-          file,
-        ],
+        ["log", `--author=${authorEmail}`, "--numstat", "--format=COMMIT %cs", "--", file],
         { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], cwd: dirname(file) },
       );
-      for (const line of out.trim().split("\n").filter(Boolean)) {
-        const parts = line.split(/\s+/);
-        const added = Number(parts[0]);
-        const removed = Number(parts[1]);
-        if (Number.isFinite(added) && Number.isFinite(removed)) {
-          delta += added - removed;
+      let currentDate = "";
+      for (const line of out.split("\n")) {
+        if (line.startsWith("COMMIT ")) {
+          currentDate = line.slice("COMMIT ".length).trim();
+        } else if (currentDate === day && line.trim().length > 0) {
+          const parts = line.split(/\s+/);
+          const added = Number(parts[0]);
+          const removed = Number(parts[1]);
+          if (Number.isFinite(added) && Number.isFinite(removed)) {
+            delta += added - removed;
+          }
         }
       }
     } catch {
