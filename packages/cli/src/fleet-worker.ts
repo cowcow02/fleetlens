@@ -113,7 +113,10 @@ type LiveConnection = {
   hostname?: string;
   since: string;
   lastSeen: string;
-  rpc: RpcSession;
+  // Filled in immediately after attachRpc returns. Optional so the entry
+  // can be registered in `live` *before* attachRpc runs, eliminating the
+  // race where a peer sends "hello" before our handler can find itself.
+  rpc?: RpcSession;
 };
 
 const live = new Map<string, LiveConnection>();
@@ -171,8 +174,12 @@ async function onConnection(conn: HyperswarmConnection, _info: unknown): Promise
   const remoteDeviceId = shortDeviceId(remotePubHex);
   // Hyperswarm can dial a peer from both sides simultaneously. If we're
   // already connected to this pubkey, drop the new connection cleanly.
+  // attachRpc isn't called for the duplicate, so attach a no-op error
+  // listener ourselves — without one, an 'error' emitted before 'close'
+  // becomes an unhandled exception.
   if (live.has(remotePubHex)) {
     log("info", `duplicate connection to ${remoteDeviceId}, dropping new one`);
+    conn.on("error", () => {});
     try {
       conn.destroy();
     } catch {
@@ -180,6 +187,18 @@ async function onConnection(conn: HyperswarmConnection, _info: unknown): Promise
     }
     return;
   }
+
+  // Register the entry *before* wiring RPC so the "hello" handler can
+  // always find itself in `live` — even if the peer races us and sends
+  // hello before our attachRpc call returns. rpc is filled in below.
+  const nowIso = new Date().toISOString();
+  const entry: LiveConnection = {
+    publicKey: remotePubHex,
+    deviceId: remoteDeviceId,
+    since: nowIso,
+    lastSeen: nowIso,
+  };
+  live.set(remotePubHex, entry);
 
   const rpc = attachRpc(conn, async (method, params) => {
     switch (method) {
@@ -189,13 +208,13 @@ async function onConnection(conn: HyperswarmConnection, _info: unknown): Promise
         // Update local label/host info opportunistically.
         if (params && typeof params === "object") {
           const p = params as Partial<HelloPayload>;
-          const entry = live.get(remotePubHex);
-          if (entry) {
-            entry.label = p.label ?? entry.label;
-            entry.hostname = p.hostname ?? entry.hostname;
-            entry.lastSeen = new Date().toISOString();
+          const existing = live.get(remotePubHex);
+          if (existing) {
+            existing.label = p.label ?? existing.label;
+            existing.hostname = p.hostname ?? existing.hostname;
+            existing.lastSeen = new Date().toISOString();
             flushConnections();
-            rememberPeer(remotePubHex, entry.label, entry.hostname);
+            rememberPeer(remotePubHex, existing.label, existing.hostname);
           }
         }
         return makeHello();
@@ -203,16 +222,8 @@ async function onConnection(conn: HyperswarmConnection, _info: unknown): Promise
         throw new Error(`unknown method: ${method}`);
     }
   });
+  entry.rpc = rpc;
 
-  const nowIso = new Date().toISOString();
-  const entry: LiveConnection = {
-    publicKey: remotePubHex,
-    deviceId: remoteDeviceId,
-    since: nowIso,
-    lastSeen: nowIso,
-    rpc,
-  };
-  live.set(remotePubHex, entry);
   flushConnections();
   log("info", `connected to ${remoteDeviceId} (${remotePubHex.slice(0, 8)}…)`);
 
@@ -284,7 +295,7 @@ log(
 async function shutdown(signal: string): Promise<void> {
   log("info", `received ${signal}; shutting down`);
   try {
-    for (const c of live.values()) c.rpc.close();
+    for (const c of live.values()) c.rpc?.close();
     live.clear();
     flushConnections();
     await swarm.destroy();

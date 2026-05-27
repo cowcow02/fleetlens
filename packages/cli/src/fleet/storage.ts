@@ -158,9 +158,16 @@ export function readConnections(): ConnectionsFile | null {
   if (!f) return null;
   // Stale-detect: a worker that crashed without cleanup leaves a connections
   // file behind. If the file is older than 60s, callers should treat it as
-  // empty — the worker writes at least every 30s while alive.
-  const age = Date.now() - statSync(CONNECTIONS_FILE).mtimeMs;
-  if (age > 60_000) return { updatedAt: f.updatedAt, connections: [] };
+  // empty — the worker writes at least every 30s while alive. The stat may
+  // race with a concurrent clearFleet() that just unlinked the file; treat
+  // ENOENT the same as "no longer fresh".
+  let mtimeMs: number;
+  try {
+    mtimeMs = statSync(CONNECTIONS_FILE).mtimeMs;
+  } catch {
+    return { updatedAt: f.updatedAt, connections: [] };
+  }
+  if (Date.now() - mtimeMs > 60_000) return { updatedAt: f.updatedAt, connections: [] };
   return f;
 }
 

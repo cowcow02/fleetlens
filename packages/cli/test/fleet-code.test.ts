@@ -40,6 +40,13 @@ describe("fleet code", () => {
     expect(() => decodeFleetCode("flv1-ABCD")).toThrow(/base32 chars/);
   });
 
+  it("rejects codes containing characters outside the base32 alphabet", () => {
+    // 26 chars total, but '!' is not in the Crockford alphabet.
+    expect(() => decodeFleetCode("flv1-" + "!".repeat(26))).toThrow(
+      /invalid fleet code character/,
+    );
+  });
+
   it("produces a stable short device id for the same public key", () => {
     const pk = "a".repeat(64);
     expect(shortDeviceId(pk)).toBe(shortDeviceId(pk));

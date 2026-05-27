@@ -31,6 +31,8 @@ export function encodeFleetCode(secret: Buffer): string {
   // 26 base32 chars = 130 bits = 128-bit secret + 2 checksum bits. base32
   // packs MSB-first, so the 2 checksum bits must live in the *top* two
   // bits of byte[16] for them to survive truncation to 26 chars.
+  // Note: 2 bits = 1-in-4 false-positive rate. This is a typo guard, not
+  // a cryptographic integrity check — never use it to authorize anything.
   const payload = Buffer.concat([secret, Buffer.from([(checksum[0] & 0x03) << 6])]);
   const chars = base32Encode(payload).slice(0, PAYLOAD_CHARS);
   return `${FLEET_CODE_PREFIX}-${groupBy4(chars).join("-")}`;

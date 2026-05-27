@@ -12,7 +12,6 @@ import {
   writePid,
 } from "../pid.js";
 import {
-  CONNECTIONS_FILE,
   FLEET_LOG,
   FLEET_PID,
   clearFleet,
@@ -360,7 +359,3 @@ function formatAge(ms: number): string {
   return `${Math.round(m / 60)}h`;
 }
 
-// Silence used-but-unused for CONNECTIONS_FILE — keeping the symbol exported
-// from storage.ts for diagnostic tooling without forcing it into the runtime
-// path.
-void CONNECTIONS_FILE;
