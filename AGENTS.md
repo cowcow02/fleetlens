@@ -85,7 +85,7 @@ node scripts/prepare-cli.mjs
 # 2. Start the CLI which spawns the bundled Next.js server
 node packages/cli/dist/index.js stop     # kill any previous
 lsof -ti:3321 | xargs kill -9 2>&1       # defensive; port can hang around
-node packages/cli/dist/index.js web usage --no-open
+node packages/cli/dist/index.js web usage
 # → http://localhost:3321/usage
 ```
 
@@ -211,7 +211,7 @@ Dashboard / Timeline / Calendar all read session JSONL from `~/.Codex/projects/`
 ## CLI command surface
 
 ```bash
-fleetlens start [--port N] [--no-open] [--no-daemon]
+fleetlens start [--port N] [--open] [--no-daemon]
 fleetlens stop
 fleetlens status
 fleetlens update
@@ -219,7 +219,7 @@ fleetlens stats [--week|--4weeks|--since D --until D|--days N] [--json|--pretty]
 fleetlens capsules [--days N] [--since D] [--until D] [--full] [--json|--pretty]
 fleetlens usage [--save]
 fleetlens usage --history [-s D] [--days N]
-fleetlens web [page] [--no-open]
+fleetlens web [page] [--open]
 fleetlens daemon <start|stop|status|logs>
 fleetlens version
 ```

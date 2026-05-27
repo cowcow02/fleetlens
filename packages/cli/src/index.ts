@@ -71,7 +71,7 @@ async function main() {
       console.log(`Usage: fleetlens <command>
 
 Common:
-  start [--port N] [--no-open]      Start dashboard + usage daemon
+  start [--port N] [--open]         Start dashboard + usage daemon (prints URL; pass --open to also launch browser)
   stop                              Stop dashboard + usage daemon
   status                            Show server + daemon + latest snapshot
   update                            Update to the latest version
@@ -86,7 +86,7 @@ Terminal:
   runs [--watch] [--json] [--since 24h]      Live LLM call activity + token spend
 
 Advanced:
-  web [page] [--no-open]            Open dashboard in browser without auto-starting daemon
+  web [page] [--open]               Print dashboard URL without auto-starting daemon (pass --open to also launch browser)
   start --no-daemon                 Start only the web server (no daemon)
   daemon <start|stop|status|logs>   Manage the usage daemon by itself
 
