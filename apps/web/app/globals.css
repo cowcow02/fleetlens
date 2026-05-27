@@ -586,3 +586,23 @@ input::placeholder {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+
+/* ────────────────────────────────────────────────────────────────── */
+/*  Fluency compare page responsive                                    */
+/* ────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+  .flu-compare-cols {
+    grid-template-columns: 1fr !important;
+  }
+  .flu-compare-diff {
+    grid-template-columns: 1fr !important;
+    row-gap: 4px !important;
+  }
+  .flu-compare-diff > *:nth-child(4n+1),
+  .flu-compare-diff > *:nth-child(4n+2),
+  .flu-compare-diff > *:nth-child(4n+3),
+  .flu-compare-diff > *:nth-child(4n+4) {
+    text-align: left !important;
+  }
+}

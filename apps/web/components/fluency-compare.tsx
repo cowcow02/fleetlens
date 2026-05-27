@@ -10,6 +10,7 @@
 import { Fluency } from "@claude-lens/entries";
 type FluencyScorecard = Fluency.FluencyScorecard;
 type AnthropicScorecard = Fluency.AnthropicScorecard;
+type SubagentScorecard = Fluency.SubagentScorecard;
 type FluencyAxisId = Fluency.FluencyAxisId;
 type AnthropicAxisId = Fluency.AnthropicAxisId;
 type FluencyRating = Fluency.FluencyRating;
@@ -46,14 +47,17 @@ const AXIS_MAP: Array<{ fl: FluencyAxisId | null; anth: AnthropicAxisId | null; 
 export function FluencyCompare({
   fleetlens,
   anthropic,
+  subagent,
   windowEnd,
   entryCount,
 }: {
   fleetlens: FluencyScorecard;
   anthropic: AnthropicScorecard | null;
+  subagent?: SubagentScorecard | null;
   windowEnd: string;
   entryCount: number;
 }) {
+  const cols = subagent ? 3 : 2;
   return (
     <>
       <header
@@ -82,7 +86,7 @@ export function FluencyCompare({
             lineHeight: 1.2,
           }}
         >
-          Same data, two scoring methodologies.
+          Same data, {cols === 3 ? "three" : "two"} scoring methodologies.
         </h1>
         <p
           style={{
@@ -90,14 +94,13 @@ export function FluencyCompare({
             fontSize: 14,
             lineHeight: 1.6,
             color: "var(--af-text-secondary)",
-            maxWidth: 720,
+            maxWidth: 740,
           }}
         >
-          The Fleetlens method (left) drops Anthropic&apos;s audience / tone / role axes — they
-          rarely fire in coding sessions — and adds plan-gating, reviewer-type matching,
-          verify-at-boundary, and rollback discipline that are pivotal for code but invisible in
-          chat. The Anthropic-style scorecard (right) is the literal published 11 indicators with
-          an LLM-written summary. The score delta is purely methodology.
+          Both deterministic methods (left two) score from regex over typed Entry fields — fast,
+          reproducible, but blind to intent. The subagent lane (right, when enabled) hands the
+          raw user-message corpus to <code>claude -p</code> and lets it score from intent the
+          way Anthropic&apos;s own product does. Score gap = pure methodology.
         </p>
       </header>
 
@@ -105,14 +108,14 @@ export function FluencyCompare({
         style={{
           marginTop: 22,
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 18,
+          gridTemplateColumns: cols === 3 ? "repeat(3, 1fr)" : "1fr 1fr",
+          gap: 16,
         }}
         className="flu-compare-cols"
       >
         <ScoreCard
-          title="Fleetlens method"
-          subtitle="3 / 4 / 4 · deterministic prose · Risk Triangle"
+          title="Fleetlens"
+          subtitle="3 / 4 / 4 · regex · weekly"
           score={fleetlens.score.numerator}
           max={11}
           summary={fleetlens.summary}
@@ -125,7 +128,7 @@ export function FluencyCompare({
         />
         <ScoreCard
           title="Anthropic-style"
-          subtitle="2 / 6 / 3 · LLM-written prose · 30-day window"
+          subtitle="2 / 6 / 3 · regex + LLM prose · 30-day"
           score={anthropic?.score.numerator ?? 0}
           max={11}
           summary={anthropic?.summary ?? null}
@@ -140,10 +143,74 @@ export function FluencyCompare({
               : []
           }
         />
+        {subagent && (
+          <ScoreCard
+            title="Subagent-LLM"
+            subtitle={`2 / 6 / 3 · pure LLM · ${subagent.corpus_user_turns} turns / ${subagent.corpus_sessions} sessions`}
+            score={subagent.score.numerator}
+            max={11}
+            summary={subagent.summary}
+            rows={subagent.axes.map((a) => ({
+              id: a.id,
+              title: a.title,
+              rating: a.rating as FluencyRating,
+              evidence: a.evidence[0]?.quote ?? null,
+            }))}
+            footer={
+              subagent.llm
+                ? `Model: ${subagent.llm.model}${subagent.llm.cost_usd !== null ? ` · ~$${subagent.llm.cost_usd.toFixed(4)}` : ""}`
+                : null
+            }
+          />
+        )}
       </section>
 
+      {subagent && <SubagentInsights subagent={subagent} />}
       <DiffStrip fleetlens={fleetlens} anthropic={anthropic} />
     </>
+  );
+}
+
+function SubagentInsights({ subagent }: { subagent: SubagentScorecard }) {
+  return (
+    <section
+      style={{
+        marginTop: 16,
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 12,
+      }}
+      className="flu-growth-grid"
+    >
+      <div
+        style={{
+          background: "var(--af-success-subtle)",
+          border: "1px solid var(--af-success)",
+          borderRadius: 10,
+          padding: "12px 14px",
+        }}
+      >
+        <div style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--af-success)", fontWeight: 700 }}>
+          Subagent: Strength
+        </div>
+        <h3 style={{ margin: "4px 0 6px", fontSize: 15, fontWeight: 600 }}>{subagent.insights.strength_title}</h3>
+        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55 }}>{subagent.insights.strength_body}</p>
+      </div>
+      <div
+        style={{
+          background: "var(--af-warning-subtle)",
+          border: "1px solid var(--af-warning)",
+          borderRadius: 10,
+          padding: "12px 14px",
+        }}
+      >
+        <div style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--af-warning)", fontWeight: 700 }}>
+          Subagent: Try next
+        </div>
+        <h3 style={{ margin: "4px 0 6px", fontSize: 15, fontWeight: 600 }}>{subagent.insights.try_next_title}</h3>
+        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55 }}>{subagent.insights.try_next_body}</p>
+      </div>
+    </section>
   );
 }
 
@@ -154,6 +221,7 @@ function ScoreCard({
   max,
   summary,
   rows,
+  footer,
 }: {
   title: string;
   subtitle: string;
@@ -161,6 +229,7 @@ function ScoreCard({
   max: number;
   summary: string | null;
   rows: Array<{ id: string; title: string; rating: FluencyRating; evidence: string | null }>;
+  footer?: string | null;
 }) {
   return (
     <article
@@ -199,6 +268,11 @@ function ScoreCard({
         >
           {summary}
         </p>
+      )}
+      {footer && (
+        <div style={{ marginTop: -8, marginBottom: 10, fontSize: 10, color: "var(--af-text-tertiary)", fontFamily: "var(--font-mono)" }}>
+          {footer}
+        </div>
       )}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {rows.map((r) => (

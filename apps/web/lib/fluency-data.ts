@@ -107,3 +107,51 @@ export async function buildAnthropicScorecard30d(
     callLLM,
   });
 }
+
+/* ------------------------------------------------------------------ */
+/*  Subagent-LLM scorecard — hands raw turns to claude -p directly     */
+/* ------------------------------------------------------------------ */
+
+/** Build the SubagentScorecard by handing the raw user-message corpus to
+ *  `claude -p` with the from-scratch fluency-scorecard system prompt.
+ *  Returns null if there are no entries, the LLM call fails, or the
+ *  model's output can't be parsed back into the typed shape. */
+export async function buildSubagentScorecard30d(
+  member: { id: string; name: string },
+): Promise<Fluency.SubagentScorecard | null> {
+  const { entries, windowEnd } = listEntriesLast30Days();
+  if (entries.length === 0) return null;
+
+  const corpus = Fluency.buildUserCorpus({
+    member_name: member.name,
+    window_end: windowEnd,
+    entries,
+  });
+  if (corpus.user_turns === 0) return null;
+
+  let res;
+  try {
+    res = await runClaudeSubprocess({
+      systemPrompt: Fluency.SUBAGENT_FLUENCY_SYSTEM_PROMPT,
+      model: "sonnet",
+      userPrompt: corpus.markdown,
+    });
+  } catch {
+    return null;
+  }
+
+  const cost =
+    res.model.toLowerCase().includes("opus")  ? ((res.input_tokens * 15 + res.output_tokens * 75) / 1_000_000) :
+    res.model.toLowerCase().includes("sonnet") ? ((res.input_tokens *  3 + res.output_tokens * 15) / 1_000_000) :
+    res.model.toLowerCase().includes("haiku")  ? ((res.input_tokens *  1 + res.output_tokens *  5) / 1_000_000) :
+    null;
+
+  return Fluency.parseSubagentScorecardOutput(res.content, {
+    member_id: member.id,
+    member_name: member.name,
+    window_end: windowEnd,
+    corpus_user_turns: corpus.user_turns,
+    corpus_sessions: corpus.sessions,
+    llm: { model: res.model, cost_usd: cost },
+  });
+}
