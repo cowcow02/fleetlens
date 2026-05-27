@@ -225,11 +225,14 @@ function claudemdLineDelta(extraRoots: string[], authorEmail: string | undefined
 }
 
 /** Run the probe. Returns null when there's nothing to ship (all-zero
- *  result) — callers may skip the `artifactSignals` field on idle days. */
+ *  result) — callers may skip the `artifactSignals` field on idle days.
+ *
+ *  Note: CLAUDE.md detection runs even when no `.claude/` roots exist —
+ *  CLAUDE.md lives at the project root, not inside `.claude/`, so it's a
+ *  separate signal from the skills/agents/commands scans. */
 export function probeArtifactSignals(opts: ProbeOptions = {}): DayArtifactSignals | null {
   const day = opts.day ?? todayLocal();
   const roots = defaultScanRoots(opts.extraRoots);
-  if (roots.length === 0) return null;
   const skillsAuthored = scanAuthored(roots, "skills", day);
   const subagentsAuthored = scanAuthored(roots, "agents", day);
   const slashCommandsAuthored = scanAuthored(roots, "commands", day);
