@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { Fluency } from "@claude-lens/entries";
 import { listEntriesForDay } from "@claude-lens/entries/fs";
 import type { Entry } from "@claude-lens/entries";
-import type { FluencyScorecard } from "@claude-lens/entries";
 
 function fmtDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -108,7 +107,7 @@ export async function fluency(args: string[]): Promise<void> {
   }
 }
 
-function renderTerminalScorecard(card: FluencyScorecard): void {
+function renderTerminalScorecard(card: Fluency.FluencyScorecard): void {
   const W = (s: string) => process.stdout.write(s);
   const scoreOut11 = card.score.numerator;
   const delta = card.score_prev ? scoreOut11 - card.score_prev.numerator : 0;
@@ -127,7 +126,7 @@ function renderTerminalScorecard(card: FluencyScorecard): void {
   W(`  Strength axis: ${card.strength_axis}    Growth axis: ${card.growth_axis}\n\n`);
 }
 
-async function pushScorecard(serverUrl: string, token: string, card: FluencyScorecard): Promise<void> {
+async function pushScorecard(serverUrl: string, token: string, card: Fluency.FluencyScorecard): Promise<void> {
   const url = `${serverUrl.replace(/\/+$/, "")}/api/ingest/fluency`;
   const res = await fetch(url, {
     method: "POST",
