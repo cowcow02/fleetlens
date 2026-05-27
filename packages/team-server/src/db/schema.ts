@@ -281,6 +281,61 @@ export const richDailyRollups = pgTable(
   }),
 );
 
+// Per-member, per-day artifact-authoring signals shipped from the personal
+// edition's file-system probe. Captures the "builds" path of the L4 maturity
+// classifier without ever shipping file contents — only opaque path hashes
+// (SHA-256 of the path relative to the .claude root) and line deltas.
+export const dayArtifactSignals = pgTable(
+  "day_artifact_signals",
+  {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id").notNull().references(() => memberships.id, { onDelete: "cascade" }),
+    day: date("day").notNull(),
+    // [{ path_hash, first_seen_date }, ...]
+    skillsAuthored: jsonb("skills_authored").notNull().default([]),
+    // [{ path_hash, line_delta }, ...]
+    skillsEdited: jsonb("skills_edited").notNull().default([]),
+    // [{ name_hash, first_seen_date }, ...]
+    subagentsAuthored: jsonb("subagents_authored").notNull().default([]),
+    // [{ name_hash, first_seen_date }, ...]
+    slashCommandsAuthored: jsonb("slash_commands_authored").notNull().default([]),
+    // Net line delta to CLAUDE.md attributed to this member on this day.
+    claudemdLineDelta: integer("claudemd_line_delta").notNull().default(0),
+    ingestedAt: timestamp("ingested_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.membershipId, t.day] }),
+    teamDay: index("idx_day_artifact_signals_team_day").on(t.teamId, sql`${t.day} DESC`),
+  }),
+);
+
+// Server-side reconciliation of team-wide artifact authorship. Populated by
+// the ingest pipeline whenever new dayArtifactSignals arrive. Originator is
+// "first member observed publishing this path_hash" and is monotonic — once
+// claimed, it stays claimed (handles late-arriving daemons gracefully).
+export const teamSkillCatalog = pgTable(
+  "team_skill_catalog",
+  {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    pathHash: text("path_hash").notNull(),
+    kind: text("kind").notNull(), // 'skill' | 'subagent' | 'slash-command'
+    originatorMembershipId: uuid("originator_membership_id")
+      .references(() => memberships.id, { onDelete: "set null" }),
+    originatorFirstSeen: date("originator_first_seen"),
+    adopterMembershipIds: uuid("adopter_membership_ids").array().notNull().default(sql`'{}'::uuid[]`),
+    loadsTotal: integer("loads_total").notNull().default(0),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.pathHash] }),
+    teamKind: index("idx_team_skill_catalog_team_kind").on(t.teamId, t.kind),
+    kindCheck: check(
+      "team_skill_catalog_kind_check",
+      sql`${t.kind} IN ('skill', 'subagent', 'slash-command')`,
+    ),
+  }),
+);
+
 export const groups = pgTable(
   "groups",
   {

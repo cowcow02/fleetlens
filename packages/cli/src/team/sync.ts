@@ -186,6 +186,7 @@ export async function runTeamSync(
     const privateProjects = new Set(config.privateProjects ?? []);
     const enrichmentOptIn = !!config.enrichmentOptIn;
 
+    const { probeArtifactSignals } = await import("../perception/file-probe.js");
     for (let i = 0; i < rollups.length; i++) {
       const rollup = rollups[i]!;
       const isLatest = i === rollups.length - 1;
@@ -196,10 +197,25 @@ export async function runTeamSync(
         privateProjects,
         enrichmentOptIn,
       );
+      // File-system probe: detect skill/sub-agent/slash-command authoring +
+      // CLAUDE.md edits attributable to this member on `rollup.day`. Local
+      // only — output is counts + opaque path hashes. Failures are silent so
+      // the push proceeds even outside a git repo / on minimal setups.
+      let artifactSignals: ReturnType<typeof probeArtifactSignals> = null;
+      try {
+        // Probe auto-detects git email from `git config user.email`.
+        artifactSignals = probeArtifactSignals({
+          day: rollup.day,
+          extraRoots: [process.cwd()],
+        });
+      } catch {
+        // Probe is best-effort; never block the main push path.
+      }
       const payload = buildIngestPayload({
         rollup,
         richExtras: richBlocks?.rich,
         enrichedExtras: richBlocks?.enriched,
+        artifactSignals: artifactSignals ?? undefined,
         usageSnapshot: isLatest ? usageSnapshot : undefined,
         planTier,
         // Same rationale as usageSnapshot — current cycle data only on the

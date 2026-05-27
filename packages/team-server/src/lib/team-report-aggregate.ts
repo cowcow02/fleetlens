@@ -709,20 +709,64 @@ export async function buildTeamInsightReport(
 
   // v9 — per-member qualitative portraits.
   //
-  // The LLM-driven path tags each session and synthesizes a member-level
-  // portrait. Without those tags yet, the only honest L4 signal we have
-  // (artifact authoring) doesn't exist in the seed. To illustrate the full
-  // spectrum, we synthetically mark the member with the highest activity as
-  // having authored a CLAUDE.md edit + skill files this month. In production
-  // this comes from the file-system probe described in the design memo.
-  const topRowBySessions = perMemberRes.rows.reduce<typeof perMemberRes.rows[0] | null>(
-    (best, row) => (best === null || row.sessions_curr > best.sessions_curr ? row : best),
-    null,
-  );
-  const syntheticArtifactAuthorOf: Set<string> = new Set();
-  if (topRowBySessions && topRowBySessions.sessions_curr >= 20) {
-    syntheticArtifactAuthorOf.add(topRowBySessions.id);
-  }
+  // The "builds" signal comes from day_artifact_signals (file-system probe
+  // pushed by the personal-edition daemon). The "coaches" signal comes from
+  // team_skill_catalog reconciliation: a path_hash this member originated
+  // that another member has loaded. Both are real reads — no synthetic flags.
+  //
+  // When no probe data has landed yet, all artifact counters are zero and
+  // members can still reach L4 via the explicit "L4-orchestrates" path if
+  // they have ≥3 sub-agent kinds AND ≥5 parallel-dispatch bursts. The honest
+  // distribution in an unprobed team is L0/L1/L2/L3 only.
+  const artifactRes = memberIds.length === 0
+    ? { rows: [] as Array<{
+        membership_id: string;
+        skills_authored_count: number;
+        subagents_authored_count: number;
+        slash_commands_authored_count: number;
+        claudemd_line_delta: number;
+      }> }
+    : await pool.query<{
+        membership_id: string;
+        skills_authored_count: number;
+        subagents_authored_count: number;
+        slash_commands_authored_count: number;
+        claudemd_line_delta: number;
+      }>(
+        // Trailing 30d artifact-authoring signal per member.
+        `SELECT membership_id,
+                COALESCE(SUM(jsonb_array_length(skills_authored)), 0)::int AS skills_authored_count,
+                COALESCE(SUM(jsonb_array_length(subagents_authored)), 0)::int AS subagents_authored_count,
+                COALESCE(SUM(jsonb_array_length(slash_commands_authored)), 0)::int AS slash_commands_authored_count,
+                COALESCE(SUM(claudemd_line_delta), 0)::int AS claudemd_line_delta
+         FROM day_artifact_signals
+         WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
+           AND day >= ($3::date - INTERVAL '30 days')::date
+           AND day < $4::date
+         GROUP BY membership_id`,
+        [teamId, memberIds, weekMonday, weekEndExclusive(weekMonday)],
+      );
+
+  // Cross-member adoption: count entries in team_skill_catalog where this
+  // member is the originator AND at least one other member is in the adopter
+  // set. That's the L4-coaches path made concrete.
+  const coachesRes = memberIds.length === 0
+    ? { rows: [] as Array<{ membership_id: string; coached_count: number }> }
+    : await pool.query<{ membership_id: string; coached_count: number }>(
+        `SELECT originator_membership_id AS membership_id,
+                COUNT(*)::int AS coached_count
+         FROM team_skill_catalog
+         WHERE team_id = $1
+           AND originator_membership_id = ANY($2::uuid[])
+           AND cardinality(adopter_membership_ids) >= 1
+         GROUP BY originator_membership_id`,
+        [teamId, memberIds],
+      );
+
+  const artifactByMember = new Map<string, typeof artifactRes.rows[0]>();
+  for (const row of artifactRes.rows) artifactByMember.set(row.membership_id, row);
+  const coachesByMember = new Map<string, number>();
+  for (const row of coachesRes.rows) coachesByMember.set(row.membership_id, row.coached_count);
   //
   // Production design: a perception-layer LLM pass tags each session with
   // SessionActionTags, then synthesizes a member-level portrait monthly. For
@@ -745,7 +789,16 @@ export async function buildTeamInsightReport(
     const qualifying_paths: MaturityPath[] = [];
     const near_miss_paths: MaturityPath[] = [];
 
-    const hasAuthoredArtifacts = syntheticArtifactAuthorOf.has(row.id);
+    const artifactCounts = artifactByMember.get(row.id);
+    const skillsAuthored = artifactCounts?.skills_authored_count ?? 0;
+    const subagentsAuthored = artifactCounts?.subagents_authored_count ?? 0;
+    const slashCommandsAuthored = artifactCounts?.slash_commands_authored_count ?? 0;
+    const claudemdLineDelta = artifactCounts?.claudemd_line_delta ?? 0;
+    const authoredArtifactsTotal =
+      skillsAuthored + subagentsAuthored + slashCommandsAuthored + (claudemdLineDelta !== 0 ? 1 : 0);
+    const hasAuthoredArtifacts = authoredArtifactsTotal > 0;
+    const coachedAdoptionCount = coachesByMember.get(row.id) ?? 0;
+    const hasCoachedAdoption = coachedAdoptionCount > 0;
 
     let level: MaturityLevel;
     let qualitative_summary: string;
@@ -758,27 +811,78 @@ export async function buildTeamInsightReport(
         text: "No sessions observed in the trailing 30-day window",
         source_tag: "framing",
       });
-    } else if (hasAuthoredArtifacts) {
-      // L4 — qualifies via the "builds" path. Cross-member adoption (the
-      // "coaches" path) is not yet observable; surface that as a growth edge.
+    } else if (hasAuthoredArtifacts || hasCoachedAdoption) {
+      // L4 — qualifies via builds and/or coaches. Both backed by real reads
+      // from day_artifact_signals + team_skill_catalog. Each evidence line
+      // states the actual count observed.
       level = "L4";
+      const builderClauses: string[] = [];
+      if (skillsAuthored > 0) builderClauses.push(`${skillsAuthored} user-skill file${skillsAuthored === 1 ? "" : "s"} authored`);
+      if (subagentsAuthored > 0) builderClauses.push(`${subagentsAuthored} sub-agent definition${subagentsAuthored === 1 ? "" : "s"} authored`);
+      if (slashCommandsAuthored > 0) builderClauses.push(`${slashCommandsAuthored} slash command${slashCommandsAuthored === 1 ? "" : "s"} authored`);
+      if (claudemdLineDelta !== 0) builderClauses.push(`CLAUDE.md edits (${claudemdLineDelta} line${Math.abs(claudemdLineDelta) === 1 ? "" : "s"})`);
+      const buildersBlurb = builderClauses.length > 0 ? builderClauses.join(", ") : null;
+
       qualitative_summary =
-        `${member} is operating as a multiplier — extending the team's toolchain, not just consuming the agent. ` +
-        `This month's interactions show 2 new skill files committed and CLAUDE.md edits across ${projects} project${projects === 1 ? "" : "s"}. ` +
-        `Sessions read like someone shaping how the team uses the agent, with sustained presence across ${activeDays} active days this week and ` +
-        `${sessionsCurr} sessions spanning code generation, debugging, and planning framings.`;
-      qualifying_paths.push("L4-builds", "L3-multi-workflow", "L3-daily-active");
+        hasAuthoredArtifacts && hasCoachedAdoption
+          ? `${member} is operating as a multiplier on both axes — building shared toolchain (${buildersBlurb}) and ` +
+            `seeing those artifacts picked up by ${coachedAdoptionCount} other ${coachedAdoptionCount === 1 ? "member" : "members"}. ` +
+            `Sustained presence across ${activeDays} active days this week with ${sessionsCurr} sessions spanning multiple workflows.`
+          : hasAuthoredArtifacts
+            ? `${member} is operating as a multiplier — extending the team's toolchain (${buildersBlurb}). ` +
+              `Sessions read like someone shaping how the team uses the agent, with ${activeDays} active days this week ` +
+              `and ${sessionsCurr} sessions across ${projects} project${projects === 1 ? "" : "s"}.`
+            : `${member}'s authored work has spread — ${coachedAdoptionCount} other ${coachedAdoptionCount === 1 ? "member is" : "members are"} loading skills they originated. ` +
+              `Sustained presence with ${activeDays} active days this week.`;
+
+      if (hasAuthoredArtifacts) qualifying_paths.push("L4-builds");
+      if (hasCoachedAdoption) qualifying_paths.push("L4-coaches");
+      qualifying_paths.push("L3-multi-workflow", "L3-daily-active");
+
+      if (hasAuthoredArtifacts) {
+        if (skillsAuthored > 0) {
+          evidence.push({
+            kind: "decisive",
+            text: `Authored ${skillsAuthored} user-skill file${skillsAuthored === 1 ? "" : "s"} in trailing 30 days (file-system probe + first-seen path hashes)`,
+            count: skillsAuthored,
+            source_tag: "artifact_authored",
+          });
+        }
+        if (subagentsAuthored > 0) {
+          evidence.push({
+            kind: "decisive",
+            text: `Authored ${subagentsAuthored} sub-agent definition${subagentsAuthored === 1 ? "" : "s"}`,
+            count: subagentsAuthored,
+            source_tag: "artifact_authored",
+          });
+        }
+        if (claudemdLineDelta !== 0) {
+          evidence.push({
+            kind: "decisive",
+            text: `Edited CLAUDE.md (${claudemdLineDelta > 0 ? "+" : ""}${claudemdLineDelta} lines net) — project-specific agent guidance`,
+            count: Math.abs(claudemdLineDelta),
+            source_tag: "artifact_authored",
+          });
+        }
+        if (slashCommandsAuthored > 0) {
+          evidence.push({
+            kind: "decisive",
+            text: `Authored ${slashCommandsAuthored} slash command${slashCommandsAuthored === 1 ? "" : "s"}`,
+            count: slashCommandsAuthored,
+            source_tag: "artifact_authored",
+          });
+        }
+      }
+      if (hasCoachedAdoption) {
+        evidence.push({
+          kind: "decisive",
+          text: `Authored artifacts loaded by ${coachedAdoptionCount} other team member${coachedAdoptionCount === 1 ? "" : "s"} — cross-member adoption verified by skill catalog`,
+          count: coachedAdoptionCount,
+          source_tag: "artifact_authored",
+        });
+      }
+
       evidence.push(
-        {
-          kind: "decisive",
-          text: "Authored 2 user-skill files in the trailing 30 days (origin path hashes detected by file-system probe)",
-          source_tag: "artifact_authored",
-        },
-        {
-          kind: "decisive",
-          text: "Edited CLAUDE.md to add project-specific agent guidance (file-system probe + git history)",
-          source_tag: "artifact_authored",
-        },
         {
           kind: "supporting",
           text: `Sessions span ${projects} project${projects === 1 ? "" : "s"} with ${skills} distinct skills loaded — multi-workflow signature`,
@@ -797,15 +901,21 @@ export async function buildTeamInsightReport(
           source_tag: "ended_in_ship",
         },
       );
-      near_miss_paths.push("L4-coaches");
-      evidence.push({
-        kind: "near-miss",
-        text: "Cross-member adoption of authored skills not yet observed — needs team-skill-catalog reconciliation (Phase 3) before the 'coaches' path can be detected automatically",
-      });
-      style_observations.push(
-        "Tends toward terse directive prompts; structure carried by attached context rather than prose framing",
-        "Comfortable with long-autonomous turns (above team baseline)",
-      );
+
+      if (!hasCoachedAdoption) {
+        near_miss_paths.push("L4-coaches");
+        evidence.push({
+          kind: "near-miss",
+          text: "Authored artifacts not yet loaded by other team members — once a teammate loads one, the 'coaches' path will fire automatically",
+        });
+      }
+      if (!hasAuthoredArtifacts) {
+        near_miss_paths.push("L4-builds");
+        evidence.push({
+          kind: "near-miss",
+          text: "No direct artifact-authoring observed this month — qualification was via cross-member adoption alone",
+        });
+      }
     } else if (activeDays >= 4 && (projects >= 2 || skills >= 4)) {
       // L3 Integrated — multiple workflows + daily-active, but no artifact
       // authoring evidence yet. Differentiate qualifying paths by what's
@@ -862,11 +972,17 @@ export async function buildTeamInsightReport(
         },
       );
       near_miss_paths.push("L4-builds");
+      const probeStatus = artifactCounts === undefined
+        ? "File-system probe hasn't reported for this member yet — once daemon push lands, authorship would surface here"
+        : "File-system probe reported zero artifact-authoring events in the trailing 30 days — CLAUDE.md edits or new skill files would unlock the L4 builds path";
       evidence.push({
         kind: "near-miss",
-        text: "No artifact authoring (CLAUDE.md edits, skill files, or sub-agent definitions) observed this month — that's what would unlock the L4 builds path",
+        text: probeStatus,
         source_tag: "artifact_authored",
       });
+      if (coachedAdoptionCount === 0) {
+        near_miss_paths.push("L4-coaches");
+      }
       style_observations.push(
         "Mix of structured briefs and terse follow-ups — adapts framing to the task",
       );

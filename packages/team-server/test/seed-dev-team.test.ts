@@ -169,6 +169,39 @@ describe("seed-dev-team", () => {
       }
     }
 
+    // Artifact-authoring signals: Charlie authors 2 skills, edits CLAUDE.md.
+    // Bob adopts one of Charlie's skills. Together this proves both the
+    // L4-builds and L4-coaches paths against real (non-synthetic) signals.
+    const charlieSkillA = "skillhash-charlie-a" + "0".repeat(13);
+    const charlieSkillB = "skillhash-charlie-b" + "0".repeat(13);
+    const today = thisWeek;
+    await pool.query(
+      `INSERT INTO day_artifact_signals (
+         team_id, membership_id, day,
+         skills_authored, skills_edited, subagents_authored,
+         slash_commands_authored, claudemd_line_delta
+       ) VALUES ($1, $2, $3::date, $4::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb, $5)`,
+      [
+        teamId, members[0].id, today,
+        JSON.stringify([
+          { pathHash: charlieSkillA, firstSeenDate: today },
+          { pathHash: charlieSkillB, firstSeenDate: today },
+        ]),
+        24,
+      ],
+    );
+    // Catalog: Charlie is originator of both skills.
+    await pool.query(
+      `INSERT INTO team_skill_catalog (
+         team_id, path_hash, kind,
+         originator_membership_id, originator_first_seen,
+         adopter_membership_ids, loads_total
+       ) VALUES
+         ($1, $2, 'skill', $3, $4::date, ARRAY[$5::uuid], 3),
+         ($1, $6, 'skill', $3, $4::date, ARRAY[]::uuid[], 1)`,
+      [teamId, charlieSkillA, members[0].id, today, members[2].id /* Bob is adopter */, charlieSkillB],
+    );
+
     const { cookieToken } = await createSession(admin.id, pool);
 
     console.log(`Seeded ${rowCount} rollup rows.`);
