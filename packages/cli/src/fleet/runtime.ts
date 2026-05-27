@@ -59,17 +59,16 @@ export type RuntimeStats = {
 };
 
 /**
- * Per-session payload shared over the wire. A subset of SessionMeta —
- * fields that contain conversation content (firstUserPreview /
- * lastUserPreview / lastAgentPreview) are stripped. filePath is also
- * stripped because the receiver's filesystem doesn't have it. The result
- * is enough for /sessions list rendering and analytics rollups but
- * doesn't expose transcript content.
+ * Per-session payload shared over the wire. A near-full SessionMeta —
+ * we strip `filePath` because the source machine's local path is
+ * meaningless on the receiver, but keep the preview fields
+ * (firstUserPreview / lastUserPreview / lastAgentPreview) so list cards
+ * render the same way for remote sessions as local ones. Since
+ * getSessionDetail already streams the full transcript on demand,
+ * stripping a one-line preview was inconsistent — visible blank cards
+ * with viewable detail inside.
  */
-export type WireSessionMeta = Omit<
-  SessionMeta,
-  "filePath" | "firstUserPreview" | "lastUserPreview" | "lastAgentPreview"
->;
+export type WireSessionMeta = Omit<SessionMeta, "filePath">;
 
 export type RuntimeInfo = {
   /** Wire-format version so we can evolve the payload without bricking peers. */
@@ -163,24 +162,15 @@ function buildWireSessions(
   sessions: SessionMeta[],
   cap: number,
 ): WireSessionMeta[] {
-  // Most-recent first; trims to cap before stripping preview fields so
-  // the cost is proportional to cap, not the full session list.
+  // Most-recent first; trims to cap before stripping the source-only
+  // field so the cost stays proportional to cap.
   return sessions
     .slice()
     .sort((a, b) => sessionEndMs(b) - sessionEndMs(a))
     .slice(0, cap)
     .map((s) => {
-      const {
-        filePath: _filePath,
-        firstUserPreview: _fup,
-        lastUserPreview: _lup,
-        lastAgentPreview: _lap,
-        ...rest
-      } = s;
+      const { filePath: _filePath, ...rest } = s;
       void _filePath;
-      void _fup;
-      void _lup;
-      void _lap;
       return rest;
     });
 }
