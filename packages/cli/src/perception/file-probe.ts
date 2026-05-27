@@ -176,15 +176,15 @@ function scanEdited(
 }
 
 /** Compute the net line delta to CLAUDE.md authored by this member on `day`.
- *  Uses `git log --numstat` filtered by author email; returns 0 outside a
- *  git repo or when the file doesn't exist.
+ *  Uses `git log --numstat` and filters in JS rather than via `--author=` and
+ *  `--since=` — both of those are surprisingly brittle (--author does
+ *  substring match against the full identity; --since uses the runner's TZ).
+ *  We embed `%cs %ae` in the format and do all filtering in JS.
  *
- *  Date filtering happens in JS by parsing the committer's short-date
- *  (`%cs` → YYYY-MM-DD in commit's own timezone) rather than passing
- *  `--since`/`--until` to git — that path is timezone-sensitive and breaks
- *  on CI runners where the runner's TZ differs from the commit's. */
+ *  When `authorEmail` is null, we accept all commits to CLAUDE.md in the
+ *  given day — appropriate for the personal probe where the only person
+ *  committing on this machine is the member. */
 function claudemdLineDelta(extraRoots: string[], authorEmail: string | undefined, day: string): number {
-  if (!authorEmail) return 0;
   let delta = 0;
   const candidates: string[] = [];
   for (const e of extraRoots) {
@@ -197,14 +197,18 @@ function claudemdLineDelta(extraRoots: string[], authorEmail: string | undefined
     try {
       const out = execFileSync(
         "git",
-        ["log", `--author=${authorEmail}`, "--numstat", "--format=COMMIT %cs", "--", file],
+        ["log", "--numstat", "--format=COMMIT %cs %ae", "--", file],
         { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], cwd: dirname(file) },
       );
       let currentDate = "";
+      let currentEmail = "";
       for (const line of out.split("\n")) {
         if (line.startsWith("COMMIT ")) {
-          currentDate = line.slice("COMMIT ".length).trim();
+          const parts = line.slice("COMMIT ".length).trim().split(/\s+/);
+          currentDate = parts[0] ?? "";
+          currentEmail = parts.slice(1).join(" ");
         } else if (currentDate === day && line.trim().length > 0) {
+          if (authorEmail && currentEmail !== authorEmail) continue;
           const parts = line.split(/\s+/);
           const added = Number(parts[0]);
           const removed = Number(parts[1]);
