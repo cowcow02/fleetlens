@@ -31,6 +31,7 @@ import {
   FLUENCY_AXIS_BY_ID,
   PILLAR_LABEL,
 } from "@claude-lens/entries/fluency";
+import { buildEvidenceHash } from "@/lib/evidence-link";
 
 const PILLAR_ORDER: FluencyPillar[] = ["delegation", "description", "discernment"];
 
@@ -393,10 +394,13 @@ export function PillarScoreCard({
 /* ------------------------------------------------------------------ */
 
 export function FluencyHeroV2({ card }: { card: FluencyScorecard }) {
-  const weekStart = new Date(`${card.week_monday}T00:00:00`);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  const dateLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${weekEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  // `card.week_monday` carries the windowEnd date for the 30-day scorecard
+  // (the only caller). Compute a 30-day-ago start so the kicker reads
+  // "Apr 28 – May 27, 2026".
+  const windowEnd = new Date(`${card.week_monday}T00:00:00`);
+  const windowStart = new Date(windowEnd);
+  windowStart.setDate(windowEnd.getDate() - 29);
+  const dateLabel = `${windowStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${windowEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
   const counts = tierCounts(card.observations);
   const surfaceLine = surfaceMixLabel(card.surface_mix);
 
@@ -665,7 +669,7 @@ function AxisRowV2({
                 fontFamily: "var(--font-mono)",
               }}
             >
-              {highlight === "strength" ? "This week's strength" : "Grow here next"}
+              {highlight === "strength" ? "Strength of the last 30 days" : "Grow here next"}
             </span>
           )}
         </div>
@@ -689,7 +693,7 @@ function AxisRowV2({
               borderLeft: "2px dashed var(--af-border-subtle)",
             }}
           >
-            No evidence found in this week&apos;s transcripts.
+            No evidence found in the last 30 days of transcripts.
           </div>
         ) : null}
       </div>
@@ -795,10 +799,15 @@ function EvidenceQuoteV2({ ev }: { ev: FluencyEvidence }) {
     );
   }
 
-  // Verbatim quote — italic, leftrule, quote marks. Wrapped in a deep
-  // link to the exact user turn if the observer captured a turn_index.
-  const turnHash = ev.turn_index !== undefined ? `#turn-${ev.turn_index}` : "";
-  const href = `/sessions/${ev.session_id}${turnHash}`;
+  // Verbatim quote — italic, leftrule, quote marks. Deep link wraps the
+  // first ~80 chars of the quote into the hash so the session view can do a
+  // substring match against visibleEvents. This is more reliable than the
+  // observer's turn_index, which counts within Entry fields (first_user +
+  // user_instructions) rather than within the session's full user-turn
+  // stream — those numbers diverge whenever the entry isn't day-1 of the
+  // session. turn_index, when present, is included as a hint fallback.
+  const hash = buildEvidenceHash(ev.quote, ev.turn_index);
+  const href = `/sessions/${ev.session_id}${hash}`;
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <a
       href={href}

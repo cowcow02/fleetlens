@@ -45,7 +45,17 @@ export type SubagentAxisRow = {
   pillar: "Delegation" | "Description" | "Discernment";
   rating: SubagentRating;
   commentary: string;
-  evidence: Array<{ quote: string; session_id_short: string; date: string; surface: "cc" | "chat" | "cowork" }>;
+  evidence: Array<{
+    quote: string;
+    session_id_short: string;
+    /** Full session UUID, resolved at parse time when the entry corpus is
+     *  available. Older cached scorecards predating this field will omit
+     *  it; consumers should treat it as optional and fall back to plain
+     *  text when absent. */
+    session_id?: string;
+    date: string;
+    surface: "cc" | "chat" | "cowork";
+  }>;
 };
 
 export type SubagentScorecard = {
@@ -300,6 +310,10 @@ export function parseSubagentScorecardOutput(
     corpus_user_turns: number;
     corpus_sessions: number;
     llm: { model: string | null; cost_usd: number | null } | null;
+    /** Map from 8-char session-id prefix → full session UUID. Built from
+     *  the corpus entries by the pipeline and used to attach full ids to
+     *  each evidence quote so the report can link to the transcript. */
+    shortIdMap?: Map<string, string>;
   },
 ): SubagentScorecard | null {
   const summary = pickBlock(text, "###SUMMARY###", "###SCORECARD###");
@@ -338,7 +352,14 @@ export function parseSubagentScorecardOutput(
     if (qMatch && pending) {
       const [, quote, sid, date] = qMatch;
       if (pending.evidence.length < 2) {
-        pending.evidence.push({ quote, session_id_short: sid, date, surface: "cc" });
+        const fullId = meta.shortIdMap?.get(sid);
+        pending.evidence.push({
+          quote,
+          session_id_short: sid,
+          ...(fullId ? { session_id: fullId } : {}),
+          date,
+          surface: "cc",
+        });
       }
       continue;
     }

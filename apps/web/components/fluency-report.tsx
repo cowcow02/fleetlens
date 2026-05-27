@@ -16,6 +16,7 @@ import {
   PILLAR_BLURB,
   PILLAR_LABEL,
 } from "@claude-lens/entries/fluency";
+import { buildEvidenceHash } from "@/lib/evidence-link";
 
 const PILLAR_ORDER: FluencyPillar[] = ["delegation", "description", "discernment"];
 
@@ -58,17 +59,20 @@ function fmtScore(num: number, denom: number): string {
 /* ------------------------------------------------------------------ */
 
 export function FluencyHeadline({ card }: { card: FluencyScorecard }) {
-  const weekStart = new Date(`${card.week_monday}T00:00:00`);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  const dateLabel = `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${weekEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  // `card.week_monday` carries the windowEnd date for the 30-day scorecard
+  // (the only caller). Compute a 30-day-ago start so the kicker reads
+  // "Apr 28 – May 27, 2026".
+  const windowEnd = new Date(`${card.week_monday}T00:00:00`);
+  const windowStart = new Date(windowEnd);
+  windowStart.setDate(windowEnd.getDate() - 29);
+  const dateLabel = `${windowStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${windowEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 
   const delta = card.score_prev
     ? card.score.numerator - card.score_prev.numerator
     : 0;
   const deltaLabel = card.score_prev
-    ? `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} vs last week`
-    : "first scored week";
+    ? `${delta >= 0 ? "+" : ""}${delta.toFixed(1)} vs prior 30 days`
+    : "first 30-day window";
 
   return (
     <header className="flu-headline">
@@ -92,7 +96,7 @@ export function FluencyHeadline({ card }: { card: FluencyScorecard }) {
             lineHeight: 1.15,
           }}
         >
-          How you&apos;re collaborating with your agents this week, {card.member_name.split(" ")[0]}.
+          How you&apos;re collaborating with your agents over the last 30 days, {card.member_name.split(" ")[0]}.
         </h1>
         <p
           className="flu-headline-summary"
@@ -168,7 +172,7 @@ export function FluencySurfaceMix({
           marginBottom: 10,
         }}
       >
-        {label ?? "Surfaces this week"}
+        {label ?? "Surfaces in the last 30 days"}
       </div>
       <div
         style={{
@@ -325,7 +329,7 @@ function ObservationCard({
             fontWeight: 600,
           }}
         >
-          {highlight === "strength" ? "This week’s strength" : "Grow here next"}
+          {highlight === "strength" ? "Strength of the last 30 days" : "Grow here next"}
         </div>
       )}
       {evidence && (
@@ -341,7 +345,7 @@ function ObservationCard({
             borderTop: "1px dashed var(--af-border-subtle)",
           }}
         >
-          No evidence found in this week&apos;s transcripts. Try one of the moves in this axis next week and the report will surface it.
+          No evidence found in the last 30 days of transcripts. Try one of the moves in this axis on your next session and the report will surface it.
         </div>
       )}
       <SourceBreakdown by={obs.by_source} />
@@ -350,7 +354,7 @@ function ObservationCard({
 }
 
 function EvidenceQuote({ ev }: { ev: FluencyEvidence }) {
-  return (
+  const body = (
     <blockquote
       style={{
         margin: 0,
@@ -376,6 +380,20 @@ function EvidenceQuote({ ev }: { ev: FluencyEvidence }) {
         {ev.project ? ` · ${ev.project}` : ""}
       </div>
     </blockquote>
+  );
+  // Derived signals are observer commentary, not real user turns — leave
+  // them unlinked rather than pretending a turn-anchored link exists.
+  if (ev.kind === "derived") return body;
+  const hash = buildEvidenceHash(ev.quote, ev.turn_index);
+  return (
+    <a
+      href={`/sessions/${ev.session_id}${hash}`}
+      className="flu-evidence-link"
+      style={{ textDecoration: "none", color: "inherit", display: "block" }}
+      title="Open the source session and scroll to this turn"
+    >
+      {body}
+    </a>
   );
 }
 
@@ -656,13 +674,13 @@ export function GrowthCallout({ card }: { card: FluencyScorecard }) {
         tone="success"
         kicker="Strength to keep"
         axis={strength}
-        body={`You consistently demonstrated ${strength.title.toLowerCase()} across the week. Anchor the rest of your team to this — name it in CLAUDE.md, share it in #eng-claude.`}
+        body={`You consistently demonstrated ${strength.title.toLowerCase()} across the last 30 days. Anchor the rest of your team to this — name it in CLAUDE.md, share it in #eng-claude.`}
       />
       <Callout
         tone="warning"
-        kicker="Lever for next week"
+        kicker="Lever for next 30 days"
         axis={growth}
-        body={`${growth.observable} Pick one session this coming week and add this step deliberately — the report will pick it up automatically.`}
+        body={`${growth.observable} Pick one session in the next few days and add this step deliberately — the report will pick it up automatically.`}
       />
     </section>
   );

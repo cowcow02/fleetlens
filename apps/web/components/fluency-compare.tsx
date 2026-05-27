@@ -9,6 +9,7 @@
 
 import { Fluency } from "@claude-lens/entries";
 import { SubagentLaneClient } from "./subagent-lane-client";
+import { buildEvidenceHash } from "@/lib/evidence-link";
 type FluencyScorecard = Fluency.FluencyScorecard;
 type AnthropicScorecard = Fluency.AnthropicScorecard;
 type SubagentScorecard = Fluency.SubagentScorecard;
@@ -118,7 +119,7 @@ export function FluencyCompare({
       >
         <ScoreCard
           title="Fleetlens"
-          subtitle="3 / 4 / 4 · regex · weekly"
+          subtitle="3 / 4 / 4 · regex · 30-day"
           score={fleetlens.score.numerator}
           max={11}
           summary={fleetlens.summary}
@@ -126,7 +127,14 @@ export function FluencyCompare({
             id: o.axis,
             title: FLUENCY_AXIS_BY_ID[o.axis].title,
             rating: o.rating,
-            evidence: o.evidence[0]?.quote ?? null,
+            evidence: o.evidence[0]
+              ? {
+                  quote: o.evidence[0].quote,
+                  session_id: o.evidence[0].session_id,
+                  turn_index: o.evidence[0].turn_index,
+                  kind: o.evidence[0].kind,
+                }
+              : null,
           }))}
         />
         <ScoreCard
@@ -141,7 +149,12 @@ export function FluencyCompare({
                   id: o.axis,
                   title: ANTHROPIC_AXIS_BY_ID[o.axis].title,
                   rating: o.rating,
-                  evidence: o.evidence[0]?.quote ?? null,
+                  evidence: o.evidence[0]
+                    ? {
+                        quote: o.evidence[0].quote,
+                        session_id: o.evidence[0].session_id,
+                      }
+                    : null,
                 }))
               : []
           }
@@ -212,7 +225,20 @@ function ScoreCard({
   score: number;
   max: number;
   summary: string | null;
-  rows: Array<{ id: string; title: string; rating: FluencyRating; evidence: string | null }>;
+  rows: Array<{
+    id: string;
+    title: string;
+    rating: FluencyRating;
+    evidence: {
+      quote: string;
+      session_id: string | null;
+      /** Optional 0-based turn index; produces `#turn-N` deep link. */
+      turn_index?: number;
+      /** Verbatim quotes link to the source; derived signals don't (no
+       *  honest turn to land on). */
+      kind?: "verbatim" | "derived";
+    } | null;
+  }>;
   footer?: string | null;
 }) {
   return (
@@ -286,19 +312,38 @@ function ScoreCard({
                 <span style={{ fontFamily: "var(--font-mono)", color: "var(--af-text-tertiary)", marginRight: 6, fontSize: 11 }}>{r.id}</span>
                 {r.title}
               </div>
-              {r.evidence && (
-                <div
-                  style={{
-                    marginTop: 3,
-                    fontSize: 11.5,
-                    color: "var(--af-text-secondary)",
-                    lineHeight: 1.5,
-                    fontStyle: "italic",
-                  }}
-                >
-                  &ldquo;{r.evidence.length > 110 ? r.evidence.slice(0, 109) + "…" : r.evidence}&rdquo;
-                </div>
-              )}
+              {r.evidence && (() => {
+                const ev = r.evidence;
+                const text = ev.quote.length > 110 ? ev.quote.slice(0, 109) + "…" : ev.quote;
+                const body = (
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontSize: 11.5,
+                      color: "var(--af-text-secondary)",
+                      lineHeight: 1.5,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    &ldquo;{text}&rdquo;
+                  </div>
+                );
+                // Derived signals are observer-generated commentary, not real
+                // user turns — leave them unlinked so we don't pretend a
+                // turn-anchored deep link exists.
+                const linkable = ev.session_id && ev.kind !== "derived";
+                if (!linkable) return body;
+                const hash = buildEvidenceHash(ev.quote, ev.turn_index);
+                return (
+                  <a
+                    href={`/sessions/${ev.session_id}${hash}`}
+                    className="flu-evidence-link"
+                    style={{ textDecoration: "none", color: "inherit", display: "block" }}
+                  >
+                    {body}
+                  </a>
+                );
+              })()}
             </div>
           </div>
         ))}

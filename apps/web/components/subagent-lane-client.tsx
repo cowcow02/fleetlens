@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Fluency } from "@claude-lens/entries";
+import { buildEvidenceHash } from "@/lib/evidence-link";
 
 type Scorecard = Fluency.SubagentScorecard;
 type Phase = "idle" | "loading-cache" | "needs-run" | "running" | "ready" | "error";
@@ -360,19 +361,34 @@ function ScorecardColumn({ scorecard, onRefresh }: { scorecard: Scorecard; onRef
                 </span>
                 {a.title}
               </div>
-              {a.evidence[0] && (
-                <div
-                  style={{
-                    marginTop: 3,
-                    fontSize: 11.5,
-                    color: "var(--af-text-secondary)",
-                    lineHeight: 1.5,
-                    fontStyle: "italic",
-                  }}
-                >
-                  &ldquo;{a.evidence[0].quote.length > 110 ? a.evidence[0].quote.slice(0, 109) + "…" : a.evidence[0].quote}&rdquo;
-                </div>
-              )}
+              {a.evidence[0] && (() => {
+                const ev = a.evidence[0];
+                const text = ev.quote.length > 110 ? ev.quote.slice(0, 109) + "…" : ev.quote;
+                const body = (
+                  <div
+                    style={{
+                      marginTop: 3,
+                      fontSize: 11.5,
+                      color: "var(--af-text-secondary)",
+                      lineHeight: 1.5,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    &ldquo;{text}&rdquo;
+                  </div>
+                );
+                return ev.session_id ? (
+                  <a
+                    href={`/sessions/${ev.session_id}${buildEvidenceHash(ev.quote)}`}
+                    className="flu-evidence-link"
+                    style={{ textDecoration: "none", color: "inherit", display: "block" }}
+                  >
+                    {body}
+                  </a>
+                ) : (
+                  body
+                );
+              })()}
             </div>
           </div>
         ))}

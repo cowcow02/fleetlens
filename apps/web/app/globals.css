@@ -289,6 +289,24 @@ input::placeholder {
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
+/* Evidence quote → session link. Wrapping a blockquote / italic div in
+ * <Link> so the whole row is clickable. Subtle background shift + accent
+ * left-edge on hover makes the affordance discoverable without screaming. */
+.flu-evidence-link {
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+.flu-evidence-link:hover {
+  background: var(--af-accent-subtle);
+}
+.flu-evidence-link:hover blockquote {
+  border-left-color: var(--af-accent-hover);
+}
+.flu-evidence-link:focus-visible {
+  outline: 2px solid var(--af-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
 
 @media (max-width: 720px) {
   .flu-page {

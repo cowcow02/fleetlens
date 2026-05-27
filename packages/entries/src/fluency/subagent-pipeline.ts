@@ -96,6 +96,15 @@ export async function* runSubagentScorecardPipeline(
   // Phase 3 — parse the marker-delimited output
   yield { type: "status", phase: "parse", text: "Parsing scorecard sections + evidence quotes…" };
   const cost = estimateCost(res.model, res.input_tokens, res.output_tokens);
+  // Build prefix → full-id map so each LLM-cited quote can link to its
+  // session page. First occurrence wins on prefix collision — at 8 hex
+  // chars across <1k sessions the collision probability is negligible.
+  const shortIdMap = new Map<string, string>();
+  for (const e of opts.entries) {
+    const short = e.session_id.slice(0, 8);
+    if (!shortIdMap.has(short)) shortIdMap.set(short, e.session_id);
+  }
+
   const parsed = parseSubagentScorecardOutput(res.content, {
     member_id: opts.member.id,
     member_name: opts.member.name,
@@ -103,6 +112,7 @@ export async function* runSubagentScorecardPipeline(
     corpus_user_turns: corpus.user_turns,
     corpus_sessions: corpus.sessions,
     llm: { model: res.model, cost_usd: cost },
+    shortIdMap,
   });
   if (!parsed) {
     yield {

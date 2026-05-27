@@ -52,6 +52,24 @@ export function buildScorecardForWeek(
   });
 }
 
+/** 30-day variant of buildScorecardForWeek. `week_monday` on the returned
+ *  card carries the windowEnd date so the headline can compute a 30-day
+ *  range ending on that date. */
+export function buildScorecard30d(
+  member: { id: string; name: string; email?: string },
+): Fluency.FluencyScorecard | null {
+  const { entries, windowEnd } = listEntriesLast30Days();
+  if (entries.length === 0) return null;
+  return Fluency.buildFluencyScorecard({
+    member_id: member.id,
+    member_name: member.name,
+    member_email: member.email,
+    week_monday: windowEnd,
+    windowLabel: "30-day",
+    entries,
+  });
+}
+
 /* ------------------------------------------------------------------ */
 /*  30-day window helpers + Anthropic-variant builder                  */
 /* ------------------------------------------------------------------ */

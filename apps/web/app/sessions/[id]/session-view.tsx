@@ -134,27 +134,43 @@ export function SessionView({
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
-  // Deep-link target: /sessions/<id>#turn-N — scroll to the Nth user event
-  // (0 = first user message, 1 = second, etc.). Set by the fluency report's
-  // verbatim evidence quotes so the reader can jump straight to the source.
-  const turnSeekRef = useRef<number | null>(null);
+  // Deep-link target from the fluency report:
+  //   /sessions/<id>#q=<urlencoded-quote-prefix>   — preferred. Quote-based
+  //     substring match against visibleEvents (deterministic, immune to the
+  //     observer's "turn within entry" vs "turn within session" mismatch).
+  //   /sessions/<id>#turn-N                         — legacy / fallback. Used
+  //     when the URL has no quote (or as the hint half of #turn-N&q=…). Maps
+  //     to the Nth user event in visibleEvents.
+  // We always parse both; if a quote substring matches a user event, that
+  // wins. Otherwise the turn index is used. If neither resolves, we no-op.
+  const turnSeekRef = useRef<{ turn: number | null; quote: string | null } | null>(null);
   useEffect(() => {
-    const parseTurnHash = (): number | null => {
-      const h = window.location.hash.replace("#", "");
-      const m = h.match(/^turn-(\d+)$/);
-      return m ? parseInt(m[1], 10) : null;
+    const parseHash = (): { turn: number | null; quote: string | null } | null => {
+      const h = window.location.hash.replace(/^#/, "");
+      if (!h) return null;
+      let turn: number | null = null;
+      let quote: string | null = null;
+      for (const part of h.split("&")) {
+        const m = part.match(/^turn-(\d+)$/);
+        if (m) { turn = parseInt(m[1], 10); continue; }
+        const qm = part.match(/^q=(.+)$/);
+        if (qm) {
+          try { quote = decodeURIComponent(qm[1]); } catch { quote = null; }
+        }
+      }
+      return (turn !== null || quote !== null) ? { turn, quote } : null;
     };
-    const initial = parseTurnHash();
-    if (initial !== null) {
+    const initial = parseHash();
+    if (initial) {
       // Force the transcript tab so the row exists in the DOM.
       setTabRaw("transcript");
       turnSeekRef.current = initial;
     }
     const onHash = () => {
-      const n = parseTurnHash();
-      if (n !== null) {
+      const next = parseHash();
+      if (next) {
         setTabRaw("transcript");
-        turnSeekRef.current = n;
+        turnSeekRef.current = next;
         // Re-trigger the scroll effect by writing a state hook below.
         setScrollTick((x) => x + 1);
       }
@@ -312,23 +328,53 @@ export function SessionView({
     [events, teammateCount],
   );
 
-  // Resolve any pending #turn-N hash to a concrete event index + scroll
-  // there. Runs after visibleEvents are available AND on every scrollTick
-  // bump from the hashchange listener.
+  // Resolve any pending deep-link hash (quote-substring or turn-N) to a
+  // concrete event index + scroll there. Runs after visibleEvents are
+  // available AND on every scrollTick bump from the hashchange listener.
+  //
+  // Quote match strategy: normalize whitespace, lowercase, then look for the
+  // first user event whose text contains the quote prefix. Whitespace
+  // normalization handles the parser's image/code-block compaction in
+  // entry.first_user (which may differ from the raw transcript text).
   useEffect(() => {
-    const n = turnSeekRef.current;
-    if (n === null) return;
+    const seek = turnSeekRef.current;
+    if (!seek) return;
     if (tab !== "transcript") return;
     const userEvents = visibleEvents.filter((e) => e.role === "user");
-    const target = userEvents[n];
+
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+    const eventText = (e: typeof userEvents[number]): string => {
+      let out = "";
+      for (const b of e.blocks) {
+        if (b.type === "text") out += " " + b.text;
+        else if (b.type === "tool_result") {
+          const c = (b as { content?: unknown }).content;
+          if (typeof c === "string") out += " " + c;
+        }
+      }
+      return out;
+    };
+
+    let target: typeof userEvents[number] | undefined;
+    if (seek.quote) {
+      const needle = norm(seek.quote);
+      if (needle.length >= 8) {
+        for (const e of userEvents) {
+          if (norm(eventText(e)).includes(needle)) { target = e; break; }
+        }
+      }
+    }
+    if (!target && seek.turn !== null) target = userEvents[seek.turn];
+
     if (!target) {
       turnSeekRef.current = null;
       return;
     }
+    const targetIndex = target.index;
     // Wait two frames so the row mounts + rowRefs populates.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const el = rowRefs.current[target.index];
+        const el = rowRefs.current[targetIndex];
         if (el) {
           el.scrollIntoView({ block: "start", behavior: "auto" });
           // Brief visual ping so the reader knows where they landed.

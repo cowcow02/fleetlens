@@ -40,14 +40,19 @@ export function isoMondayOf(d: Date): string {
   return `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
 }
 
-/** Build a personal fluency scorecard for one ISO-week from N entries. */
+/** Build a personal fluency scorecard for one ISO-week (or a 30-day window)
+ *  from N entries. The data window is whatever the caller passes in via
+ *  `entries`; `windowLabel` only adjusts the prose ("this week" vs
+ *  "the last 30 days"). */
 export function buildFluencyScorecard(input: {
   member_id: string;
   member_name: string;
   member_email?: string;
   week_monday: string;
   entries: Entry[];
-  /** Optional last-week scorecard for the +/- delta line. */
+  /** Prose framing for the summary. Defaults to "week". */
+  windowLabel?: "week" | "30-day";
+  /** Optional last-window scorecard for the +/- delta line. */
   prev?: FluencyScorecard | null;
 }): FluencyScorecard {
   const entryObs = input.entries.map(observeEntry);
@@ -79,6 +84,7 @@ export function buildFluencyScorecard(input: {
     risk_triangle,
     surface_mix,
     prev: input.prev,
+    windowLabel: input.windowLabel ?? "week",
   });
 
   return {
@@ -175,6 +181,7 @@ function buildSummary(input: {
   risk_triangle: RiskTrianglePosition;
   surface_mix: Record<AgentSourceKey, number>;
   prev?: FluencyScorecard | null;
+  windowLabel: "week" | "30-day";
 }): string {
   const firstName = input.name.split(" ")[0];
   const wins = input.observations.filter((o) => o.rating === "+");
@@ -184,7 +191,12 @@ function buildSummary(input: {
     .map((o) => FLUENCY_AXIS_BY_ID[o.axis].title.toLowerCase())
     .join(", ");
   const gap = gaps[0] ? FLUENCY_AXIS_BY_ID[gaps[0].axis].title.toLowerCase() : "verify at boundary";
-  const sourceLine = describeSurfaceMix(input.surface_mix);
+  const sourceLine = describeSurfaceMix(input.surface_mix, input.windowLabel);
+  const windowPhrase = input.windowLabel === "30-day" ? "the last 30 days" : "this week";
+  const nextPhrase = input.windowLabel === "30-day" ? "moving forward" : "next week";
+  const balancedClose = input.windowLabel === "30-day"
+    ? "Your three failure modes balanced across the last 30 days."
+    : "Your three failure modes balanced this week.";
   const riskLine =
     input.risk_triangle.dominant_corner === "polish_without_check"
       ? "Your largest risk corner is polish-without-check — polished outputs went un-verified more than they should."
@@ -192,15 +204,22 @@ function buildSummary(input: {
         ? "Your largest risk corner is iterate-without-verify — refined into a comfortable answer, never tested."
         : input.risk_triangle.dominant_corner === "verify_without_iterate"
           ? "Your largest risk corner is verify-without-iterate — checked, then shipped first draft anyway."
-          : "Your three failure modes balanced this week.";
-  return `${firstName}, this week you demonstrated ${winList || "early signs across most axes"}. ${sourceLine} ${riskLine} The single highest-leverage move next week is to deliberately add a ${gap} step on one session — the report will pick it up automatically.`;
+          : balancedClose;
+  return `${firstName}, over ${windowPhrase} you demonstrated ${winList || "early signs across most axes"}. ${sourceLine} ${riskLine} The single highest-leverage move ${nextPhrase} is to deliberately add a ${gap} step on one session — the report will pick it up automatically.`;
 }
 
-function describeSurfaceMix(mix: Record<AgentSourceKey, number>): string {
+function describeSurfaceMix(
+  mix: Record<AgentSourceKey, number>,
+  windowLabel: "week" | "30-day",
+): string {
   const ranked = (Object.entries(mix) as Array<[AgentSourceKey, number]>)
     .filter(([, v]) => v > 0)
     .sort((a, b) => b[1] - a[1]);
-  if (ranked.length === 0) return "No active surfaces this week.";
+  if (ranked.length === 0) {
+    return windowLabel === "30-day"
+      ? "No active surfaces in the last 30 days."
+      : "No active surfaces this week.";
+  }
   if (ranked.length === 1) {
     return `${AGENT_SOURCE_LABEL[ranked[0][0]]} carried 100% of your agent time.`;
   }

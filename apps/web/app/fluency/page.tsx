@@ -9,8 +9,7 @@ import {
   FluencyHeroV2,
 } from "@/components/fluency-report-v2";
 import { FluencyTabs } from "@/components/fluency-tabs";
-import { buildScorecardForWeek } from "@/lib/fluency-data";
-import { currentWeekMonday } from "@/lib/entries";
+import { buildScorecard30d } from "@/lib/fluency-data";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,17 +17,14 @@ export const runtime = "nodejs";
 /**
  * Personal AI Fluency Report.
  *
- * Reads the current ISO-week's entries from ~/.cclens/entries and builds
- * a deterministic 11-axis scorecard via the @claude-lens/entries/fluency
- * observer. Falls back to the realistic mock when no entries exist (fresh
- * install / never-ran-daemon path) so the page is never empty.
+ * Reads the last 30 days of Entry artefacts from ~/.cclens/entries and
+ * builds a deterministic 11-axis scorecard via the
+ * @claude-lens/entries/fluency observer. Falls back to the realistic mock
+ * when no entries exist (fresh install / never-ran-daemon path) so the
+ * page is never empty.
  */
 export default async function FluencyPage() {
-  const monday = currentWeekMonday();
-  const real = buildScorecardForWeek(monday, {
-    id: "local",
-    name: "you",
-  });
+  const real = buildScorecard30d({ id: "local", name: "you" });
   const card = real ?? Fluency.PERSONAL_SCORECARD_CHARLIE;
   const isMock = real === null;
   return (
@@ -57,8 +53,8 @@ function DemoBanner() {
         color: "var(--af-text)",
       }}
     >
-      <strong>Showing the prototype mock data.</strong> No Entry artefacts exist for the current
-      ISO week yet — once the daemon&apos;s perception sweep has built Entries for your sessions,
+      <strong>Showing the prototype mock data.</strong> No Entry artefacts exist for the last
+      30 days yet — once the daemon&apos;s perception sweep has built Entries for your sessions,
       this page renders your real scorecard.
     </div>
   );

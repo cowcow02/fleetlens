@@ -51,6 +51,7 @@ export default async function FluencyComparePage({
     member_id: "local",
     member_name: "you",
     week_monday: windowEnd,
+    windowLabel: "30-day",
     entries,
   });
 
