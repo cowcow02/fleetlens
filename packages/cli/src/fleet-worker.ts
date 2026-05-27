@@ -28,12 +28,20 @@ import {
   writeConnections,
   writeIdentity,
   writePeers,
+  writeRuntimesSnapshot,
   type ConnectionRecord,
   type PeerRecord,
 } from "./fleet/storage.js";
 import { attachRpc, type RpcSession } from "./fleet/rpc.js";
 import { deriveTopic } from "./fleet/topic.js";
 import { shortDeviceId } from "./fleet/code.js";
+import {
+  computeLocalRuntimeInfo,
+  RUNTIME_INFO_PROTOCOL_VERSION,
+  type RuntimeInfo,
+} from "./fleet/runtime.js";
+
+declare const CLI_VERSION: string;
 
 // Hyperswarm + hyperdht are CommonJS native-backed packages. createRequire
 // lets us load them from the bundled ESM worker without going through
@@ -60,6 +68,13 @@ type HyperswarmInstance = {
 
 const CONNECTIONS_FLUSH_MS = 30_000;
 const PING_INTERVAL_MS = 30_000;
+// Pulls a fresh RuntimeInfo from every connected peer at this cadence.
+// 60s keeps the /runtimes page reasonably live without hammering peers
+// with full session scans every few seconds. Tweak via env if needed.
+const RUNTIMES_REFRESH_MS = Number(process.env.FLEETLENS_RUNTIMES_REFRESH_MS ?? 60_000);
+// First refresh happens shortly after the worker boots so the dashboard
+// has data faster than RUNTIMES_REFRESH_MS would imply.
+const RUNTIMES_FIRST_REFRESH_MS = 3_000;
 
 mkdirSync(dirname(FLEET_LOG), { recursive: true });
 
@@ -218,6 +233,17 @@ async function onConnection(conn: HyperswarmConnection, _info: unknown): Promise
           }
         }
         return makeHello();
+      case "getInfo": {
+        // Compute on demand. Peers call this every RUNTIMES_REFRESH_MS,
+        // so this runs maybe once a minute per peer — cheap.
+        const info = await computeLocalRuntimeInfo({
+          deviceId: myDeviceId,
+          publicKey: identity!.publicKey,
+          label: myLabel,
+          fleetlensVersion: CLI_VERSION,
+        });
+        return info;
+      }
       default:
         throw new Error(`unknown method: ${method}`);
     }
@@ -286,6 +312,97 @@ discovery
 // so CLI status can distinguish "no peers" from "worker dead".
 setInterval(() => flushConnections(), CONNECTIONS_FLUSH_MS);
 flushConnections();
+
+// Runtimes snapshot: compute our own RuntimeInfo + fan out getInfo to every
+// connected peer, then write the union to ~/.cclens/fleet/runtimes.json.
+// The /runtimes page reads this file. Pull cadence is intentionally slower
+// than the connection heartbeat — peers don't need sub-second freshness.
+let runtimesRefreshInFlight = false;
+async function refreshRuntimes(): Promise<void> {
+  if (runtimesRefreshInFlight) return;
+  runtimesRefreshInFlight = true;
+  const startMs = Date.now();
+  try {
+    const local = await computeLocalRuntimeInfo({
+      deviceId: myDeviceId,
+      publicKey: identity!.publicKey,
+      label: myLabel,
+      fleetlensVersion: CLI_VERSION,
+    });
+    const remoteResults = await Promise.all(
+      [...live.values()].map(async (c) => {
+        const fallback = stubRuntimeFromConnection(c);
+        if (!c.rpc) return fallback;
+        try {
+          const info = (await c.rpc.call("getInfo", undefined, 8_000)) as RuntimeInfo;
+          // Stamp connection metadata (since/lastSeen) onto whatever the
+          // peer reported; treat the peer-reported isLocal as advisory and
+          // override here — from this machine's perspective, they're remote.
+          return {
+            ...info,
+            isLocal: false,
+            connection: { since: c.since, lastSeen: c.lastSeen },
+          } as RuntimeInfo;
+        } catch (err) {
+          // Peer is connected but on an older build without getInfo (or
+          // it errored). Still surface them on /runtimes using the hello
+          // data we already have, so the UI matches reality.
+          log(
+            "warn",
+            `getInfo to ${c.deviceId} failed (${(err as Error).message}); showing hello-only stub`,
+          );
+          return fallback;
+        }
+      }),
+    );
+    const runtimes: RuntimeInfo[] = [
+      local,
+      ...remoteResults.filter((r): r is RuntimeInfo => r !== null),
+    ];
+    writeRuntimesSnapshot({
+      updatedAt: new Date().toISOString(),
+      runtimes,
+    });
+    log(
+      "info",
+      `runtimes refreshed: ${runtimes.length} runtime${runtimes.length === 1 ? "" : "s"} (${Date.now() - startMs}ms)`,
+    );
+  } catch (err) {
+    log("error", `refreshRuntimes failed: ${(err as Error).message}`);
+  } finally {
+    runtimesRefreshInFlight = false;
+  }
+}
+/**
+ * Hello-only stub used when a peer is connected but cannot answer getInfo
+ * (typically: connected to an older fleetlens build, or transient RPC
+ * error). The peer is real, we just have no stats yet — surface what we
+ * learned from the hello handshake.
+ */
+function stubRuntimeFromConnection(c: LiveConnection): RuntimeInfo {
+  return {
+    protocol: RUNTIME_INFO_PROTOCOL_VERSION,
+    deviceId: c.deviceId,
+    publicKey: c.publicKey,
+    isLocal: false,
+    label: c.label,
+    hostname: c.hostname,
+    fleetlensVersion: undefined,
+    stats: {
+      totalSessions: 0,
+      sessionsLast24h: 0,
+      sessionsLast7d: 0,
+      agentTimeLast24hMs: 0,
+      agentTimeLast7dMs: 0,
+    },
+    agentSources: [],
+    recentProjects: [],
+    connection: { since: c.since, lastSeen: c.lastSeen },
+    capturedAt: new Date().toISOString(),
+  };
+}
+setTimeout(() => void refreshRuntimes(), RUNTIMES_FIRST_REFRESH_MS);
+setInterval(() => void refreshRuntimes(), RUNTIMES_REFRESH_MS);
 
 log(
   "info",

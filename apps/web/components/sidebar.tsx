@@ -18,6 +18,7 @@ import {
   Settings,
   CalendarDays,
   Users,
+  Network,
 } from "lucide-react";
 import { formatRelative, prettyProjectName } from "@/lib/format";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -231,6 +232,13 @@ export function Sidebar({
           icon={<Users size={15} />}
         >
           Team
+        </NavLink>
+        <NavLink
+          href="/runtimes"
+          active={pathname === "/runtimes" || pathname.startsWith("/runtimes/")}
+          icon={<Network size={15} />}
+        >
+          Fleet
         </NavLink>
       </nav>
 

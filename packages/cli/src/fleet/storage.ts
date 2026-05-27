@@ -31,6 +31,7 @@ export const FLEET_FILE = cclensPath("fleet", "fleet.json");
 export const IDENTITY_FILE = cclensPath("fleet", "identity.json");
 export const PEERS_FILE = cclensPath("fleet", "peers.json");
 export const CONNECTIONS_FILE = cclensPath("fleet", "connections.json");
+export const RUNTIMES_FILE = cclensPath("fleet", "runtimes.json");
 export const FLEET_PID = cclensPath("fleet.pid");
 export const FLEET_LOG = cclensPath("fleet.log");
 
@@ -175,3 +176,25 @@ export function writeConnections(file: ConnectionsFile): void {
   ensureDir();
   writeJsonAtomic(CONNECTIONS_FILE, file);
 }
+
+/**
+ * Snapshot of all known runtimes (local + every connected peer's reported
+ * RuntimeInfo). Written by the fleet worker and read by the web server's
+ * /runtimes page. Kept as a single file because callers always want the
+ * full union.
+ */
+export type RuntimesSnapshot = {
+  updatedAt: string;
+  /** Element 0 is always the local runtime. */
+  runtimes: unknown[];
+};
+
+export function readRuntimesSnapshot(): RuntimesSnapshot | null {
+  return readJson<RuntimesSnapshot>(RUNTIMES_FILE);
+}
+
+export function writeRuntimesSnapshot(snap: RuntimesSnapshot): void {
+  ensureDir();
+  writeJsonAtomic(RUNTIMES_FILE, snap);
+}
+
