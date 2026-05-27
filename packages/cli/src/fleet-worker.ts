@@ -251,13 +251,25 @@ async function onConnection(conn: HyperswarmConnection, _info: unknown): Promise
         // session. We parse it from this machine's local JSONL and ship
         // the SessionDetail back. Across the user's own fleet, this is
         // the same data they'd see on /sessions/[id] here.
+        //
+        // The `raw` field on each event is a verbatim copy of the JSONL
+        // line — for an 8.7 MB session this roughly doubles the payload
+        // and crosses Hyperswarm's 16 MiB atomic-write limit, breaking
+        // the connection on every fetch. Strip it before transmission;
+        // the receiver's Debug tab can rebuild a useful view from the
+        // structured event fields (rawType, blocks, usage, model,
+        // requestId, …) without the raw line.
         const sessionId = (params as { sessionId?: string } | null)?.sessionId;
         if (!sessionId || typeof sessionId !== "string") {
           throw new Error("getSessionDetail requires { sessionId }");
         }
         const detail = await getAnySession(sessionId);
         if (!detail) return { found: false as const };
-        return { found: true as const, detail };
+        const stripped = {
+          ...detail,
+          events: detail.events.map((e) => ({ ...e, raw: undefined })),
+        };
+        return { found: true as const, detail: stripped };
       }
       default:
         throw new Error(`unknown method: ${method}`);

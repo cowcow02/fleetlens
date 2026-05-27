@@ -29,10 +29,12 @@ import type { SessionMeta, AgentKind } from "@claude-lens/parser";
  */
 export const RUNTIME_INFO_PROTOCOL_VERSION = 2;
 
-/** Max sessions per peer we put on the wire each refresh. Caps payload at
- *  roughly 200 * ~1.5 KB = 300 KB per peer per minute. The dashboard never
- *  shows more than ~50 rows on a page anyway. */
-export const REMOTE_SESSIONS_CAP = 200;
+/** Max sessions per peer we put on the wire each refresh. Hyperswarm's
+ *  Noise stream caps a single atomic message at 16 MiB; with 200 sessions
+ *  and dense activeSegments arrays + previews we were crossing that limit
+ *  on busy machines and breaking the connection every refresh tick.
+ *  100 keeps the typical payload comfortably under 4 MiB. */
+export const REMOTE_SESSIONS_CAP = 100;
 
 export type RuntimeProjectSummary = {
   name: string;
