@@ -1,5 +1,10 @@
 import "server-only";
 
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { createHash } from "node:crypto";
+
 import { Fluency } from "@claude-lens/entries";
 import { runClaudeSubprocess } from "@claude-lens/entries/node";
 import { listEntriesForDay } from "@claude-lens/entries/fs";
@@ -112,12 +117,41 @@ export async function buildAnthropicScorecard30d(
 /*  Subagent-LLM scorecard — hands raw turns to claude -p directly     */
 /* ------------------------------------------------------------------ */
 
+/** On-disk cache for subagent scorecards. Keyed by (member, window_end,
+ *  corpus-hash) so changes to entries invalidate naturally and we don't
+ *  re-fire the ~$0.01 LLM call on every page render. */
+const SUBAGENT_CACHE_DIR = join(homedir(), ".cclens", "fluency-subagent");
+
+function subagentCachePath(memberId: string, windowEnd: string, corpusHash: string): string {
+  if (!existsSync(SUBAGENT_CACHE_DIR)) {
+    try { mkdirSync(SUBAGENT_CACHE_DIR, { recursive: true }); } catch { /* race ok */ }
+  }
+  return join(SUBAGENT_CACHE_DIR, `${memberId}__${windowEnd}__${corpusHash}.json`);
+}
+
+function readSubagentCache(path: string): Fluency.SubagentScorecard | null {
+  try {
+    if (!existsSync(path)) return null;
+    return JSON.parse(readFileSync(path, "utf8")) as Fluency.SubagentScorecard;
+  } catch {
+    return null;
+  }
+}
+
+function writeSubagentCache(path: string, sc: Fluency.SubagentScorecard): void {
+  try { writeFileSync(path, JSON.stringify(sc, null, 2)); } catch { /* non-fatal */ }
+}
+
 /** Build the SubagentScorecard by handing the raw user-message corpus to
  *  `claude -p` with the from-scratch fluency-scorecard system prompt.
  *  Returns null if there are no entries, the LLM call fails, or the
- *  model's output can't be parsed back into the typed shape. */
+ *  model's output can't be parsed back into the typed shape.
+ *
+ *  Disk-cached by `(member_id × window_end × corpus_sha16)` so re-renders
+ *  return instantly. Pass `forceRefresh: true` to bypass the cache. */
 export async function buildSubagentScorecard30d(
   member: { id: string; name: string },
+  opts: { forceRefresh?: boolean } = {},
 ): Promise<Fluency.SubagentScorecard | null> {
   const { entries, windowEnd } = listEntriesLast30Days();
   if (entries.length === 0) return null;
@@ -128,6 +162,13 @@ export async function buildSubagentScorecard30d(
     entries,
   });
   if (corpus.user_turns === 0) return null;
+
+  const corpusHash = createHash("sha256").update(corpus.markdown).digest("hex").slice(0, 16);
+  const cachePath = subagentCachePath(member.id, windowEnd, corpusHash);
+  if (!opts.forceRefresh) {
+    const cached = readSubagentCache(cachePath);
+    if (cached) return cached;
+  }
 
   let res;
   try {
@@ -146,7 +187,7 @@ export async function buildSubagentScorecard30d(
     res.model.toLowerCase().includes("haiku")  ? ((res.input_tokens *  1 + res.output_tokens *  5) / 1_000_000) :
     null;
 
-  return Fluency.parseSubagentScorecardOutput(res.content, {
+  const parsed = Fluency.parseSubagentScorecardOutput(res.content, {
     member_id: member.id,
     member_name: member.name,
     window_end: windowEnd,
@@ -154,4 +195,7 @@ export async function buildSubagentScorecard30d(
     corpus_sessions: corpus.sessions,
     llm: { model: res.model, cost_usd: cost },
   });
+
+  if (parsed) writeSubagentCache(cachePath, parsed);
+  return parsed;
 }

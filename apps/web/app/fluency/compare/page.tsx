@@ -26,11 +26,12 @@ export const runtime = "nodejs";
 export default async function FluencyComparePage({
   searchParams,
 }: {
-  searchParams: Promise<{ llm?: string; subagent?: string }>;
+  searchParams: Promise<{ llm?: string; subagent?: string; refresh?: string }>;
 }) {
   const sp = await searchParams;
   const useLlm = sp.llm !== "0";
   const useSubagent = sp.subagent === "1";
+  const forceRefresh = sp.refresh === "1";
 
   const { entries, windowEnd } = listEntriesLast30Days();
 
@@ -56,7 +57,7 @@ export default async function FluencyComparePage({
   // Run the two LLM-touching scorecards in parallel when both are requested.
   const [anthropic, subagent] = await Promise.all([
     buildAnthropicScorecard30d({ id: "local", name: "you" }, { useLlm }),
-    useSubagent ? buildSubagentScorecard30d({ id: "local", name: "you" }) : Promise.resolve(null),
+    useSubagent ? buildSubagentScorecard30d({ id: "local", name: "you" }, { forceRefresh }) : Promise.resolve(null),
   ]);
 
   return (
