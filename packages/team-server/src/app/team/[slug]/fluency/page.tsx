@@ -35,7 +35,7 @@ export default async function TeamFluencyPage({
 }) {
   const { slug } = await params;
   const demo = process.env.FLEETLENS_FLUENCY_DEMO === "1";
-  let teamName = "Demo team";
+  let teamName: string;
   if (!demo) {
     const pool = getPool();
     const cookieStore = await cookies();
