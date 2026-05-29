@@ -16,3 +16,4 @@ pnpm-debug.log*
 .claude/
 .harness/
 .antigravitycli/
+.playwright-mcp/

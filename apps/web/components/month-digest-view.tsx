@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback, type ReactNode } from "react";
 import { MonthDigest as MonthDigestRender } from "./month-digest";
+import { ExportPdfButton } from "./export-pdf-button";
 import type { MonthDigest as MonthDigestType } from "@claude-lens/entries";
 
 type Status = "idle" | "streaming" | "done" | "error";
@@ -66,6 +67,7 @@ export function MonthDigestView({
 
   const isStreaming = status === "streaming";
   const narrativeFresh = !!digest?.headline;
+  const pdfAction = digest ? <ExportPdfButton digestKey={`month-${yearMonth}`} /> : null;
 
   let actions: ReactNode = null;
   if (!narrativeFresh && aiEnabled) {
@@ -116,6 +118,14 @@ export function MonthDigestView({
       <>
         {actions}
         <span style={{ fontSize: 10, color: "var(--af-text-tertiary)" }}>{progress}</span>
+      </>
+    );
+  }
+  if (pdfAction) {
+    actions = (
+      <>
+        {actions}
+        {pdfAction}
       </>
     );
   }
