@@ -13,7 +13,14 @@ const SPACE_PATH = "/Users/me/Documents/Claude/Projects/Demo";
 const SESSION_ID = "local_aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
 const CLI_SESSION = "ca90acc3-950e-4f4d-b785-e1af14cce3f9";
 
-async function makeFixture(opts: { withSpace: boolean } = { withSpace: true }): Promise<string> {
+type FixtureOpts = {
+  withSpace?: boolean;
+  userSelectedFolders?: string[];
+};
+
+async function makeFixture(opts: FixtureOpts = {}): Promise<string> {
+  const withSpace = opts.withSpace ?? true;
+  const userSelectedFolders = opts.userSelectedFolders ?? [];
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-fixture-"));
   const workspaceDir = path.join(root, "account-1", "workspace-1");
   await fs.mkdir(workspaceDir, { recursive: true });
@@ -39,12 +46,12 @@ async function makeFixture(opts: { withSpace: boolean } = { withSpace: true }): 
       sessionId: SESSION_ID,
       cliSessionId: CLI_SESSION,
       cwd: "/sessions/practical-eager-newton",
-      userSelectedFolders: [],
+      userSelectedFolders,
       createdAt: 1779860761055,
       lastActivityAt: 1779860784199,
       model: "claude-opus-4-7",
       title: "Demo cowork session",
-      ...(opts.withSpace ? { spaceId: SPACE_ID } : {}),
+      ...(withSpace ? { spaceId: SPACE_ID } : {}),
     }),
   );
 
@@ -168,6 +175,64 @@ describe("cowork parser", () => {
     const list = await listCoworkSessions({ root });
     expect(list).toHaveLength(1);
     expect(list[0]!.projectName).toBe("cowork:unspaced");
+  });
+
+  it("falls back to userSelectedFolders[0] when no spaceId is set", async () => {
+    const folderPath = "/Users/me/Projects/AdHoc";
+    const root = await makeFixture({
+      withSpace: false,
+      userSelectedFolders: [folderPath],
+    });
+    const list = await listCoworkSessions({ root });
+    expect(list).toHaveLength(1);
+    expect(list[0]!.projectName).toBe(folderPath);
+    expect(list[0]!.cwd).toBe(folderPath);
+  });
+
+  it("invalidates cached projectName when spaces.json is rewritten", async () => {
+    const root = await makeFixture();
+    const first = (await listCoworkSessions({ root }))[0]!;
+    expect(first.projectName).toBe(SPACE_PATH);
+
+    // Rewrite spaces.json (Desktop does this on space rename / folder edit)
+    // but leave audit.jsonl untouched. The cache must invalidate.
+    const newPath = "/Users/me/Documents/Claude/Projects/Renamed";
+    const spacesPath = path.join(root, "account-1", "workspace-1", "spaces.json");
+    await fs.writeFile(
+      spacesPath,
+      JSON.stringify({
+        spaces: [
+          { id: SPACE_ID, name: "Renamed", folders: [{ path: newPath }] },
+        ],
+      }),
+    );
+    // mkdtemp gives us 1s+ mtime resolution on macOS, but vitest may run this
+    // within the same second — bump the mtime explicitly.
+    const future = new Date(Date.now() + 5000);
+    await fs.utimes(spacesPath, future, future);
+
+    const second = (await listCoworkSessions({ root }))[0]!;
+    expect(second.projectName).toBe(newPath);
+    expect(second.cwd).toBe(newPath);
+  });
+
+  it("invalidates cached projectName when local_<uuid>.json sidecar is rewritten", async () => {
+    const root = await makeFixture({ withSpace: false });
+    const first = (await listCoworkSessions({ root }))[0]!;
+    expect(first.projectName).toBe("cowork:unspaced");
+
+    // User attaches a folder mid-session: Desktop writes the sidecar JSON
+    // but doesn't touch audit.jsonl until the next agent turn.
+    const folderPath = "/Users/me/Projects/AttachedLater";
+    const metaPath = path.join(root, "account-1", "workspace-1", `${SESSION_ID}.json`);
+    const raw = JSON.parse(await fs.readFile(metaPath, "utf8")) as Record<string, unknown>;
+    raw.userSelectedFolders = [folderPath];
+    await fs.writeFile(metaPath, JSON.stringify(raw));
+    const future = new Date(Date.now() + 5000);
+    await fs.utimes(metaPath, future, future);
+
+    const second = (await listCoworkSessions({ root }))[0]!;
+    expect(second.projectName).toBe(folderPath);
   });
 
   it("getCoworkSession returns the full event timeline", async () => {

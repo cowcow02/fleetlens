@@ -1,23 +1,17 @@
 /**
  * Cowork (Claude Desktop "local agent mode") transcript reader.
  *
- * Cowork stores per-session state in the Claude Desktop user-data dir:
- *   macOS:   ~/Library/Application Support/Claude/local-agent-mode-sessions/
- *   Linux:   ~/.config/Claude/local-agent-mode-sessions/
- *   Windows: %APPDATA%/Claude/local-agent-mode-sessions/
- * Inside each: <accountId>/<workspaceId>/ holds one `local_<uuid>.json` (the
- * top-level session metadata) and a sibling `local_<uuid>/` directory whose
- * `audit.jsonl` is the conversation transcript. The audit log uses Claude
- * Code's JSONL shape (user / assistant / system / attachment / …) plus a few
- * cowork-only event types that already fall through `parseTranscript` as
- * meta. Same workspace also holds `spaces.json`: cowork's Spaces feature,
- * mapping `spaceId → folders[].path`, which is how a session resolves to a
- * real user-facing project path on disk.
+ * Read from `audit.jsonl` rather than the per-session
+ * `.claude/projects/<encoded>/<cliSessionId>.jsonl` mirror: the audit log
+ * is at a fixed path and covers every session, including the few that
+ * errored before the inner JSONL was written. Sessions resolve to a
+ * user-facing project path via the sibling `spaces.json` (cowork's Spaces
+ * feature) — the in-session `cwd` is the VM-internal `/sessions/<name>`
+ * path and is not user-meaningful.
  *
- * Sibling dir `claude-code-sessions/<accountId>/<workspaceId>/local_*.json`
- * holds Claude Code sessions launched from inside the Desktop app — same
- * shape as this one but a different lineage. Defer to a future agent: add
- * a parallel adapter or extend this one once the rollup story is decided.
+ * `claude-code-sessions/<accountId>/<workspaceId>/` is the same shape
+ * but holds Claude Code sessions launched from inside Desktop — out of
+ * scope here; a future agent can extend or fork this adapter.
  */
 
 import { promises as fs } from "node:fs";
@@ -46,19 +40,29 @@ const SESSION_ID_RE = /^local_[0-9a-f-]+$/;
 type SessionFile = {
   /** Outer `local_<uuid>` slug — the user-facing session id. */
   sessionId: string;
-  /** Absolute path to the `audit.jsonl` transcript. */
   auditPath: string;
-  /** Absolute path to the sibling `local_<uuid>.json` metadata file. */
   metaPath: string;
   /** Workspace directory (contains `spaces.json`). */
   workspaceDir: string;
-  /** mtime/size of the audit file — drives the cache. */
-  mtimeMs: number;
-  sizeBytes: number;
+  auditMtimeMs: number;
+  auditSize: number;
+  /** mtime of `local_<uuid>.json` — Desktop rewrites it when the user
+   *  attaches a folder, links a Space, or finishes a turn (lastActivityAt).
+   *  Folded into the cache key so a sidecar-only edit invalidates the
+   *  cached `projectName`/`cwd`/model. 0 when the sidecar is missing. */
+  metaMtimeMs: number;
+  /** mtime of the workspace's `spaces.json` — same invalidation story for
+   *  folder renames or space deletions. 0 when missing. */
+  spacesMtimeMs: number;
 };
 
 async function safeReaddir(p: string): Promise<string[]> {
   return fs.readdir(p).catch(() => [] as string[]);
+}
+
+async function statMs(p: string): Promise<number> {
+  const s = await fs.stat(p).catch(() => null);
+  return s ? s.mtimeMs : 0;
 }
 
 async function listSessionFiles(root: string): Promise<SessionFile[]> {
@@ -69,30 +73,30 @@ async function listSessionFiles(root: string): Promise<SessionFile[]> {
     const workspaces = await safeReaddir(accountDir);
     for (const workspaceId of workspaces) {
       const workspaceDir = path.join(accountDir, workspaceId);
+      const spacesMtimeMs = await statMs(path.join(workspaceDir, "spaces.json"));
       const entries = await safeReaddir(workspaceDir);
       for (const entry of entries) {
         if (!SESSION_ID_RE.test(entry)) continue;
-        const sessionDir = path.join(workspaceDir, entry);
-        const auditPath = path.join(sessionDir, "audit.jsonl");
-        const stat = await fs.stat(auditPath).catch(() => null);
-        if (!stat || !stat.isFile() || stat.size === 0) continue;
+        const auditPath = path.join(workspaceDir, entry, "audit.jsonl");
+        const auditStat = await fs.stat(auditPath).catch(() => null);
+        if (!auditStat || !auditStat.isFile() || auditStat.size === 0) continue;
+        const metaPath = path.join(workspaceDir, `${entry}.json`);
+        const metaMtimeMs = await statMs(metaPath);
         out.push({
           sessionId: entry,
           auditPath,
-          metaPath: path.join(workspaceDir, `${entry}.json`),
+          metaPath,
           workspaceDir,
-          mtimeMs: stat.mtimeMs,
-          sizeBytes: stat.size,
+          auditMtimeMs: auditStat.mtimeMs,
+          auditSize: auditStat.size,
+          metaMtimeMs,
+          spacesMtimeMs,
         });
       }
     }
   }
   return out;
 }
-
-/* ================================================================= */
-/*  spaces.json → spaceId → project path                             */
-/* ================================================================= */
 
 type SpacesCacheEntry = { mtimeMs: number; spaceIdToPath: Map<string, string> };
 const spacesCache = new Map<string, SpacesCacheEntry>();
@@ -120,10 +124,6 @@ async function loadSpacesForWorkspace(workspaceDir: string): Promise<Map<string,
   spacesCache.set(workspaceDir, { mtimeMs: stat.mtimeMs, spaceIdToPath: out });
   return out;
 }
-
-/* ================================================================= */
-/*  Per-session metadata                                             */
-/* ================================================================= */
 
 type CoworkMeta = {
   spaceId?: string;
@@ -156,10 +156,9 @@ async function readCoworkMeta(metaPath: string): Promise<CoworkMeta> {
   }
 }
 
-/** Resolve the user-facing project path for a cowork session. spaceId
- *  trumps userSelectedFolders because a session can run inside a folder
- *  the user picked ad-hoc; the Space is the durable grouping that the
- *  UI also uses. */
+/** spaceId trumps userSelectedFolders: a session can run inside a folder
+ *  the user picked ad-hoc, but the Space is the durable grouping that
+ *  the Desktop UI also uses. */
 function resolveProject(
   meta: CoworkMeta,
   spaceIdToPath: Map<string, string>,
@@ -178,10 +177,6 @@ function resolveProject(
     cwd: projectPath,
   };
 }
-
-/* ================================================================= */
-/*  Read + parse                                                     */
-/* ================================================================= */
 
 async function readJsonl(filePath: string): Promise<unknown[]> {
   const raw = await fs.readFile(filePath, "utf8");
@@ -209,8 +204,8 @@ async function parseCoworkSession(file: SessionFile): Promise<Parsed> {
   const { meta: baseMeta, events } = parseTranscript(lines);
   const { projectName, projectDir, cwd } = resolveProject(coworkMeta, spaceIdToPath);
 
-  // The audit JSONL never carries a real cwd — its `cwd` field is the VM
-  // path (`/sessions/<vmProcessName>`). Prefer the resolved space path.
+  // The audit JSONL's `cwd` field is the VM path (`/sessions/<vmProcessName>`)
+  // and is never user-meaningful — prefer the resolved Space path.
   const meta: SessionMeta = {
     ...baseMeta,
     agent: "cowork",
@@ -225,12 +220,33 @@ async function parseCoworkSession(file: SessionFile): Promise<Parsed> {
   return { meta, events };
 }
 
-/* ================================================================= */
-/*  Caching                                                          */
-/* ================================================================= */
+type CacheKey = {
+  auditMtimeMs: number;
+  auditSize: number;
+  metaMtimeMs: number;
+  spacesMtimeMs: number;
+};
 
-type MetaEntry = { meta: SessionMeta; mtimeMs: number; sizeBytes: number };
-type DetailEntry = { detail: SessionDetail; mtimeMs: number; sizeBytes: number };
+function cacheKeyFor(file: SessionFile): CacheKey {
+  return {
+    auditMtimeMs: file.auditMtimeMs,
+    auditSize: file.auditSize,
+    metaMtimeMs: file.metaMtimeMs,
+    spacesMtimeMs: file.spacesMtimeMs,
+  };
+}
+
+function cacheKeyMatches(a: CacheKey, b: CacheKey): boolean {
+  return (
+    a.auditMtimeMs === b.auditMtimeMs &&
+    a.auditSize === b.auditSize &&
+    a.metaMtimeMs === b.metaMtimeMs &&
+    a.spacesMtimeMs === b.spacesMtimeMs
+  );
+}
+
+type MetaEntry = { meta: SessionMeta; key: CacheKey };
+type DetailEntry = { detail: SessionDetail; key: CacheKey };
 const metaCache = new Map<string, MetaEntry>();
 const detailCache = new Map<string, DetailEntry>();
 
@@ -249,18 +265,15 @@ export async function listCoworkSessions(
   const files = await listSessionFiles(root);
   const out: SessionMeta[] = [];
   for (const file of files) {
+    const key = cacheKeyFor(file);
     const cached = metaCache.get(file.auditPath);
-    if (cached && cached.mtimeMs === file.mtimeMs && cached.sizeBytes === file.sizeBytes) {
+    if (cached && cacheKeyMatches(cached.key, key)) {
       out.push(cached.meta);
       continue;
     }
     try {
       const { meta } = await parseCoworkSession(file);
-      metaCache.set(file.auditPath, {
-        meta,
-        mtimeMs: file.mtimeMs,
-        sizeBytes: file.sizeBytes,
-      });
+      metaCache.set(file.auditPath, { meta, key });
       out.push(meta);
     } catch {
       // Skip files that fail to parse — keep listing the rest.
@@ -281,17 +294,12 @@ export async function getCoworkSession(
   const files = await listSessionFiles(root);
   const file = files.find((f) => f.sessionId === id);
   if (!file) return null;
+  const key = cacheKeyFor(file);
   const cached = detailCache.get(file.auditPath);
-  if (cached && cached.mtimeMs === file.mtimeMs && cached.sizeBytes === file.sizeBytes) {
-    return cached.detail;
-  }
+  if (cached && cacheKeyMatches(cached.key, key)) return cached.detail;
   const { meta, events } = await parseCoworkSession(file);
   const detail: SessionDetail = { ...meta, events };
-  detailCache.set(file.auditPath, {
-    detail,
-    mtimeMs: file.mtimeMs,
-    sizeBytes: file.sizeBytes,
-  });
+  detailCache.set(file.auditPath, { detail, key });
   return detail;
 }
 
