@@ -242,7 +242,8 @@ export function buildRichRollupBlocks(
       .sort((a, b) => b.sessions - a.sessions),
     concurrencyPeak: stats.peakConcurrent,
     parallelMinutes: Math.round(stats.totalParallelMs / 60_000),
-    longAutonomous: { count: longCount, totalMin: longTotalMin, maxSingleMin: longMaxSingleMin },
+    // Wire schema requires integer minutes (active_min is a float).
+    longAutonomous: { count: longCount, totalMin: Math.round(longTotalMin), maxSingleMin: Math.round(longMaxSingleMin) },
     toolErrors,
     skillsLoaded: Array.from(skills.entries())
       .map(([name, sessions]) => ({ name, sessions }))
