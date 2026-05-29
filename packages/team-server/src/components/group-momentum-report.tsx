@@ -27,11 +27,13 @@ function TrendCard({
   values,
   unit = "",
   fmt,
+  explainId,
 }: {
   label: string;
   values: number[];
   unit?: string;
   fmt: (v: number) => string;
+  explainId?: string;
 }) {
   const max = Math.max(...values, 1);
   const latest = values[values.length - 1] ?? 0;
@@ -42,7 +44,10 @@ function TrendCard({
     <div className="builder-widget" style={{ gridColumn: "span 1" }}>
       <header className="builder-widget-head">
         <div className="builder-widget-titlewrap">
-          <h3 className="builder-widget-title">{label}</h3>
+          <h3 className="builder-widget-title">
+            {label}
+            {explainId && <ExplainBadge p={provenanceFor(explainId)} />}
+          </h3>
         </div>
       </header>
       <div className="builder-widget-body">
@@ -136,10 +141,10 @@ export function GroupMomentumReport({
             are secondary context.
           </p>
           <div className="builder-grid group-momentum-grid">
-            <TrendCard label="Agent time" unit="h" values={trend.map((t) => t.agentHours)} fmt={(v) => v.toFixed(1)} />
-            <TrendCard label="Active members" values={trend.map((t) => t.activeMembers)} fmt={(v) => String(Math.round(v))} />
-            <TrendCard label="PRs shipped" values={trend.map((t) => t.prs)} fmt={(v) => String(Math.round(v))} />
-            <TrendCard label="Sessions" values={trend.map((t) => t.sessions)} fmt={(v) => String(Math.round(v))} />
+            <TrendCard label="Agent time" unit="h" values={trend.map((t) => t.agentHours)} fmt={(v) => v.toFixed(1)} explainId={explain ? "trend-agent-time" : undefined} />
+            <TrendCard label="Active members" values={trend.map((t) => t.activeMembers)} fmt={(v) => String(Math.round(v))} explainId={explain ? "trend-active-members" : undefined} />
+            <TrendCard label="PRs shipped" values={trend.map((t) => t.prs)} fmt={(v) => String(Math.round(v))} explainId={explain ? "trend-prs" : undefined} />
+            <TrendCard label="Sessions" values={trend.map((t) => t.sessions)} fmt={(v) => String(Math.round(v))} explainId={explain ? "trend-sessions" : undefined} />
           </div>
         </section>
       )}

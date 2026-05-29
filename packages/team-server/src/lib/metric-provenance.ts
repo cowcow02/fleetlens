@@ -35,6 +35,30 @@ export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
     status: "live",
     llm: false,
   },
+  "trend-agent-time": {
+    description: "Combined agent time (active-segment time, gaps >3 min excluded) across the group, per week for the last 4 weeks.",
+    source: `${ROLLUPS}.agent_time_ms, summed per ISO week`,
+    status: "live",
+    llm: false,
+  },
+  "trend-active-members": {
+    description: "Distinct members with at least one active day in the week — the group's weekly reach.",
+    source: `${ROLLUPS} — distinct membership_id with agent_time_ms > 0 per ISO week`,
+    status: "live",
+    llm: false,
+  },
+  "trend-prs": {
+    description: "PRs the group shipped per week. An impact proxy — correlation, not causation; a true delivery measure needs the deferred GitHub/Jira integration.",
+    source: `${ROLLUPS}.prs (from each member's git activity), summed per ISO week`,
+    status: "live",
+    llm: false,
+  },
+  "trend-sessions": {
+    description: "Agent sessions the group started per week — a usage-volume signal, deliberately NOT used to grade maturity.",
+    source: `${ROLLUPS}.sessions, summed per ISO week`,
+    status: "live",
+    llm: false,
+  },
   "live-active-rate": {
     description: "Share of the group active in the last 7 and 30 days.",
     source: `${ROLLUPS} — distinct members with any active day in the window`,
