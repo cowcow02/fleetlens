@@ -4,6 +4,20 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.11.0] — 2026-05-29
+
+### Added
+- **Real-data team insight report (v8 framework-aligned).** The live `/team/[slug]/insights` page now builds from `rich_daily_rollups` via `buildTeamInsightReport()` instead of mock data, defaulting to a starter block set keyed to the three adoption pillars (usage / getting better / impact): active-rate (7d/30d), per-member maturity portraits, team-pulse WoW, PRs shipped + per active engineer, per-project time, skill usage, and long-autonomous turn texture. The mock report stays available at `/team/[slug]/insights/preview` as a reference.
+- **Per-member L0–L4 maturity portraits (v9).** Each member is placed on the L0–L4 adoption ladder (L0 Unaware → L4 Multiplier) from their trailing-30-day signals, with an audit-friendly cadence / breadth / harness-authorship stat strip, qualifying-path and growth-edge chips, and decisive / supporting / near-miss observations. Working-style notes are shown separately and explicitly never grade the level.
+- **Real L4 classifier.** A personal-side file-system probe (counts of authored skills / sub-agents / slash-commands and net CLAUDE.md line deltas, shipped as SHA-256 path hashes only — never raw paths or content) feeds new `day_artifact_signals` rows; `team_skill_catalog` reconciliation tracks cross-member adoption. L4 "Multiplier" now fires on real authored-artifact counts and/or verified cross-member adoption rather than a synthetic flag.
+- **PDF export points at live data by default.** `GET /api/team/[slug]/insights/pdf` and `/report/[slug]` render the live report; `?source=preview` reproduces the mock reference.
+
+### Changed
+- The new insight report and maturity portraits are reachable by **direct URL only — not linked from the team navigation** — so the existing roster / plan / groups experience is unchanged for current users while these dashboards are iterated on.
+
+### Database
+- New migration `0006_day_artifact_signals.sql` — **additive only, no existing tables altered.** Adds `day_artifact_signals` (per-member, per-day authored/edited skill, sub-agent and slash-command arrays plus `claudemd_line_delta`, keyed on `(team_id, membership_id, day)`) and `team_skill_catalog` (per-team `path_hash` with monotonic originator + adopter-set tracking for cross-member adoption). Both cascade from `teams` and `memberships`.
+
 ## [0.10.0] — 2026-05-21
 
 ### Added
