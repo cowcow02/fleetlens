@@ -35,12 +35,13 @@ async function handle(
   // headless render against /report's not-found page.
   const group = req.nextUrl.searchParams.get("group");
   const coaching = req.nextUrl.searchParams.get("coaching") === "1";
+  const mock = req.nextUrl.searchParams.get("mock") === "1";
   if (group) {
     const g = await requireGroupManager(auth, group);
     if (g instanceof NextResponse) return g;
   }
   const reportQuery = group
-    ? `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}`
+    ? `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}`
     : source === "preview"
       ? "?source=preview"
       : "";

@@ -8,6 +8,7 @@ import { buildTeamInsightReport, LIVE_STARTER_BLOCKS_V8 } from "../../../lib/tea
 import { VariantBuilder } from "../../../components/insights-variants/v7-builder";
 import { GroupMomentumReport } from "../../../components/group-momentum-report";
 import { ReportHeader } from "../../../components/report-header";
+import { buildMockGroupReport } from "../../../lib/mock-group-report";
 import { mockTeamInsightReport } from "../../../lib/insights-mock-data";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function ReportPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ blocks?: string; source?: string; group?: string; coaching?: string }>;
+  searchParams: Promise<{ blocks?: string; source?: string; group?: string; coaching?: string; mock?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
@@ -58,14 +59,38 @@ export default async function ReportPage({
     const groupMemberIds = await visibleMembershipIds(teamId, scope, pool);
     const membersTotal = groupMemberIds.length;
     const weekMonday = isoMondayOf(new Date());
-    const [report, trend] = await Promise.all([
-      buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
-      groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
-    ]);
+    const coaching = sp.coaching === "1";
+    const mock = sp.mock === "1";
+
+    let report;
+    let trend;
+    let activeCount: number;
+    if (mock) {
+      const rosterRes = membersTotal === 0
+        ? { rows: [] as Array<{ id: string; name: string; tier: string }> }
+        : await pool.query<{ id: string; name: string; tier: string }>(
+            `SELECT m.id, COALESCE(NULLIF(ua.display_name, ''), split_part(ua.email, '@', 1)) AS name,
+                    m.plan_tier AS tier
+             FROM memberships m JOIN user_accounts ua ON ua.id = m.user_account_id
+             WHERE m.id = ANY($1::uuid[]) ORDER BY m.id`,
+            [groupMemberIds],
+          );
+      const md = buildMockGroupReport(rosterRes.rows.map((r) => ({ membershipId: r.id, name: r.name, tier: r.tier })));
+      report = md.report;
+      trend = md.trend;
+      activeCount = md.activeCount;
+    } else {
+      const [rep, tr] = await Promise.all([
+        buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
+        groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
+      ]);
+      report = rep;
+      trend = tr;
+      activeCount = rep.cross_edition.roster.length;
+    }
     const ws = new Date(`${report.week_monday}T12:00:00`);
     const we = new Date(ws);
     we.setDate(ws.getDate() + 6);
-    const coaching = sp.coaching === "1";
     const clientReport =
       coaching || !report.live_extras
         ? report
@@ -76,7 +101,7 @@ export default async function ReportPage({
           teamName={group.name}
           weekStart={ws}
           weekEnd={we}
-          activeCount={report.cross_edition.roster.length}
+          activeCount={activeCount}
           memberTotal={membersTotal}
           agentHours={report.volume.agent_hours_total}
           generatedAt={new Date()}

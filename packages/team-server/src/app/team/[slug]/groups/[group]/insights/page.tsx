@@ -3,11 +3,13 @@ import { redirect, notFound } from "next/navigation";
 import { getPool } from "../../../../../../db/pool";
 import { validateSession } from "../../../../../../lib/auth";
 import { loadGroupBySlug } from "../../../../../../lib/groups";
-import { groupMomentumTrend, isoMondayOf, visibleMembershipIds } from "../../../../../../lib/insights-aggregate";
+import { groupMomentumTrend, isoMondayOf, visibleMembershipIds, type MomentumTrendWeek } from "../../../../../../lib/insights-aggregate";
+import type { TeamInsightReport } from "../../../insights/types";
 import { buildTeamInsightReport } from "../../../../../../lib/team-report-aggregate";
 import { loadOptimizerInputs } from "../../../../../../lib/plan-queries";
 import { recommend } from "../../../../../../lib/plan-optimizer";
 import { tierEntry } from "../../../../../../lib/plan-tiers";
+import { buildMockGroupReport } from "../../../../../../lib/mock-group-report";
 import { ReportHeader } from "../../../../../../components/report-header";
 import { GroupMomentumReport } from "../../../../../../components/group-momentum-report";
 import { SeatRightSizing, type SeatCandidate } from "../../../../../../components/seat-right-sizing";
@@ -26,12 +28,13 @@ export default async function GroupInsightsPage({
   searchParams,
 }: {
   params: Promise<{ slug: string; group: string }>;
-  searchParams: Promise<{ coaching?: string; explain?: string }>;
+  searchParams: Promise<{ coaching?: string; explain?: string; mock?: string }>;
 }) {
   const { slug, group: groupSlug } = await params;
   const sp = await searchParams;
   const coaching = sp?.coaching === "1";
   const explain = sp?.explain === "1";
+  const mock = sp?.mock === "1";
   const pool = getPool();
   const cookieStore = await cookies();
   const token = cookieStore.get("fleetlens_session")?.value;
@@ -64,32 +67,64 @@ export default async function GroupInsightsPage({
   const membersTotal = groupMemberIds.length;
 
   const weekMonday = isoMondayOf(new Date());
-  const groupIds = new Set(groupMemberIds);
-  const [report, trend, optimizerInputs] = await Promise.all([
-    buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
-    groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
-    loadOptimizerInputs(teamId, pool),
-  ]);
 
-  // Seat right-sizing (Phase 1b): only downgrade candidates within the group.
-  const groupSeatRecs = optimizerInputs
-    .filter((i) => groupIds.has(i.membershipId))
-    .map((i) => ({ input: i, rec: recommend(i.stats, tierEntry(i.tierKey)) }));
-  const seatCandidates: SeatCandidate[] = groupSeatRecs
-    .filter((r) => r.rec.action === "downgrade")
-    .map((r) => {
-      const rec = r.rec as Extract<typeof r.rec, { action: "downgrade" }>;
-      return {
-        name: r.input.memberName,
-        fromTier: tierEntry(r.input.tierKey).label,
-        toTier: tierEntry(rec.targetTier).label,
-        avgPct: Math.round(r.input.stats.avgSevenDayAvg),
-        peakPct: Math.round(r.input.stats.worstSevenDayPeak),
-        savingsUsd: rec.estimatedSavingsUsd,
-      };
-    });
-  const seatReviewed = groupSeatRecs.filter((r) => r.rec.action !== "insufficient_data").length;
-  const seatInsufficient = groupSeatRecs.filter((r) => r.rec.action === "insufficient_data").length;
+  let report: TeamInsightReport;
+  let trend: MomentumTrendWeek[];
+  let seatCandidates: SeatCandidate[];
+  let seatReviewed: number;
+  let seatInsufficient: number;
+  let activeCount: number;
+
+  if (mock) {
+    // ?mock=1 — synthesize metrics for the REAL roster, no DB activity rows.
+    const rosterRes = membersTotal === 0
+      ? { rows: [] as Array<{ id: string; name: string; tier: string }> }
+      : await pool.query<{ id: string; name: string; tier: string }>(
+          `SELECT m.id, COALESCE(NULLIF(ua.display_name, ''), split_part(ua.email, '@', 1)) AS name,
+                  m.plan_tier AS tier
+           FROM memberships m JOIN user_accounts ua ON ua.id = m.user_account_id
+           WHERE m.id = ANY($1::uuid[]) ORDER BY m.id`,
+          [groupMemberIds],
+        );
+    const md = buildMockGroupReport(
+      rosterRes.rows.map((r) => ({ membershipId: r.id, name: r.name, tier: r.tier })),
+    );
+    report = md.report;
+    trend = md.trend;
+    seatCandidates = md.seatCandidates;
+    seatReviewed = md.seatReviewed;
+    seatInsufficient = md.seatInsufficient;
+    activeCount = md.activeCount;
+  } else {
+    const groupIds = new Set(groupMemberIds);
+    const [rep, tr, optimizerInputs] = await Promise.all([
+      buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
+      groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
+      loadOptimizerInputs(teamId, pool),
+    ]);
+    report = rep;
+    trend = tr;
+    activeCount = rep.cross_edition.roster.length;
+    // Seat right-sizing (Phase 1b): only downgrade candidates within the group.
+    const groupSeatRecs = optimizerInputs
+      .filter((i) => groupIds.has(i.membershipId))
+      .map((i) => ({ input: i, rec: recommend(i.stats, tierEntry(i.tierKey)) }));
+    seatCandidates = groupSeatRecs
+      .filter((r) => r.rec.action === "downgrade")
+      .map((r) => {
+        const rec = r.rec as Extract<typeof r.rec, { action: "downgrade" }>;
+        return {
+          name: r.input.memberName,
+          fromTier: tierEntry(r.input.tierKey).label,
+          toTier: tierEntry(rec.targetTier).label,
+          avgPct: Math.round(r.input.stats.avgSevenDayAvg),
+          peakPct: Math.round(r.input.stats.worstSevenDayPeak),
+          savingsUsd: rec.estimatedSavingsUsd,
+        };
+      });
+    seatReviewed = groupSeatRecs.filter((r) => r.rec.action !== "insufficient_data").length;
+    seatInsufficient = groupSeatRecs.filter((r) => r.rec.action === "insufficient_data").length;
+  }
 
   const weekDate = new Date(`${report.week_monday}T12:00:00`);
   const weekEnd = new Date(weekDate);
@@ -102,15 +137,16 @@ export default async function GroupInsightsPage({
       ? report
       : { ...report, live_extras: { ...report.live_extras, member_portraits: undefined } };
 
-  // Toggle links preserve the other view flag.
+  // Toggle links preserve the other view flags.
   const base = `/team/${slug}/groups/${group.slug}/insights`;
-  const qs = (next: { coaching?: boolean; explain?: boolean }) => {
+  const qs = (next: { coaching?: boolean; explain?: boolean; mock?: boolean }) => {
     const c = next.coaching ?? coaching;
     const e = next.explain ?? explain;
-    const parts = [c ? "coaching=1" : "", e ? "explain=1" : ""].filter(Boolean);
+    const k = next.mock ?? mock;
+    const parts = [c ? "coaching=1" : "", e ? "explain=1" : "", k ? "mock=1" : ""].filter(Boolean);
     return parts.length ? `${base}?${parts.join("&")}` : base;
   };
-  const pdfHref = `/api/team/${encodeURIComponent(slug)}/insights/pdf?group=${encodeURIComponent(group.slug)}${coaching ? "&coaching=1" : ""}`;
+  const pdfHref = `/api/team/${encodeURIComponent(slug)}/insights/pdf?group=${encodeURIComponent(group.slug)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}`;
 
   return (
     <>
@@ -121,6 +157,9 @@ export default async function GroupInsightsPage({
           {teamName}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <a href={qs({ mock: !mock })} className="btn secondary">
+            {mock ? "Use real data" : "Mock data"}
+          </a>
           <a href={qs({ explain: !explain })} className="btn secondary">
             {explain ? "Hide explanations" : "ⓘ Explain metrics"}
           </a>
@@ -131,11 +170,18 @@ export default async function GroupInsightsPage({
         </div>
       </div>
 
+      {mock && (
+        <div className="explain-banner" style={{ borderColor: "var(--warning, #b06a00)", marginBottom: 12 }}>
+          <strong>Mock data.</strong> Metrics on this view are synthesized from the real roster for
+          alignment/demo — they are <em>not</em> actual activity. Switch to “Use real data” for live numbers.
+        </div>
+      )}
+
       <ReportHeader
         teamName={group.name}
         weekStart={weekDate}
         weekEnd={weekEnd}
-        activeCount={report.cross_edition.roster.length}
+        activeCount={activeCount}
         memberTotal={membersTotal}
         agentHours={report.volume.agent_hours_total}
         generatedAt={new Date(report.generated_at)}
