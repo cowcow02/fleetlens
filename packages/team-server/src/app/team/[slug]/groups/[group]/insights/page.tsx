@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { getPool } from "../../../../../../db/pool";
 import { validateSession } from "../../../../../../lib/auth";
 import { loadGroupBySlug } from "../../../../../../lib/groups";
-import { groupMomentumTrend, isoMondayOf, visibleMembershipIds, type MomentumTrendWeek } from "../../../../../../lib/insights-aggregate";
+import { groupMomentumTrend, lastCompletedWeekMonday, visibleMembershipIds, type MomentumTrendWeek } from "../../../../../../lib/insights-aggregate";
 import type { TeamInsightReport } from "../../../insights/types";
 import { buildTeamInsightReport } from "../../../../../../lib/team-report-aggregate";
 import { loadOptimizerInputs } from "../../../../../../lib/plan-queries";
@@ -66,7 +66,7 @@ export default async function GroupInsightsPage({
   const groupMemberIds = await visibleMembershipIds(teamId, scope, pool);
   const membersTotal = groupMemberIds.length;
 
-  const weekMonday = isoMondayOf(new Date());
+  const weekMonday = lastCompletedWeekMonday();
 
   let report: TeamInsightReport;
   let trend: MomentumTrendWeek[];

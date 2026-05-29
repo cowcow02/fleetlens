@@ -54,6 +54,14 @@ export function previousIsoMonday(weekMonday: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+// The most recent FULLY-ELAPSED ISO week (Mon–Sun). The current week is always
+// in progress, so insight reports lead with this instead — a complete,
+// stable window that also sidesteps the 1–2 day lag before the daemon has
+// pushed the latest days.
+export function lastCompletedWeekMonday(now: Date = new Date()): string {
+  return previousIsoMonday(isoMondayOf(now));
+}
+
 export function weekEndExclusive(weekMonday: string): string {
   const d = new Date(`${weekMonday}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 7);

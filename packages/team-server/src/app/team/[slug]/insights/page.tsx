@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "../../../../db/pool";
 import { validateSession } from "../../../../lib/auth";
-import { isoMondayOf } from "../../../../lib/insights-aggregate";
+import { lastCompletedWeekMonday } from "../../../../lib/insights-aggregate";
 import { buildTeamInsightReport, LIVE_STARTER_BLOCKS_V8 } from "../../../../lib/team-report-aggregate";
 import { VariantBuilder } from "../../../../components/insights-variants/v7-builder";
 import { ReportHeader } from "../../../../components/report-header";
@@ -42,7 +42,7 @@ export default async function TeamInsightsPage({
   );
   const membersTotal = Number(memberCountRes.rows[0]?.count ?? 0);
 
-  const weekMonday = isoMondayOf(new Date());
+  const weekMonday = lastCompletedWeekMonday();
   const report = await buildTeamInsightReport(
     teamId,
     { kind: "team-wide" },
