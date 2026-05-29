@@ -7,6 +7,8 @@
 
 import {
   groupByProject,
+  dailyActivity,
+  toLocalDay,
   type AgentKind,
   agentMetadata,
   type SessionMeta,
@@ -52,6 +54,23 @@ export default async function DashboardHome({
   ]);
   const sessions = filterByRange(allSessions, cutoff);
   const conn = readTeamConnection();
+
+  // Headline "Agent time" answers "agent time spent within the selected
+  // window". Summing whole-session airTimeMs over start-day-filtered sessions
+  // diverged from the team rollups at the window edges — it dropped pre-window
+  // sessions that bled into the window and kept the out-of-window tail of
+  // in-window sessions. Compute it the way the team daily_rollups / weekly
+  // digest do: dailyActivity's per-calendar-day clipped agent time over ALL
+  // sessions, kept to the window's days. For "all" this equals the whole-set
+  // total, so it's a no-op there.
+  const windowBuckets = (() => {
+    const buckets = dailyActivity(allSessions);
+    if (cutoff === undefined) return buckets;
+    const cutoffDay = toLocalDay(cutoff);
+    return buckets.filter((b) => b.date >= cutoffDay);
+  })();
+  const windowAgentMs = windowBuckets.reduce((sum, b) => sum + b.airTimeMs, 0);
+  const windowActiveDays = windowBuckets.filter((b) => b.airTimeMs > 0).length;
 
   // Heatmap day summaries — outcome from index, headline + helpfulness from cached digests
   const daySummaries = new Map<string, DaySummary>();
@@ -143,7 +162,11 @@ export default async function DashboardHome({
           is closed and the digest is final. */}
       <YesterdayHero />
 
-      <DashboardView sessions={sessions} daySummaries={daySummaries} />
+      <DashboardView
+        sessions={sessions}
+        daySummaries={daySummaries}
+        override={{ activeTimeMs: windowAgentMs, activeDayCount: windowActiveDays }}
+      />
 
       {/* Top projects + Recent sessions + Recent days */}
       <section

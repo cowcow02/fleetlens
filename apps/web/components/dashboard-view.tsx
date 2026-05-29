@@ -34,6 +34,7 @@ export function DashboardView({
   sessions: SessionMeta[];
   override?: {
     activeTimeMs?: number;
+    activeDayCount?: number;
     extraCards?: ReactNode;
   };
   daySummaries?: Map<string, DaySummary>;
@@ -46,7 +47,7 @@ export function DashboardView({
     metrics.totalTokens.input + metrics.totalTokens.cacheRead + metrics.totalTokens.cacheWrite;
 
   const activeTimeMs = override?.activeTimeMs ?? metrics.totalAirTimeMs;
-  const activeDayCount = buckets.filter((b) => b.airTimeMs > 0).length;
+  const activeDayCount = override?.activeDayCount ?? buckets.filter((b) => b.airTimeMs > 0).length;
 
   return (
     <>
