@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { Sidebar } from "@/components/sidebar";
 import { LiveRefresher } from "@/components/live-refresher";
 import {
@@ -25,6 +25,28 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // /print/* is a stripped layout used as the headless-render target for PDF
+  // export. Skip the sidebar, live-sessions widget, and job-queue widget so
+  // the captured PDF contains only the digest content.
+  const reqHeaders = await headers();
+  const pathname = reqHeaders.get("x-fleetlens-pathname") ?? "";
+  if (pathname.startsWith("/print/")) {
+    // Theme priority: header set by middleware from ?theme= (forwarded by
+    // the PDF API), then cookie (for direct browser visits), then dark.
+    const headerTheme = reqHeaders.get("x-fleetlens-theme");
+    const cookieStore = await cookies();
+    const cookieTheme = cookieStore.get("claude-lens-theme")?.value;
+    const theme =
+      headerTheme === "light" || headerTheme === "dark" ? headerTheme :
+      cookieTheme === "light" || cookieTheme === "dark" ? cookieTheme :
+      "dark";
+    return (
+      <html lang="en" data-theme={theme} suppressHydrationWarning>
+        <body>{children}</body>
+      </html>
+    );
+  }
+
   const [projects, allFiles, allSessions, entriesIndex] = await Promise.all([
     listProjects(),
     walkJsonlFiles(),

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { WeekDigest as WeekDigestRender } from "./week-digest";
+import { ExportPdfButton } from "./export-pdf-button";
 import type { WeekDigest as WeekDigestType } from "@claude-lens/entries";
 
 type Status = "idle" | "streaming" | "done" | "error";
@@ -76,6 +77,7 @@ export function WeekDigestView({
 
   const isStreaming = status === "streaming";
   const narrativeFresh = !!digest?.headline;
+  const pdfAction = digest ? <ExportPdfButton digestKey={`week-${monday}`} /> : null;
 
   let actions: ReactNode = null;
   if (!narrativeFresh && aiEnabled) {
@@ -108,6 +110,14 @@ export function WeekDigestView({
       <>
         {actions}
         <span style={{ fontSize: 10, color: "var(--af-text-tertiary)" }}>{progress}</span>
+      </>
+    );
+  }
+  if (pdfAction) {
+    actions = (
+      <>
+        {actions}
+        {pdfAction}
       </>
     );
   }
