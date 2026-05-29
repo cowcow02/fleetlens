@@ -66,10 +66,23 @@ const MEMBERS = [
     activeDows: [],              sessionsPerDay: 0, projN: 0, skillN: 0, subN: 0, prsWk: 0 },
 ];
 
+// Two groups so the per-group momentum dashboard renders distinct stories:
+// Platform has an L4 multiplier (Maya), Product has none. Managers are
+// deliberately NON-admins (Devin, Theo) so the guarded coaching view is
+// exercised by a line manager, not the all-seeing admin. Maya's adopters span
+// both groups (Priya in Platform, Theo in Product), so the within-group
+// L4-coaches count differs by scope: 1 in-group adopter in Platform vs 2
+// team-wide. (The pure coaches-without-builds isolation is exercised by the
+// unit test, which omits Maya's day_artifact_signals.)
+const GROUPS = [
+  { slug: "platform", name: "Platform", manager: "Devin", members: ["Maya", "Devin", "Priya"] },
+  { slug: "product",  name: "Product Squad", manager: "Theo", members: ["Theo", "Lena", "Sam"] },
+];
+
 async function seed(client) {
   for (const t of ["team_skill_catalog", "day_artifact_signals", "rich_daily_rollups",
                    "plan_utilization", "membership_cycle_peaks", "sessions",
-                   "memberships", "teams", "user_accounts"]) {
+                   "group_members", "groups", "memberships", "teams", "user_accounts"]) {
     await client.query(`DELETE FROM ${t}`).catch(() => {});
   }
 
@@ -93,6 +106,20 @@ async function seed(client) {
       [membershipId, teamId, userId, m.role, m.tier]);
     mId[m.name] = membershipId;
     if (m.role === "admin") adminUserId = userId;
+  }
+
+  // Groups + membership assignment (manager flag on group_members).
+  const gId = {};
+  for (const g of GROUPS) {
+    const groupId = randomUUID();
+    gId[g.slug] = groupId;
+    await client.query(`INSERT INTO groups (id, team_id, slug, name) VALUES ($1, $2, $3, $4)`,
+      [groupId, teamId, g.slug, g.name]);
+    for (const name of g.members) {
+      await client.query(
+        `INSERT INTO group_members (group_id, membership_id, is_manager) VALUES ($1, $2, $3)`,
+        [groupId, mId[name], name === g.manager]);
+    }
   }
 
   // a session for the admin so the dashboard is reachable without the UI login
@@ -187,6 +214,9 @@ async function seed(client) {
        (SELECT count(*) FROM team_skill_catalog WHERE team_id=$1) tsc`, [teamId]);
   console.log("[seed] rows:", counts.rows[0]);
   console.log(`[seed] team: /team/${teamSlug}/insights  ·  admin login: maya@example.com / demo1234`);
+  for (const g of GROUPS) {
+    console.log(`[seed] group: /team/${teamSlug}/groups/${g.slug}/insights  (manager: ${g.manager.toLowerCase()}@example.com / demo1234)`);
+  }
   console.log(`[seed] ADMIN_SESSION_TOKEN=${token}`);
 }
 

@@ -6199,6 +6199,23 @@ button.builder-action.danger:hover {
   row-gap: 14px;
   align-items: start;
 }
+/* Per-group momentum dashboard: same 4-col widths as the builder grid, but
+   content-driven row heights — these widgets render read-only and never
+   measure/set their own grid-row span the way the builder's do, so the 8px
+   masonry tracks would collapse and overlap them on a wide viewport. */
+.group-momentum-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: auto;
+  grid-auto-flow: row;
+  column-gap: 14px;
+  row-gap: 14px;
+  align-items: stretch;
+}
+@media (max-width: 900px) {
+  .group-momentum-grid { grid-template-columns: 1fr; }
+  .group-momentum-grid > .builder-widget { grid-column: 1 / -1 !important; }
+}
 .builder-widget {
   position: relative;
   background: var(--paper);

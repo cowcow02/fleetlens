@@ -1,10 +1,12 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import { redirect, notFound } from "next/navigation";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
-import { isoMondayOf } from "../../../lib/insights-aggregate";
+import { loadGroupBySlug } from "../../../lib/groups";
+import { isoMondayOf, visibleMembershipIds } from "../../../lib/insights-aggregate";
 import { buildTeamInsightReport, LIVE_STARTER_BLOCKS_V8 } from "../../../lib/team-report-aggregate";
 import { VariantBuilder } from "../../../components/insights-variants/v7-builder";
+import { GroupMomentumReport } from "../../../components/group-momentum-report";
 import { ReportHeader } from "../../../components/report-header";
 import { mockTeamInsightReport } from "../../../lib/insights-mock-data";
 
@@ -13,12 +15,15 @@ export const dynamic = "force-dynamic";
 // PDF render target. Defaults to live data (`source=live`); pass
 // `?source=preview` to capture the v7 mock report (used by the
 // /insights/preview "Export PDF" button so the mock-PDF path keeps working).
+// Pass `?group=<slug>` to render the per-group momentum report instead — same
+// layout the live group page shows, with `?coaching=1` revealing per-member
+// portraits. Group access is guarded to admin/staff or the group's manager.
 export default async function ReportPage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ blocks?: string; source?: string }>;
+  searchParams: Promise<{ blocks?: string; source?: string; group?: string; coaching?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
@@ -36,6 +41,54 @@ export default async function ReportPage({
   const teamName = teamRes.rows[0].name;
   const myMembership = session.memberships.find((m) => m.team_id === teamId);
   if (!myMembership) redirect("/login");
+
+  // ── Per-group momentum report ──────────────────────────────────────────
+  if (!useMock && sp?.group) {
+    const group = await loadGroupBySlug(teamId, sp.group, pool);
+    if (!group) notFound();
+    const isAdminOrStaff = session.user.is_staff || myMembership.role === "admin";
+    if (!isAdminOrStaff) {
+      const r = await pool.query(
+        "SELECT 1 FROM group_members WHERE group_id = $1 AND membership_id = $2 AND is_manager = true",
+        [group.id, myMembership.id],
+      );
+      if (!r.rowCount) notFound();
+    }
+    const scope = { kind: "group" as const, groupId: group.id };
+    const groupMemberIds = await visibleMembershipIds(teamId, scope, pool);
+    const membersTotal = groupMemberIds.length;
+    const weekMonday = isoMondayOf(new Date());
+    const report = await buildTeamInsightReport(
+      teamId,
+      scope,
+      pool,
+      { teamSlug: slug, teamName, membersTotal },
+      weekMonday,
+    );
+    const ws = new Date(`${report.week_monday}T12:00:00`);
+    const we = new Date(ws);
+    we.setDate(ws.getDate() + 6);
+    const coaching = sp.coaching === "1";
+    const clientReport =
+      coaching || !report.live_extras
+        ? report
+        : { ...report, live_extras: { ...report.live_extras, member_portraits: undefined } };
+    return (
+      <>
+        <ReportHeader
+          teamName={group.name}
+          weekStart={ws}
+          weekEnd={we}
+          activeCount={report.cross_edition.roster.length}
+          memberTotal={membersTotal}
+          agentHours={report.volume.agent_hours_total}
+          generatedAt={new Date()}
+          roster={report.cross_edition.roster.map((m) => m.display_name)}
+        />
+        <GroupMomentumReport report={clientReport} coaching={coaching} />
+      </>
+    );
+  }
 
   let report;
   let membersTotal: number;

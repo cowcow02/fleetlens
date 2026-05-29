@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chromium, type BrowserContextOptions } from "playwright";
-import { requireTeamMembership } from "../../../../../../lib/route-helpers";
+import { requireTeamMembership, requireGroupManager } from "../../../../../../lib/route-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +30,21 @@ async function handle(
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const reportPath = `/report/${encodeURIComponent(slug)}${source === "preview" ? "?source=preview" : ""}`;
+  // Per-group export: guard group access to admin/staff or the group's manager
+  // here (404) so unauthorized requests fail fast instead of timing out the
+  // headless render against /report's not-found page.
+  const group = req.nextUrl.searchParams.get("group");
+  const coaching = req.nextUrl.searchParams.get("coaching") === "1";
+  if (group) {
+    const g = await requireGroupManager(auth, group);
+    if (g instanceof NextResponse) return g;
+  }
+  const reportQuery = group
+    ? `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}`
+    : source === "preview"
+      ? "?source=preview"
+      : "";
+  const reportPath = `/report/${encodeURIComponent(slug)}${reportQuery}`;
   const dashUrl = `${baseUrl(req)}${reportPath}`;
   const cookieDomain = new URL(baseUrl(req)).hostname;
   const cookieSecure = baseUrl(req).startsWith("https:");
@@ -101,11 +115,11 @@ async function handle(
     });
 
     const today = new Date().toISOString().slice(0, 10);
-    const filename = `${slug}-insight-report-${today}.pdf`;
+    const filename = `${slug}${group ? `-${group}` : ""}-insight-report-${today}.pdf`;
     if (process.env.NODE_ENV !== "production") {
       try {
         const { writeFile } = await import("node:fs/promises");
-        await writeFile(`/tmp/last-pdf-${slug}.pdf`, Buffer.from(pdf));
+        await writeFile(`/tmp/last-pdf-${slug}${group ? `-${group}` : ""}.pdf`, Buffer.from(pdf));
       } catch {
         // ignore — dev convenience only
       }

@@ -715,45 +715,11 @@ export async function buildTeamInsightReport(
         [teamId, memberIds, weekMonday, weekEndExclusive(weekMonday)],
       );
 
-  const classifications: MaturityMemberClassification[] = perMemberRes.rows.map((r) => {
-    const sessionsCurr = r.sessions_curr;
-    const sessionsPrev = r.sessions_prev;
-    const activeDays = r.active_days_curr;
-    const projects = r.projects_curr;
-    const skills = r.skills_curr;
-    const subagents = r.subagents_curr;
-    let level: MaturityLevel;
-    let evidence: string;
-    if (sessionsCurr === 0 && sessionsPrev === 0) {
-      level = "L0";
-      evidence = "no activity in 14 days";
-    } else if (subagents >= 2 && sessionsCurr >= 20) {
-      level = "L4";
-      evidence = `${sessionsCurr} sessions · dispatches subagents · ${skills} skills loaded`;
-    } else if (activeDays >= 5 && (projects >= 2 || skills >= 3)) {
-      level = "L3";
-      evidence = `${activeDays} active days · ${projects} projects · ${skills} skills`;
-    } else if (sessionsCurr >= 5 && activeDays >= 3) {
-      level = "L2";
-      evidence = `${sessionsCurr} sessions · ${activeDays} active days`;
-    } else if (sessionsCurr >= 1) {
-      level = "L1";
-      evidence = `${sessionsCurr} session${sessionsCurr === 1 ? "" : "s"} this week · exploring`;
-    } else {
-      level = "L1";
-      evidence = `${sessionsPrev} sessions last week · idle this week`;
-    }
-    return { member: r.display_name, level, evidence };
-  });
-
-  const distribution: Record<MaturityLevel, number> = { L0: 0, L1: 0, L2: 0, L3: 0, L4: 0 };
-  for (const c of classifications) distribution[c.level] += 1;
-  // Members with zero activity in window aren't in perMemberRes (only if they
-  // never had a rollup row); fold remaining as L0.
-  const classifiedCount = classifications.length;
-  if (classifiedCount < ctx.membersTotal) {
-    distribution.L0 += ctx.membersTotal - classifiedCount;
-  }
+  // The aggregate L0–L4 mix is derived from the portrait classifier below
+  // (single source of truth) — see classifications/distribution after the
+  // portraits are built. This keeps the headline distribution and the
+  // per-member portraits from ever disagreeing, and keeps grading off raw
+  // session/token volume (anti-tokenmaxxing).
 
   // v9 — per-member qualitative portraits.
   //
@@ -795,19 +761,22 @@ export async function buildTeamInsightReport(
         [teamId, memberIds, weekMonday, weekEndExclusive(weekMonday)],
       );
 
-  // Cross-member adoption: count entries in team_skill_catalog where this
-  // member is the originator AND at least one other member is in the adopter
-  // set. That's the L4-coaches path made concrete.
+  // Cross-member adoption: count the DISTINCT in-scope teammates who adopted an
+  // artifact this member originated. That's the L4-coaches path made concrete.
+  // Counting distinct adopters (not catalog rows) means "adopter overlap with
+  // group members" — for a group report only same-group adopters count, so the
+  // figure reflects within-group diffusion, not org-wide reach.
   const coachesRes = memberIds.length === 0
     ? { rows: [] as Array<{ membership_id: string; coached_count: number }> }
     : await pool.query<{ membership_id: string; coached_count: number }>(
-        `SELECT originator_membership_id AS membership_id,
-                COUNT(*)::int AS coached_count
-         FROM team_skill_catalog
-         WHERE team_id = $1
-           AND originator_membership_id = ANY($2::uuid[])
-           AND cardinality(adopter_membership_ids) >= 1
-         GROUP BY originator_membership_id`,
+        `SELECT t.originator_membership_id AS membership_id,
+                COUNT(DISTINCT a)::int AS coached_count
+         FROM team_skill_catalog t,
+              LATERAL unnest(t.adopter_membership_ids) a
+         WHERE t.team_id = $1
+           AND t.originator_membership_id = ANY($2::uuid[])
+           AND a = ANY($2::uuid[])
+         GROUP BY t.originator_membership_id`,
         [teamId, memberIds],
       );
 
@@ -1145,6 +1114,33 @@ export async function buildTeamInsightReport(
 
   // Sort multipliers first so the eye lands on them.
   portraits.sort((a, b) => b.level.localeCompare(a.level));
+
+  // Aggregate maturity mix — derived from the portrait levels so the
+  // distribution and the per-member portraits are one classifier, not two.
+  const maturityCue = (p: MemberMaturityPortrait): string => {
+    const { cadence: c, breadth: b, harness: h, level } = p;
+    if (level === "L0") return "no activity in trailing 30d";
+    if (level === "L4") {
+      const bits: string[] = [];
+      const authored = h.skills_authored_30d + h.subagents_authored_30d + h.slash_commands_authored_30d;
+      if (authored > 0 || h.claudemd_line_delta_30d !== 0) bits.push("authors shared toolchain");
+      if (h.cross_member_adopters_30d > 0)
+        bits.push(`${h.cross_member_adopters_30d} in-group adopter${h.cross_member_adopters_30d === 1 ? "" : "s"}`);
+      return bits.join(" · ") || "multiplier";
+    }
+    return `${c.active_days_7d} active day${c.active_days_7d === 1 ? "" : "s"} · ` +
+      `${b.distinct_projects_30d} project${b.distinct_projects_30d === 1 ? "" : "s"} · ` +
+      `${b.distinct_skills_30d} skill${b.distinct_skills_30d === 1 ? "" : "s"}`;
+  };
+  const classifications: MaturityMemberClassification[] = portraits.map((p) => ({
+    member: p.member,
+    level: p.level,
+    evidence: maturityCue(p),
+  }));
+  const distribution: Record<MaturityLevel, number> = { L0: 0, L1: 0, L2: 0, L3: 0, L4: 0 };
+  for (const p of portraits) distribution[p.level] += 1;
+  // Members with no rollup row at all never produced a portrait; fold them in as L0.
+  if (portraits.length < ctx.membersTotal) distribution.L0 += ctx.membersTotal - portraits.length;
 
   const liveExtras: LiveExtras = {
     active_rate: {
