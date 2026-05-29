@@ -26,10 +26,12 @@ export default async function GroupInsightsPage({
   searchParams,
 }: {
   params: Promise<{ slug: string; group: string }>;
-  searchParams: Promise<{ coaching?: string }>;
+  searchParams: Promise<{ coaching?: string; explain?: string }>;
 }) {
   const { slug, group: groupSlug } = await params;
-  const coaching = (await searchParams)?.coaching === "1";
+  const sp = await searchParams;
+  const coaching = sp?.coaching === "1";
+  const explain = sp?.explain === "1";
   const pool = getPool();
   const cookieStore = await cookies();
   const token = cookieStore.get("fleetlens_session")?.value;
@@ -100,7 +102,14 @@ export default async function GroupInsightsPage({
       ? report
       : { ...report, live_extras: { ...report.live_extras, member_portraits: undefined } };
 
+  // Toggle links preserve the other view flag.
   const base = `/team/${slug}/groups/${group.slug}/insights`;
+  const qs = (next: { coaching?: boolean; explain?: boolean }) => {
+    const c = next.coaching ?? coaching;
+    const e = next.explain ?? explain;
+    const parts = [c ? "coaching=1" : "", e ? "explain=1" : ""].filter(Boolean);
+    return parts.length ? `${base}?${parts.join("&")}` : base;
+  };
   const pdfHref = `/api/team/${encodeURIComponent(slug)}/insights/pdf?group=${encodeURIComponent(group.slug)}${coaching ? "&coaching=1" : ""}`;
 
   return (
@@ -112,7 +121,10 @@ export default async function GroupInsightsPage({
           {teamName}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <a href={coaching ? base : `${base}?coaching=1`} className="btn secondary">
+          <a href={qs({ explain: !explain })} className="btn secondary">
+            {explain ? "Hide explanations" : "ⓘ Explain metrics"}
+          </a>
+          <a href={qs({ coaching: !coaching })} className="btn secondary">
             {coaching ? "Hide per-member detail" : "Show per-member coaching detail →"}
           </a>
           <a href={pdfHref} className="btn">Export PDF</a>
@@ -137,11 +149,12 @@ export default async function GroupInsightsPage({
         </div>
       ) : (
         <>
-          <GroupMomentumReport report={clientReport} coaching={coaching} trend={trend} />
+          <GroupMomentumReport report={clientReport} coaching={coaching} trend={trend} explain={explain} />
           <SeatRightSizing
             candidates={seatCandidates}
             reviewedCount={seatReviewed}
             insufficientCount={seatInsufficient}
+            explain={explain}
           />
         </>
       )}

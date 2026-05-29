@@ -8,6 +8,9 @@
 
 import pg from "pg";
 import { randomBytes, scryptSync, randomUUID, createHash } from "node:crypto";
+import { readFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
 
 const DAY = 24 * 3600_000;
 
@@ -45,39 +48,59 @@ const SKILL_TREND = [1.35, 1.15, 1.0, 0.82, 0.7, 1.25, 1.05];
 function pick(arr, n) { return arr.slice(0, n); }
 function jitter(base, pct = 0.25) { return Math.round(base * (1 + (Math.random() * 2 - 1) * pct)); }
 
-// Per-member adoption profiles. activeDows = which weekdays (0=Mon..6=Sun) they work,
-// applied to BOTH the current week and the trailing 30d. sessionsPerDay kept <20/wk for
-// non-L4 so the quick + portrait classifiers agree.
-const MEMBERS = [
-  { name: "Maya",  email: "maya@example.com",  role: "admin",  tier: "pro-max-20x", level: "L4",
-    activeDows: [0,1,2,3,4], sessionsPerDay: 4, projN: 3, skillN: 6, subN: 3, prsWk: 9,
-    authorsSkills: true },
-  { name: "Devin", email: "devin@example.com", role: "member", tier: "pro-max-20x", level: "L3",
-    activeDows: [0,1,2,3,4], sessionsPerDay: 2, projN: 3, skillN: 5, subN: 2, prsWk: 6 },
-  { name: "Priya", email: "priya@example.com", role: "member", tier: "pro-max",    level: "L3",
-    activeDows: [0,1,2,3],       sessionsPerDay: 2, projN: 2, skillN: 4, subN: 1, prsWk: 4,
-    adopter: true },
-  { name: "Theo",  email: "theo@example.com",  role: "member", tier: "pro-max",    level: "L2",
-    activeDows: [0,2,4],         sessionsPerDay: 2, projN: 1, skillN: 2, subN: 0, prsWk: 1,
-    adopter: true },
-  { name: "Lena",  email: "lena@example.com",  role: "member", tier: "pro",        level: "L1",
-    activeDows: [1,3],           sessionsPerDay: 1, projN: 1, skillN: 1, subN: 0, prsWk: 0 },
-  { name: "Sam",   email: "sam@example.com",   role: "member", tier: "pro",        level: "L0",
-    activeDows: [],              sessionsPerDay: 0, projN: 0, skillN: 0, subN: 0, prsWk: 0 },
-];
+// Activity profile per ladder level — drives the mock rollups so a roster only
+// needs name/email/role/tier/level. jitter() adds per-day/per-member variation.
+// sessionsPerDay kept <20/wk so the portrait classifier never grades on volume.
+const LEVEL_PROFILE = {
+  L4: { activeDows: [0,1,2,3,4], sessionsPerDay: 4, projN: 3, skillN: 6, subN: 3, prsWk: 9 },
+  L3: { activeDows: [0,1,2,3,4], sessionsPerDay: 2, projN: 3, skillN: 5, subN: 2, prsWk: 6 },
+  L2: { activeDows: [0,2,4],     sessionsPerDay: 2, projN: 1, skillN: 2, subN: 0, prsWk: 1 },
+  L1: { activeDows: [1,3],       sessionsPerDay: 1, projN: 1, skillN: 1, subN: 0, prsWk: 0 },
+  L0: { activeDows: [],          sessionsPerDay: 0, projN: 0, skillN: 0, subN: 0, prsWk: 0 },
+};
 
-// Two groups so the per-group momentum dashboard renders distinct stories:
-// Platform has an L4 multiplier (Maya), Product has none. Managers are
-// deliberately NON-admins (Devin, Theo) so the guarded coaching view is
-// exercised by a line manager, not the all-seeing admin. Maya's adopters span
-// both groups (Priya in Platform, Theo in Product), so the within-group
-// L4-coaches count differs by scope: 1 in-group adopter in Platform vs 2
-// team-wide. (The pure coaches-without-builds isolation is exercised by the
-// unit test, which omits Maya's day_artifact_signals.)
-const GROUPS = [
-  { slug: "platform", name: "Platform", manager: "Devin", members: ["Maya", "Devin", "Priya"] },
-  { slug: "product",  name: "Product Squad", manager: "Theo", members: ["Theo", "Lena", "Sam"] },
-];
+// Built-in representative roster — generic names; real engineers never live in
+// this committed file. To demo with REAL names + mock metrics, drop a gitignored
+// scripts/roster.local.json (or set ROSTER_FILE=/path/to.json); see
+// scripts/roster.local.example.json. The author-multiplier authors skills that
+// an in-group adopter picks up, so within-group L4-coaches fires for that group;
+// the low-utilization member (on a top-tier seat) drives the seat-right-sizing
+// downgrade candidate.
+const DEFAULT_ROSTER = {
+  teamName: "Product Engineering (demo)",
+  teamSlug: "demo-team",
+  members: [
+    { name: "Maya",  email: "maya@example.com",  role: "admin",  tier: "pro-max-20x", level: "L4" },
+    { name: "Devin", email: "devin@example.com", role: "member", tier: "pro-max-20x", level: "L3" },
+    { name: "Priya", email: "priya@example.com", role: "member", tier: "pro-max",     level: "L3" },
+    { name: "Theo",  email: "theo@example.com",  role: "member", tier: "pro-max",     level: "L2" },
+    { name: "Lena",  email: "lena@example.com",  role: "member", tier: "pro",         level: "L1" },
+    { name: "Sam",   email: "sam@example.com",   role: "member", tier: "pro",         level: "L0" },
+  ],
+  groups: [
+    { slug: "platform", name: "Platform", manager: "Devin", members: ["Maya", "Devin", "Priya"] },
+    { slug: "product",  name: "Product Squad", manager: "Theo", members: ["Theo", "Lena", "Sam"] },
+  ],
+  authorMultiplier: "Maya",
+  inGroupAdopters: ["Priya"],
+  crossGroupAdopters: ["Theo"],
+  lowUtilizationMember: "Devin",
+};
+
+function loadRoster() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const local = join(here, "roster.local.json");
+  const path = process.env.ROSTER_FILE && existsSync(process.env.ROSTER_FILE)
+    ? process.env.ROSTER_FILE
+    : existsSync(local) ? local : null;
+  if (!path) return DEFAULT_ROSTER;
+  console.log(`[seed] roster: ${path} (real names, mock metrics)`);
+  return { ...DEFAULT_ROSTER, ...JSON.parse(readFileSync(path, "utf8")) };
+}
+
+const roster = loadRoster();
+const MEMBERS = roster.members.map((m) => ({ ...LEVEL_PROFILE[m.level], ...m }));
+const GROUPS = roster.groups;
 
 async function seed(client) {
   for (const t of ["team_skill_catalog", "day_artifact_signals", "rich_daily_rollups",
@@ -87,9 +110,9 @@ async function seed(client) {
   }
 
   const teamId = randomUUID();
-  const teamSlug = "demo-team";
-  await client.query(`INSERT INTO teams (id, name, slug) VALUES ($1, 'Product Engineering (demo)', $2)`,
-    [teamId, teamSlug]);
+  const teamSlug = roster.teamSlug;
+  await client.query(`INSERT INTO teams (id, name, slug) VALUES ($1, $2, $3)`,
+    [teamId, roster.teamName, teamSlug]);
 
   const mId = {};
   let adminUserId = null;
@@ -181,8 +204,8 @@ async function seed(client) {
     }
   }
 
-  // L4 "Multiplier": Maya authored skills (recent) + others adopted them
-  const maya = mId["Maya"];
+  // L4 "Multiplier": the author authored skills (recent) + others adopted them.
+  const author = mId[roster.authorMultiplier];
   const authoredSkills = ["harness-orchestrate", "release-ship-check"];
   for (let off = 12; off >= 8; off -= 2) {
     await client.query(
@@ -191,7 +214,7 @@ async function seed(client) {
          subagents_authored, slash_commands_authored, claudemd_line_delta)
        VALUES ($1,$2,$3,$4::jsonb,$5::jsonb,$6::jsonb,$7::jsonb,$8)
        ON CONFLICT (team_id, membership_id, day) DO NOTHING`,
-      [teamId, maya, dayStr(off),
+      [teamId, author, dayStr(off),
        JSON.stringify(authoredSkills.map((n) => ({ name: n, path_hash: pathHash(n) }))),
        JSON.stringify([]),
        JSON.stringify([{ type: "reviewer", path_hash: pathHash("reviewer") }]),
@@ -204,17 +227,18 @@ async function seed(client) {
          adopter_membership_ids, loads_total)
        VALUES ($1,$2,'skill',$3,$4,$5::uuid[],$6)
        ON CONFLICT (team_id, path_hash) DO NOTHING`,
-      [teamId, pathHash(name), maya, dayStr(12), [mId["Priya"], mId["Theo"]], jitter(40)]);
+      [teamId, pathHash(name), author, dayStr(12),
+       [...roster.inGroupAdopters, ...roster.crossGroupAdopters].map((n) => mId[n]), jitter(40)]);
   }
 
-  // plan_utilization so the seat right-sizing lens has data. Devin (on the
-  // Pro Max 20x seat) runs chronically low -> downgrade candidate; Maya (also
-  // 20x) is well-matched -> stays. 20 daily snapshots clear the optimizer's
-  // 14-day minimum. The optimizer only downgrades from the top tier, so the
-  // lens surfaces exactly one Platform candidate.
+  // plan_utilization so the seat right-sizing lens has data. The low-utilization
+  // member (on a top-tier 20x seat) runs chronically low -> downgrade candidate;
+  // the author-multiplier (also 20x) is well-matched -> stays. 20 daily snapshots
+  // clear the optimizer's 14-day minimum. The optimizer only downgrades from the
+  // top tier, so the lens surfaces exactly one candidate in that member's group.
   const UTIL = [
-    { name: "Devin", avg: 24, peak: 41 },
-    { name: "Maya",  avg: 76, peak: 92 },
+    { name: roster.lowUtilizationMember, avg: 24, peak: 41 },
+    { name: roster.authorMultiplier,     avg: 76, peak: 92 },
   ];
   for (const u of UTIL) {
     for (let off = 20; off >= 1; off--) {
@@ -241,10 +265,12 @@ async function seed(client) {
        (SELECT count(*) FROM rich_daily_rollups WHERE team_id=$1) rr,
        (SELECT count(*) FROM day_artifact_signals WHERE team_id=$1) das,
        (SELECT count(*) FROM team_skill_catalog WHERE team_id=$1) tsc`, [teamId]);
+  const emailOf = (name) => roster.members.find((m) => m.name === name)?.email ?? "?";
+  const adminEmail = roster.members.find((m) => m.role === "admin")?.email ?? "?";
   console.log("[seed] rows:", counts.rows[0]);
-  console.log(`[seed] team: /team/${teamSlug}/insights  ·  admin login: maya@example.com / demo1234`);
+  console.log(`[seed] team: /team/${teamSlug}/insights  ·  admin login: ${adminEmail} / demo1234`);
   for (const g of GROUPS) {
-    console.log(`[seed] group: /team/${teamSlug}/groups/${g.slug}/insights  (manager: ${g.manager.toLowerCase()}@example.com / demo1234)`);
+    console.log(`[seed] group: /team/${teamSlug}/groups/${g.slug}/insights  (manager: ${emailOf(g.manager)} / demo1234)`);
   }
   console.log(`[seed] ADMIN_SESSION_TOKEN=${token}`);
 }

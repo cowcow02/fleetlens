@@ -1,0 +1,21 @@
+{
+  "_comment": "Copy to scripts/roster.local.json (gitignored) and replace with REAL names to demo the dashboard with mock metrics against your actual roster. seed-team-story.mjs picks it up automatically (or set ROSTER_FILE=/path/to.json). Names/emails here never get committed. levels: L0-L4; tiers: pro | pro-max | pro-max-20x. Mark one manager:true per group.",
+  "teamName": "Acme Engineering",
+  "teamSlug": "demo-team",
+  "members": [
+    { "name": "Ada Lovelace",   "email": "ada@example.com",   "role": "admin",  "tier": "pro-max-20x", "level": "L4" },
+    { "name": "Alan Turing",    "email": "alan@example.com",  "role": "member", "tier": "pro-max-20x", "level": "L3" },
+    { "name": "Grace Hopper",   "email": "grace@example.com", "role": "member", "tier": "pro-max",     "level": "L3" },
+    { "name": "Katherine J.",   "email": "kj@example.com",    "role": "member", "tier": "pro-max",     "level": "L2" },
+    { "name": "Linus T.",       "email": "linus@example.com", "role": "member", "tier": "pro",         "level": "L1" },
+    { "name": "Margaret H.",    "email": "margaret@example.com", "role": "member", "tier": "pro",      "level": "L0" }
+  ],
+  "groups": [
+    { "slug": "platform", "name": "Platform",      "manager": "Alan Turing", "members": ["Ada Lovelace", "Alan Turing", "Grace Hopper"] },
+    { "slug": "product",  "name": "Product Squad", "manager": "Katherine J.", "members": ["Katherine J.", "Linus T.", "Margaret H."] }
+  ],
+  "authorMultiplier": "Ada Lovelace",
+  "inGroupAdopters": ["Grace Hopper"],
+  "crossGroupAdopters": ["Katherine J."],
+  "lowUtilizationMember": "Alan Turing"
+}

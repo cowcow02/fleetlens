@@ -61,9 +61,10 @@ export default async function GroupDetailPage({
             {(totalAgentMs / 3600000).toFixed(1)}h combined agent time
           </div>
         </div>
+        {/* Insight report is intentionally URL-only (not nav-exposed) — reach it
+            directly at /groups/<slug>/insights. No visible link here. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <RangeTabs value={range} />
-          <a href={`/team/${slug}/groups/${group.slug}/insights`} className="btn">Insights →</a>
           <a href={`/team/${slug}/groups/${group.slug}/invite`} className="btn">+ Invite member</a>
         </div>
       </div>

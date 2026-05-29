@@ -6216,6 +6216,74 @@ button.builder-action.danger:hover {
   .group-momentum-grid { grid-template-columns: 1fr; }
   .group-momentum-grid > .builder-widget { grid-column: 1 / -1 !important; }
 }
+
+/* Explain mode — ⓘ badge with a CSS-only hover/focus popover describing a
+   metric's source, pipeline status, and deterministic-vs-LLM method. */
+.metric-explain {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  cursor: help;
+  vertical-align: middle;
+}
+.metric-explain-dot {
+  font-size: 13px;
+  color: var(--accent);
+  opacity: 0.7;
+}
+.metric-explain:hover .metric-explain-dot,
+.metric-explain:focus-visible .metric-explain-dot { opacity: 1; }
+.metric-explain-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  width: 340px;
+  max-width: 80vw;
+  display: none;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  background: var(--paper, #fffdf7);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
+  font-family: var(--sans, system-ui, sans-serif);
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--ink, #2b2b2b);
+  white-space: normal;
+}
+.metric-explain:hover .metric-explain-pop,
+.metric-explain:focus-within .metric-explain-pop { display: flex; }
+.metric-explain-pop .mep-desc { font-weight: 600; }
+.metric-explain-pop .mep-row { display: grid; grid-template-columns: 56px 1fr; gap: 8px; }
+.metric-explain-pop .mep-k {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-top: 1px;
+}
+.metric-explain-pop .mep-status { font-weight: 600; }
+.metric-explain-pop .mep-status-live { color: var(--positive, #2e7d32); }
+.metric-explain-pop .mep-status-templated { color: var(--warning, #b06a00); }
+.metric-explain-pop .mep-status-planned { color: var(--ink-soft); }
+
+/* Explain-mode banner above the report. */
+.explain-banner {
+  margin: 18px 0 4px;
+  padding: 10px 14px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
 .builder-widget {
   position: relative;
   background: var(--paper);

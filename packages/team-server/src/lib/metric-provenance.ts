@@ -1,0 +1,102 @@
+// Provenance for the Explain overlay on the group momentum dashboard. Each
+// entry answers, for one element: what it measures, where the data comes from,
+// whether the pipeline is live or a placeholder, and whether the value/text is
+// deterministic or LLM-generated (and if so, exactly how).
+//
+// `status` describes the PIPELINE, not today's data:
+//   live      — computed from members' pushed rollups (seeded with mock data in
+//               this demo, real once the daemon pushes).
+//   templated — a placeholder generated from deterministic signals; LLM-authored
+//               in production but NOT an LLM call in this build.
+//   planned   — not built yet.
+export type MetricStatus = "live" | "templated" | "planned";
+
+export type MetricProvenance = {
+  description: string;
+  source: string;
+  status: MetricStatus;
+  // false = deterministic (no model). Otherwise, precisely how the LLM output
+  // is obtained in production.
+  llm: false | string;
+};
+
+export const STATUS_LABEL: Record<MetricStatus, string> = {
+  live: "Live pipeline · seeded with mock data in this demo",
+  templated: "Templated placeholder · LLM-authored in production",
+  planned: "Planned · not built yet",
+};
+
+const ROLLUPS = "rich_daily_rollups (pushed per member by the Fleetlens daemon)";
+
+export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
+  "momentum-trend": {
+    description: "Trailing-4-week trajectory of agent time, active members, PRs and sessions for the group. Leads over week-over-week because single-week swings are noisy for a small group.",
+    source: `${ROLLUPS}, bucketed by ISO week`,
+    status: "live",
+    llm: false,
+  },
+  "live-active-rate": {
+    description: "Share of the group active in the last 7 and 30 days.",
+    source: `${ROLLUPS} — distinct members with any active day in the window`,
+    status: "live",
+    llm: false,
+  },
+  "team-pulse-wow": {
+    description: "Combined agent time, sessions, concurrency peak and parallel-execution minutes, week over week.",
+    source: ROLLUPS,
+    status: "live",
+    llm: false,
+  },
+  "live-maturity-mix": {
+    description: "L0–L4 adoption-ladder placement per member and the group distribution. The level is a deterministic classifier (active days, breadth, authored artifacts, in-group adoption) — it never grades on raw volume.",
+    source: `${ROLLUPS} + day_artifact_signals (file-system probe) + team_skill_catalog (cross-member adoption)`,
+    status: "live",
+    llm: false,
+  },
+  "live-member-portraits": {
+    description: "Per-member narrative portrait and the 'why this level' reasoning. The LEVEL and the stat strips are deterministic; the prose is the part that is templated today.",
+    source: `same signals as the L0–L4 mix`,
+    status: "templated",
+    llm: "In production: each session is tagged by `claude -p` (SessionActionTags), then a per-member portrait is synthesized monthly from those tags. In this build the prose is templated from the deterministic signals — no model call yet.",
+  },
+  "live-plan-mode": {
+    description: "How many members used plan-mode this week and the adoption rate — an autonomy/steering signal.",
+    source: `${ROLLUPS}.plan_mode_used`,
+    status: "live",
+    llm: false,
+  },
+  "long-autonomous-texture": {
+    description: "Long uninterrupted autonomous turns and their total time — an autonomy signal (less hand-holding).",
+    source: `${ROLLUPS}.long_auto_count / long_auto_total_min`,
+    status: "live",
+    llm: false,
+  },
+  "skill-usage-wow-bars": {
+    description: "Which skills the group loaded, week over week. Usage-pattern context — never used to grade maturity.",
+    source: `${ROLLUPS}.skills_loaded`,
+    status: "live",
+    llm: false,
+  },
+  "live-prs-shipped": {
+    description: "PRs shipped and per-active-engineer, as an IMPACT PROXY — correlation, not causation. A real delivery measure needs the deferred GitHub/Jira (DORA) integration.",
+    source: `${ROLLUPS}.prs (self-reported by the member's git activity)`,
+    status: "live",
+    llm: false,
+  },
+  "per-project-time-bars": {
+    description: "Agent time per project for the group, this week vs last.",
+    source: `${ROLLUPS}.projects`,
+    status: "live",
+    llm: false,
+  },
+  "seat-right-sizing": {
+    description: "Members on a top-tier seat whose plan utilization is chronically low — candidates to move to a smaller seat. A cost lens, never a performance ranking; high usage is not flagged.",
+    source: "plan_utilization snapshots → membership_weekly_utilization, against the optimizer's downgrade thresholds (avg <40% & peak <60% over 30 days)",
+    status: "live",
+    llm: false,
+  },
+};
+
+export function provenanceFor(id: string): MetricProvenance | null {
+  return METRIC_PROVENANCE[id] ?? null;
+}

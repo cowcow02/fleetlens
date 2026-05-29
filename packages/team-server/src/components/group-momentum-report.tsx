@@ -2,6 +2,8 @@
 
 import type { TeamInsightReport } from "../app/team/[slug]/insights/types";
 import type { MomentumTrendWeek } from "../lib/insights-aggregate";
+import { provenanceFor } from "../lib/metric-provenance";
+import { ExplainBadge } from "./explain-badge";
 import { BLOCK_CATALOG, defaultWidthFor } from "./insights-variants/v7-builder-blocks";
 
 // Per-group momentum dashboard — a focused, read-only rendering of the same
@@ -74,10 +76,12 @@ export function GroupMomentumReport({
   report,
   coaching,
   trend,
+  explain = false,
 }: {
   report: TeamInsightReport;
   coaching: boolean;
   trend?: MomentumTrendWeek[];
+  explain?: boolean;
 }) {
   const sections: Section[] = [
     {
@@ -111,11 +115,19 @@ export function GroupMomentumReport({
 
   return (
     <div className="group-momentum">
+      {explain && (
+        <div className="explain-banner">
+          <strong>Explain mode.</strong> This dashboard is populated with representative <em>mock</em> data
+          for alignment. In production every metric is computed from members&rsquo; pushed rollups. Hover any{" "}
+          &#9432; for its data source, pipeline status, and whether it&rsquo;s deterministic or LLM-generated.
+        </div>
+      )}
       {trend && trend.length > 0 && (
         <section className="live-section" style={{ marginTop: 28 }}>
           <div className="subsection-head">
             <h2>
               <em>Momentum · last {trend.length} weeks</em>
+              {explain && <ExplainBadge p={provenanceFor("momentum-trend")} />}
             </h2>
           </div>
           <p className="kicker" style={{ marginTop: 4, marginBottom: 14, maxWidth: 760, lineHeight: 1.5 }}>
@@ -153,7 +165,10 @@ export function GroupMomentumReport({
                 >
                   <header className="builder-widget-head">
                     <div className="builder-widget-titlewrap">
-                      <h3 className="builder-widget-title">{block.title}</h3>
+                      <h3 className="builder-widget-title">
+                        {block.title}
+                        {explain && <ExplainBadge p={provenanceFor(id)} />}
+                      </h3>
                     </div>
                   </header>
                   <div className="builder-widget-body">{block.render(report)}</div>
