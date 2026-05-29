@@ -40,8 +40,11 @@ export default async function PrintPage({
   const monthMatch = MONTH_KEY.exec(key);
   if (monthMatch) {
     const yearMonth = monthMatch[1]!;
+    // Match the week branch: try in-memory cache for the current month, then
+    // fall back to disk. Force-generated current-month digests get persisted
+    // by digest-month-pipeline so PDF export survives the 10-min TTL.
     const digest = yearMonth === currentYearMonth()
-      ? getCurrentMonthDigestFromCache(yearMonth, Date.now())
+      ? (getCurrentMonthDigestFromCache(yearMonth, Date.now()) ?? readMonthDigest(yearMonth))
       : readMonthDigest(yearMonth);
     if (!digest) notFound();
     return (
@@ -66,10 +69,12 @@ function PrintShell({ children }: { children: React.ReactNode }) {
 // Reset html/body to the digest's own background so the PDF page bleeds
 // edge-to-edge in the same color the digest renders against. @page disables
 // the printer header/margin defaults; Chrome's --print-to-pdf paginates A4.
+// --background is theme-aware (dark / light tokens in globals.css); never
+// hardcode a fallback that would break the light theme.
 const PRINT_CSS = `
   @page { size: A4; margin: 8mm; }
   html, body {
-    background: var(--af-bg, #0f1115) !important;
+    background: var(--background) !important;
     color: var(--af-text);
     margin: 0 !important;
     padding: 0 !important;

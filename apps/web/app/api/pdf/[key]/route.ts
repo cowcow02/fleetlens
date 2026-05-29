@@ -3,12 +3,17 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import {
+  readWeekDigest, readMonthDigest,
+  getCurrentWeekDigestFromCache, getCurrentMonthDigestFromCache,
+} from "@claude-lens/entries/node";
+import { currentWeekMonday, currentYearMonth } from "@/lib/entries";
 import { findChrome } from "@/lib/find-chrome";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const KEY = /^(week-\d{4}-\d{2}-\d{2}|month-\d{4}-\d{2})$/;
+const KEY = /^(week-(\d{4}-\d{2}-\d{2})|month-(\d{4}-\d{2}))$/;
 
 const RENDER_TIMEOUT_MS = 25_000;
 const STABILITY_MS = 600;
@@ -18,11 +23,24 @@ export async function POST(
   { params }: { params: Promise<{ key: string }> },
 ) {
   const { key } = await params;
-  if (!KEY.test(key)) {
+  const m = KEY.exec(key);
+  if (!m) {
     return jsonError(400, `Invalid key: ${key}`);
   }
 
-  const chrome = findChrome();
+  // Pre-check the digest exists in whichever source the /print page would
+  // read from. Without this, Chrome happily captures Next.js's 404 page as
+  // a "successful" PDF, and current-period digests that have aged out of
+  // the in-memory TTL would yield a broken download instead of a clear
+  // error.
+  if (!digestExists(m)) {
+    return jsonError(
+      404,
+      "Digest not found. If this is the current week or month, the in-memory cache may have expired — reload the page and re-generate.",
+    );
+  }
+
+  const chrome = await findChrome();
   if (!chrome) {
     return jsonError(
       500,
@@ -31,7 +49,13 @@ export async function POST(
   }
 
   const origin = new URL(req.url).origin;
-  const targetUrl = `${origin}/print/${key}`;
+  // Headless Chrome won't carry the user's session cookies, so forward the
+  // current theme via query param. Middleware turns it into a header that
+  // the root layout applies to <html data-theme>.
+  const theme = parseThemeCookie(req.headers.get("cookie"));
+  const targetUrl = theme
+    ? `${origin}/print/${key}?theme=${theme}`
+    : `${origin}/print/${key}`;
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "fleetlens-pdf-"));
   const tmpPath = path.join(tmpDir, "out.pdf");
@@ -57,6 +81,24 @@ export async function POST(
   }
 }
 
+function digestExists(match: RegExpExecArray): boolean {
+  const monday = match[2];
+  const yearMonth = match[3];
+  if (monday) {
+    if (monday === currentWeekMonday()) {
+      return !!(getCurrentWeekDigestFromCache(monday, Date.now()) ?? readWeekDigest(monday));
+    }
+    return !!readWeekDigest(monday);
+  }
+  if (yearMonth) {
+    if (yearMonth === currentYearMonth()) {
+      return !!(getCurrentMonthDigestFromCache(yearMonth, Date.now()) ?? readMonthDigest(yearMonth));
+    }
+    return !!readMonthDigest(yearMonth);
+  }
+  return false;
+}
+
 // Chrome on macOS produces the PDF in 2–3s but the parent process keeps
 // running (GoogleUpdater helpers prevent a clean exit). So instead of waiting
 // for the process to close, we poll the output file for stability and kill
@@ -67,10 +109,16 @@ async function renderToPdf(
   out: string,
   profileDir: string,
 ): Promise<void> {
+  // --no-sandbox is required on Linux containers / CI without user namespaces
+  // (Chrome can't drop privileges otherwise), but it's a security weakening
+  // that's not needed on macOS or Windows desktop Chrome. Opt-in via env on
+  // the systems that need it.
+  const noSandbox = process.env.FLEETLENS_CHROME_NO_SANDBOX === "1"
+    || process.platform === "linux";
   const args = [
     "--headless=new",
     "--disable-gpu",
-    "--no-sandbox",
+    ...(noSandbox ? ["--no-sandbox"] : []),
     "--no-pdf-header-footer",
     "--hide-scrollbars",
     "--no-first-run",
@@ -82,18 +130,18 @@ async function renderToPdf(
     url,
   ];
 
+  let earlyExit: number | null = null;
   const proc = spawn(chrome, args, {
     stdio: "ignore",
     detached: true,
   });
+  proc.on("exit", (code) => { earlyExit = code; });
   proc.unref();
 
   const deadline = Date.now() + RENDER_TIMEOUT_MS;
   let lastSize = -1;
   let stableSince = 0;
   let lastErr: NodeJS.ErrnoException | null = null;
-  let earlyExit: number | null = null;
-  proc.on("exit", (code) => { earlyExit = code; });
 
   while (Date.now() < deadline) {
     await delay(150);
@@ -127,10 +175,20 @@ async function renderToPdf(
   );
 }
 
+// On Unix the negative PID kills the whole process group (Chrome spawns
+// helper processes for GPU, network, renderer). On Windows process.kill(-pid)
+// throws ESRCH — the swallowed exception is intentional, and the fallback
+// kill below at least reaps the root Chrome process.
 function killGroup(pid: number | undefined): void {
   if (!pid) return;
-  try { process.kill(-pid, "SIGKILL"); } catch { /* group already gone */ }
+  try { process.kill(-pid, "SIGKILL"); } catch { /* group already gone, or Windows */ }
   try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+}
+
+function parseThemeCookie(header: string | null): "light" | "dark" | null {
+  if (!header) return null;
+  const m = /(?:^|;\s*)claude-lens-theme=(light|dark)/.exec(header);
+  return m ? (m[1] as "light" | "dark") : null;
 }
 
 function jsonError(status: number, message: string): Response {

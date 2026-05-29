@@ -17,8 +17,11 @@ export function ExportPdfButton({ digestKey }: { digestKey: string }) {
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
       const blob = await res.blob();
-      const today = new Date().toISOString().slice(0, 10);
-      triggerDownload(blob, `fleetlens-${digestKey}-${today}.pdf`);
+      // Trust the server's Content-Disposition for the filename so we don't
+      // drift across the midnight boundary between request and response.
+      const filename = parseDispositionFilename(res.headers.get("content-disposition"))
+        ?? `fleetlens-${digestKey}.pdf`;
+      triggerDownload(blob, filename);
       setStatus("idle");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -53,6 +56,12 @@ export function ExportPdfButton({ digestKey }: { digestKey: string }) {
       </button>
     </span>
   );
+}
+
+function parseDispositionFilename(header: string | null): string | null {
+  if (!header) return null;
+  const m = /filename="([^"]+)"/.exec(header) ?? /filename=([^;]+)/.exec(header);
+  return m ? m[1].trim() : null;
 }
 
 function triggerDownload(blob: Blob, filename: string): void {

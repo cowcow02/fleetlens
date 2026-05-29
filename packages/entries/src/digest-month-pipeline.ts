@@ -159,6 +159,15 @@ export async function* runMonthDigestPipeline(
     } else {
       digest.is_live = true;
       setCurrentMonthDigestInCache(yearMonth, digest, now());
+      // Mirror digest-week-pipeline: force=true on the current month is an
+      // explicit user-driven generation. The default in-memory TTL isn't
+      // visible across Next.js route bundles, so the insights / print page's
+      // RSC can't see what the API route just generated. Persist on force so
+      // PDF export and direct revisits land on the same digest.
+      if (opts.force === true) {
+        writeMonthDigest(digest);
+        yield { type: "saved", path: `~/.cclens/digests/month/${yearMonth}.json` };
+      }
     }
 
     yield { type: "digest", digest };

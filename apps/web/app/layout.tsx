@@ -31,9 +31,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const reqHeaders = await headers();
   const pathname = reqHeaders.get("x-fleetlens-pathname") ?? "";
   if (pathname.startsWith("/print/")) {
+    // Theme priority: header set by middleware from ?theme= (forwarded by
+    // the PDF API), then cookie (for direct browser visits), then dark.
+    const headerTheme = reqHeaders.get("x-fleetlens-theme");
     const cookieStore = await cookies();
-    const themeCookie = cookieStore.get("claude-lens-theme")?.value;
-    const theme = themeCookie === "light" || themeCookie === "dark" ? themeCookie : "dark";
+    const cookieTheme = cookieStore.get("claude-lens-theme")?.value;
+    const theme =
+      headerTheme === "light" || headerTheme === "dark" ? headerTheme :
+      cookieTheme === "light" || cookieTheme === "dark" ? cookieTheme :
+      "dark";
     return (
       <html lang="en" data-theme={theme} suppressHydrationWarning>
         <body>{children}</body>
