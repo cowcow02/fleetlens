@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { loadGroupBySlug } from "../../../lib/groups";
-import { isoMondayOf, visibleMembershipIds } from "../../../lib/insights-aggregate";
+import { groupMomentumTrend, isoMondayOf, visibleMembershipIds } from "../../../lib/insights-aggregate";
 import { buildTeamInsightReport, LIVE_STARTER_BLOCKS_V8 } from "../../../lib/team-report-aggregate";
 import { VariantBuilder } from "../../../components/insights-variants/v7-builder";
 import { GroupMomentumReport } from "../../../components/group-momentum-report";
@@ -58,13 +58,10 @@ export default async function ReportPage({
     const groupMemberIds = await visibleMembershipIds(teamId, scope, pool);
     const membersTotal = groupMemberIds.length;
     const weekMonday = isoMondayOf(new Date());
-    const report = await buildTeamInsightReport(
-      teamId,
-      scope,
-      pool,
-      { teamSlug: slug, teamName, membersTotal },
-      weekMonday,
-    );
+    const [report, trend] = await Promise.all([
+      buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
+      groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
+    ]);
     const ws = new Date(`${report.week_monday}T12:00:00`);
     const we = new Date(ws);
     we.setDate(ws.getDate() + 6);
@@ -85,7 +82,7 @@ export default async function ReportPage({
           generatedAt={new Date()}
           roster={report.cross_edition.roster.map((m) => m.display_name)}
         />
-        <GroupMomentumReport report={clientReport} coaching={coaching} />
+        <GroupMomentumReport report={clientReport} coaching={coaching} trend={trend} />
       </>
     );
   }

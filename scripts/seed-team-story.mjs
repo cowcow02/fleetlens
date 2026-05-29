@@ -207,6 +207,35 @@ async function seed(client) {
       [teamId, pathHash(name), maya, dayStr(12), [mId["Priya"], mId["Theo"]], jitter(40)]);
   }
 
+  // plan_utilization so the seat right-sizing lens has data. Devin (on the
+  // Pro Max 20x seat) runs chronically low -> downgrade candidate; Maya (also
+  // 20x) is well-matched -> stays. 20 daily snapshots clear the optimizer's
+  // 14-day minimum. The optimizer only downgrades from the top tier, so the
+  // lens surfaces exactly one Platform candidate.
+  const UTIL = [
+    { name: "Devin", avg: 24, peak: 41 },
+    { name: "Maya",  avg: 76, peak: 92 },
+  ];
+  for (const u of UTIL) {
+    for (let off = 20; off >= 1; off--) {
+      const capturedAt = new Date();
+      capturedAt.setUTCHours(12, 0, 0, 0);
+      capturedAt.setUTCDate(capturedAt.getUTCDate() - off);
+      const sevenDay = off % 5 === 0
+        ? u.peak
+        : Math.min(100, Math.max(0, Math.round(u.avg + (Math.random() * 2 - 1) * 8)));
+      await client.query(
+        `INSERT INTO plan_utilization
+          (team_id, membership_id, captured_at, seven_day_utilization,
+           seven_day_resets_at, five_hour_utilization)
+         VALUES ($1,$2,$3,$4,$3,$5)
+         ON CONFLICT (team_id, membership_id, captured_at) DO NOTHING`,
+        [teamId, mId[u.name], capturedAt.toISOString(), sevenDay, Math.round(sevenDay * 0.6)]);
+    }
+  }
+  await client.query("REFRESH MATERIALIZED VIEW membership_weekly_utilization")
+    .catch((e) => console.warn("[seed] mat-view refresh failed:", e.message));
+
   const counts = await client.query(
     `SELECT
        (SELECT count(*) FROM rich_daily_rollups WHERE team_id=$1) rr,

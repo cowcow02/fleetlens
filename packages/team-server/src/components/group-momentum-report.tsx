@@ -1,6 +1,7 @@
 "use client";
 
 import type { TeamInsightReport } from "../app/team/[slug]/insights/types";
+import type { MomentumTrendWeek } from "../lib/insights-aggregate";
 import { BLOCK_CATALOG, defaultWidthFor } from "./insights-variants/v7-builder-blocks";
 
 // Per-group momentum dashboard — a focused, read-only rendering of the same
@@ -19,12 +20,64 @@ function blockById(id: string) {
   return BLOCK_CATALOG.find((b) => b.id === id) ?? null;
 }
 
+function TrendCard({
+  label,
+  values,
+  unit = "",
+  fmt,
+}: {
+  label: string;
+  values: number[];
+  unit?: string;
+  fmt: (v: number) => string;
+}) {
+  const max = Math.max(...values, 1);
+  const latest = values[values.length - 1] ?? 0;
+  const delta = latest - (values[0] ?? 0);
+  const dir = delta > 0.05 ? "▲" : delta < -0.05 ? "▼" : "→";
+  const tone = delta > 0.05 ? "var(--positive)" : delta < -0.05 ? "var(--accent)" : "var(--ink-soft)";
+  return (
+    <div className="builder-widget" style={{ gridColumn: "span 1" }}>
+      <header className="builder-widget-head">
+        <div className="builder-widget-titlewrap">
+          <h3 className="builder-widget-title">{label}</h3>
+        </div>
+      </header>
+      <div className="builder-widget-body">
+        <div style={{ fontSize: 30, fontFamily: "var(--serif, Georgia, serif)", lineHeight: 1 }}>
+          {fmt(latest)}
+          {unit}
+        </div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 40, margin: "12px 0 8px" }}>
+          {values.map((v, i) => (
+            <div
+              key={i}
+              title={`${fmt(v)}${unit}`}
+              style={{
+                flex: 1,
+                height: `${Math.max(3, (v / max) * 100)}%`,
+                background: i === values.length - 1 ? "var(--accent)" : "var(--rule)",
+                borderRadius: "2px 2px 0 0",
+              }}
+            />
+          ))}
+        </div>
+        <div className="kicker" style={{ color: tone }}>
+          {dir} {fmt(Math.abs(delta))}{unit} over {values.length} wks
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function GroupMomentumReport({
   report,
   coaching,
+  trend,
 }: {
   report: TeamInsightReport;
   coaching: boolean;
+  trend?: MomentumTrendWeek[];
 }) {
   const sections: Section[] = [
     {
@@ -58,6 +111,26 @@ export function GroupMomentumReport({
 
   return (
     <div className="group-momentum">
+      {trend && trend.length > 0 && (
+        <section className="live-section" style={{ marginTop: 28 }}>
+          <div className="subsection-head">
+            <h2>
+              <em>Momentum · last {trend.length} weeks</em>
+            </h2>
+          </div>
+          <p className="kicker" style={{ marginTop: 4, marginBottom: 14, maxWidth: 760, lineHeight: 1.5 }}>
+            Four-week trajectory, oldest → newest — the primary read for a small group, where
+            single week-over-week swings are noisy. The per-tile &ldquo;vs last wk&rdquo; figures below
+            are secondary context.
+          </p>
+          <div className="builder-grid group-momentum-grid">
+            <TrendCard label="Agent time" unit="h" values={trend.map((t) => t.agentHours)} fmt={(v) => v.toFixed(1)} />
+            <TrendCard label="Active members" values={trend.map((t) => t.activeMembers)} fmt={(v) => String(Math.round(v))} />
+            <TrendCard label="PRs shipped" values={trend.map((t) => t.prs)} fmt={(v) => String(Math.round(v))} />
+            <TrendCard label="Sessions" values={trend.map((t) => t.sessions)} fmt={(v) => String(Math.round(v))} />
+          </div>
+        </section>
+      )}
       {sections.map((s) => (
         <section key={s.key} className="live-section" style={{ marginTop: 28 }}>
           <div className="subsection-head">

@@ -3,10 +3,14 @@ import { redirect, notFound } from "next/navigation";
 import { getPool } from "../../../../../../db/pool";
 import { validateSession } from "../../../../../../lib/auth";
 import { loadGroupBySlug } from "../../../../../../lib/groups";
-import { isoMondayOf, visibleMembershipIds } from "../../../../../../lib/insights-aggregate";
+import { groupMomentumTrend, isoMondayOf, visibleMembershipIds } from "../../../../../../lib/insights-aggregate";
 import { buildTeamInsightReport } from "../../../../../../lib/team-report-aggregate";
+import { loadOptimizerInputs } from "../../../../../../lib/plan-queries";
+import { recommend } from "../../../../../../lib/plan-optimizer";
+import { tierEntry } from "../../../../../../lib/plan-tiers";
 import { ReportHeader } from "../../../../../../components/report-header";
 import { GroupMomentumReport } from "../../../../../../components/group-momentum-report";
+import { SeatRightSizing, type SeatCandidate } from "../../../../../../components/seat-right-sizing";
 
 export const dynamic = "force-dynamic";
 
@@ -58,13 +62,32 @@ export default async function GroupInsightsPage({
   const membersTotal = groupMemberIds.length;
 
   const weekMonday = isoMondayOf(new Date());
-  const report = await buildTeamInsightReport(
-    teamId,
-    scope,
-    pool,
-    { teamSlug: slug, teamName, membersTotal },
-    weekMonday,
-  );
+  const groupIds = new Set(groupMemberIds);
+  const [report, trend, optimizerInputs] = await Promise.all([
+    buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
+    groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
+    loadOptimizerInputs(teamId, pool),
+  ]);
+
+  // Seat right-sizing (Phase 1b): only downgrade candidates within the group.
+  const groupSeatRecs = optimizerInputs
+    .filter((i) => groupIds.has(i.membershipId))
+    .map((i) => ({ input: i, rec: recommend(i.stats, tierEntry(i.tierKey)) }));
+  const seatCandidates: SeatCandidate[] = groupSeatRecs
+    .filter((r) => r.rec.action === "downgrade")
+    .map((r) => {
+      const rec = r.rec as Extract<typeof r.rec, { action: "downgrade" }>;
+      return {
+        name: r.input.memberName,
+        fromTier: tierEntry(r.input.tierKey).label,
+        toTier: tierEntry(rec.targetTier).label,
+        avgPct: Math.round(r.input.stats.avgSevenDayAvg),
+        peakPct: Math.round(r.input.stats.worstSevenDayPeak),
+        savingsUsd: rec.estimatedSavingsUsd,
+      };
+    });
+  const seatReviewed = groupSeatRecs.filter((r) => r.rec.action !== "insufficient_data").length;
+  const seatInsufficient = groupSeatRecs.filter((r) => r.rec.action === "insufficient_data").length;
 
   const weekDate = new Date(`${report.week_monday}T12:00:00`);
   const weekEnd = new Date(weekDate);
@@ -113,7 +136,14 @@ export default async function GroupInsightsPage({
           <p>Add members to {group.name} to see its momentum.</p>
         </div>
       ) : (
-        <GroupMomentumReport report={clientReport} coaching={coaching} />
+        <>
+          <GroupMomentumReport report={clientReport} coaching={coaching} trend={trend} />
+          <SeatRightSizing
+            candidates={seatCandidates}
+            reviewedCount={seatReviewed}
+            insufficientCount={seatInsufficient}
+          />
+        </>
       )}
     </>
   );
