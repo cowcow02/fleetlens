@@ -17,7 +17,12 @@ function baseUrl(req: NextRequest): string {
   return `${proto}://${host}`;
 }
 
-async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>, builderState: string | null) {
+async function handle(
+  req: NextRequest,
+  slugParam: Promise<{ slug: string }>,
+  builderState: string | null,
+  source: "live" | "preview",
+) {
   const { slug } = await slugParam;
   const auth = await requireTeamMembership(req, slug, { bySlug: true });
   if (auth instanceof NextResponse) return auth;
@@ -25,7 +30,8 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>, bu
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const dashUrl = `${baseUrl(req)}/report/${encodeURIComponent(slug)}`;
+  const reportPath = `/report/${encodeURIComponent(slug)}${source === "preview" ? "?source=preview" : ""}`;
+  const dashUrl = `${baseUrl(req)}${reportPath}`;
   const cookieDomain = new URL(baseUrl(req)).hostname;
   const cookieSecure = baseUrl(req).startsWith("https:");
 
@@ -120,24 +126,32 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>, bu
   }
 }
 
+function sourceFromQuery(req: NextRequest): "live" | "preview" {
+  return req.nextUrl.searchParams.get("source") === "preview" ? "preview" : "live";
+}
+
 export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
-  return handle(req, ctx.params, null);
+  return handle(req, ctx.params, null, sourceFromQuery(req));
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
   let state: string | null = null;
+  let bodySource: "live" | "preview" | null = null;
   const contentType = req.headers.get("content-type") ?? "";
   try {
     if (contentType.includes("application/json")) {
       const body = await req.json();
       if (body && typeof body.state === "string" && body.state.length < MAX_STATE_BYTES) state = body.state;
+      if (body && (body.source === "live" || body.source === "preview")) bodySource = body.source;
     } else if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
       const form = await req.formData();
       const raw = form.get("state");
       if (typeof raw === "string" && raw.length < MAX_STATE_BYTES) state = raw;
+      const rawSource = form.get("source");
+      if (rawSource === "live" || rawSource === "preview") bodySource = rawSource;
     }
   } catch {
     // ignore — no state provided, route will render starter layout
   }
-  return handle(req, ctx.params, state);
+  return handle(req, ctx.params, state, bodySource ?? sourceFromQuery(req));
 }

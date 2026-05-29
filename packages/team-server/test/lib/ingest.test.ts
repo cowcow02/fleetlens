@@ -319,6 +319,128 @@ describe("processIngest", () => {
     expect(rows[0].outcome_mix).toEqual({ shipped: 1, partial: 2 });
   });
 
+  it("upserts day_artifact_signals when artifactSignals is in the payload", async () => {
+    const day = "2026-02-10";
+    const payload = makePayload({
+      ingestId: `ingest-art-${Math.random().toString(36).slice(2)}`,
+      schemaVersion: 2,
+      dailyRollup: {
+        day, agentTimeMs: 3_600_000, sessions: 3, toolCalls: 20, turns: 8,
+        tokens: { input: 500, output: 300, cacheRead: 100, cacheWrite: 50 },
+      },
+      richRollup: {
+        day, agentTimeMs: 3_600_000, sessions: 3, toolCalls: 20, turns: 8,
+        tokens: { input: 500, output: 300, cacheRead: 100, cacheWrite: 50 },
+        projects: [], workingShapes: [], concurrencyPeak: 0, parallelMinutes: 0,
+        longAutonomous: { count: 0, totalMin: 0, maxSingleMin: 0 },
+        toolErrors: 0, skillsLoaded: [], subagentsDispatched: [],
+        brainstormWarmupSessions: 0, planModeUsed: 0,
+        prs: 0, commits: 0, pushes: 0,
+      },
+      artifactSignals: {
+        skillsAuthored: [
+          { pathHash: "a".repeat(32), firstSeenDate: day },
+          { pathHash: "b".repeat(32), firstSeenDate: day },
+        ],
+        skillsEdited: [{ pathHash: "c".repeat(32), lineDelta: 12 }],
+        subagentsAuthored: [{ pathHash: "d".repeat(32), firstSeenDate: day }],
+        slashCommandsAuthored: [],
+        claudemdLineDelta: 7,
+      },
+    });
+    await processIngest(payload, membershipId, teamId, pool);
+    const res = await pool.query(
+      `SELECT skills_authored, claudemd_line_delta FROM day_artifact_signals
+       WHERE team_id = $1 AND membership_id = $2 AND day = $3::date`,
+      [teamId, membershipId, day],
+    );
+    expect(res.rowCount).toBe(1);
+    expect(res.rows[0].claudemd_line_delta).toBe(7);
+    expect(res.rows[0].skills_authored).toHaveLength(2);
+  });
+
+  it("reconciles team_skill_catalog: originator stays monotonic; second member becomes adopter", async () => {
+    const day = "2026-02-11";
+    const pathHash = "skillhash" + "0".repeat(23);
+
+    // Member B for adopter check
+    const memberB = await createUserAccount(`adopter-${Math.random().toString(36).slice(2)}@x.dev`, "pass1234", null, {}, pool);
+    const memBRes = await pool.query<{ id: string }>(
+      `INSERT INTO memberships (user_account_id, team_id, role) VALUES ($1, $2, 'member') RETURNING id`,
+      [memberB.id, teamId],
+    );
+    const memBId = memBRes.rows[0].id;
+
+    // Member A authors a skill
+    await processIngest(
+      makePayload({
+        ingestId: `ingest-cat-a-${Math.random().toString(36).slice(2)}`,
+        schemaVersion: 2,
+        dailyRollup: {
+          day, agentTimeMs: 100, sessions: 1, toolCalls: 1, turns: 1,
+          tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+        richRollup: {
+          day, agentTimeMs: 100, sessions: 1, toolCalls: 1, turns: 1,
+          tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          projects: [], workingShapes: [], concurrencyPeak: 0, parallelMinutes: 0,
+          longAutonomous: { count: 0, totalMin: 0, maxSingleMin: 0 },
+          toolErrors: 0, skillsLoaded: [], subagentsDispatched: [],
+          brainstormWarmupSessions: 0, planModeUsed: 0,
+          prs: 0, commits: 0, pushes: 0,
+        },
+        artifactSignals: {
+          skillsAuthored: [{ pathHash, firstSeenDate: day }],
+          skillsEdited: [], subagentsAuthored: [], slashCommandsAuthored: [],
+          claudemdLineDelta: 0,
+        },
+      }),
+      membershipId, teamId, pool,
+    );
+
+    // Member B "adopts" by authoring the same path_hash later (representing
+    // load+commit of the same skill name across the team)
+    await processIngest(
+      makePayload({
+        ingestId: `ingest-cat-b-${Math.random().toString(36).slice(2)}`,
+        schemaVersion: 2,
+        dailyRollup: {
+          day, agentTimeMs: 100, sessions: 1, toolCalls: 1, turns: 1,
+          tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+        richRollup: {
+          day, agentTimeMs: 100, sessions: 1, toolCalls: 1, turns: 1,
+          tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          projects: [], workingShapes: [], concurrencyPeak: 0, parallelMinutes: 0,
+          longAutonomous: { count: 0, totalMin: 0, maxSingleMin: 0 },
+          toolErrors: 0, skillsLoaded: [], subagentsDispatched: [],
+          brainstormWarmupSessions: 0, planModeUsed: 0,
+          prs: 0, commits: 0, pushes: 0,
+        },
+        artifactSignals: {
+          skillsAuthored: [{ pathHash, firstSeenDate: day }],
+          skillsEdited: [], subagentsAuthored: [], slashCommandsAuthored: [],
+          claudemdLineDelta: 0,
+        },
+      }),
+      memBId, teamId, pool,
+    );
+
+    const res = await pool.query<{
+      originator_membership_id: string;
+      adopter_membership_ids: string[];
+      loads_total: number;
+    }>(
+      `SELECT originator_membership_id, adopter_membership_ids, loads_total
+       FROM team_skill_catalog WHERE team_id = $1 AND path_hash = $2`,
+      [teamId, pathHash],
+    );
+    expect(res.rowCount).toBe(1);
+    expect(res.rows[0].originator_membership_id).toBe(membershipId);
+    expect(res.rows[0].adopter_membership_ids).toContain(memBId);
+    expect(res.rows[0].loads_total).toBeGreaterThanOrEqual(2);
+  });
+
   it("preserves prior outcome_mix when a later push omits enrichedExtras (opt-out path)", async () => {
     const day = "2026-05-13";
     const richRollup = {

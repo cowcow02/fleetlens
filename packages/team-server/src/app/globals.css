@@ -7825,3 +7825,116 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
   .group-card-name { font-size: 34px; }
   .group-card-name-input { font-size: 34px; }
 }
+
+/* ─── Per-member maturity portrait (v9) ────────────────────────────────── */
+.portrait-stack { display: flex; flex-direction: column; gap: 16px; }
+.portrait-card {
+  border: 1px solid var(--rule-soft);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--paper) 100%, transparent);
+  padding: 18px 20px;
+}
+.portrait-card-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px; margin-bottom: 10px;
+}
+.portrait-card-name { font-size: 18px; font-weight: 600; }
+.portrait-card-trend { font-size: 12px; margin-top: 2px; }
+.portrait-card-level-block { text-align: right; }
+.portrait-card-level { font-size: 26px; font-weight: 700; line-height: 1; }
+.portrait-card-level-label { font-size: 13px; color: var(--ink-soft); margin-left: 4px; }
+.portrait-card-summary {
+  font-size: 14px; line-height: 1.55; margin: 0 0 12px 0;
+  color: var(--ink);
+}
+.portrait-paths {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-bottom: 12px; font-size: 12px;
+}
+.portrait-paths-label { color: var(--ink-soft); margin-right: 4px; }
+.portrait-path-chip {
+  display: inline-block; padding: 3px 8px; border-radius: 999px;
+  border: 1px solid var(--rule-soft); font-size: 11px;
+}
+.portrait-path-chip.qualifying {
+  background: color-mix(in srgb, var(--positive) 10%, transparent);
+  border-color: color-mix(in srgb, var(--positive) 30%, transparent);
+  color: color-mix(in srgb, var(--positive) 85%, var(--ink));
+}
+.portrait-path-chip.near-miss {
+  background: color-mix(in srgb, var(--mute) 12%, transparent);
+  border-color: var(--rule-soft);
+  color: var(--ink-soft); font-style: italic;
+}
+.portrait-evidence { margin-top: 10px; }
+.portrait-evidence-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--ink-soft); margin-bottom: 4px;
+}
+.portrait-evidence-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 13px;
+}
+.portrait-evidence-list li {
+  display: grid; grid-template-columns: 14px 1fr; gap: 6px; align-items: baseline;
+}
+.portrait-evidence-glyph { font-weight: 600; color: var(--ink-soft); }
+.portrait-evidence-decisive .portrait-evidence-glyph { color: var(--positive); }
+.portrait-evidence-supporting .portrait-evidence-glyph { color: var(--accent); }
+.portrait-evidence-near-miss .portrait-evidence-glyph { color: var(--warning); }
+.portrait-evidence-style {
+  padding-top: 10px; margin-top: 10px; border-top: 1px dashed var(--rule-soft);
+}
+
+/* ─── Portrait stat strip (v9.1 — concrete-numbers refresh) ─────────────── */
+.portrait-stats {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px; margin: 14px 0 4px;
+  border-top: 1px solid var(--rule-soft);
+  border-bottom: 1px solid var(--rule-soft);
+  padding: 14px 0;
+}
+.portrait-stat-col { font-size: 13px; line-height: 1.45; }
+.portrait-stat-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-soft); margin-bottom: 4px; font-weight: 600;
+}
+.portrait-stat-primary {
+  font-size: 18px; font-weight: 600; color: var(--ink);
+  letter-spacing: -0.01em; margin-bottom: 4px;
+}
+.portrait-stat-unit {
+  font-size: 12px; font-weight: 400; color: var(--ink-soft);
+}
+.portrait-stat-line { color: var(--ink); }
+.portrait-stat-line.muted { color: var(--ink-soft); font-size: 12px; }
+
+.portrait-harness-grid { margin: 14px 0; }
+.portrait-harness-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--ink-soft); margin-bottom: 6px; font-weight: 600;
+}
+.portrait-harness-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.portrait-harness-table td {
+  padding: 5px 8px; border-bottom: 1px solid var(--rule-soft);
+}
+.portrait-harness-table tr:last-child td { border-bottom: none; }
+.portrait-harness-cat { color: var(--ink); width: 60%; }
+.portrait-harness-val {
+  color: var(--ink-soft); font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.portrait-harness-row-emphasis td {
+  background: color-mix(in srgb, var(--positive) 6%, transparent);
+  font-weight: 500;
+}
+.portrait-harness-row-emphasis .portrait-harness-val {
+  color: color-mix(in srgb, var(--positive) 80%, var(--ink));
+}
+
+@media (max-width: 720px) {
+  .portrait-stats { grid-template-columns: 1fr; gap: 10px; }
+}

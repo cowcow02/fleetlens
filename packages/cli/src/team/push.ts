@@ -13,6 +13,7 @@ import {
   type DailyRollup,
   type RichDailyRollup,
   type EnrichedDailyExtras,
+  type DayArtifactSignals,
   type WireUsageWindow,
   type WireExtraUsage,
   type WireUsageSnapshot,
@@ -33,6 +34,7 @@ export type {
   DailyRollup,
   RichDailyRollup,
   EnrichedDailyExtras,
+  DayArtifactSignals,
   WireUsageWindow,
   WireExtraUsage,
   WireUsageSnapshot,
@@ -298,6 +300,7 @@ export type IngestPayloadInputs = {
   rollup?: DailyRollup;
   richExtras?: Omit<RichDailyRollup, keyof DailyRollup>;
   enrichedExtras?: EnrichedDailyExtras;
+  artifactSignals?: DayArtifactSignals;
   usageSnapshot?: WireUsageSnapshot;
   planTier?: string;
   cyclePeaks?: WireCyclePeaks;
@@ -310,10 +313,13 @@ export function buildIngestPayload(inputs: IngestPayloadInputs): IngestPayload {
   return {
     ingestId: randomUUID(),
     observedAt: new Date().toISOString(),
-    ...(richRollup || inputs.enrichedExtras ? { schemaVersion: RICH_ROLLUP_SCHEMA_VERSION } : {}),
+    ...(richRollup || inputs.enrichedExtras || inputs.artifactSignals
+      ? { schemaVersion: RICH_ROLLUP_SCHEMA_VERSION }
+      : {}),
     ...(inputs.rollup ? { dailyRollup: inputs.rollup } : {}),
     ...(richRollup ? { richRollup } : {}),
     ...(inputs.enrichedExtras ? { enrichedExtras: inputs.enrichedExtras } : {}),
+    ...(inputs.artifactSignals ? { artifactSignals: inputs.artifactSignals } : {}),
     ...(inputs.usageSnapshot ? { usageSnapshot: inputs.usageSnapshot } : {}),
     ...(inputs.planTier ? { planTier: inputs.planTier } : {}),
     ...(inputs.cyclePeaks ? { cyclePeaks: inputs.cyclePeaks } : {}),
