@@ -182,15 +182,14 @@ export function buildRichRollupBlocks(
 
   const projects = new Map<string, { agentTimeMs: number; sessions: number }>();
   for (const s of clippedSessions) {
-    // Canonical project is computed from the human-readable cwd path, NOT the
-    // raw `~/.claude/projects/<encoded>` directory — matching the Entry's
-    // `project` field that build.ts derives via the same call.
-    // Private-project opt-out is keyed on the full canonical path; group the
-    // breakdown by repo name so the team edition never receives absolute paths
-    // and same-repo-different-harness rows fold together.
+    // Group the breakdown by repo name so the team edition never receives
+    // absolute paths and same-repo-different-harness rows fold together.
     const canonical = canonicalProjectName(s.projectName);
-    if (privateProjects.has(canonical)) continue;
     const name = projectRepoName(s.projectName);
+    // Privacy opt-out: the consent UI writes the repo-name identity that
+    // groupByProject now surfaces, so match on that — and still honor any
+    // legacy full-canonical-path entry. Either match excludes the project.
+    if (privateProjects.has(name) || privateProjects.has(canonical)) continue;
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
     const cur = projects.get(name) ?? { agentTimeMs: 0, sessions: 0 };
     cur.agentTimeMs += ms;
@@ -211,7 +210,9 @@ export function buildRichRollupBlocks(
   let longTotalMin = 0;
   let longMaxSingleMin = 0;
   for (const e of entries) {
-    if (privateProjects.has(e.project)) continue;
+    // Same dual-key privacy check as the projects loop (repo name + legacy
+    // full path) — e.project is the entry's full canonical path.
+    if (privateProjects.has(projectRepoName(e.project)) || privateProjects.has(e.project)) continue;
     const shape = e.signals?.working_shape ?? null;
     if (shape) {
       const cur = workingShapes.get(shape) ?? { sessions: 0, agentTimeMs: 0 };

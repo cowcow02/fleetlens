@@ -444,12 +444,24 @@ describe("buildRichRollupBlocks", () => {
     expect(blocks.parallelMinutes).toBeGreaterThan(0);
   });
 
-  it("filters projects via privateProjects set", () => {
+  it("filters projects private by repo name — the identity the consent UI writes", () => {
     const entries: Entry[] = [
       makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens" }),
       makeEntry({ session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka" }),
     ];
-    // Private opt-out is keyed on the full canonical path; output is repo name.
+    // groupByProject now surfaces the repo leaf, so the consent UI saves
+    // "topeka" — the push must honor that, not just the full path.
+    const blocks = buildRichRollupBlocks(day, [s1, s3], entries, new Set(["topeka"]));
+    const names = blocks.projects.map((p) => p.project);
+    expect(names).toContain("fleetlens");
+    expect(names).not.toContain("topeka");
+  });
+
+  it("still honors a legacy full-canonical-path privateProjects entry", () => {
+    const entries: Entry[] = [
+      makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens" }),
+      makeEntry({ session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka" }),
+    ];
     const blocks = buildRichRollupBlocks(day, [s1, s3], entries, new Set(["/Users/x/Repo/topeka"]));
     const names = blocks.projects.map((p) => p.project);
     expect(names).toContain("fleetlens");
