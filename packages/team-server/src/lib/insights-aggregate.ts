@@ -54,12 +54,45 @@ export function previousIsoMonday(weekMonday: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+export function nextIsoMonday(weekMonday: string): string {
+  const d = new Date(`${weekMonday}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
+
 // The most recent FULLY-ELAPSED ISO week (Mon–Sun). The current week is always
 // in progress, so insight reports lead with this instead — a complete,
 // stable window that also sidesteps the 1–2 day lag before the daemon has
 // pushed the latest days.
 export function lastCompletedWeekMonday(now: Date = new Date()): string {
   return previousIsoMonday(isoMondayOf(now));
+}
+
+// Validate a `?week=` param into a renderable week Monday: it must be a real
+// Monday and no later than the last completed week (the current week is in
+// progress and has no stable report). Anything else falls back to the last
+// completed week, so a bad/blank param degrades gracefully.
+export function resolveWeekMonday(param: string | null | undefined, now: Date = new Date()): string {
+  const last = lastCompletedWeekMonday(now);
+  if (!param || !/^\d{4}-\d{2}-\d{2}$/.test(param)) return last;
+  const d = new Date(`${param}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || isoMondayOf(d) !== param) return last;
+  return param > last ? last : param;
+}
+
+// Monday of the earliest week with any rich rollup for these members — the
+// floor for week navigation. Null when the scope has no data at all.
+export async function earliestWeekMonday(
+  membershipIds: string[],
+  pool: pg.Pool,
+): Promise<string | null> {
+  if (membershipIds.length === 0) return null;
+  const res = await pool.query<{ d: string | null }>(
+    `SELECT min(day)::text AS d FROM rich_daily_rollups WHERE membership_id = ANY($1::uuid[])`,
+    [membershipIds],
+  );
+  const d = res.rows[0]?.d;
+  return d ? isoMondayOf(new Date(`${d}T00:00:00Z`)) : null;
 }
 
 export function weekEndExclusive(weekMonday: string): string {

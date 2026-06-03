@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { getPool } from "../../../../../../db/pool";
 import { validateSession } from "../../../../../../lib/auth";
 import { loadGroupBySlug } from "../../../../../../lib/groups";
-import { groupMomentumTrend, lastCompletedWeekMonday, visibleMembershipIds, type MomentumTrendWeek } from "../../../../../../lib/insights-aggregate";
+import { groupMomentumTrend, resolveWeekMonday, lastCompletedWeekMonday, previousIsoMonday, nextIsoMonday, earliestWeekMonday, visibleMembershipIds, type MomentumTrendWeek } from "../../../../../../lib/insights-aggregate";
 import type { TeamInsightReport } from "../../../insights/types";
 import { buildTeamInsightReport } from "../../../../../../lib/team-report-aggregate";
 import { loadOptimizerInputs } from "../../../../../../lib/plan-queries";
@@ -28,7 +28,7 @@ export default async function GroupInsightsPage({
   searchParams,
 }: {
   params: Promise<{ slug: string; group: string }>;
-  searchParams: Promise<{ coaching?: string; explain?: string; mock?: string }>;
+  searchParams: Promise<{ coaching?: string; explain?: string; mock?: string; week?: string }>;
 }) {
   const { slug, group: groupSlug } = await params;
   const sp = await searchParams;
@@ -66,7 +66,7 @@ export default async function GroupInsightsPage({
   const groupMemberIds = await visibleMembershipIds(teamId, scope, pool);
   const membersTotal = groupMemberIds.length;
 
-  const weekMonday = lastCompletedWeekMonday();
+  const weekMonday = resolveWeekMonday(sp?.week);
 
   let report: TeamInsightReport;
   let trend: MomentumTrendWeek[];
@@ -74,6 +74,9 @@ export default async function GroupInsightsPage({
   let seatReviewed: number;
   let seatInsufficient: number;
   let activeCount: number;
+  // Earliest week with data — the floor for week navigation. Null in mock mode
+  // (synthetic single week) so the arrows hide.
+  let earliest: string | null = null;
 
   if (mock) {
     // ?mock=1 — synthesize metrics for the REAL roster, no DB activity rows.
@@ -97,13 +100,15 @@ export default async function GroupInsightsPage({
     activeCount = md.activeCount;
   } else {
     const groupIds = new Set(groupMemberIds);
-    const [rep, tr, optimizerInputs] = await Promise.all([
+    const [rep, tr, optimizerInputs, earliestM] = await Promise.all([
       buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
       groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
       loadOptimizerInputs(teamId, pool),
+      earliestWeekMonday(groupMemberIds, pool),
     ]);
     report = rep;
     trend = tr;
+    earliest = earliestM;
     activeCount = rep.cross_edition.roster.length;
     // Seat right-sizing (Phase 1b): only downgrade candidates within the group.
     const groupSeatRecs = optimizerInputs
@@ -137,16 +142,33 @@ export default async function GroupInsightsPage({
       ? report
       : { ...report, live_extras: { ...report.live_extras, member_portraits: undefined } };
 
-  // Toggle links preserve the other view flags.
+  // Toggle/nav links preserve the other view flags + the viewed week.
   const base = `/team/${slug}/groups/${group.slug}/insights`;
-  const qs = (next: { coaching?: boolean; explain?: boolean; mock?: boolean }) => {
+  const qs = (next: { coaching?: boolean; explain?: boolean; mock?: boolean; week?: string }) => {
     const c = next.coaching ?? coaching;
     const e = next.explain ?? explain;
     const k = next.mock ?? mock;
-    const parts = [c ? "coaching=1" : "", e ? "explain=1" : "", k ? "mock=1" : ""].filter(Boolean);
+    const w = next.week ?? weekMonday;
+    const parts = [
+      c ? "coaching=1" : "",
+      e ? "explain=1" : "",
+      k ? "mock=1" : "",
+      // Only pin the week when it isn't the default (last completed).
+      w !== lastCompletedWeekMonday() ? `week=${w}` : "",
+    ].filter(Boolean);
     return parts.length ? `${base}?${parts.join("&")}` : base;
   };
-  const pdfHref = `/api/team/${encodeURIComponent(slug)}/insights/pdf?group=${encodeURIComponent(group.slug)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}`;
+
+  // Week navigation, bounded by [earliest data week, last completed week].
+  // Hidden in mock mode (single synthetic week).
+  const last = lastCompletedWeekMonday();
+  const prevM = previousIsoMonday(weekMonday);
+  const nextM = nextIsoMonday(weekMonday);
+  const showWeekNav = !mock && earliest !== null;
+  const prevWeekHref = showWeekNav ? (prevM >= earliest! ? qs({ week: prevM }) : null) : undefined;
+  const nextWeekHref = showWeekNav ? (nextM <= last ? qs({ week: nextM }) : null) : undefined;
+
+  const pdfHref = `/api/team/${encodeURIComponent(slug)}/insights/pdf?group=${encodeURIComponent(group.slug)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}${weekMonday !== last ? `&week=${weekMonday}` : ""}`;
 
   return (
     <>
@@ -186,6 +208,8 @@ export default async function GroupInsightsPage({
         agentHours={report.volume.agent_hours_total}
         generatedAt={new Date(report.generated_at)}
         roster={report.cross_edition.roster.map((rm) => rm.display_name)}
+        prevWeekHref={prevWeekHref}
+        nextWeekHref={nextWeekHref}
       />
 
       {membersTotal === 0 ? (

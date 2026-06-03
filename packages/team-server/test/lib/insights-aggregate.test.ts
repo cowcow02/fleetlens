@@ -7,6 +7,8 @@ import {
   isoMondayOf,
   perProjectTimeWoW,
   previousIsoMonday,
+  nextIsoMonday,
+  resolveWeekMonday,
   skillUsageWeek,
   teamPulseWeek,
   visibleMembershipIds,
@@ -93,6 +95,25 @@ describe("insights-aggregate · week math", () => {
 
   it("previousIsoMonday steps back exactly 7 days", () => {
     expect(previousIsoMonday("2026-05-11")).toBe("2026-05-04");
+  });
+
+  it("nextIsoMonday steps forward exactly 7 days", () => {
+    expect(nextIsoMonday("2026-05-11")).toBe("2026-05-18");
+    expect(nextIsoMonday(previousIsoMonday("2026-05-11"))).toBe("2026-05-11");
+  });
+
+  it("resolveWeekMonday clamps to the last completed week and rejects non-Mondays", () => {
+    const now = new Date("2026-05-20T12:00:00Z"); // a Wednesday
+    const last = "2026-05-11"; // last completed week's Monday
+    // Valid past Monday passes through.
+    expect(resolveWeekMonday("2026-05-04", now)).toBe("2026-05-04");
+    // The current (in-progress) week and any future week clamp to last completed.
+    expect(resolveWeekMonday("2026-05-18", now)).toBe(last);
+    expect(resolveWeekMonday("2026-06-01", now)).toBe(last);
+    // Non-Monday, malformed, and blank all fall back to last completed.
+    expect(resolveWeekMonday("2026-05-13", now)).toBe(last); // a Wednesday
+    expect(resolveWeekMonday("not-a-date", now)).toBe(last);
+    expect(resolveWeekMonday(undefined, now)).toBe(last);
   });
 });
 

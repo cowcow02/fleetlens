@@ -6518,7 +6518,20 @@ button.builder-action.danger:hover {
   letter-spacing: 0.04em;
   justify-self: end;
   text-align: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
+.report-week-nav {
+  font-size: 12px;
+  line-height: 1;
+  text-decoration: none;
+  color: var(--accent);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.report-week-nav:hover { background: var(--rule-soft); }
+.report-week-nav.disabled { color: var(--rule-soft); cursor: default; pointer-events: none; }
 .report-header-stats {
   grid-column: 1 / -1;
   display: flex;

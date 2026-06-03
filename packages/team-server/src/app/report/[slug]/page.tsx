@@ -3,7 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { getPool } from "../../../db/pool";
 import { validateSession } from "../../../lib/auth";
 import { loadGroupBySlug } from "../../../lib/groups";
-import { groupMomentumTrend, lastCompletedWeekMonday, visibleMembershipIds } from "../../../lib/insights-aggregate";
+import { groupMomentumTrend, resolveWeekMonday, visibleMembershipIds } from "../../../lib/insights-aggregate";
 import { buildTeamInsightReport, LIVE_STARTER_BLOCKS_V8 } from "../../../lib/team-report-aggregate";
 import { VariantBuilder } from "../../../components/insights-variants/v7-builder";
 import { GroupMomentumReport } from "../../../components/group-momentum-report";
@@ -24,7 +24,7 @@ export default async function ReportPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ blocks?: string; source?: string; group?: string; coaching?: string; mock?: string }>;
+  searchParams: Promise<{ blocks?: string; source?: string; group?: string; coaching?: string; mock?: string; week?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
@@ -58,7 +58,7 @@ export default async function ReportPage({
     const scope = { kind: "group" as const, groupId: group.id };
     const groupMemberIds = await visibleMembershipIds(teamId, scope, pool);
     const membersTotal = groupMemberIds.length;
-    const weekMonday = lastCompletedWeekMonday();
+    const weekMonday = resolveWeekMonday(sp?.week);
     const coaching = sp.coaching === "1";
     const mock = sp.mock === "1";
 
@@ -123,7 +123,7 @@ export default async function ReportPage({
       [teamId],
     );
     membersTotal = Number(memberCountRes.rows[0]?.count ?? 0);
-    const weekMonday = lastCompletedWeekMonday();
+    const weekMonday = resolveWeekMonday(sp?.week);
     report = await buildTeamInsightReport(
       teamId,
       { kind: "team-wide" },
