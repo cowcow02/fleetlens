@@ -276,7 +276,7 @@ describe("E2E · personal-to-team bridge", () => {
     expect(groupProjects.find((p) => p.project === "/Users/b/fleetlens")).toBeUndefined();
   });
 
-  it("matches the LiveInsights component contract end-to-end", async () => {
+  it("matches the live aggregate contract end-to-end", async () => {
     // Use today's local Monday so the date math matches what the page computes.
     const today = new Date();
     const monday = isoMondayOf(today);
@@ -300,7 +300,7 @@ describe("E2E · personal-to-team bridge", () => {
       workingShapeDistribution(teamId, scope, monday, pool),
     ]);
 
-    // The LiveInsights component expects these exact field shapes.
+    // The live insight blocks expect these exact field shapes.
     expect(pulse).toMatchObject({
       weekMonday: monday,
       membersActive: expect.any(Number),

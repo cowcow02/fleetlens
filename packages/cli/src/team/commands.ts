@@ -1,5 +1,5 @@
 import type { TeamConfig, ServerCommand, CommandResult } from "@claude-lens/parser/fs";
-import { buildRollupsForRange, buildIngestPayload, pushToTeamServer } from "./push.js";
+import { buildRollupsForRange, buildIngestPayload, buildRichBlocksForDay, sessionTouchesDay, pushToTeamServer } from "./push.js";
 
 export type { ServerCommand, CommandResult };
 
@@ -32,6 +32,7 @@ async function runActivityBackfill(
 ): Promise<CommandResult> {
   const { listSessions } = await import("@claude-lens/parser/fs");
   const { toLocalDay } = await import("@claude-lens/parser");
+  const { probeArtifactSignals } = await import("../perception/file-probe.js");
 
   const days = command.params.days;
   const todayMs = Date.now();
@@ -65,11 +66,29 @@ async function runActivityBackfill(
     };
   }
 
+  // Compute rich blocks + artifact signals per day, same as the regular sync —
+  // the server only persists rollups that arrive as `richRollup` (rollup +
+  // richExtras), so a rollup-only payload would be silently dropped.
+  const privateProjects = new Set(config.privateProjects ?? []);
+  const enrichmentOptIn = !!config.enrichmentOptIn;
   let pushed = 0;
   for (const rollup of rollups) {
-    // Historical-only push: no live snapshot, no cyclePeaks, no planTier.
-    // Those belong on the latest rollup that the regular sync attaches.
-    const payload = buildIngestPayload({ rollup });
+    // Historical push: no live snapshot, no cyclePeaks, no planTier — those
+    // belong on the latest rollup that the regular sync attaches.
+    const daySessions = sessions.filter((s) => sessionTouchesDay(s, rollup.day));
+    const richBlocks = buildRichBlocksForDay(rollup.day, daySessions, privateProjects, enrichmentOptIn);
+    let artifactSignals: ReturnType<typeof probeArtifactSignals> = null;
+    try {
+      artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: [process.cwd()] });
+    } catch {
+      // Probe is best-effort; never block the backfill.
+    }
+    const payload = buildIngestPayload({
+      rollup,
+      richExtras: richBlocks?.rich,
+      enrichedExtras: richBlocks?.enriched,
+      artifactSignals: artifactSignals ?? undefined,
+    });
     const result = await pushToTeamServer(config, payload);
     if (!result.ok) {
       return {

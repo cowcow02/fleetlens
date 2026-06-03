@@ -75,6 +75,26 @@ export function defaultWidthFor(b: DashboardBlock): number {
 
 // ─── Small inline render helpers ─────────────────────────────────────────
 
+// Project identities are full canonical cwd paths (e.g.
+// /Users/x/conductor/workspaces/claude-lens). The leaf segment is the
+// meaningful repo/workspace name; the absolute prefix just overflows the
+// label column and collides with the bars. Show the leaf, keep the full path
+// as the title tooltip.
+function shortProjectLabel(project: string): string {
+  const segs = project.replace(/\/+$/, "").split("/").filter(Boolean);
+  return segs[segs.length - 1] || project;
+}
+
+// Percent-change is meaningless when a project/skill existed in only one of the
+// two weeks (division by ~zero produced +1599% / ±100% noise). Render the
+// transition instead.
+function wowDelta(thisWk: number, lastWk: number, pct: number): { text: string; tone: string } {
+  if (lastWk <= 0 && thisWk > 0) return { text: "new", tone: "positive" };
+  if (thisWk <= 0 && lastWk > 0) return { text: "gone", tone: "negative" };
+  if (thisWk <= 0 && lastWk <= 0) return { text: "—", tone: "" };
+  return { text: `${pct > 0 ? "+" : ""}${pct}%`, tone: pct > 0 ? "positive" : pct < 0 ? "negative" : "" };
+}
+
 function fmtMin(n: number): string {
   if (n < 60) return `${Math.round(n)}m`;
   const h = Math.floor(n / 60);
@@ -690,13 +710,17 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     tier: "deterministic",
     source_version: "v4",
     render: (r) => {
-      const projects = r.variants.wow_pulse.project_time;
+      // Only projects active this week — a row that was busy last week but
+      // idle this week is just noise in a "this vs last" read.
+      const projects = r.variants.wow_pulse.project_time.filter((p) => p.hours_this_week > 0);
       const max = Math.max(...projects.flatMap((p) => [p.hours_this_week, p.hours_last_week]), 1);
       return (
         <div className="bar-chart paired-bar-chart">
-          {projects.map((p) => (
+          {projects.map((p) => {
+            const d = wowDelta(p.hours_this_week, p.hours_last_week, p.delta_pct);
+            return (
             <div key={p.project} className="paired-bar-row">
-              <div className="bar-chart-label"><code>{p.project}</code></div>
+              <div className="bar-chart-label"><code title={p.project}>{shortProjectLabel(p.project)}</code></div>
               <div className="paired-bar-tracks">
                 <div className="paired-bar-track">
                   <div className="paired-bar-fill this-week" style={{ width: `${(p.hours_this_week / max) * 100}%` }}>
@@ -709,11 +733,10 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
                   </div>
                 </div>
               </div>
-              <div className={`bar-chart-delta ${p.delta_pct > 0 ? "positive" : p.delta_pct < 0 ? "negative" : ""}`}>
-                {p.delta_pct > 0 ? "+" : ""}{p.delta_pct}%
-              </div>
+              <div className={`bar-chart-delta ${d.tone}`}>{d.text}</div>
             </div>
-          ))}
+            );
+          })}
           <div className="paired-bar-legend">
             <span><span className="paired-bar-swatch this-week" /> This week</span>
             <span><span className="paired-bar-swatch last-week" /> Last week</span>
@@ -832,7 +855,9 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
     tier: "deterministic",
     source_version: "v4",
     render: (r) => {
-      const skills = r.variants.wow_pulse.skill_usage;
+      // Only skills used this week — dropping last-week-only rows keeps the
+      // WoW read focused on what's actually in play now.
+      const skills = r.variants.wow_pulse.skill_usage.filter((s) => s.uses_this_week > 0);
       const max = Math.max(...skills.flatMap((s) => [s.uses_this_week, s.uses_last_week]), 1);
       return (
         <div className="bar-chart paired-bar-chart">

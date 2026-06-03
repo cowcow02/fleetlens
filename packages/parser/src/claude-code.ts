@@ -13,7 +13,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseTranscript } from "./parser.js";
-import { canonicalProjectName, worktreeName } from "./analytics.js";
+import { worktreeName, projectRepoName } from "./analytics.js";
 import { groupByTeam, type TeamView } from "./team.js";
 import type {
   AgentKind,
@@ -745,13 +745,15 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
   const canonicalMap = new Map<string, Agg>();
   for (const [rawDir, { count, lastActiveMs }] of byRawDir) {
     const cwdOrDecoded = cwdForProject(rawDir) ?? decodeProjectName(rawDir);
-    const canonical = canonicalProjectName(cwdOrDecoded);
+    // Fold by repo name so the same repo reached via different harnesses
+    // collapses into one project — matching groupByProject.
+    const repo = projectRepoName(cwdOrDecoded);
     const wt = worktreeName(cwdOrDecoded);
 
     const agg =
-      canonicalMap.get(canonical) ??
+      canonicalMap.get(repo) ??
       ({
-        canonicalName: canonical,
+        canonicalName: repo,
         count: 0,
         lastActiveMs: 0,
         worktreeBranches: new Set<string>(),
@@ -759,7 +761,7 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
     agg.count += count;
     if (lastActiveMs > agg.lastActiveMs) agg.lastActiveMs = lastActiveMs;
     if (wt) agg.worktreeBranches.add(wt);
-    canonicalMap.set(canonical, agg);
+    canonicalMap.set(repo, agg);
   }
 
   return Array.from(canonicalMap.values())

@@ -3,9 +3,12 @@ import { resetDb } from "../helpers/db.js";
 import { createUserAccount } from "../../src/lib/auth.js";
 import { addGroupMember, createGroup } from "../../src/lib/groups.js";
 import {
+  groupMomentumTrend,
   isoMondayOf,
   perProjectTimeWoW,
   previousIsoMonday,
+  nextIsoMonday,
+  resolveWeekMonday,
   skillUsageWeek,
   teamPulseWeek,
   visibleMembershipIds,
@@ -92,6 +95,25 @@ describe("insights-aggregate · week math", () => {
 
   it("previousIsoMonday steps back exactly 7 days", () => {
     expect(previousIsoMonday("2026-05-11")).toBe("2026-05-04");
+  });
+
+  it("nextIsoMonday steps forward exactly 7 days", () => {
+    expect(nextIsoMonday("2026-05-11")).toBe("2026-05-18");
+    expect(nextIsoMonday(previousIsoMonday("2026-05-11"))).toBe("2026-05-11");
+  });
+
+  it("resolveWeekMonday clamps to the last completed week and rejects non-Mondays", () => {
+    const now = new Date("2026-05-20T12:00:00Z"); // a Wednesday
+    const last = "2026-05-11"; // last completed week's Monday
+    // Valid past Monday passes through.
+    expect(resolveWeekMonday("2026-05-04", now)).toBe("2026-05-04");
+    // The current (in-progress) week and any future week clamp to last completed.
+    expect(resolveWeekMonday("2026-05-18", now)).toBe(last);
+    expect(resolveWeekMonday("2026-06-01", now)).toBe(last);
+    // Non-Monday, malformed, and blank all fall back to last completed.
+    expect(resolveWeekMonday("2026-05-13", now)).toBe(last); // a Wednesday
+    expect(resolveWeekMonday("not-a-date", now)).toBe(last);
+    expect(resolveWeekMonday(undefined, now)).toBe(last);
   });
 });
 
@@ -236,5 +258,39 @@ describe("workingShapeDistribution", () => {
     expect(solo?.sessions).toBe(6);
     expect(solo?.agentHours).toBeCloseTo(1.5, 5);
     expect(rows[0]?.shape).toBe("solo-build"); // sorted by sessions
+  });
+});
+
+describe("groupMomentumTrend", () => {
+  it("buckets the group's last 4 weeks oldest→newest, zero-filling empty weeks", async () => {
+    const s = await seed();
+    const g = await createGroup(s.teamId, "platform", "Platform", s.userId, s.pool);
+    await addGroupMember(g.id, s.alice, s.userId, s.pool);
+
+    const thisWk = "2026-05-11";
+    const wk2ago = "2026-04-27";
+    // Alice in two of the four weeks; Bob (outside the group) must not leak.
+    await insertRichRollup(s.pool, s.teamId, s.alice, thisWk, { agentTimeMs: 3_600_000, sessions: 2, prs: 1 });
+    await insertRichRollup(s.pool, s.teamId, s.alice, wk2ago, { agentTimeMs: 1_800_000, sessions: 1, prs: 0 });
+    await insertRichRollup(s.pool, s.teamId, s.bob, thisWk, { agentTimeMs: 7_200_000, sessions: 9, prs: 4 });
+
+    const trend = await groupMomentumTrend(s.teamId, { kind: "group", groupId: g.id }, thisWk, s.pool, 4);
+    expect(trend.map((t) => t.weekMonday)).toEqual([
+      "2026-04-20", "2026-04-27", "2026-05-04", "2026-05-11",
+    ]);
+    expect(trend[0]).toMatchObject({ agentHours: 0, sessions: 0, prs: 0, activeMembers: 0 });
+    expect(trend[1]).toMatchObject({ sessions: 1, prs: 0, activeMembers: 1 });
+    expect(trend[1].agentHours).toBeCloseTo(0.5, 5);
+    expect(trend[2]).toMatchObject({ agentHours: 0, sessions: 0, activeMembers: 0 });
+    expect(trend[3]).toMatchObject({ sessions: 2, prs: 1, activeMembers: 1 }); // Bob excluded
+    expect(trend[3].agentHours).toBeCloseTo(1, 5);
+  });
+
+  it("returns all-zero weeks for an empty group", async () => {
+    const s = await seed();
+    const g = await createGroup(s.teamId, "empty", "Empty", s.userId, s.pool);
+    const trend = await groupMomentumTrend(s.teamId, { kind: "group", groupId: g.id }, "2026-05-11", s.pool, 4);
+    expect(trend).toHaveLength(4);
+    expect(trend.every((t) => t.agentHours === 0 && t.activeMembers === 0)).toBe(true);
   });
 });

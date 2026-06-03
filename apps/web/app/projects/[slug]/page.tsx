@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { listSessions, getSession } from "@/lib/data";
 import {
-  canonicalProjectName,
+  projectRepoName,
   detectPrMarkers,
   sessionAirTimeMs,
 } from "@claude-lens/parser";
@@ -39,18 +39,17 @@ export const dynamic = "force-dynamic";
 export default async function ProjectDetail({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   // Slugs are URL-encoded canonical project names (e.g.
-  // `%2FUsers%2Ffoo%2FRepo%2Fbar`). Match any session whose own
-  // canonicalProjectName resolves to the same path — that includes the
-  // parent repo AND any `/.worktrees/<name>` subdirs, so a project detail
-  // page naturally shows all parallel worktree activity in one view.
+  // Slugs are repo names (e.g. `claude-lens`). Match any session in that repo,
+  // which folds the parent repo, every `/.worktrees/<name>` subdir, and the
+  // same repo reached via Conductor / Superset into one view.
   const decodedCanonical = decodeURIComponent(slug);
   const all = await listSessions();
   const projectSessions = all.filter(
-    (s) => canonicalProjectName(s.projectName) === decodedCanonical,
+    (s) => projectRepoName(s.projectName) === decodedCanonical,
   );
   if (projectSessions.length === 0) return notFound();
 
-  // Use the canonical name for display (no `.worktrees/<name>` suffix).
+  // Display the repo name.
   const projectName = decodedCanonical;
 
   // PR detection is per-session — it needs the event stream, so load the

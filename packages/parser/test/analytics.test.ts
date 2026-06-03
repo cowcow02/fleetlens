@@ -9,6 +9,7 @@ import {
   sessionAirTimeMs,
   canonicalProjectName,
   worktreeName,
+  projectRepoName,
 } from "../src/analytics.js";
 import type { SessionMeta, SessionEvent } from "../src/types.js";
 
@@ -123,7 +124,7 @@ describe("highLevelMetrics", () => {
 });
 
 describe("groupByProject", () => {
-  it("groups sessions by canonical project name and computes per-project metrics", () => {
+  it("groups sessions by repo name and computes per-project metrics", () => {
     const sessions = [
       mkMeta("a", "foo", "2026-04-10T10:00:00Z", "2026-04-10T11:00:00Z"),
       mkMeta("b", "foo", "2026-04-10T12:00:00Z", "2026-04-10T13:00:00Z"),
@@ -131,7 +132,7 @@ describe("groupByProject", () => {
     ];
     const groups = groupByProject(sessions);
     expect(groups).toHaveLength(2);
-    const foo = groups.find((g) => g.projectDir === "/Users/me/Repo/foo")!;
+    const foo = groups.find((g) => g.projectDir === "foo")!;
     expect(foo.sessions).toHaveLength(2);
     expect(foo.metrics.sessionCount).toBe(2);
     expect(foo.worktreeCount).toBe(0);
@@ -155,7 +156,7 @@ describe("groupByProject", () => {
     ];
     const groups = groupByProject(sessions);
     expect(groups).toHaveLength(2);
-    const foo = groups.find((g) => g.projectDir === "/Users/me/Repo/foo")!;
+    const foo = groups.find((g) => g.projectDir === "foo")!;
     expect(foo.sessions).toHaveLength(3);
     expect(foo.worktreeCount).toBe(2);
     expect(foo.rawProjectDirs).toContain("-Users-me-Repo-foo");
@@ -267,6 +268,32 @@ describe("canonicalProjectName + worktreeName", () => {
     ).toBe("/Users/me/conductor/workspaces/claude-lens");
   });
 
+  it("collapses Superset worktrees, dropping the per-run uuid", () => {
+    // ~/.superset/worktrees/<run-uuid>/<workspace> — the uuid is per-run noise,
+    // so all runs of one workspace fold together with the workspace as badge.
+    const p =
+      "/Users/me/.superset/worktrees/b77ee62a-ff4f-46d4-9d92-981e54565d55/chart-input-blank-fix";
+    expect(canonicalProjectName(p)).toBe(
+      "/Users/me/.superset/worktrees/chart-input-blank-fix",
+    );
+    expect(worktreeName(p)).toBe("chart-input-blank-fix");
+  });
+
+  it("handles a Superset worktree with no uuid layer", () => {
+    const p = "/Users/me/.superset/worktrees/agentic-knowledge-system";
+    expect(canonicalProjectName(p)).toBe(p);
+    expect(worktreeName(p)).toBe("agentic-knowledge-system");
+  });
+
+  it("projectRepoName folds the same repo across harnesses by repo name", () => {
+    // Same repo reached directly, via a Conductor workspace, and via a
+    // (now-deleted) Superset worktree all collapse to the repo name.
+    expect(projectRepoName("/Users/me/Repo/claude-lens")).toBe("claude-lens");
+    expect(projectRepoName("/Users/me/conductor/workspaces/claude-lens")).toBe("claude-lens");
+    expect(projectRepoName("/Users/me/Repo/claude-lens/.worktrees/feat-x")).toBe("claude-lens");
+    expect(projectRepoName("/Users/me/conductor/workspaces/claude-lens/yangon")).toBe("claude-lens");
+  });
+
   it("handles repos whose name starts with the workspace name (offset bug regression)", () => {
     // Repo "yangon-api" + workspace "yangon": indexOf("/yangon") would
     // land inside "/yangon-api/" and produce a wrong canonical.
@@ -305,8 +332,26 @@ describe("groupByProject — Conductor workspaces", () => {
     const groups = groupByProject(sessions);
     expect(groups).toHaveLength(1);
     const lens = groups[0]!;
-    expect(lens.projectDir).toBe("/Users/me/conductor/workspaces/claude-lens");
+    expect(lens.projectDir).toBe("claude-lens");
     expect(lens.sessions).toHaveLength(3);
     expect(lens.worktreeCount).toBe(3);
+  });
+
+  it("folds the same repo reached via different harnesses into one project", () => {
+    const sessions = [
+      mkMeta("direct", "claude-lens", "2026-04-10T10:00:00Z", "2026-04-10T11:00:00Z"),
+      mkMeta("cond", "claude-lens", "2026-04-10T12:00:00Z", "2026-04-10T13:00:00Z", {
+        projectName: "/Users/me/conductor/workspaces/claude-lens",
+        projectDir: "-Users-me-conductor-workspaces-claude-lens",
+      }),
+      mkMeta("wt", "claude-lens", "2026-04-10T14:00:00Z", "2026-04-10T15:00:00Z", {
+        projectName: "/Users/me/Repo/claude-lens/.worktrees/feat-x",
+        projectDir: "-Users-me-Repo-claude-lens--worktrees-feat-x",
+      }),
+    ];
+    const groups = groupByProject(sessions);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.projectDir).toBe("claude-lens");
+    expect(groups[0]!.sessions).toHaveLength(3);
   });
 });

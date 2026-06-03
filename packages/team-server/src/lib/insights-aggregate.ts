@@ -54,6 +54,47 @@ export function previousIsoMonday(weekMonday: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+export function nextIsoMonday(weekMonday: string): string {
+  const d = new Date(`${weekMonday}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
+
+// The most recent FULLY-ELAPSED ISO week (Mon–Sun). The current week is always
+// in progress, so insight reports lead with this instead — a complete,
+// stable window that also sidesteps the 1–2 day lag before the daemon has
+// pushed the latest days.
+export function lastCompletedWeekMonday(now: Date = new Date()): string {
+  return previousIsoMonday(isoMondayOf(now));
+}
+
+// Validate a `?week=` param into a renderable week Monday: it must be a real
+// Monday and no later than the last completed week (the current week is in
+// progress and has no stable report). Anything else falls back to the last
+// completed week, so a bad/blank param degrades gracefully.
+export function resolveWeekMonday(param: string | null | undefined, now: Date = new Date()): string {
+  const last = lastCompletedWeekMonday(now);
+  if (!param || !/^\d{4}-\d{2}-\d{2}$/.test(param)) return last;
+  const d = new Date(`${param}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || isoMondayOf(d) !== param) return last;
+  return param > last ? last : param;
+}
+
+// Monday of the earliest week with any rich rollup for these members — the
+// floor for week navigation. Null when the scope has no data at all.
+export async function earliestWeekMonday(
+  membershipIds: string[],
+  pool: pg.Pool,
+): Promise<string | null> {
+  if (membershipIds.length === 0) return null;
+  const res = await pool.query<{ d: string | null }>(
+    `SELECT min(day)::text AS d FROM rich_daily_rollups WHERE membership_id = ANY($1::uuid[])`,
+    [membershipIds],
+  );
+  const d = res.rows[0]?.d;
+  return d ? isoMondayOf(new Date(`${d}T00:00:00Z`)) : null;
+}
+
 export function weekEndExclusive(weekMonday: string): string {
   const d = new Date(`${weekMonday}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + 7);
@@ -319,4 +360,64 @@ export async function workingShapeDistribution(
       agentHours: Number(row.agent_time_ms) / 3_600_000,
     }))
     .sort((a, b) => b.sessions - a.sessions);
+}
+
+export type MomentumTrendWeek = {
+  weekMonday: string;
+  agentHours: number;
+  sessions: number;
+  prs: number;
+  activeMembers: number;
+};
+
+// Trailing N-week trajectory for a scope. Small groups read noisy week-over-week,
+// so the group dashboard leads with this 4-week trend instead of raw WoW deltas.
+// Returns one entry per expected week, oldest→newest, zero-filling empty weeks.
+export async function groupMomentumTrend(
+  teamId: string,
+  scope: InsightsScope,
+  weekMonday: string,
+  pool: pg.Pool,
+  weeks = 4,
+): Promise<MomentumTrendWeek[]> {
+  const mondays: string[] = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const d = new Date(`${weekMonday}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - i * 7);
+    mondays.push(d.toISOString().slice(0, 10));
+  }
+  const empty = (m: string): MomentumTrendWeek => ({
+    weekMonday: m, agentHours: 0, sessions: 0, prs: 0, activeMembers: 0,
+  });
+
+  const memberIds = await visibleMembershipIds(teamId, scope, pool);
+  if (memberIds.length === 0) return mondays.map(empty);
+
+  const res = await pool.query<{
+    week_monday: string; agent_ms: string; sessions: number; prs: number; active_members: number;
+  }>(
+    // date_trunc('week') is ISO (Monday-anchored), so the bucket key matches our
+    // weekMonday strings directly.
+    `SELECT date_trunc('week', day)::date::text AS week_monday,
+            COALESCE(SUM(agent_time_ms), 0)::text AS agent_ms,
+            COALESCE(SUM(sessions), 0)::int AS sessions,
+            COALESCE(SUM(prs), 0)::int AS prs,
+            COUNT(DISTINCT membership_id) FILTER (WHERE agent_time_ms > 0)::int AS active_members
+     FROM rich_daily_rollups
+     WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
+       AND day >= $3::date AND day < $4::date
+     GROUP BY 1`,
+    [teamId, memberIds, mondays[0], weekEndExclusive(weekMonday)],
+  );
+  const byWeek = new Map<string, MomentumTrendWeek>();
+  for (const r of res.rows) {
+    byWeek.set(r.week_monday, {
+      weekMonday: r.week_monday,
+      agentHours: Number(r.agent_ms) / 3_600_000,
+      sessions: r.sessions,
+      prs: r.prs,
+      activeMembers: r.active_members,
+    });
+  }
+  return mondays.map((m) => byWeek.get(m) ?? empty(m));
 }

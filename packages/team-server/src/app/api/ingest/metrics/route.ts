@@ -23,7 +23,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(result, { status: result.nextSyncAfter ? 200 : 202 });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
-      return NextResponse.json({ error: "Validation failed" }, { status: 400 });
+      const issues = (err as unknown as { issues?: unknown[] }).issues;
+      console.warn("[ingest] validation failed:", JSON.stringify(issues?.slice(0, 3)));
+      return NextResponse.json({ error: "Validation failed", issues }, { status: 400 });
     }
     throw err;
   }

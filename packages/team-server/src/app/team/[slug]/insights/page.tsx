@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPool } from "../../../../db/pool";
 import { validateSession } from "../../../../lib/auth";
-import { isoMondayOf } from "../../../../lib/insights-aggregate";
+import { resolveWeekMonday, lastCompletedWeekMonday, previousIsoMonday, nextIsoMonday, earliestWeekMonday, visibleMembershipIds } from "../../../../lib/insights-aggregate";
 import { buildTeamInsightReport, LIVE_STARTER_BLOCKS_V8 } from "../../../../lib/team-report-aggregate";
 import { VariantBuilder } from "../../../../components/insights-variants/v7-builder";
 import { ReportHeader } from "../../../../components/report-header";
@@ -18,7 +18,7 @@ export default async function TeamInsightsPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ blocks?: string }>;
+  searchParams: Promise<{ blocks?: string; week?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
@@ -36,25 +36,35 @@ export default async function TeamInsightsPage({
   const myMembership = session.memberships.find((m) => m.team_id === teamId);
   if (!myMembership) redirect("/login");
 
-  const memberCountRes = await pool.query<{ count: string }>(
-    "SELECT count(*)::text AS count FROM memberships WHERE team_id = $1 AND revoked_at IS NULL",
-    [teamId],
-  );
-  const membersTotal = Number(memberCountRes.rows[0]?.count ?? 0);
+  const memberIds = await visibleMembershipIds(teamId, { kind: "team-wide" }, pool);
+  const membersTotal = memberIds.length;
 
-  const weekMonday = isoMondayOf(new Date());
-  const report = await buildTeamInsightReport(
-    teamId,
-    { kind: "team-wide" },
-    pool,
-    { teamSlug: slug, teamName, membersTotal },
-    weekMonday,
-  );
+  const weekMonday = resolveWeekMonday(sp?.week);
+  const [report, earliest] = await Promise.all([
+    buildTeamInsightReport(
+      teamId,
+      { kind: "team-wide" },
+      pool,
+      { teamSlug: slug, teamName, membersTotal },
+      weekMonday,
+    ),
+    earliestWeekMonday(memberIds, pool),
+  ]);
 
   const weekDate = new Date(`${report.week_monday}T12:00:00`);
   const weekEnd = new Date(weekDate);
   weekEnd.setDate(weekDate.getDate() + 6);
   const blocksParam = sp?.blocks ?? LIVE_STARTER_BLOCKS_V8.join(",");
+
+  // Week navigation, bounded by [earliest data week, last completed week].
+  const last = lastCompletedWeekMonday();
+  const blocksQs = sp?.blocks ? `&blocks=${encodeURIComponent(sp.blocks)}` : "";
+  const weekHref = (w: string) =>
+    `/team/${slug}/insights?${w !== last ? `week=${w}` : ""}${blocksQs}`.replace(/\?&/, "?").replace(/\?$/, "");
+  const prevM = previousIsoMonday(weekMonday);
+  const nextM = nextIsoMonday(weekMonday);
+  const prevWeekHref = earliest === null ? undefined : prevM >= earliest ? weekHref(prevM) : null;
+  const nextWeekHref = earliest === null ? undefined : nextM <= last ? weekHref(nextM) : null;
 
   return (
     <>
@@ -67,6 +77,8 @@ export default async function TeamInsightsPage({
         agentHours={report.volume.agent_hours_total}
         generatedAt={new Date(report.generated_at)}
         roster={report.cross_edition.roster.map((m) => m.display_name)}
+        prevWeekHref={prevWeekHref}
+        nextWeekHref={nextWeekHref}
       />
       <VariantBuilder r={report} slug={slug} blocksParam={blocksParam} />
     </>

@@ -83,6 +83,25 @@ function findConductorWorkspace(projectName: string): { canonicalEndIdx: number;
   return { canonicalEndIdx, workspaceName };
 }
 
+// Superset (another parallel-agent harness) stores worktrees at
+// `~/.superset/worktrees/<run-uuid>/<workspace>` — the uuid layer is per-run
+// and optional. Unlike .worktrees/, there is no repo root before the marker
+// (it sits directly under home), so stripping to the parent would yield a
+// meaningless `~` canonical. Instead keep the workspace as the canonical leaf
+// and drop the per-run uuid, so all runs of one workspace roll up together
+// with the workspace name as the badge.
+const SUPERSET_MARKER = "/.superset/worktrees/";
+const UUID_SEG_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+function findSupersetWorkspace(projectName: string): { canonical: string; workspaceName: string } | null {
+  const idx = projectName.indexOf(SUPERSET_MARKER);
+  if (idx < 0) return null;
+  const segs = projectName.slice(idx + SUPERSET_MARKER.length).split("/").filter(Boolean);
+  if (segs.length === 0) return null;
+  const workspaceName = UUID_SEG_RE.test(segs[0]!) ? (segs[1] ?? segs[0]!) : segs[0]!;
+  return { canonical: projectName.slice(0, idx) + SUPERSET_MARKER + workspaceName, workspaceName };
+}
+
 export function canonicalProjectName(projectName: string): string {
   // Some upstream sources produce anomalous repeated slashes
   // (e.g. //claude/worktrees/...). Collapse before pattern-matching.
@@ -91,6 +110,8 @@ export function canonicalProjectName(projectName: string): string {
   if (wt) return normalized.slice(0, wt.idx);
   const cd = findConductorWorkspace(normalized);
   if (cd) return normalized.slice(0, cd.canonicalEndIdx);
+  const ss = findSupersetWorkspace(normalized);
+  if (ss) return ss.canonical;
   return normalized;
 }
 
@@ -106,7 +127,21 @@ export function worktreeName(projectName: string): string | null {
   }
   const cd = findConductorWorkspace(normalized);
   if (cd) return cd.workspaceName;
+  const ss = findSupersetWorkspace(normalized);
+  if (ss) return ss.workspaceName;
   return null;
+}
+
+/** Repo identity used to fold one logical repo reached through different
+ *  harnesses (direct checkout, Conductor workspace, Superset/ephemeral
+ *  worktree) into a single project. Git can't recover this once a worktree is
+ *  pruned, so we key on the repo NAME — the leaf of the canonical path. Two
+ *  distinct repos that share a name will merge (uncommon on one machine); that
+ *  is the accepted tradeoff for collapsing the cross-harness duplicates. */
+export function projectRepoName(projectName: string): string {
+  const canonical = canonicalProjectName(projectName);
+  const segs = canonical.replace(/\/+$/, "").split("/").filter(Boolean);
+  return segs[segs.length - 1] || canonical;
 }
 
 /* ================================================================= */
@@ -913,13 +948,16 @@ export type ProjectRollup = {
 export function groupByProject(sessions: SessionMeta[]): ProjectRollup[] {
   const map = new Map<string, ProjectRollup>();
   for (const s of sessions) {
-    const canonical = canonicalProjectName(s.projectName);
-    const key = canonical;
+    // Group by repo name so the same repo reached via different harnesses
+    // (Repo/foo, conductor/workspaces/foo, .superset worktree of foo) rolls
+    // up into one project. See projectRepoName for the tradeoff.
+    const repo = projectRepoName(s.projectName);
+    const key = repo;
     let cur = map.get(key);
     if (!cur) {
       cur = {
-        projectDir: canonical,
-        projectName: canonical,
+        projectDir: repo,
+        projectName: repo,
         sessions: [],
         rawProjectDirs: [],
         worktreeCount: 0,

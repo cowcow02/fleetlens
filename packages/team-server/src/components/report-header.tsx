@@ -9,6 +9,11 @@ type ReportHeaderProps = {
   agentHours: number;
   generatedAt?: Date | string;
   roster?: string[];
+  // Week navigation. Pass either prop (string href or null to disable the
+  // arrow at a boundary) to render the prev/next controls; omit both for a
+  // static header (e.g. the PDF render).
+  prevWeekHref?: string | null;
+  nextWeekHref?: string | null;
 };
 
 export function ReportHeader({
@@ -20,7 +25,10 @@ export function ReportHeader({
   agentHours,
   generatedAt,
   roster,
+  prevWeekHref,
+  nextWeekHref,
 }: ReportHeaderProps) {
+  const showNav = prevWeekHref !== undefined || nextWeekHref !== undefined;
   let gen: string | null = null;
   if (generatedAt) {
     gen = typeof generatedAt === "string" ? generatedAt : formatDateLong(generatedAt);
@@ -38,7 +46,19 @@ export function ReportHeader({
       </div>
       <h1 className="report-header-team">{teamName}</h1>
       <div className="report-header-period">
-        Week of {formatDateDay(weekStart)} – {formatDateDay(weekEnd)}, {weekEnd.getFullYear()}
+        {showNav &&
+          (prevWeekHref ? (
+            <a className="report-week-nav" href={prevWeekHref} aria-label="Previous week">◀</a>
+          ) : (
+            <span className="report-week-nav disabled" aria-hidden>◀</span>
+          ))}
+        <span>Week of {formatDateDay(weekStart)} – {formatDateDay(weekEnd)}, {weekEnd.getFullYear()}</span>
+        {showNav &&
+          (nextWeekHref ? (
+            <a className="report-week-nav" href={nextWeekHref} aria-label="Next week">▶</a>
+          ) : (
+            <span className="report-week-nav disabled" aria-hidden>▶</span>
+          ))}
       </div>
       <div className="report-header-stats">
         <div className="report-header-stat">
