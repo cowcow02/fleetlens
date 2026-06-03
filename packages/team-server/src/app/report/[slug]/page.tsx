@@ -86,7 +86,9 @@ export default async function ReportPage({
       ]);
       report = rep;
       trend = tr;
-      activeCount = rep.cross_edition.roster.length;
+      // Count only members with agent time this week (roster left-joins all
+      // visible members) so the header isn't a misleading N/N.
+      activeCount = rep.cross_edition.roster.filter((rm) => rm.agent_hours > 0).length;
     }
     const ws = new Date(`${report.week_monday}T12:00:00`);
     const we = new Date(ws);

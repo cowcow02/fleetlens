@@ -82,11 +82,13 @@ export function GroupMomentumReport({
   coaching,
   trend,
   explain = false,
+  mock = false,
 }: {
   report: TeamInsightReport;
   coaching: boolean;
   trend?: MomentumTrendWeek[];
   explain?: boolean;
+  mock?: boolean;
 }) {
   const sections: Section[] = [
     {
@@ -122,9 +124,16 @@ export function GroupMomentumReport({
     <div className="group-momentum">
       {explain && (
         <div className="explain-banner">
-          <strong>Explain mode.</strong> This dashboard is populated with representative <em>mock</em> data
-          for alignment. In production every metric is computed from members&rsquo; pushed rollups. Hover any{" "}
-          &#9432; for its data source, pipeline status, and whether it&rsquo;s deterministic or LLM-generated.
+          <strong>Explain mode.</strong>{" "}
+          {mock ? (
+            <>
+              This dashboard is populated with representative <em>mock</em> data for alignment. In production every
+              metric is computed from members&rsquo; pushed rollups.{" "}
+            </>
+          ) : (
+            <>Every metric below is computed from members&rsquo; pushed rollups.{" "}</>
+          )}
+          Hover any &#9432; for its data source, pipeline status, and whether it&rsquo;s deterministic or LLM-generated.
         </div>
       )}
       {trend && trend.length > 0 && (

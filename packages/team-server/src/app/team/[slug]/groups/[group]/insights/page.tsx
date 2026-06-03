@@ -109,7 +109,9 @@ export default async function GroupInsightsPage({
     report = rep;
     trend = tr;
     earliest = earliestM;
-    activeCount = rep.cross_edition.roster.length;
+    // Roster includes every visible member (left join); count only those with
+    // agent time this week so the header isn't a misleading N/N.
+    activeCount = rep.cross_edition.roster.filter((rm) => rm.agent_hours > 0).length;
     // Seat right-sizing (Phase 1b): only downgrade candidates within the group.
     const groupSeatRecs = optimizerInputs
       .filter((i) => groupIds.has(i.membershipId))
@@ -219,7 +221,7 @@ export default async function GroupInsightsPage({
         </div>
       ) : (
         <>
-          <GroupMomentumReport report={clientReport} coaching={coaching} trend={trend} explain={explain} />
+          <GroupMomentumReport report={clientReport} coaching={coaching} trend={trend} explain={explain} mock={mock} />
           <SeatRightSizing
             candidates={seatCandidates}
             reviewedCount={seatReviewed}
