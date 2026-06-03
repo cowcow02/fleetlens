@@ -4,6 +4,19 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.12.0] — 2026-06-03
+
+### Added
+- **Per-group momentum dashboard.** `/team/[slug]/groups/[group]/insights` renders a focused, group-scoped momentum report (Game Plan v3) reframed around the three adoption questions — using it / getting better / changing how we ship — aggregate-first. A 4-week momentum trend leads (the primary read for small groups, over noisy single-week WoW), followed by active-rate (7d/30d), week-over-week pulse tiles, the L0–L4 maturity mix, per-member portraits behind a guarded `?coaching=1` toggle, and a downgrade-only seat right-sizing lens. Reached by URL only (not nav-linked); per-group PDF export plus an `?explain=1` provenance overlay and `?mock=1` roster-only data mode are included.
+- **Historical insight reports.** Team and group reports — and their PDFs — now accept `?week=<Monday>` and show prev/next week navigation on the report header, bounded by the earliest week with data through the last completed week. Each week is computed live from `rich_daily_rollups`; nothing is persisted, and a bad/blank/future `?week=` falls back to the last completed week.
+
+### Changed
+- **Per-project & skill paired-bars cleaned up.** Per-project rows show the short repo-leaf label (full path on hover) instead of an overlapping absolute path, and same-repo-across-harnesses rows fold into one. Week-over-week deltas that divided by ~zero now render as `new` / `gone` / `—` instead of nonsensical percentages, and both the per-project and skill bars drop rows that were idle this week. Deferred tool-loading (`ToolSearch`) no longer shows up as a "skill," de-noising the skill bars and the maturity breadth axis.
+
+### Fixed
+- **Members-active header.** The report header counted the full left-joined roster, showing a misleading `N/N`; it now counts only members with agent time in the displayed week (group page and `/report` PDF).
+- **Explain banner.** `?explain=1` on a real-data view no longer claims the dashboard is "representative mock data" — that wording now only appears in mock mode.
+
 ## [0.11.0] — 2026-05-29
 
 ### Added
