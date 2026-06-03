@@ -4018,11 +4018,19 @@ a.group-card-name:hover {
   font-family: "JetBrains Mono", monospace;
   color: var(--ink-soft);
   font-size: 12px;
+  /* min-width:0 lets the grid track actually shrink so the leaf label can
+     ellipsis instead of overflowing into the bar column. */
+  min-width: 0;
+  overflow: hidden;
 }
 .bar-chart-label code {
   font-family: "JetBrains Mono", monospace;
   font-size: 12px;
   color: var(--ink);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .bar-chart-track {
   height: 22px;
