@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   canonicalProjectName,
+  projectRepoName,
   computeBurstsFromSessions,
   dailyActivity,
   sessionDay,
@@ -184,8 +185,12 @@ export function buildRichRollupBlocks(
     // Canonical project is computed from the human-readable cwd path, NOT the
     // raw `~/.claude/projects/<encoded>` directory — matching the Entry's
     // `project` field that build.ts derives via the same call.
-    const name = canonicalProjectName(s.projectName);
-    if (privateProjects.has(name)) continue;
+    // Private-project opt-out is keyed on the full canonical path; group the
+    // breakdown by repo name so the team edition never receives absolute paths
+    // and same-repo-different-harness rows fold together.
+    const canonical = canonicalProjectName(s.projectName);
+    if (privateProjects.has(canonical)) continue;
+    const name = projectRepoName(s.projectName);
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
     const cur = projects.get(name) ?? { agentTimeMs: 0, sessions: 0 };
     cur.agentTimeMs += ms;
