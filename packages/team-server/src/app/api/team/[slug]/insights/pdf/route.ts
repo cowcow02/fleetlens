@@ -21,7 +21,6 @@ async function handle(
   req: NextRequest,
   slugParam: Promise<{ slug: string }>,
   builderState: string | null,
-  source: "live" | "preview",
 ) {
   const { slug } = await slugParam;
   const auth = await requireTeamMembership(req, slug, { bySlug: true });
@@ -30,25 +29,19 @@ async function handle(
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Per-group export: guard group access to admin/staff or the group's manager
-  // here (404) so unauthorized requests fail fast instead of timing out the
-  // headless render against /report's not-found page.
+  // Insights are group-scoped only — a group is required, and access is guarded
+  // to admin/staff or the group's manager here (404) so unauthorized requests
+  // fail fast instead of timing out the headless render against /report's
+  // not-found page.
   const group = req.nextUrl.searchParams.get("group");
+  if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const coaching = req.nextUrl.searchParams.get("coaching") === "1";
   const mock = req.nextUrl.searchParams.get("mock") === "1";
   const week = req.nextUrl.searchParams.get("week");
   const weekQs = week ? `&week=${encodeURIComponent(week)}` : "";
-  if (group) {
-    const g = await requireGroupManager(auth, group);
-    if (g instanceof NextResponse) return g;
-  }
-  const reportQuery = group
-    ? `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}${weekQs}`
-    : source === "preview"
-      ? "?source=preview"
-      : week
-        ? `?week=${encodeURIComponent(week)}`
-        : "";
+  const g = await requireGroupManager(auth, group);
+  if (g instanceof NextResponse) return g;
+  const reportQuery = `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}${weekQs}`;
   const reportPath = `/report/${encodeURIComponent(slug)}${reportQuery}`;
   const dashUrl = `${baseUrl(req)}${reportPath}`;
   const cookieDomain = new URL(baseUrl(req)).hostname;
@@ -145,32 +138,24 @@ async function handle(
   }
 }
 
-function sourceFromQuery(req: NextRequest): "live" | "preview" {
-  return req.nextUrl.searchParams.get("source") === "preview" ? "preview" : "live";
-}
-
 export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
-  return handle(req, ctx.params, null, sourceFromQuery(req));
+  return handle(req, ctx.params, null);
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
   let state: string | null = null;
-  let bodySource: "live" | "preview" | null = null;
   const contentType = req.headers.get("content-type") ?? "";
   try {
     if (contentType.includes("application/json")) {
       const body = await req.json();
       if (body && typeof body.state === "string" && body.state.length < MAX_STATE_BYTES) state = body.state;
-      if (body && (body.source === "live" || body.source === "preview")) bodySource = body.source;
     } else if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
       const form = await req.formData();
       const raw = form.get("state");
       if (typeof raw === "string" && raw.length < MAX_STATE_BYTES) state = raw;
-      const rawSource = form.get("source");
-      if (rawSource === "live" || rawSource === "preview") bodySource = rawSource;
     }
   } catch {
     // ignore — no state provided, route will render starter layout
   }
-  return handle(req, ctx.params, state, bodySource ?? sourceFromQuery(req));
+  return handle(req, ctx.params, state);
 }
