@@ -8,6 +8,7 @@ import { buildTeamInsightReport } from "../../../lib/team-report-aggregate";
 import { GroupMomentumReport } from "../../../components/group-momentum-report";
 import { ReportHeader } from "../../../components/report-header";
 import { buildMockGroupReport } from "../../../lib/mock-group-report";
+import { verifyRenderToken } from "../../../lib/render-token";
 
 export const dynamic = "force-dynamic";
 
@@ -16,15 +17,24 @@ export const dynamic = "force-dynamic";
 // report. Same layout the live group page shows; `?coaching=1` reveals
 // per-member portraits. Group access is guarded to admin/staff or the group's
 // manager.
+//
+// Only the PDF route is meant to load this page: it mints a short-lived
+// `render` token over the exact scope, verified here before anything else so
+// plain browser sessions (even admins) get a 404. The session + role checks
+// below are kept as defense in depth.
 export default async function ReportPage({
   params,
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ group?: string; coaching?: string; mock?: string; week?: string }>;
+  searchParams: Promise<{ group?: string; coaching?: string; mock?: string; week?: string; render?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
+
+  if (!sp?.group) notFound();
+  const renderScope = { slug, group: sp.group, coaching: sp.coaching === "1", mock: sp.mock === "1", week: sp.week };
+  if (!verifyRenderToken(sp.render, renderScope)) notFound();
 
   const pool = getPool();
   const cookieStore = await cookies();
@@ -39,8 +49,6 @@ export default async function ReportPage({
   const myMembership = session.memberships.find((m) => m.team_id === teamId);
   if (!myMembership) redirect("/login");
 
-  // Insights are group-scoped only — a group is required.
-  if (!sp?.group) notFound();
   const group = await loadGroupBySlug(teamId, sp.group, pool);
   if (!group) notFound();
   const isAdminOrStaff = session.user.is_staff || myMembership.role === "admin";
