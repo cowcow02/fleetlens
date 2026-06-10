@@ -3,6 +3,7 @@ import { requireTeamMembership, requireAdmin, type TeamContext } from "../../../
 import {
   deleteIntegration,
   getIntegration,
+  normalizeGithubRepos,
   runGithubSync,
   saveGithubIntegration,
 } from "../../../../../../lib/integrations";
@@ -24,20 +25,30 @@ export async function GET(req: NextRequest) {
   const integration = await getIntegration(ctx.membership.team_id, "github", ctx.pool);
   if (!integration) return NextResponse.json({ connected: false });
 
-  const counts = await ctx.pool.query(
-    `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE ai_assisted)::int AS ai
-     FROM github_pull_requests WHERE team_id = $1`,
+  const counts = await ctx.pool.query<{ repo: string; total: number; ai: number; merged: number }>(
+    `SELECT repo, COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE ai_assisted)::int AS ai,
+            COUNT(*) FILTER (WHERE state = 'merged')::int AS merged
+     FROM github_pull_requests WHERE team_id = $1 GROUP BY repo`,
     [ctx.membership.team_id],
   );
+  const countsByRepo = new Map(counts.rows.map((r) => [r.repo, r]));
+  const repos = normalizeGithubRepos(integration.config.repos).map((r) => ({
+    ...r,
+    prs_synced: countsByRepo.get(r.name)?.total ?? 0,
+    prs_merged: countsByRepo.get(r.name)?.merged ?? 0,
+    prs_ai_assisted: countsByRepo.get(r.name)?.ai ?? 0,
+  }));
+
   return NextResponse.json({
     connected: true,
     login: integration.config.login ?? null,
-    repos: integration.config.repos,
+    repos,
     status: integration.status,
     last_error: integration.last_error,
     last_sync_at: integration.last_sync_at,
-    prs_synced: counts.rows[0].total,
-    prs_ai_assisted: counts.rows[0].ai,
+    prs_synced: repos.reduce((s, r) => s + r.prs_synced, 0),
+    prs_ai_assisted: repos.reduce((s, r) => s + r.prs_ai_assisted, 0),
   });
 }
 
@@ -52,17 +63,22 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  const { token, repos } = (await req.json()) as { token?: string; repos?: string[] };
-  if (!token) return NextResponse.json({ error: "token required" }, { status: 400 });
-  const repoList = (repos ?? []).map((r) => r.trim()).filter(Boolean);
-  if (repoList.length === 0) return NextResponse.json({ error: "at least one owner/name repo required" }, { status: 400 });
-  if (repoList.some((r) => !/^[\w.-]+\/[\w.-]+$/.test(r))) {
+  const body = (await req.json()) as { token?: string; repos?: unknown };
+  const repoList = normalizeGithubRepos(body.repos);
+  if (repoList.length === 0) return NextResponse.json({ error: "select at least one repository" }, { status: 400 });
+  if (repoList.some((r) => !/^[\w.-]+\/[\w.-]+$/.test(r.name))) {
     return NextResponse.json({ error: "repos must be owner/name" }, { status: 400 });
   }
 
   let login: string;
   try {
-    ({ login } = await saveGithubIntegration(ctx.membership.team_id, token, repoList, ctx.user.id, ctx.pool));
+    ({ login } = await saveGithubIntegration(
+      ctx.membership.team_id,
+      body.token?.trim() || null,
+      repoList,
+      ctx.user.id,
+      ctx.pool,
+    ));
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }

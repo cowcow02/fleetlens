@@ -2,12 +2,35 @@ import type pg from "pg";
 import { encryptAesGcm, decryptAesGcm } from "./crypto";
 import { assertRepoAccess, fetchRepoPulls, validateGithubToken } from "./github";
 
+// A repo and which groups it counts toward in the insight report.
+// Empty group_ids = counts toward every group (the safe default).
+export type GithubRepoMapping = { name: string; group_ids: string[] };
+
 export type GithubIntegrationConfig = {
-  repos: string[];
+  repos: GithubRepoMapping[];
   sync_days: number;
   // Login the token authenticated as at save time — display only.
   login?: string;
 };
+
+// Accepts the legacy shape (plain "owner/name" strings) and anything a client
+// sends; always returns clean mappings.
+export function normalizeGithubRepos(raw: unknown): GithubRepoMapping[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GithubRepoMapping[] = [];
+  for (const item of raw) {
+    if (typeof item === "string") {
+      if (item.trim()) out.push({ name: item.trim(), group_ids: [] });
+    } else if (item && typeof item === "object" && typeof (item as { name?: unknown }).name === "string") {
+      const it = item as { name: string; group_ids?: unknown };
+      out.push({
+        name: it.name.trim(),
+        group_ids: Array.isArray(it.group_ids) ? it.group_ids.filter((g): g is string => typeof g === "string") : [],
+      });
+    }
+  }
+  return out.filter((r) => r.name);
+}
 
 export type IntegrationRow = {
   provider: string;
@@ -37,23 +60,37 @@ export async function getIntegration(
   return (res.rows[0] as IntegrationRow | undefined) ?? null;
 }
 
+/** Decrypted token of an existing integration, or null when not connected. */
+export async function storedGithubToken(teamId: string, pool: pg.Pool): Promise<string | null> {
+  const res = await pool.query(
+    "SELECT credentials_enc FROM team_integrations WHERE team_id = $1 AND provider = 'github'",
+    [teamId],
+  );
+  if (!res.rowCount) return null;
+  return decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
+}
+
+/** Connect or reconfigure. `token` null = keep the stored token (mapping-only
+ *  edits and adding repos don't force the admin to re-paste credentials). */
 export async function saveGithubIntegration(
   teamId: string,
-  token: string,
-  repos: string[],
+  token: string | null,
+  repos: GithubRepoMapping[],
   createdBy: string,
   pool: pg.Pool,
 ): Promise<{ login: string }> {
   const key = encryptionKey();
-  const { login } = await validateGithubToken(token);
-  await assertRepoAccess(token, repos);
+  const effectiveToken = token ?? (await storedGithubToken(teamId, pool));
+  if (!effectiveToken) throw new Error("GitHub token required — no stored credentials to reuse");
+  const { login } = await validateGithubToken(effectiveToken);
+  await assertRepoAccess(effectiveToken, repos.map((r) => r.name));
   const config: GithubIntegrationConfig = { repos, sync_days: 60, login };
   await pool.query(
     `INSERT INTO team_integrations (team_id, provider, credentials_enc, config, status, last_error, created_by)
      VALUES ($1, 'github', $2, $3, 'active', NULL, $4)
      ON CONFLICT (team_id, provider)
      DO UPDATE SET credentials_enc = $2, config = $3, status = 'active', last_error = NULL, created_by = $4`,
-    [teamId, encryptAesGcm(token, key), JSON.stringify(config), createdBy],
+    [teamId, encryptAesGcm(effectiveToken, key), JSON.stringify(config), createdBy],
   );
   return { login };
 }
@@ -80,7 +117,7 @@ export async function runGithubSync(teamId: string, pool: pg.Pool): Promise<Gith
   try {
     let prs = 0;
     let aiAssisted = 0;
-    for (const repo of config.repos) {
+    for (const { name: repo } of normalizeGithubRepos(config.repos)) {
       const rows = await fetchRepoPulls(token, repo, config.sync_days ?? 60);
       for (const r of rows) {
         await pool.query(

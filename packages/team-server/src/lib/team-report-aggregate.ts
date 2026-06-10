@@ -14,6 +14,7 @@ import type {
   TeamInsightReport,
 } from "../app/team/[slug]/insights/types";
 import { medianHours } from "./github";
+import { normalizeGithubRepos } from "./integrations";
 import {
   isoMondayOf,
   perProjectTimeWoW,
@@ -204,19 +205,40 @@ function githubWeekDelivery(rows: GithubPrRow[]): GithubWeekDelivery {
   };
 }
 
-// Team-level (not group-scoped): synced PRs carry no membership mapping until
-// the session↔commit-SHA join lands. Null when the integration isn't connected.
+// PRs carry no membership mapping (that needs the session↔commit-SHA join),
+// but repos ARE group-mapped: each configured repo lists the group ids it
+// counts toward (empty = all groups). Group-scoped reports only see PRs from
+// their mapped repos. Null when the integration isn't connected; connected
+// with zero mapped repos returns an empty-repos stats object so the widget
+// can tell the admin to fix the mapping rather than silently showing nothing.
 async function githubDelivery(
   teamId: string,
+  scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
 ): Promise<GithubDeliveryStats | null> {
-  const integ = await pool.query<{ config: { repos: string[] }; last_sync_at: string | null }>(
+  const integ = await pool.query<{ config: { repos: unknown }; last_sync_at: string | null }>(
     `SELECT config, last_sync_at::text FROM team_integrations
      WHERE team_id = $1 AND provider = 'github'`,
     [teamId],
   );
   if (!integ.rowCount) return null;
+
+  const allRepos = normalizeGithubRepos(integ.rows[0].config.repos);
+  const scoped =
+    scope.kind === "group"
+      ? allRepos.filter((r) => r.group_ids.length === 0 || r.group_ids.includes(scope.groupId))
+      : allRepos;
+  const repoNames = scoped.map((r) => r.name);
+  if (repoNames.length === 0) {
+    return {
+      repos: [],
+      last_sync_at: integ.rows[0].last_sync_at,
+      open_now: 0,
+      week: githubWeekDelivery([]),
+      prev_week: githubWeekDelivery([]),
+    };
+  }
 
   const prevMonday = previousIsoMonday(weekMonday);
   const winEnd = weekEndExclusive(weekMonday);
@@ -225,17 +247,19 @@ async function githubDelivery(
       `SELECT created_at::text, merged_at::text, first_commit_at::text, first_review_at::text,
               ai_assisted, (merged_at >= $3::date) AS in_current_week
        FROM github_pull_requests
-       WHERE team_id = $1 AND merged_at >= $2::date AND merged_at < $4::date`,
-      [teamId, prevMonday, weekMonday, winEnd],
+       WHERE team_id = $1 AND repo = ANY($5::text[])
+         AND merged_at >= $2::date AND merged_at < $4::date`,
+      [teamId, prevMonday, weekMonday, winEnd, repoNames],
     ),
     pool.query<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM github_pull_requests WHERE team_id = $1 AND state = 'open'`,
-      [teamId],
+      `SELECT COUNT(*)::int AS n FROM github_pull_requests
+       WHERE team_id = $1 AND repo = ANY($2::text[]) AND state = 'open'`,
+      [teamId, repoNames],
     ),
   ]);
 
   return {
-    repos: integ.rows[0].config.repos ?? [],
+    repos: repoNames,
     last_sync_at: integ.rows[0].last_sync_at,
     open_now: open.rows[0].n,
     week: githubWeekDelivery(prs.rows.filter((r) => r.in_current_week)),
@@ -1243,7 +1267,7 @@ export async function buildTeamInsightReport(
     data_freshness: freshnessRes.rows[0]?.ingested_at ?? new Date().toISOString(),
     member_portraits: portraits,
   };
-  const ghDelivery = await githubDelivery(teamId, weekMonday, pool);
+  const ghDelivery = await githubDelivery(teamId, scope, weekMonday, pool);
   if (ghDelivery) liveExtras.github_delivery = ghDelivery;
   report.live_extras = liveExtras;
 

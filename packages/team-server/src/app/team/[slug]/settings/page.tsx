@@ -66,7 +66,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
         groups={groups}
         allowedSignupDomains={team.allowed_signup_domains ?? []}
       />
-      <IntegrationsPanel teamSlug={slug} />
+      <IntegrationsPanel teamSlug={slug} groups={groups} />
     </>
   );
 }

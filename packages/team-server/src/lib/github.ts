@@ -97,6 +97,26 @@ export async function validateGithubToken(token: string): Promise<{ login: strin
   return { login: body.login };
 }
 
+export type AccessibleRepo = {
+  full_name: string;
+  private: boolean;
+  pushed_at: string | null;
+};
+
+/** Repos the token can read, most recently pushed first. Capped at 300 —
+ *  the picker has a client-side filter for bigger orgs. */
+export async function listAccessibleRepos(token: string): Promise<AccessibleRepo[]> {
+  const repos: AccessibleRepo[] = [];
+  for (let page = 1; page <= 3; page++) {
+    const res = await gh(token, `/user/repos?per_page=100&sort=pushed&page=${page}`);
+    if (!res.ok) throw new Error(`GitHub rejected the token while listing repositories (HTTP ${res.status})`);
+    const batch = (await res.json()) as AccessibleRepo[];
+    repos.push(...batch.map((r) => ({ full_name: r.full_name, private: r.private, pushed_at: r.pushed_at })));
+    if (batch.length < 100) break;
+  }
+  return repos;
+}
+
 /** Throws naming the first repo the token cannot see. */
 export async function assertRepoAccess(token: string, repos: string[]): Promise<void> {
   for (const repo of repos) {

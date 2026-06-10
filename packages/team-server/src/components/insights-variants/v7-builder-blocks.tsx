@@ -503,7 +503,18 @@ const V8_BLOCKS: DashboardBlock[] = [
       if (!g) {
         return (
           <div className="live-empty-row">
-            GitHub integration not connected — connect it in team settings to see merged-PR delivery metrics here.
+            GitHub isn&rsquo;t connected yet, so PR counts here are transcript-side estimates.{" "}
+            <a href={`/team/${r.team_slug}/settings`}>Connect GitHub in team settings</a> to see merge-confirmed
+            delivery — including how AI-assisted PRs compare with the rest.
+          </div>
+        );
+      }
+      if (g.repos.length === 0) {
+        return (
+          <div className="live-empty-row">
+            GitHub is connected, but no repository is mapped to this group yet — in{" "}
+            <a href={`/team/${r.team_slug}/settings`}>team settings → Integrations</a>, set each repo&rsquo;s
+            &ldquo;counts toward&rdquo; to this group (or to all groups).
           </div>
         );
       }
@@ -542,8 +553,9 @@ const V8_BLOCKS: DashboardBlock[] = [
             {pair("Review wait (created → first review)", w.median_review_wait_hours_ai, w.median_review_wait_hours_other)}
           </div>
           <div className="kicker" style={{ marginTop: 10 }}>
-            {g.repos.join(", ")} · {g.open_now} open now · merge-confirmed via GitHub, not transcript-counted ·
-            AI attribution from Co-Authored-By trailers (squash-merges that strip trailers undercount)
+            Counting {g.repos.join(", ")} ({g.open_now} open now) — manage which repos count toward this report in
+            team settings → Integrations. Merge-confirmed via GitHub, not transcript-counted; AI attribution from
+            Co-Authored-By trailers (squash-merges that strip trailers undercount).
           </div>
         </>
       );
