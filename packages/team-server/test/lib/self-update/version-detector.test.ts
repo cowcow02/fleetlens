@@ -4,16 +4,25 @@ import { getLatestVersion } from "../../../src/lib/self-update/version-detector.
 global.fetch = vi.fn() as unknown as typeof fetch;
 const fetchMock = global.fetch as unknown as ReturnType<typeof vi.fn>;
 
+function tagsPage(tags: string[], nextLast?: string) {
+  return {
+    ok: true,
+    headers: new Headers(
+      nextLast
+        ? { link: `</v2/cowcow02/fleetlens-team-server/tags/list?last=${nextLast}&n=0>; rel="next"` }
+        : {},
+    ),
+    json: async () => ({ name: "cowcow02/fleetlens-team-server", tags }),
+  };
+}
+
 function mockTokenThenTags(tags: string[]) {
   fetchMock
     .mockResolvedValueOnce({
       ok: true,
       json: async () => ({ token: "anon-token" }),
     })
-    .mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ name: "cowcow02/fleetlens-team-server", tags }),
-    });
+    .mockResolvedValueOnce(tagsPage(tags));
 }
 
 beforeEach(() => fetchMock.mockReset());
@@ -61,5 +70,27 @@ describe("getLatestVersion", () => {
     expect((tagsCallOpts as RequestInit).headers).toEqual(
       expect.objectContaining({ Authorization: "Bearer anon-token" }),
     );
+  });
+
+  it("follows Link pagination — newest release on the last page wins", async () => {
+    fetchMock
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ token: "anon-token" }) })
+      .mockResolvedValueOnce(tagsPage(["0.9.0", "abc1234", "0.10.0"], "0.10.0"))
+      .mockResolvedValueOnce(tagsPage(["0.11.0", "def5678", "latest"], "latest"))
+      .mockResolvedValueOnce(tagsPage(["0.12.0", "0.12.1"]));
+    expect(await getLatestVersion()).toBe("0.12.1");
+    // token + 3 pages
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    const [pageTwoUrl] = fetchMock.mock.calls[2];
+    expect(String(pageTwoUrl)).toBe(
+      "https://ghcr.io/v2/cowcow02/fleetlens-team-server/tags/list?last=0.10.0&n=0",
+    );
+  });
+
+  it("stops following pages at the safety cap", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, json: async () => ({ token: "anon-token" }) });
+    for (let i = 0; i < 60; i++) fetchMock.mockResolvedValueOnce(tagsPage([`0.${i}.0`], `0.${i}.0`));
+    expect(await getLatestVersion()).toBe("0.49.0");
+    expect(fetchMock).toHaveBeenCalledTimes(51); // token + 50 pages
   });
 });
