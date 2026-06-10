@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chromium, type BrowserContextOptions } from "playwright";
 import { requireTeamMembership, requireGroupManager } from "../../../../../../lib/route-helpers";
+import { mintRenderToken } from "../../../../../../lib/render-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SESSION_COOKIE = "fleetlens_session";
-const BUILDER_STATE_KEY_PREFIX = "fleetlens-builder-v7:";
-const MAX_STATE_BYTES = 200_000;
 
 function baseUrl(req: NextRequest): string {
   const env = process.env.BASE_URL;
@@ -17,12 +16,7 @@ function baseUrl(req: NextRequest): string {
   return `${proto}://${host}`;
 }
 
-async function handle(
-  req: NextRequest,
-  slugParam: Promise<{ slug: string }>,
-  builderState: string | null,
-  source: "live" | "preview",
-) {
+async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>) {
   const { slug } = await slugParam;
   const auth = await requireTeamMembership(req, slug, { bySlug: true });
   if (auth instanceof NextResponse) return auth;
@@ -30,26 +24,23 @@ async function handle(
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Per-group export: guard group access to admin/staff or the group's manager
-  // here (404) so unauthorized requests fail fast instead of timing out the
-  // headless render against /report's not-found page.
+  // Insights are group-scoped only — a group is required, and access is guarded
+  // to admin/staff or the group's manager here (404) so unauthorized requests
+  // fail fast instead of timing out the headless render against /report's
+  // not-found page.
   const group = req.nextUrl.searchParams.get("group");
+  if (!group) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const coaching = req.nextUrl.searchParams.get("coaching") === "1";
   const mock = req.nextUrl.searchParams.get("mock") === "1";
   const week = req.nextUrl.searchParams.get("week");
-  const weekQs = week ? `&week=${encodeURIComponent(week)}` : "";
-  if (group) {
-    const g = await requireGroupManager(auth, group);
-    if (g instanceof NextResponse) return g;
-  }
-  const reportQuery = group
-    ? `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}${weekQs}`
-    : source === "preview"
-      ? "?source=preview"
-      : week
-        ? `?week=${encodeURIComponent(week)}`
-        : "";
-  const reportPath = `/report/${encodeURIComponent(slug)}${reportQuery}`;
+  const g = await requireGroupManager(auth, group);
+  if (g instanceof NextResponse) return g;
+  const qs = new URLSearchParams({ group });
+  if (coaching) qs.set("coaching", "1");
+  if (mock) qs.set("mock", "1");
+  if (week) qs.set("week", week);
+  qs.set("render", mintRenderToken({ slug, group, coaching, mock, week: week ?? undefined }));
+  const reportPath = `/report/${encodeURIComponent(slug)}?${qs}`;
   const dashUrl = `${baseUrl(req)}${reportPath}`;
   const cookieDomain = new URL(baseUrl(req)).hostname;
   const cookieSecure = baseUrl(req).startsWith("https:");
@@ -69,17 +60,6 @@ async function handle(
     ]);
 
     const page = await context.newPage();
-    // Must seed localStorage BEFORE goto — otherwise React hydrates with the
-    // starter preset and never re-reads the storage entry.
-    if (builderState) {
-      const storageKey = `${BUILDER_STATE_KEY_PREFIX}${slug}`;
-      await page.addInitScript(
-        ([key, value]) => {
-          try { window.localStorage.setItem(key, value); } catch {}
-        },
-        [storageKey, builderState],
-      );
-    }
     await page.goto(dashUrl, { waitUntil: "networkidle", timeout: 30_000 });
     await page.waitForSelector(".builder-grid", { timeout: 15_000 });
     await page.waitForFunction(
@@ -120,11 +100,11 @@ async function handle(
     });
 
     const today = new Date().toISOString().slice(0, 10);
-    const filename = `${slug}${group ? `-${group}` : ""}-insight-report-${today}.pdf`;
+    const filename = `${slug}-${group}-insight-report-${today}.pdf`;
     if (process.env.NODE_ENV !== "production") {
       try {
         const { writeFile } = await import("node:fs/promises");
-        await writeFile(`/tmp/last-pdf-${slug}${group ? `-${group}` : ""}.pdf`, Buffer.from(pdf));
+        await writeFile(`/tmp/last-pdf-${slug}-${group}.pdf`, Buffer.from(pdf));
       } catch {
         // ignore — dev convenience only
       }
@@ -145,32 +125,6 @@ async function handle(
   }
 }
 
-function sourceFromQuery(req: NextRequest): "live" | "preview" {
-  return req.nextUrl.searchParams.get("source") === "preview" ? "preview" : "live";
-}
-
 export async function GET(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
-  return handle(req, ctx.params, null, sourceFromQuery(req));
-}
-
-export async function POST(req: NextRequest, ctx: { params: Promise<{ slug: string }> }) {
-  let state: string | null = null;
-  let bodySource: "live" | "preview" | null = null;
-  const contentType = req.headers.get("content-type") ?? "";
-  try {
-    if (contentType.includes("application/json")) {
-      const body = await req.json();
-      if (body && typeof body.state === "string" && body.state.length < MAX_STATE_BYTES) state = body.state;
-      if (body && (body.source === "live" || body.source === "preview")) bodySource = body.source;
-    } else if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
-      const form = await req.formData();
-      const raw = form.get("state");
-      if (typeof raw === "string" && raw.length < MAX_STATE_BYTES) state = raw;
-      const rawSource = form.get("source");
-      if (rawSource === "live" || rawSource === "preview") bodySource = rawSource;
-    }
-  } catch {
-    // ignore — no state provided, route will render starter layout
-  }
-  return handle(req, ctx.params, state, bodySource ?? sourceFromQuery(req));
+  return handle(req, ctx.params);
 }
