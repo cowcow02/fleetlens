@@ -1,6 +1,7 @@
 import type pg from "pg";
 import { encryptAesGcm, decryptAesGcm } from "./crypto";
 import { assertRepoAccess, fetchRepoPulls, validateGithubToken } from "./github";
+import { fetchLinearIssues, validateLinearKey } from "./linear";
 
 // A repo and which groups it counts toward in the insight report.
 // Empty group_ids = counts toward every group (the safe default).
@@ -158,17 +159,102 @@ export async function runGithubSync(teamId: string, pool: pg.Pool): Promise<Gith
   }
 }
 
-/** Hourly scheduler entry: sync every team with an active github integration. */
-export async function syncAllGithubIntegrations(pool: pg.Pool): Promise<void> {
+// ── Linear ────────────────────────────────────────────────────────────────
+
+export type LinearIntegrationConfig = {
+  team_keys: string[]; // Linear team keys (e.g. ["KIP"]); empty = all visible
+  sync_days: number;
+  login?: string; // viewer name at save time — display only
+};
+
+export async function storedLinearKey(teamId: string, pool: pg.Pool): Promise<string | null> {
   const res = await pool.query(
-    "SELECT team_id FROM team_integrations WHERE provider = 'github' AND status = 'active'",
+    "SELECT credentials_enc FROM team_integrations WHERE team_id = $1 AND provider = 'linear'",
+    [teamId],
+  );
+  if (!res.rowCount) return null;
+  return decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
+}
+
+export async function saveLinearIntegration(
+  teamId: string,
+  apiKey: string | null,
+  teamKeys: string[],
+  createdBy: string,
+  pool: pg.Pool,
+): Promise<{ login: string }> {
+  const key = encryptionKey();
+  const effective = apiKey ?? (await storedLinearKey(teamId, pool));
+  if (!effective) throw new Error("Linear API key required — no stored credentials to reuse");
+  const viewer = await validateLinearKey(effective);
+  const config: LinearIntegrationConfig = { team_keys: teamKeys, sync_days: 60, login: viewer.name };
+  await pool.query(
+    `INSERT INTO team_integrations (team_id, provider, credentials_enc, config, status, last_error, created_by)
+     VALUES ($1, 'linear', $2, $3, 'active', NULL, $4)
+     ON CONFLICT (team_id, provider)
+     DO UPDATE SET credentials_enc = $2, config = $3, status = 'active', last_error = NULL, created_by = $4`,
+    [teamId, encryptAesGcm(effective, key), JSON.stringify(config), createdBy],
+  );
+  return { login: viewer.name };
+}
+
+export type LinearSyncSummary = { issues: number; completed: number };
+
+export async function runLinearSync(teamId: string, pool: pg.Pool): Promise<LinearSyncSummary> {
+  const res = await pool.query(
+    "SELECT credentials_enc, config FROM team_integrations WHERE team_id = $1 AND provider = 'linear'",
+    [teamId],
+  );
+  if (!res.rowCount) throw new Error("Linear integration not configured");
+  const config = res.rows[0].config as LinearIntegrationConfig;
+  const apiKey = decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
+
+  try {
+    const rows = await fetchLinearIssues(apiKey, config.team_keys ?? [], config.sync_days ?? 60);
+    for (const r of rows) {
+      await pool.query(
+        `INSERT INTO linear_issues (
+           team_id, identifier, title, state_name, state_type, linear_team_key,
+           assignee, estimate, url, created_at, started_at, completed_at, canceled_at, synced_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
+         ON CONFLICT (team_id, identifier) DO UPDATE SET
+           title = $3, state_name = $4, state_type = $5, linear_team_key = $6,
+           assignee = $7, estimate = $8, url = $9,
+           created_at = $10, started_at = $11, completed_at = $12, canceled_at = $13,
+           synced_at = now()`,
+        [
+          teamId, r.identifier, r.title, r.stateName, r.stateType, r.linearTeamKey,
+          r.assignee, r.estimate, r.url, r.createdAt, r.startedAt, r.completedAt, r.canceledAt,
+        ],
+      );
+    }
+    await pool.query(
+      `UPDATE team_integrations SET status = 'active', last_error = NULL, last_sync_at = now()
+       WHERE team_id = $1 AND provider = 'linear'`,
+      [teamId],
+    );
+    return { issues: rows.length, completed: rows.filter((r) => r.stateType === "completed").length };
+  } catch (err) {
+    await pool.query(
+      `UPDATE team_integrations SET status = 'error', last_error = $2 WHERE team_id = $1 AND provider = 'linear'`,
+      [teamId, (err as Error).message],
+    );
+    throw err;
+  }
+}
+
+/** Hourly scheduler entry: sync every active integration, all providers. */
+export async function syncAllIntegrations(pool: pg.Pool): Promise<void> {
+  const res = await pool.query(
+    "SELECT team_id, provider FROM team_integrations WHERE status = 'active'",
   );
   for (const row of res.rows) {
     try {
-      await runGithubSync(row.team_id, pool);
+      if (row.provider === "github") await runGithubSync(row.team_id, pool);
+      else if (row.provider === "linear") await runLinearSync(row.team_id, pool);
     } catch (err) {
       // Row is already marked status='error'; keep going for other teams.
-      console.error(`[integrations] github sync failed for team ${row.team_id}: ${(err as Error).message}`);
+      console.error(`[integrations] ${row.provider} sync failed for team ${row.team_id}: ${(err as Error).message}`);
     }
   }
 }

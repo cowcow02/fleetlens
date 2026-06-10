@@ -8046,6 +8046,17 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
    Reusable interactive primitives (src/components/ui.tsx). New panels use
    these instead of native checkboxes / ad-hoc tables / inline styles. */
 
+/* Provider sub-header inside a settings section (bare .kicker is unscoped and
+   used for prose elsewhere — don't style it globally). */
+.provider-head {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-bottom: 12px;
+}
+
 .status-strip {
   display: flex;
   align-items: baseline;

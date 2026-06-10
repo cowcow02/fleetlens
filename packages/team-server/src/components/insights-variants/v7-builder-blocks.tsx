@@ -562,6 +562,63 @@ const V8_BLOCKS: DashboardBlock[] = [
     },
   },
   {
+    id: "linear-velocity",
+    title: "Ticket velocity · Linear",
+    short_description:
+      "Synced from the Linear integration — completed tickets, cycle/lead medians, WIP, and the share shipped via AI-assisted PRs",
+    category: "outcomes",
+    tier: "external-plug-in",
+    source_version: "v8",
+    defaultW: 4,
+    render: (r) => {
+      const l = r.live_extras?.linear_velocity;
+      if (!l) {
+        return (
+          <div className="live-empty-row">
+            Linear isn&rsquo;t connected.{" "}
+            <a href={`/team/${r.team_slug}/settings`}>Connect it in team settings</a> to see ticket cycle time and
+            how much completed work ships through AI-assisted PRs.
+          </div>
+        );
+      }
+      const w = l.week;
+      const pw = l.prev_week;
+      const completedDelta = w.completed - pw.completed;
+      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+      const timeTile = (label: string, cur: number | null, prev: number | null) => (
+        <div className="wow-tile">
+          <div className="wow-tile-label">{label}</div>
+          <div className="wow-tile-value" style={{ fontSize: 22 }}>{fmtH(cur)}</div>
+          <div className="wow-tile-delta">{prev == null ? "no prior week" : `${fmtH(prev)} last wk`}</div>
+        </div>
+      );
+      return (
+        <>
+          <div className="wow-tile-row">
+            <div className="wow-tile">
+              <div className="wow-tile-label">Tickets completed</div>
+              <div className="wow-tile-value">{w.completed}</div>
+              <div className={`wow-tile-delta ${completedDelta >= 0 ? "positive" : "negative"}`}>
+                {completedDelta >= 0 ? "+" : ""}{completedDelta} vs last wk ({pw.completed})
+              </div>
+            </div>
+            <div className="wow-tile">
+              <div className="wow-tile-label">Shipped via AI-assisted PRs</div>
+              <div className="wow-tile-value">{w.ai_linked_share_pct}%</div>
+              <div className="wow-tile-delta">{w.ai_linked} of {w.completed} tickets · joined by ticket ref</div>
+            </div>
+            {timeTile("Cycle time (started → done)", w.median_cycle_hours, pw.median_cycle_hours)}
+            {timeTile("Lead time (created → done)", w.median_lead_hours, pw.median_lead_hours)}
+          </div>
+          <div className="kicker" style={{ marginTop: 10 }}>
+            Linear {l.team_keys.join(", ")} · {l.wip_now} in progress now · cycle/lead from Linear&rsquo;s native
+            started/completed timestamps · AI linkage requires the ticket ref in the PR title, so it undercounts.
+          </div>
+        </>
+      );
+    },
+  },
+  {
     id: "live-plan-mode",
     title: "Plan-mode adoption",
     short_description: "Share of active members using plan-mode this week",

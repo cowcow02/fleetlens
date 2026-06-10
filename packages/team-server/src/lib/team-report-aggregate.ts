@@ -5,6 +5,8 @@ import type {
   GithubDeliveryStats,
   GithubWeekDelivery,
   HarnessBreakdown,
+  LinearVelocityStats,
+  LinearWeekVelocity,
   LiveExtras,
   MaturityEvidence,
   MaturityLevel,
@@ -202,6 +204,77 @@ function githubWeekDelivery(rows: GithubPrRow[]): GithubWeekDelivery {
     median_cycle_hours_other: medianHours(cycleMs(other)),
     median_review_wait_hours_ai: medianHours(reviewMs(ai)),
     median_review_wait_hours_other: medianHours(reviewMs(other)),
+  };
+}
+
+type LinearIssueAggRow = {
+  created_at: string;
+  started_at: string | null;
+  completed_at: string;
+  ai_linked: boolean;
+};
+
+function linearWeekVelocity(rows: LinearIssueAggRow[]): LinearWeekVelocity {
+  const aiLinked = rows.filter((r) => r.ai_linked).length;
+  const cycleMs = rows
+    .filter((r) => r.started_at)
+    .map((r) => new Date(r.completed_at).getTime() - new Date(r.started_at!).getTime())
+    .filter((ms) => ms >= 0);
+  const leadMs = rows
+    .map((r) => new Date(r.completed_at).getTime() - new Date(r.created_at).getTime())
+    .filter((ms) => ms >= 0);
+  return {
+    completed: rows.length,
+    ai_linked: aiLinked,
+    ai_linked_share_pct: rows.length === 0 ? 0 : Math.round((aiLinked / rows.length) * 100),
+    median_cycle_hours: medianHours(cycleMs),
+    median_lead_hours: medianHours(leadMs),
+  };
+}
+
+// Team-level ticket velocity from the Linear integration. AI linkage joins a
+// completed ticket to any AI-assisted synced PR whose title carries the ticket
+// ref ("KIP-315" + word boundary, so KIP-3150 doesn't match). Null when the
+// integration isn't connected.
+async function linearVelocity(
+  teamId: string,
+  weekMonday: string,
+  pool: pg.Pool,
+): Promise<LinearVelocityStats | null> {
+  const integ = await pool.query<{ config: { team_keys?: string[] }; last_sync_at: string | null }>(
+    `SELECT config, last_sync_at::text FROM team_integrations
+     WHERE team_id = $1 AND provider = 'linear'`,
+    [teamId],
+  );
+  if (!integ.rowCount) return null;
+
+  const prevMonday = previousIsoMonday(weekMonday);
+  const winEnd = weekEndExclusive(weekMonday);
+  const [issues, wip] = await Promise.all([
+    pool.query<LinearIssueAggRow & { in_current_week: boolean }>(
+      `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
+              (i.completed_at >= $3::date) AS in_current_week,
+              EXISTS (
+                SELECT 1 FROM github_pull_requests p
+                WHERE p.team_id = i.team_id AND p.ai_assisted
+                  AND p.title ~* (i.identifier || '\\M')
+              ) AS ai_linked
+       FROM linear_issues i
+       WHERE i.team_id = $1 AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
+      [teamId, prevMonday, weekMonday, winEnd],
+    ),
+    pool.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM linear_issues WHERE team_id = $1 AND state_type = 'started'`,
+      [teamId],
+    ),
+  ]);
+
+  return {
+    team_keys: integ.rows[0].config.team_keys ?? [],
+    last_sync_at: integ.rows[0].last_sync_at,
+    wip_now: wip.rows[0].n,
+    week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
+    prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),
   };
 }
 
@@ -1267,8 +1340,12 @@ export async function buildTeamInsightReport(
     data_freshness: freshnessRes.rows[0]?.ingested_at ?? new Date().toISOString(),
     member_portraits: portraits,
   };
-  const ghDelivery = await githubDelivery(teamId, scope, weekMonday, pool);
+  const [ghDelivery, linVelocity] = await Promise.all([
+    githubDelivery(teamId, scope, weekMonday, pool),
+    linearVelocity(teamId, weekMonday, pool),
+  ]);
   if (ghDelivery) liveExtras.github_delivery = ghDelivery;
+  if (linVelocity) liveExtras.linear_velocity = linVelocity;
   report.live_extras = liveExtras;
 
   // Mirror PR totals on outcomes for any catalog widget that reads them.

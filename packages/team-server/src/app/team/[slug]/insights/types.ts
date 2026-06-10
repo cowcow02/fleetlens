@@ -1388,6 +1388,25 @@ export type GithubDeliveryStats = {
   prev_week: GithubWeekDelivery;
 };
 
+// Linear-integration ticket velocity. Team-level. AI linkage joins completed
+// tickets to AI-assisted synced PRs whose title carries the ticket ref —
+// an undercount when PRs omit the ref.
+export type LinearWeekVelocity = {
+  completed: number;
+  ai_linked: number;
+  ai_linked_share_pct: number; // ai_linked / completed × 100
+  median_cycle_hours: number | null; // started → completed
+  median_lead_hours: number | null; // created → completed
+};
+
+export type LinearVelocityStats = {
+  team_keys: string[];
+  last_sync_at: string | null;
+  wip_now: number; // issues currently in a "started" state
+  week: LinearWeekVelocity;
+  prev_week: LinearWeekVelocity;
+};
+
 export type LiveExtras = {
   active_rate: LiveActiveRate;
   maturity_mix: LiveMaturityMix;
@@ -1399,6 +1418,8 @@ export type LiveExtras = {
   member_portraits?: MemberMaturityPortrait[];
   // Present only when the team's GitHub integration is connected.
   github_delivery?: GithubDeliveryStats;
+  // Present only when the team's Linear integration is connected.
+  linear_velocity?: LinearVelocityStats;
 };
 
 // ─── The whole report ─────────────────────────────────────────────────────

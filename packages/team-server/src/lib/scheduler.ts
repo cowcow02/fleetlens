@@ -60,10 +60,10 @@ export function startScheduler(): void {
 
   setInterval(async () => {
     try {
-      const { syncAllGithubIntegrations } = await import("./integrations");
-      await syncAllGithubIntegrations(getPool());
+      const { syncAllIntegrations } = await import("./integrations");
+      await syncAllIntegrations(getPool());
     } catch (err) {
-      console.error(`[scheduler] github sync sweep failed: ${(err as Error).message}`);
+      console.error(`[scheduler] integration sync sweep failed: ${(err as Error).message}`);
     }
   }, 60 * 60 * 1000);
 

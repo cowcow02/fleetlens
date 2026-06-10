@@ -453,3 +453,31 @@ export const githubPullRequests = pgTable(
     ),
   }),
 );
+
+// Issues synced from the Linear integration, upserted on every sync. Native
+// Linear timestamps (startedAt/completedAt) drive cycle/lead time — the full
+// per-status transition history (v6 phase spine) is a later expansion.
+export const linearIssues = pgTable(
+  "linear_issues",
+  {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    identifier: text("identifier").notNull(), // e.g. KIP-315
+    title: text("title").notNull(),
+    stateName: text("state_name").notNull(),
+    // Linear's canonical buckets: triage|backlog|unstarted|started|completed|canceled
+    stateType: text("state_type").notNull(),
+    linearTeamKey: text("linear_team_key").notNull(),
+    assignee: text("assignee"),
+    estimate: integer("estimate"),
+    url: text("url"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.identifier] }),
+    teamCompleted: index("idx_linear_issues_team_completed").on(t.teamId, sql`${t.completedAt} DESC`),
+  }),
+);

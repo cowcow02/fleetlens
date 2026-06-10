@@ -114,6 +114,13 @@ export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
     status: "live",
     llm: false,
   },
+  "linear-velocity": {
+    description:
+      "Ticket velocity from the Linear integration: completed tickets WoW, median cycle (started → done) and lead (created → done) hours from Linear's native timestamps, WIP count, and the share of completed tickets shipped via AI-assisted PRs (joined by ticket ref in synced PR titles — undercounts refless PRs). Team-level, not group-scoped.",
+    source: "linear_issues + github_pull_requests (hourly poll via the team's encrypted Linear API key)",
+    status: "live",
+    llm: false,
+  },
   "per-project-time-bars": {
     description: "Agent time per project for the group, this week vs last.",
     source: `${ROLLUPS}.projects`,

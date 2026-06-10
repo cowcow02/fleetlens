@@ -57,6 +57,13 @@
       "when": 1781049600000,
       "tag": "0007_team_integrations",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781056800000,
+      "tag": "0008_linear_issues",
+      "breakpoints": true
     }
   ]
 }

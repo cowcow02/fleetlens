@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmModal } from "./confirm-modal";
+import { LinearCard } from "./linear-card";
 import { Callout, CheckChip, PickerRow, StatusStrip } from "./ui";
 
 type GroupOpt = { id: string; slug: string; name: string };
@@ -430,9 +431,10 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
     <section className="settings-section">
       <div className="subsection-head">
         <h2>Integrations</h2>
-        <span className="kicker">GitHub · merge-confirmed delivery for insight reports</span>
+        <span className="kicker">GitHub + Linear · delivery signals for insight reports</span>
       </div>
 
+      <div className="provider-head">GitHub · merge-confirmed delivery</div>
       {gh === null ? (
         <p className="help-note" style={{ border: "none", padding: 0 }}>Loading…</p>
       ) : gh.connected ? (
@@ -443,6 +445,8 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
 
       {error && <div className="form-error" style={{ marginTop: 14, maxWidth: 680 }}>{error}</div>}
       {message && <div className="action-note">{message}</div>}
+
+      <LinearCard teamSlug={teamSlug} />
 
       <ConfirmModal
         open={confirmDisconnect}
