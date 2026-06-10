@@ -553,9 +553,9 @@ const V8_BLOCKS: DashboardBlock[] = [
             {pair("Review wait (created → first review)", w.median_review_wait_hours_ai, w.median_review_wait_hours_other)}
           </div>
           <div className="kicker" style={{ marginTop: 10 }}>
-            Counting {g.repos.join(", ")} ({g.open_now} open now) — manage which repos count toward this report in
-            team settings → Integrations. Merge-confirmed via GitHub, not transcript-counted; AI attribution from
-            Co-Authored-By trailers (squash-merges that strip trailers undercount).
+            {`Counting ${g.repos.join(", ")} (${g.open_now} open now) — manage which repos count toward this report ` +
+              `in team settings → Integrations. Merge-confirmed via GitHub, not transcript-counted; AI attribution ` +
+              `from Co-Authored-By trailers (squash-merges that strip trailers undercount).`}
           </div>
         </>
       );
@@ -611,8 +611,8 @@ const V8_BLOCKS: DashboardBlock[] = [
             {timeTile("Lead time (created → done)", w.median_lead_hours, pw.median_lead_hours)}
           </div>
           <div className="kicker" style={{ marginTop: 10 }}>
-            Linear {l.team_keys.join(", ")} · {l.wip_now} in progress now · cycle/lead from Linear&rsquo;s native
-            started/completed timestamps · AI linkage requires the ticket ref in the PR title, so it undercounts.
+            {`Linear ${l.team_keys.join(", ")} · ${l.wip_now} in progress now · cycle/lead from Linear's native ` +
+              `started/completed timestamps · AI linkage requires the ticket ref in the PR title, so it undercounts.`}
           </div>
         </>
       );
