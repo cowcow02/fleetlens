@@ -14,15 +14,30 @@ async function getAnonToken(): Promise<string> {
   return data.token;
 }
 
+// GHCR pages tags/list at 100 in creation order with an RFC-5988 Link header,
+// so the newest release tag is always on the LAST page — reading only the
+// first page froze "latest" at whatever fit there (per-push sha tags fill the
+// pages fast). Follow the chain; the page cap is a guard against a registry
+// hiccup looping forever.
+function nextLink(header: string | null, base: string): string | null {
+  const m = header?.match(/<([^>]+)>\s*;\s*rel="next"/);
+  return m ? new URL(m[1], base).toString() : null;
+}
+
 export async function getLatestVersion(): Promise<string | null> {
   const token = await getAnonToken();
-  const res = await fetch(GHCR_TAGS_URL, {
-    headers: { Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(3000),
-  });
-  if (!res.ok) throw new Error(`GHCR tags list returned ${res.status}`);
-  const data = (await res.json()) as { tags?: string[] };
-  const tags = data.tags ?? [];
+  const tags: string[] = [];
+  let url: string | null = GHCR_TAGS_URL;
+  for (let page = 0; url && page < 50; page++) {
+    const res: Response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) throw new Error(`GHCR tags list returned ${res.status}`);
+    const data = (await res.json()) as { tags?: string[] };
+    tags.push(...(data.tags ?? []));
+    url = nextLink(res.headers.get("link"), url);
+  }
   const semverTags = tags.filter((t) => semver.valid(t) !== null);
   if (semverTags.length === 0) return null;
   return semverTags.sort(semver.rcompare)[0];
