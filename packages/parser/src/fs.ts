@@ -21,6 +21,7 @@ import {
   type AgentMetadata,
   CODEX_METADATA,
   GEMINI_METADATA,
+  ANTIGRAVITY_METADATA,
   COWORK_METADATA,
 } from "./agent-metadata.js";
 import {
@@ -60,6 +61,13 @@ import {
   getGeminiSession as _getGeminiSession,
   clearGeminiCaches,
 } from "./gemini.js";
+
+import {
+  DEFAULT_ANTIGRAVITY_ROOT as _DEFAULT_ANTIGRAVITY_ROOT,
+  listAntigravitySessions as _listAntigravitySessions,
+  getAntigravitySession as _getAntigravitySession,
+  clearAntigravityCaches,
+} from "./antigravity.js";
 
 import {
   DEFAULT_COWORK_ROOT as _DEFAULT_COWORK_ROOT,
@@ -109,6 +117,17 @@ export type {
   ListGeminiOptions,
   GetGeminiOptions,
 } from "./gemini.js";
+
+export {
+  DEFAULT_ANTIGRAVITY_ROOT,
+  listAntigravitySessions,
+  getAntigravitySession,
+  antigravitySessionLocalDay,
+} from "./antigravity.js";
+export type {
+  ListAntigravityOptions,
+  GetAntigravityOptions,
+} from "./antigravity.js";
 
 export {
   DEFAULT_COWORK_ROOT,
@@ -180,6 +199,7 @@ export function clearCaches(): void {
   clearClaudeCodeCaches();
   clearCodexCaches();
   clearGeminiCaches();
+  clearAntigravityCaches();
   clearCoworkCaches();
 }
 
@@ -246,6 +266,17 @@ const geminiSource: AgentSource = {
   },
 };
 
+const antigravitySource: AgentSource = {
+  ...ANTIGRAVITY_METADATA,
+  defaultRoot: _DEFAULT_ANTIGRAVITY_ROOT,
+  async listSessions(opts) {
+    return _listAntigravitySessions(opts);
+  },
+  async getSession(id) {
+    return _getAntigravitySession(id);
+  },
+};
+
 // Cowork sessions don't expose rate-limit telemetry in their transcripts —
 // utilization rolls into the Claude account's OAuth window, which is already
 // polled by the Claude-Code source.
@@ -264,6 +295,7 @@ export const agentSources: AgentSource[] = [
   claudeCodeSource,
   codexSource,
   geminiSource,
+  antigravitySource,
   coworkSource,
 ];
 

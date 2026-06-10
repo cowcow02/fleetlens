@@ -54,6 +54,14 @@ export const GEMINI_METADATA: AgentMetadata = {
   iconChar: "✺",
 };
 
+export const ANTIGRAVITY_METADATA: AgentMetadata = {
+  kind: "antigravity",
+  displayName: "Antigravity",
+  shortLabel: "Agy",
+  accentColor: "rgb(236, 72, 153)",
+  iconChar: "⏃",
+};
+
 export const COWORK_METADATA: AgentMetadata = {
   kind: "cowork",
   displayName: "Cowork",
@@ -68,6 +76,7 @@ export const agentMetadata: AgentMetadata[] = [
   CLAUDE_CODE_METADATA,
   CODEX_METADATA,
   GEMINI_METADATA,
+  ANTIGRAVITY_METADATA,
   COWORK_METADATA,
 ];
 
