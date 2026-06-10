@@ -33,12 +33,14 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>) {
   const coaching = req.nextUrl.searchParams.get("coaching") === "1";
   const mock = req.nextUrl.searchParams.get("mock") === "1";
   const week = req.nextUrl.searchParams.get("week");
-  const weekQs = week ? `&week=${encodeURIComponent(week)}` : "";
   const g = await requireGroupManager(auth, group);
   if (g instanceof NextResponse) return g;
-  const render = mintRenderToken({ slug, group, coaching, mock, week: week ?? undefined });
-  const reportQuery = `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}${weekQs}&render=${encodeURIComponent(render)}`;
-  const reportPath = `/report/${encodeURIComponent(slug)}${reportQuery}`;
+  const qs = new URLSearchParams({ group });
+  if (coaching) qs.set("coaching", "1");
+  if (mock) qs.set("mock", "1");
+  if (week) qs.set("week", week);
+  qs.set("render", mintRenderToken({ slug, group, coaching, mock, week: week ?? undefined }));
+  const reportPath = `/report/${encodeURIComponent(slug)}?${qs}`;
   const dashUrl = `${baseUrl(req)}${reportPath}`;
   const cookieDomain = new URL(baseUrl(req)).hostname;
   const cookieSecure = baseUrl(req).startsWith("https:");

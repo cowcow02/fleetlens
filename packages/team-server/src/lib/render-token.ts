@@ -20,7 +20,12 @@ export type RenderScope = {
 
 function secret(): Buffer {
   const env = process.env.FLEETLENS_ENCRYPTION_KEY;
-  if (env) return Buffer.from(env, "hex");
+  if (env) {
+    // Buffer.from(.., "hex") silently truncates on invalid input — a typo'd
+    // key would HMAC with a weakened secret instead of failing loudly.
+    if (!/^[0-9a-f]{64}$/i.test(env)) throw new Error("FLEETLENS_ENCRYPTION_KEY must be 64 hex chars");
+    return Buffer.from(env, "hex");
+  }
   const g = globalThis as { __fleetlensRenderSecret?: Buffer };
   g.__fleetlensRenderSecret ??= randomBytes(32);
   return g.__fleetlensRenderSecret;

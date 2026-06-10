@@ -30,6 +30,19 @@ describe("render token", () => {
     expect(verifyRenderToken(t, scope)).toBe(false);
   });
 
+  it("rejects a malformed FLEETLENS_ENCRYPTION_KEY loudly", () => {
+    const prev = process.env.FLEETLENS_ENCRYPTION_KEY;
+    process.env.FLEETLENS_ENCRYPTION_KEY = "not-hex";
+    try {
+      expect(() => mintRenderToken(scope)).toThrow(/64 hex/);
+      process.env.FLEETLENS_ENCRYPTION_KEY = "ab".repeat(32);
+      expect(verifyRenderToken(mintRenderToken(scope), scope)).toBe(true);
+    } finally {
+      if (prev === undefined) delete process.env.FLEETLENS_ENCRYPTION_KEY;
+      else process.env.FLEETLENS_ENCRYPTION_KEY = prev;
+    }
+  });
+
   it("rejects missing, malformed, and tampered tokens", () => {
     expect(verifyRenderToken(undefined, scope)).toBe(false);
     expect(verifyRenderToken("", scope)).toBe(false);
