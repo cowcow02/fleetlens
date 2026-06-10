@@ -4,6 +4,11 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.12.2] — 2026-06-10
+
+### Fixed
+- **Update check could not see new releases.** The GHCR tags list is paginated at 100 tags (creation order, newest last); the checker read only the first page, so "Check for updates" froze at an old version (v0.10.0) and never offered anything newer. The checker now follows the pagination chain. **Instances running ≤ 0.12.1 carry the broken checker and need one manual redeploy to this version; self-update works again afterward.**
+
 ## [0.12.1] — 2026-06-10
 
 ### Security
