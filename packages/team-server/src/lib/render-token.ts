@@ -1,4 +1,4 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 // Short-lived bearer token gating /report/[slug] to the headless PDF render —
 // the page is a print layout, not a destination, so it shouldn't answer plain
@@ -20,12 +20,11 @@ export type RenderScope = {
 
 function secret(): Buffer {
   const env = process.env.FLEETLENS_ENCRYPTION_KEY;
-  if (env) {
-    // Buffer.from(.., "hex") silently truncates on invalid input — a typo'd
-    // key would HMAC with a weakened secret instead of failing loudly.
-    if (!/^[0-9a-f]{64}$/i.test(env)) throw new Error("FLEETLENS_ENCRYPTION_KEY must be 64 hex chars");
-    return Buffer.from(env, "hex");
-  }
+  // Domain-separated derivation rather than hex-decoding: any env value
+  // yields a sound 32-byte HMAC key (Buffer.from(.., "hex") would silently
+  // truncate malformed input), and the AES-GCM use of the same env var in
+  // crypto.ts never shares raw key bits with this HMAC.
+  if (env) return createHash("sha256").update(`render-token:${env}`).digest();
   const g = globalThis as { __fleetlensRenderSecret?: Buffer };
   g.__fleetlensRenderSecret ??= randomBytes(32);
   return g.__fleetlensRenderSecret;

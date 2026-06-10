@@ -30,13 +30,14 @@ describe("render token", () => {
     expect(verifyRenderToken(t, scope)).toBe(false);
   });
 
-  it("rejects a malformed FLEETLENS_ENCRYPTION_KEY loudly", () => {
+  it("derives a working key from any FLEETLENS_ENCRYPTION_KEY value", () => {
     const prev = process.env.FLEETLENS_ENCRYPTION_KEY;
-    process.env.FLEETLENS_ENCRYPTION_KEY = "not-hex";
     try {
-      expect(() => mintRenderToken(scope)).toThrow(/64 hex/);
-      process.env.FLEETLENS_ENCRYPTION_KEY = "ab".repeat(32);
-      expect(verifyRenderToken(mintRenderToken(scope), scope)).toBe(true);
+      process.env.FLEETLENS_ENCRYPTION_KEY = "short-non-hex-dev-key";
+      const t = mintRenderToken(scope);
+      expect(verifyRenderToken(t, scope)).toBe(true);
+      process.env.FLEETLENS_ENCRYPTION_KEY = "a-different-key";
+      expect(verifyRenderToken(t, scope)).toBe(false);
     } finally {
       if (prev === undefined) delete process.env.FLEETLENS_ENCRYPTION_KEY;
       else process.env.FLEETLENS_ENCRYPTION_KEY = prev;
