@@ -4,6 +4,12 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.12.1] — 2026-06-10
+
+### Security
+- **Team-wide insight surfaces removed; insights are group-scoped only.** The team-wide `/team/[slug]/insights` page (and its `/preview` + `/preview/archive` mock routes) rendered every member's L0–L4 maturity portrait — names, level, coaching prose — to *any* team member, with no admin/manager check and no coaching toggle, including via the team-wide PDF export. All three routes are gone; insights now live exclusively at `/team/[slug]/groups/[group]/insights`, where access was already guarded to admin/staff or the group's manager and portraits stay stripped unless `?coaching=1`. `/report/[slug]` and the PDF route now require `?group=` and 404 without it. **If you bookmarked the team-wide insights URL, use your group's insights page instead.**
+- **`/report/[slug]` no longer answers browser sessions.** The page exists only as the PDF render target; the export route now mints a short-lived HMAC token over the exact report scope and `/report` 404s without it — even for admins. The token key derives from `FLEETLENS_ENCRYPTION_KEY` when set (set it if you run more than one replica, or PDF export will fail intermittently); session + role checks remain as defense in depth.
+
 ## [0.12.0] — 2026-06-03
 
 ### Added
