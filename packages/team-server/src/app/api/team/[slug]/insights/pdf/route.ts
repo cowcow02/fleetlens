@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chromium, type BrowserContextOptions } from "playwright";
 import { requireTeamMembership, requireGroupManager } from "../../../../../../lib/route-helpers";
+import { mintRenderToken } from "../../../../../../lib/render-token";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,8 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>) {
   const weekQs = week ? `&week=${encodeURIComponent(week)}` : "";
   const g = await requireGroupManager(auth, group);
   if (g instanceof NextResponse) return g;
-  const reportQuery = `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}${weekQs}`;
+  const render = mintRenderToken({ slug, group, coaching, mock, week: week ?? undefined });
+  const reportQuery = `?group=${encodeURIComponent(group)}${coaching ? "&coaching=1" : ""}${mock ? "&mock=1" : ""}${weekQs}&render=${encodeURIComponent(render)}`;
   const reportPath = `/report/${encodeURIComponent(slug)}${reportQuery}`;
   const dashUrl = `${baseUrl(req)}${reportPath}`;
   const cookieDomain = new URL(baseUrl(req)).hostname;
