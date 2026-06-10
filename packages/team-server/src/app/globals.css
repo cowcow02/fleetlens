@@ -8041,3 +8041,190 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
 @media (max-width: 720px) {
   .portrait-stats { grid-template-columns: 1fr; gap: 10px; }
 }
+
+/* ── Control kit ──────────────────────────────────────────────────────────
+   Reusable interactive primitives (src/components/ui.tsx). New panels use
+   these instead of native checkboxes / ad-hoc tables / inline styles. */
+
+.status-strip {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.status-strip .status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--positive);
+  flex: none;
+  align-self: center;
+}
+.status-strip.error .status-dot { background: var(--danger); }
+.status-strip .sep { color: var(--rule); }
+.status-strip .mono-meta {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--mute);
+}
+
+/* Checkbox rendered as an editorial chip. The native input stays in the tree
+   (visually hidden) so keyboard + screen-reader behavior is stock. */
+.check-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 120ms, color 120ms, background 120ms;
+}
+.check-chip input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.check-chip .chip-box {
+  width: 9px;
+  height: 9px;
+  border: 1px solid currentColor;
+  flex: none;
+  transition: background 120ms, border-color 120ms;
+}
+.check-chip:hover { border-color: var(--ink); color: var(--ink); }
+.check-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.check-chip.checked {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.check-chip.checked .chip-box { background: var(--accent); border-color: var(--accent); }
+/* Implied = on because a broader default ("all groups") covers it. */
+.check-chip.implied {
+  border-style: dashed;
+  color: var(--mute-soft);
+}
+.check-chip.implied .chip-box { background: var(--rule); border-color: var(--rule); }
+
+/* Scrollable selection list (repo picker). */
+.picker-list {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+  max-height: 300px;
+  overflow-y: auto;
+}
+.picker-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--rule-soft);
+  cursor: pointer;
+  transition: background 100ms;
+}
+.picker-row:last-child { border-bottom: none; }
+.picker-row:hover { background: var(--rule-soft); }
+.picker-row.selected { background: color-mix(in srgb, var(--accent) 7%, var(--paper)); }
+.picker-row input { position: absolute; opacity: 0; pointer-events: none; }
+.picker-row .pick-mark {
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--mute);
+  flex: none;
+  align-self: center;
+  position: relative;
+  transition: background 100ms, border-color 100ms;
+}
+.picker-row.selected .pick-mark { background: var(--accent); border-color: var(--accent); }
+.picker-row.selected .pick-mark::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--paper);
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+.picker-row .pick-name { font-family: "JetBrains Mono", monospace; font-size: 13px; }
+.picker-row .pick-meta {
+  margin-left: auto;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute-soft);
+  white-space: nowrap;
+}
+.badge-tag {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mute);
+  border: 1px solid var(--rule);
+  padding: 1px 5px;
+  align-self: center;
+}
+
+/* Numbered setup steps, magazine-style mono numerals. */
+.steps-editorial {
+  list-style: none;
+  margin: 16px 0 22px;
+  padding: 0;
+}
+.steps-editorial li {
+  counter-increment: step;
+  display: flex;
+  gap: 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--rule-soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+  max-width: 640px;
+}
+.steps-editorial li:last-child { border-bottom: 1px solid var(--rule-soft); }
+.steps-editorial li::before {
+  content: "0" counter(step);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+  padding-top: 3px;
+  flex: none;
+}
+.steps-editorial a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+
+/* Inline callout. Info by default; error tone for failures with a fix path. */
+.callout {
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, var(--paper));
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 12px 0;
+  max-width: 680px;
+}
+.callout.error {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--rule));
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 5%, var(--paper));
+}
+
+/* Result line under an action row. */
+.action-note {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+  margin-top: 12px;
+}
+.action-note.error { color: var(--danger); }

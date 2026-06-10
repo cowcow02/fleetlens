@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmModal } from "./confirm-modal";
+import { Callout, CheckChip, PickerRow, StatusStrip } from "./ui";
 
 type GroupOpt = { id: string; slug: string; name: string };
 
@@ -132,10 +133,6 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
     await saveRepos(repos, false);
   }
 
-  async function saveMapping() {
-    await saveRepos(mapping, false);
-  }
-
   async function syncNow() {
     setBusy(true);
     setError(null);
@@ -184,11 +181,13 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
   }
 
   const repoPicker = (onConfirm: () => void, confirmLabel: string) => (
-    <div style={{ marginTop: 14 }}>
-      <div className="form-group" style={{ maxWidth: 420 }}>
+    <div style={{ marginTop: 18, maxWidth: 680 }}>
+      <div className="form-group">
         <label htmlFor="gh-repo-filter">
-          Choose repositories to track ({selected.size} selected
-          {repoOptions ? ` of ${repoOptions.length} visible to this token` : ""})
+          Choose repositories to track
+          <span className="optional" style={{ marginLeft: 8 }}>
+            {selected.size} selected{repoOptions ? ` · ${repoOptions.length} visible to this token` : ""}
+          </span>
         </label>
         <input
           id="gh-repo-filter"
@@ -197,39 +196,35 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
           placeholder="Filter by name…"
         />
       </div>
-      <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid var(--rule)", padding: "6px 10px" }}>
+      <div className="picker-list">
         {filteredOptions.length === 0 && (
-          <p className="help-note">No repositories match. The token only lists repos it was granted access to.</p>
+          <p className="help-note" style={{ border: "none", padding: "10px 12px", margin: 0 }}>
+            No repositories match. The token only lists repos it was granted access to.
+          </p>
         )}
         {filteredOptions.map((r) => (
-          <label key={r.full_name} style={{ display: "flex", gap: 8, alignItems: "baseline", padding: "3px 0", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={selected.has(r.full_name)}
-              onChange={() => {
-                const next = new Set(selected);
-                if (next.has(r.full_name)) next.delete(r.full_name);
-                else next.add(r.full_name);
-                setSelected(next);
-              }}
-            />
-            <span className="mono" style={{ fontSize: 13 }}>{r.full_name}</span>
-            {r.private && <span className="kicker">private</span>}
-            {r.pushed_at && (
-              <span className="kicker" style={{ marginLeft: "auto" }}>
-                pushed {new Date(r.pushed_at).toLocaleDateString()}
-              </span>
-            )}
-          </label>
+          <PickerRow
+            key={r.full_name}
+            selected={selected.has(r.full_name)}
+            onToggle={() => {
+              const next = new Set(selected);
+              if (next.has(r.full_name)) next.delete(r.full_name);
+              else next.add(r.full_name);
+              setSelected(next);
+            }}
+            name={r.full_name}
+            tag={r.private ? "private" : undefined}
+            meta={r.pushed_at ? `pushed ${new Date(r.pushed_at).toLocaleDateString()}` : undefined}
+          />
         ))}
       </div>
-      <p className="help-note" style={{ marginTop: 8 }}>
+      <p className="help-note">
         Pick the repos this team ships to — pull requests from these repos feed the delivery metrics. You can add or
         remove repos later without re-entering a token.
       </p>
-      <div style={{ display: "flex", gap: 12, marginTop: 10 }}>
+      <div className="settings-row" style={{ marginTop: 14 }}>
         <button className="btn" onClick={onConfirm} disabled={busy || selected.size === 0}>
-          {busy ? "Working…" : `${confirmLabel} (${selected.size})`}
+          {busy ? "Working…" : `${confirmLabel} ${selected.size > 0 ? `(${selected.size})` : ""}`}
         </button>
         <button
           className="btn-link"
@@ -247,19 +242,22 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
 
   const connectFlow = (
     <div style={{ maxWidth: 680 }}>
-      <p style={{ marginTop: 0, lineHeight: 1.55 }}>
-        Connect GitHub to add <strong>merge-confirmed delivery metrics</strong> to your insight reports: merged PRs per
-        week, how many were AI-assisted, and how their cycle time compares with the rest. Without it, reports rely on
-        transcript-side estimates.
+      <p style={{ marginTop: 0, lineHeight: 1.6, maxWidth: 640 }}>
+        Connect GitHub to add <strong>merge-confirmed delivery metrics</strong> to your insight reports: merged PRs
+        per week, how many were AI-assisted, and how their cycle time compares with the rest. Without it, reports
+        rely on transcript-side estimates.
       </p>
-      <ol style={{ lineHeight: 1.7, paddingLeft: 20 }}>
+      <ol className="steps-editorial">
         <li>
-          <a href={TOKEN_URL} target="_blank" rel="noreferrer">Create a fine-grained access token on GitHub ↗</a>{" "}
-          — under <em>Repository access</em> pick the repos your team ships to; under <em>Permissions</em> grant
-          read-only <strong>Contents</strong>, <strong>Pull requests</strong> and <strong>Metadata</strong>. Nothing else.
+          <span>
+            <a href={TOKEN_URL} target="_blank" rel="noreferrer">Create a fine-grained access token on GitHub ↗</a>{" "}
+            — under <em>Repository access</em> pick the repos your team ships to; under <em>Permissions</em> grant
+            read-only <strong>Contents</strong>, <strong>Pull requests</strong> and <strong>Metadata</strong>.
+            Nothing else.
+          </span>
         </li>
-        <li>Paste the token below. It&rsquo;s validated, encrypted, and never shown again.</li>
-        <li>Tick the repositories to track — you&rsquo;ll be able to map them to groups afterwards.</li>
+        <li><span>Paste the token below. It&rsquo;s validated, encrypted, and never shown again.</span></li>
+        <li><span>Tick the repositories to track — you&rsquo;ll be able to map them to groups afterwards.</span></li>
       </ol>
       <div className="form-group" style={{ maxWidth: 420 }}>
         <label htmlFor="gh-token">GitHub token</label>
@@ -268,7 +266,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
           type="password"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder="github_pat_… or a classic token"
+          placeholder="github_pat_…"
           autoComplete="off"
         />
       </div>
@@ -281,28 +279,38 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
     </div>
   );
 
-  const groupLabel = (id: string) => groups.find((g) => g.id === id)?.name ?? "unknown group";
+  const fmtSync = (iso: string | null | undefined) =>
+    iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "never";
 
   const connectedView = gh?.connected && (
-    <div style={{ maxWidth: 760 }}>
-      <p style={{ marginTop: 0 }}>
-        Connected as <strong>{gh.login ?? "unknown"}</strong> · syncs every hour ·{" "}
-        {gh.prs_synced ?? 0} PRs stored ({gh.prs_ai_assisted ?? 0} AI-assisted) · last sync{" "}
-        {gh.last_sync_at ? new Date(gh.last_sync_at).toLocaleString() : "never"}
-      </p>
+    <div>
+      <StatusStrip
+        ok={gh.status !== "error"}
+        segments={[
+          <span key="who">
+            Connected as <strong>{gh.login ?? "unknown"}</strong>
+          </span>,
+          <span key="cadence" className="mono-meta">syncs hourly</span>,
+          <span key="vol" className="mono-meta">
+            {gh.prs_synced ?? 0} PRs · {gh.prs_ai_assisted ?? 0} AI-assisted
+          </span>,
+          <span key="last" className="mono-meta">last sync {fmtSync(gh.last_sync_at)}</span>,
+        ]}
+      />
+
       {gh.status === "error" && (
-        <div className="form-error" style={{ marginBottom: 12 }}>
+        <Callout tone="error">
           Last sync failed: {gh.last_error ?? "unknown error"}. If the token expired or lost repo access, reconnect
-          with a fresh one below — your repo list and group mapping are kept.
-          <div style={{ marginTop: 8 }}>
-            <button className="btn" onClick={() => setReconnecting(true)} disabled={busy || reconnecting}>
+          with a fresh one — your repo list and group mapping are kept.
+          <div style={{ marginTop: 10 }}>
+            <button className="btn secondary" onClick={() => setReconnecting(true)} disabled={busy || reconnecting}>
               Reconnect with a new token
             </button>
           </div>
-        </div>
+        </Callout>
       )}
       {reconnecting && (
-        <div className="form-group" style={{ maxWidth: 420 }}>
+        <div className="form-group" style={{ maxWidth: 420, marginTop: 14 }}>
           <label htmlFor="gh-token-re">New GitHub token</label>
           <input
             id="gh-token-re"
@@ -311,7 +319,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
             onChange={(e) => setToken(e.target.value)}
             autoComplete="off"
           />
-          <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+          <div className="settings-row" style={{ marginTop: 8 }}>
             <button className="btn" onClick={() => saveRepos(mapping, true)} disabled={busy || !token}>
               Save new token
             </button>
@@ -320,12 +328,12 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
         </div>
       )}
 
-      <table style={{ width: "100%", marginTop: 6 }}>
+      <table className="member-table" style={{ marginTop: 18 }}>
         <thead>
           <tr>
-            <th style={{ textAlign: "left" }}>Repository</th>
-            <th style={{ textAlign: "left" }}>Synced</th>
-            <th style={{ textAlign: "left" }}>Counts toward</th>
+            <th>Repository</th>
+            <th>Pull requests</th>
+            <th>Counts toward</th>
           </tr>
         </thead>
         <tbody>
@@ -334,34 +342,38 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
             const all = r.group_ids.length === 0;
             return (
               <tr key={r.name}>
-                <td className="mono" style={{ fontSize: 13, paddingRight: 12 }}>{r.name}</td>
-                <td style={{ whiteSpace: "nowrap", paddingRight: 12 }}>
-                  {status ? `${status.prs_merged} merged · ${status.prs_ai_assisted} AI` : "—"}
+                <td className="mono" style={{ fontSize: 13 }}>{r.name}</td>
+                <td className="mono" style={{ fontSize: 12, color: "var(--mute)", whiteSpace: "nowrap" }}>
+                  {status
+                    ? `${status.prs_merged} merged · ${status.prs_ai_assisted} AI-assisted`
+                    : "not synced yet"}
                 </td>
                 <td>
-                  <label style={{ marginRight: 12, whiteSpace: "nowrap", cursor: "pointer" }}>
-                    <input type="checkbox" checked={all} onChange={() => toggleGroup(r.name, "all")} /> All groups
-                  </label>
-                  {groups.map((g) => (
-                    <label key={g.id} style={{ marginRight: 12, whiteSpace: "nowrap", cursor: "pointer", opacity: all ? 0.55 : 1 }}>
-                      <input
-                        type="checkbox"
-                        checked={all || r.group_ids.includes(g.id)}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <CheckChip checked={all} onChange={() => toggleGroup(r.name, "all")}>
+                      All groups
+                    </CheckChip>
+                    {groups.map((g) => (
+                      <CheckChip
+                        key={g.id}
+                        checked={!all && r.group_ids.includes(g.id)}
+                        implied={all}
                         onChange={() => toggleGroup(r.name, g.id)}
-                      />{" "}
-                      {g.name}
-                    </label>
-                  ))}
+                      >
+                        {g.name}
+                      </CheckChip>
+                    ))}
+                  </div>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      <p className="help-note" style={{ marginTop: 8 }}>
+      <p className="help-note" style={{ maxWidth: 680 }}>
         &ldquo;Counts toward&rdquo; decides which group reports include each repo&rsquo;s PRs — e.g. map a platform
-        repo to the platform group so other groups&rsquo; delivery numbers aren&rsquo;t diluted. New repos default to
-        all groups. Changes apply to the{" "}
+        repo to the platform group so other groups&rsquo; delivery numbers aren&rsquo;t diluted. New repos default
+        to all groups. Changes apply to the{" "}
         {groups.length > 0 ? (
           <>
             insight reports under{" "}
@@ -379,23 +391,21 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
       </p>
 
       {mapping.some((r) => r.group_ids.length > 0 && !r.group_ids.some((id) => groups.some((g) => g.id === id))) && (
-        <p className="form-error">
-          Some repos are mapped only to deleted groups ({mapping
-            .filter((r) => r.group_ids.length > 0 && !r.group_ids.some((id) => groups.some((g) => g.id === id)))
-            .map((r) => `${r.name} → ${r.group_ids.map(groupLabel).join(", ")}`)
-            .join("; ")}) — their PRs currently count toward no report.
-        </p>
+        <Callout tone="error">
+          Some repos are mapped only to deleted groups — their PRs currently count toward no report. Re-map them
+          below and save.
+        </Callout>
       )}
 
-      <div style={{ display: "flex", gap: 14, marginTop: 12, flexWrap: "wrap" }}>
+      <div className="settings-row" style={{ marginTop: 18, flexWrap: "wrap" }}>
         {mappingDirty && (
-          <button className="btn" onClick={saveMapping} disabled={busy}>
+          <button className="btn" onClick={() => saveRepos(mapping, false)} disabled={busy}>
             {busy ? "Saving…" : "Save group mapping"}
           </button>
         )}
         {!adding && (
           <button
-            className="btn"
+            className="btn secondary"
             onClick={() => {
               setAdding(true);
               listRepos(true);
@@ -405,7 +415,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
             + Add repositories
           </button>
         )}
-        <button className="btn" onClick={syncNow} disabled={busy}>
+        <button className="btn secondary" onClick={syncNow} disabled={busy}>
           {busy ? "Working…" : "Sync now"}
         </button>
         <button className="btn-link is-danger" onClick={() => setConfirmDisconnect(true)} disabled={busy}>
@@ -420,25 +430,19 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
     <section className="settings-section">
       <div className="subsection-head">
         <h2>Integrations</h2>
-        <span className="kicker">
-          GitHub — merge-confirmed delivery metrics for the insight reports. Read-only token, encrypted at rest.
-        </span>
+        <span className="kicker">GitHub · merge-confirmed delivery for insight reports</span>
       </div>
 
       {gh === null ? (
-        <p className="help-note">Loading…</p>
+        <p className="help-note" style={{ border: "none", padding: 0 }}>Loading…</p>
       ) : gh.connected ? (
         connectedView
       ) : (
         connectFlow
       )}
 
-      {error && <div className="form-error" style={{ marginTop: 10 }}>{error}</div>}
-      {message && (
-        <div className="mono" style={{ fontSize: 11, color: "var(--mute)", marginTop: 10, letterSpacing: "0.1em" }}>
-          {message.toUpperCase()}
-        </div>
-      )}
+      {error && <div className="form-error" style={{ marginTop: 14, maxWidth: 680 }}>{error}</div>}
+      {message && <div className="action-note">{message}</div>}
 
       <ConfirmModal
         open={confirmDisconnect}
