@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   canonicalProjectName,
+  projectRepoName,
   computeBurstsFromSessions,
   dailyActivity,
   sessionDay,
@@ -13,6 +14,7 @@ import {
   type DailyRollup,
   type RichDailyRollup,
   type EnrichedDailyExtras,
+  type DayArtifactSignals,
   type WireUsageWindow,
   type WireExtraUsage,
   type WireUsageSnapshot,
@@ -33,6 +35,7 @@ export type {
   DailyRollup,
   RichDailyRollup,
   EnrichedDailyExtras,
+  DayArtifactSignals,
   WireUsageWindow,
   WireExtraUsage,
   WireUsageSnapshot,
@@ -179,11 +182,14 @@ export function buildRichRollupBlocks(
 
   const projects = new Map<string, { agentTimeMs: number; sessions: number }>();
   for (const s of clippedSessions) {
-    // Canonical project is computed from the human-readable cwd path, NOT the
-    // raw `~/.claude/projects/<encoded>` directory — matching the Entry's
-    // `project` field that build.ts derives via the same call.
-    const name = canonicalProjectName(s.projectName);
-    if (privateProjects.has(name)) continue;
+    // Group the breakdown by repo name so the team edition never receives
+    // absolute paths and same-repo-different-harness rows fold together.
+    const canonical = canonicalProjectName(s.projectName);
+    const name = projectRepoName(s.projectName);
+    // Privacy opt-out: the consent UI writes the repo-name identity that
+    // groupByProject now surfaces, so match on that — and still honor any
+    // legacy full-canonical-path entry. Either match excludes the project.
+    if (privateProjects.has(name) || privateProjects.has(canonical)) continue;
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
     const cur = projects.get(name) ?? { agentTimeMs: 0, sessions: 0 };
     cur.agentTimeMs += ms;
@@ -204,7 +210,9 @@ export function buildRichRollupBlocks(
   let longTotalMin = 0;
   let longMaxSingleMin = 0;
   for (const e of entries) {
-    if (privateProjects.has(e.project)) continue;
+    // Same dual-key privacy check as the projects loop (repo name + legacy
+    // full path) — e.project is the entry's full canonical path.
+    if (privateProjects.has(projectRepoName(e.project)) || privateProjects.has(e.project)) continue;
     const shape = e.signals?.working_shape ?? null;
     if (shape) {
       const cur = workingShapes.get(shape) ?? { sessions: 0, agentTimeMs: 0 };
@@ -240,7 +248,8 @@ export function buildRichRollupBlocks(
       .sort((a, b) => b.sessions - a.sessions),
     concurrencyPeak: stats.peakConcurrent,
     parallelMinutes: Math.round(stats.totalParallelMs / 60_000),
-    longAutonomous: { count: longCount, totalMin: longTotalMin, maxSingleMin: longMaxSingleMin },
+    // Wire schema requires integer minutes (active_min is a float).
+    longAutonomous: { count: longCount, totalMin: Math.round(longTotalMin), maxSingleMin: Math.round(longMaxSingleMin) },
     toolErrors,
     skillsLoaded: Array.from(skills.entries())
       .map(([name, sessions]) => ({ name, sessions }))
@@ -298,6 +307,7 @@ export type IngestPayloadInputs = {
   rollup?: DailyRollup;
   richExtras?: Omit<RichDailyRollup, keyof DailyRollup>;
   enrichedExtras?: EnrichedDailyExtras;
+  artifactSignals?: DayArtifactSignals;
   usageSnapshot?: WireUsageSnapshot;
   planTier?: string;
   cyclePeaks?: WireCyclePeaks;
@@ -310,10 +320,13 @@ export function buildIngestPayload(inputs: IngestPayloadInputs): IngestPayload {
   return {
     ingestId: randomUUID(),
     observedAt: new Date().toISOString(),
-    ...(richRollup || inputs.enrichedExtras ? { schemaVersion: RICH_ROLLUP_SCHEMA_VERSION } : {}),
+    ...(richRollup || inputs.enrichedExtras || inputs.artifactSignals
+      ? { schemaVersion: RICH_ROLLUP_SCHEMA_VERSION }
+      : {}),
     ...(inputs.rollup ? { dailyRollup: inputs.rollup } : {}),
     ...(richRollup ? { richRollup } : {}),
     ...(inputs.enrichedExtras ? { enrichedExtras: inputs.enrichedExtras } : {}),
+    ...(inputs.artifactSignals ? { artifactSignals: inputs.artifactSignals } : {}),
     ...(inputs.usageSnapshot ? { usageSnapshot: inputs.usageSnapshot } : {}),
     ...(inputs.planTier ? { planTier: inputs.planTier } : {}),
     ...(inputs.cyclePeaks ? { cyclePeaks: inputs.cyclePeaks } : {}),

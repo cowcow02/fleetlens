@@ -57,7 +57,7 @@ node packages/cli/dist/index.js start
 
 ```bash
 # Common
-fleetlens start [--port N] [--no-open] [--no-daemon]   # Start dashboard + usage daemon
+fleetlens start [--port N] [--open] [--no-daemon]   # Start dashboard + usage daemon (prints URL; --open to launch browser)
 fleetlens stop                           # Stop dashboard + usage daemon
 fleetlens status                         # Server + daemon + latest snapshot, one glance
 fleetlens update                         # Upgrade to latest; stops + re-exec's cleanly
@@ -67,7 +67,7 @@ fleetlens stats [--live] [-s D] [--days N]   # ccusage-style daily token table
 fleetlens usage [--save]                 # Plan utilization (5h/7d) printed once
 
 # Advanced
-fleetlens web [page] [--no-open]         # Open the dashboard in a browser (auto-starts server only)
+fleetlens web [page] [--open]            # Print dashboard URL (auto-starts server only); --open to launch browser
 fleetlens start --no-daemon              # Start only the web server (skip the daemon)
 fleetlens daemon start|stop|status|logs  # Manage the usage daemon by itself
 
@@ -258,7 +258,7 @@ pnpm build                                # build parser + web + cli
 # Build a fresh standalone bundle for `fleetlens web`
 NEXT_OUTPUT=standalone pnpm build
 node scripts/prepare-cli.mjs
-node packages/cli/dist/index.js web --no-open
+node packages/cli/dist/index.js web
 ```
 
 ### Mock usage data

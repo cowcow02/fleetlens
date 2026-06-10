@@ -9,6 +9,7 @@ coverage
 .env
 .env.local
 .env*.local
+*.local.json
 npm-debug.log*
 pnpm-debug.log*
 .superpowers/
@@ -16,3 +17,4 @@ pnpm-debug.log*
 .claude/
 .harness/
 .antigravitycli/
+.playwright-mcp/

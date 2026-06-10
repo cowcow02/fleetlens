@@ -87,7 +87,7 @@ node scripts/prepare-cli.mjs
 # 2. Start the CLI which spawns the bundled Next.js server
 node packages/cli/dist/index.js stop     # kill any previous
 lsof -ti:3321 | xargs kill -9 2>&1       # defensive; port can hang around
-node packages/cli/dist/index.js web usage --no-open
+node packages/cli/dist/index.js web usage
 # → http://localhost:3321/usage
 ```
 
@@ -257,7 +257,7 @@ Dashboard / Timeline / Calendar all read session JSONL from `~/.claude/projects/
 ## CLI command surface
 
 ```bash
-fleetlens start [--port N] [--no-open] [--no-daemon]
+fleetlens start [--port N] [--open] [--no-daemon]
 fleetlens stop
 fleetlens status
 fleetlens update
@@ -267,14 +267,14 @@ fleetlens digest week  [--week D|--last-week|--this-week] [--json]
 fleetlens digest month [--month YYYY-MM|--last-month|--this-month] [--json]
 fleetlens usage [--save]
 fleetlens usage --history [-s D] [--days N]
-fleetlens web [page] [--no-open]
+fleetlens web [page] [--open]
 fleetlens daemon <start|stop|status|logs>
 fleetlens version
 ```
 
 **Design:** `start` and `stop` manage **both** the web server AND the usage daemon in one call. That's the "common path" — almost everyone wants them together. Power users who want to manage them separately can use `fleetlens daemon <subcommand>` directly, or pass `--no-daemon` to `start`.
 
-`fleetlens web [page]` opens the browser without auto-starting anything — useful if the server is already running and you just want to jump to a specific page.
+`fleetlens web [page]` prints the dashboard URL for the requested page without auto-starting the daemon — useful when the server is already running and you just want to grab a link. Pass `--open` to also launch the URL in a browser; the default is print-only because auto-opening a browser surprised users in some terminals.
 
 **`fleetlens digest week` / `month` reproduce the same digests served at `/insights`.** Each consumes the layer immediately below — `digest week` reads day digests (auto-filling missing past-day digests), `digest month` reads week digests. Use `--json` for byte-equal output to the corresponding `/api/digest/{week,month}/<key>` GET response.
 

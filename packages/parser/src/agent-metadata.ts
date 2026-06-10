@@ -62,6 +62,14 @@ export const ANTIGRAVITY_METADATA: AgentMetadata = {
   iconChar: "⏃",
 };
 
+export const COWORK_METADATA: AgentMetadata = {
+  kind: "cowork",
+  displayName: "Cowork",
+  shortLabel: "Cowork",
+  accentColor: "rgb(217, 119, 87)",
+  iconChar: "⌘",
+};
+
 /** Ordered list of registered agent metadata. UI iterates this for
  *  badges, tabs, and prompt-template generation. */
 export const agentMetadata: AgentMetadata[] = [
@@ -69,6 +77,7 @@ export const agentMetadata: AgentMetadata[] = [
   CODEX_METADATA,
   GEMINI_METADATA,
   ANTIGRAVITY_METADATA,
+  COWORK_METADATA,
 ];
 
 /** Browser-safe metadata lookup. Returns undefined for unknown kinds. */

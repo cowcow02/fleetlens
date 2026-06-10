@@ -4,6 +4,24 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.11.2] — 2026-05-27
+
+### Changed
+- **`fleetlens start` and `fleetlens web` no longer auto-launch the browser.** The dashboard URL is printed so you can click it (every modern terminal makes `http://localhost:…` clickable), but no browser tab opens unless you pass the new `--open` flag. Auto-launch was surprising users whose default browser had moved to a different desktop, was a corp-managed profile they didn't want spawned, or was simply already in flow on another window. The previous `--no-open` flag is still accepted as a no-op — existing scripts and aliases keep working without changes.
+
+## [0.11.1] — 2026-05-21
+
+### Added
+- **Team workspace seeding script.** Added `scripts/seed-team-workspace.mjs` for local end-to-end telemetry testing.
+
+### Changed
+- **Plan page layout grid consistency.** Enhanced the Team Edition Plan page layout grid consistency and renamed the 'Latest cycle' column to 'Current cycle'.
+- **Completed cycles alignment.** Modified the completed cycles strip to show a maximum of 4 historical cycles, padded on the left with empty placeholders for visual right-alignment and grid uniformity.
+
+### Fixed
+- **Mini-burndown SVG typings and filtering.** Resolved mini-burndown SVG typings and parameterized cycle strip filtering.
+- **Active cycle query performance.** Batched active cycle loads in a single query to eliminate N+1 DB lookups.
+
 ## [0.11.0] — 2026-05-21
 
 ### Added

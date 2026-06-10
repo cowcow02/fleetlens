@@ -358,11 +358,11 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
               if (name === "Skill") {
                 const sk = String((ct.input?.skill as string | undefined) ?? "unknown");
                 cur.skills.set(sk, (cur.skills.get(sk) ?? 0) + 1);
-              } else if (name === "ToolSearch") {
-                const q = String((ct.input?.query as string | undefined) ?? "");
-                const key = `(ToolSearch: ${trunc(q, 60)})`;
-                cur.skills.set(key, (cur.skills.get(key) ?? 0) + 1);
               }
+              // ToolSearch is deferred-tool loading, not a skill — recording it
+              // here drowned the real skills (~70% noise) in every skill widget
+              // and inflated the maturity breadth axis. It stays counted in
+              // toolMix as the tool it is.
               if (name === "Agent") {
                 const inp = ct.input ?? {};
                 cur.subagents.push({

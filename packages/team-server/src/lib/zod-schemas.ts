@@ -120,6 +120,28 @@ export const EnrichedDailyExtrasSchema = z.object({
   goalMix: z.record(z.number().nonnegative()).optional().default({}),
 }).passthrough();
 
+// Artifact-authoring signals captured by the personal-edition file-system
+// probe. All identifiers are SHA-256 hashes of paths relative to the .claude
+// root so cross-member reconciliation can match without ever shipping file
+// content. Daily-grain (per-team × per-member × per-day).
+const AuthoredArtifactSchema = z.object({
+  pathHash: z.string().min(8).max(128),
+  firstSeenDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+}).passthrough();
+
+const EditedArtifactSchema = z.object({
+  pathHash: z.string().min(8).max(128),
+  lineDelta: z.number().int(),
+}).passthrough();
+
+export const DayArtifactSignalsSchema = z.object({
+  skillsAuthored: z.array(AuthoredArtifactSchema).max(100).default([]),
+  skillsEdited: z.array(EditedArtifactSchema).max(200).default([]),
+  subagentsAuthored: z.array(AuthoredArtifactSchema).max(50).default([]),
+  slashCommandsAuthored: z.array(AuthoredArtifactSchema).max(50).default([]),
+  claudemdLineDelta: z.number().int().default(0),
+}).passthrough();
+
 // Every field except ingestId/observedAt is optional so the daemon can push
 // any subset on each tick:
 //   - idle day  →  { snapshot, cyclePeaks, planTier }
@@ -141,6 +163,10 @@ export const IngestPayload = z.object({
   dailyRollup: DailyRollupSchema.optional(),
   richRollup: RichDailyRollupSchema.optional(),
   enrichedExtras: EnrichedDailyExtrasSchema.optional(),
+  // V2.1 — artifact-authoring signals from the file-system probe. The
+  // payload is keyed to dailyRollup.day. Sent alongside richRollup on the
+  // daily push tick; omitted on idle days.
+  artifactSignals: DayArtifactSignalsSchema.optional(),
   usageSnapshot: UsageSnapshotSchema.optional(),
   planTier: PlanTierKeySchema.optional(),
   cyclePeaks: WireCyclePeaksSchema.optional(),

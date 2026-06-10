@@ -43,6 +43,13 @@
       "when": 1778926777000,
       "tag": "0005_rich_daily_rollups",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1779867692528,
+      "tag": "0006_day_artifact_signals",
+      "breakpoints": true
     }
   ]
 }

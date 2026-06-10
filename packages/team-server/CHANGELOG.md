@@ -4,6 +4,39 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.12.1] — 2026-06-10
+
+### Security
+- **Team-wide insight surfaces removed; insights are group-scoped only.** The team-wide `/team/[slug]/insights` page (and its `/preview` + `/preview/archive` mock routes) rendered every member's L0–L4 maturity portrait — names, level, coaching prose — to *any* team member, with no admin/manager check and no coaching toggle, including via the team-wide PDF export. All three routes are gone; insights now live exclusively at `/team/[slug]/groups/[group]/insights`, where access was already guarded to admin/staff or the group's manager and portraits stay stripped unless `?coaching=1`. `/report/[slug]` and the PDF route now require `?group=` and 404 without it. **If you bookmarked the team-wide insights URL, use your group's insights page instead.**
+- **`/report/[slug]` no longer answers browser sessions.** The page exists only as the PDF render target; the export route now mints a short-lived HMAC token over the exact report scope and `/report` 404s without it — even for admins. The token key derives from `FLEETLENS_ENCRYPTION_KEY` when set (set it if you run more than one replica, or PDF export will fail intermittently); session + role checks remain as defense in depth.
+
+## [0.12.0] — 2026-06-03
+
+### Added
+- **Per-group momentum dashboard.** `/team/[slug]/groups/[group]/insights` renders a focused, group-scoped momentum report (Game Plan v3) reframed around the three adoption questions — using it / getting better / changing how we ship — aggregate-first. A 4-week momentum trend leads (the primary read for small groups, over noisy single-week WoW), followed by active-rate (7d/30d), week-over-week pulse tiles, the L0–L4 maturity mix, per-member portraits behind a guarded `?coaching=1` toggle, and a downgrade-only seat right-sizing lens. Reached by URL only (not nav-linked); per-group PDF export plus an `?explain=1` provenance overlay and `?mock=1` roster-only data mode are included.
+- **Historical insight reports.** Team and group reports — and their PDFs — now accept `?week=<Monday>` and show prev/next week navigation on the report header, bounded by the earliest week with data through the last completed week. Each week is computed live from `rich_daily_rollups`; nothing is persisted, and a bad/blank/future `?week=` falls back to the last completed week.
+
+### Changed
+- **Per-project & skill paired-bars cleaned up.** Per-project rows show the short repo-leaf label (full path on hover) instead of an overlapping absolute path, and same-repo-across-harnesses rows fold into one. Week-over-week deltas that divided by ~zero now render as `new` / `gone` / `—` instead of nonsensical percentages, and both the per-project and skill bars drop rows that were idle this week. Deferred tool-loading (`ToolSearch`) no longer shows up as a "skill," de-noising the skill bars and the maturity breadth axis.
+
+### Fixed
+- **Members-active header.** The report header counted the full left-joined roster, showing a misleading `N/N`; it now counts only members with agent time in the displayed week (group page and `/report` PDF).
+- **Explain banner.** `?explain=1` on a real-data view no longer claims the dashboard is "representative mock data" — that wording now only appears in mock mode.
+
+## [0.11.0] — 2026-05-29
+
+### Added
+- **Real-data team insight report (v8 framework-aligned).** The live `/team/[slug]/insights` page now builds from `rich_daily_rollups` via `buildTeamInsightReport()` instead of mock data, defaulting to a starter block set keyed to the three adoption pillars (usage / getting better / impact): active-rate (7d/30d), per-member maturity portraits, team-pulse WoW, PRs shipped + per active engineer, per-project time, skill usage, and long-autonomous turn texture. The mock report stays available at `/team/[slug]/insights/preview` as a reference.
+- **Per-member L0–L4 maturity portraits (v9).** Each member is placed on the L0–L4 adoption ladder (L0 Unaware → L4 Multiplier) from their trailing-30-day signals, with an audit-friendly cadence / breadth / harness-authorship stat strip, qualifying-path and growth-edge chips, and decisive / supporting / near-miss observations. Working-style notes are shown separately and explicitly never grade the level.
+- **Real L4 classifier.** A personal-side file-system probe (counts of authored skills / sub-agents / slash-commands and net CLAUDE.md line deltas, shipped as SHA-256 path hashes only — never raw paths or content) feeds new `day_artifact_signals` rows; `team_skill_catalog` reconciliation tracks cross-member adoption. L4 "Multiplier" now fires on real authored-artifact counts and/or verified cross-member adoption rather than a synthetic flag.
+- **PDF export points at live data by default.** `GET /api/team/[slug]/insights/pdf` and `/report/[slug]` render the live report; `?source=preview` reproduces the mock reference.
+
+### Changed
+- The new insight report and maturity portraits are reachable by **direct URL only — not linked from the team navigation** — so the existing roster / plan / groups experience is unchanged for current users while these dashboards are iterated on.
+
+### Database
+- New migration `0006_day_artifact_signals.sql` — **additive only, no existing tables altered.** Adds `day_artifact_signals` (per-member, per-day authored/edited skill, sub-agent and slash-command arrays plus `claudemd_line_delta`, keyed on `(team_id, membership_id, day)`) and `team_skill_catalog` (per-team `path_hash` with monotonic originator + adopter-set tracking for cross-member adoption). Both cascade from `teams` and `memberships`.
+
 ## [0.10.0] — 2026-05-21
 
 ### Added

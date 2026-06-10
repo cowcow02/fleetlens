@@ -15,7 +15,8 @@ import { startDaemonSilent } from "./daemon.js";
 export async function start(args: string[]): Promise<void> {
   const portFlag = args.indexOf("--port");
   const port = portFlag !== -1 ? parseInt(args[portFlag + 1], 10) : undefined;
-  const noOpen = args.includes("--no-open");
+  // --open opts into browser launch; --no-open is silently accepted as a no-op for backward compat.
+  const open = args.includes("--open");
   const noDaemon = args.includes("--no-daemon");
 
   // Auto-update check
@@ -60,5 +61,9 @@ export async function start(args: string[]): Promise<void> {
     }
   }
 
-  if (!noOpen) openBrowser(serverUrl);
+  if (open) {
+    openBrowser(serverUrl);
+  } else {
+    console.log(`\nOpen ${serverUrl} in your browser, or re-run with --open to launch it automatically.`);
+  }
 }

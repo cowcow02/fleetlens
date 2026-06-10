@@ -88,6 +88,19 @@ export type EnrichedDailyExtras = {
   goalMix: Partial<Record<string, number>>;
 };
 
+// V2.1 — artifact-authoring signals from the personal-edition file-system
+// probe. Captured per-day; ships alongside richRollup. Identifiers are
+// SHA-256 hashes of paths relative to the .claude root — never raw paths or
+// file contents. Drives the L4-builds path of the team-server's maturity
+// classifier and feeds team_skill_catalog reconciliation for L4-coaches.
+export type DayArtifactSignals = {
+  skillsAuthored: { pathHash: string; firstSeenDate: string }[];
+  skillsEdited: { pathHash: string; lineDelta: number }[];
+  subagentsAuthored: { pathHash: string; firstSeenDate: string }[];
+  slashCommandsAuthored: { pathHash: string; firstSeenDate: string }[];
+  claudemdLineDelta: number;
+};
+
 export type IngestPayload = {
   ingestId: string;
   observedAt: string;
@@ -100,6 +113,9 @@ export type IngestPayload = {
   richRollup?: RichDailyRollup;
   // Layer B — LLM-enriched extras, only when the member opted in.
   enrichedExtras?: EnrichedDailyExtras;
+  // V2.1 — Layer C: file-system artifact signals (no LLM, no raw text).
+  // Same day key as richRollup; safe to share, hashes only.
+  artifactSignals?: DayArtifactSignals;
   usageSnapshot?: WireUsageSnapshot;
   // Anthropic-detected tier ("pro"|"pro-max"|"pro-max-20x"|"custom"). Server
   // upserts memberships.plan_tier when this is set so admins don't have to

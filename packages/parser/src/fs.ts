@@ -22,6 +22,7 @@ import {
   CODEX_METADATA,
   GEMINI_METADATA,
   ANTIGRAVITY_METADATA,
+  COWORK_METADATA,
 } from "./agent-metadata.js";
 import {
   type CalibrationEvent,
@@ -67,6 +68,13 @@ import {
   getAntigravitySession as _getAntigravitySession,
   clearAntigravityCaches,
 } from "./antigravity.js";
+
+import {
+  DEFAULT_COWORK_ROOT as _DEFAULT_COWORK_ROOT,
+  listCoworkSessions as _listCoworkSessions,
+  getCoworkSession as _getCoworkSession,
+  clearCoworkCaches,
+} from "./cowork.js";
 
 // ─── Re-exports (preserve the public @claude-lens/parser/fs surface) ───
 
@@ -122,6 +130,17 @@ export type {
 } from "./antigravity.js";
 
 export {
+  DEFAULT_COWORK_ROOT,
+  listCoworkSessions,
+  getCoworkSession,
+  coworkSessionLocalDay,
+} from "./cowork.js";
+export type {
+  ListCoworkOptions,
+  GetCoworkOptions,
+} from "./cowork.js";
+
+export {
   type TeamConfig,
   readTeamConfig,
   writeTeamConfig,
@@ -132,6 +151,7 @@ export {
   type DailyRollup,
   type RichDailyRollup,
   type EnrichedDailyExtras,
+  type DayArtifactSignals,
   type WireUsageWindow,
   type WireExtraUsage,
   type WireUsageSnapshot,
@@ -180,6 +200,7 @@ export function clearCaches(): void {
   clearCodexCaches();
   clearGeminiCaches();
   clearAntigravityCaches();
+  clearCoworkCaches();
 }
 
 /** Drop cached entries for a Claude Code file path. Called by the SSE
@@ -256,7 +277,27 @@ const antigravitySource: AgentSource = {
   },
 };
 
-export const agentSources: AgentSource[] = [claudeCodeSource, codexSource, geminiSource, antigravitySource];
+// Cowork sessions don't expose rate-limit telemetry in their transcripts —
+// utilization rolls into the Claude account's OAuth window, which is already
+// polled by the Claude-Code source.
+const coworkSource: AgentSource = {
+  ...COWORK_METADATA,
+  defaultRoot: _DEFAULT_COWORK_ROOT,
+  async listSessions(opts) {
+    return _listCoworkSessions(opts);
+  },
+  async getSession(id) {
+    return _getCoworkSession(id);
+  },
+};
+
+export const agentSources: AgentSource[] = [
+  claudeCodeSource,
+  codexSource,
+  geminiSource,
+  antigravitySource,
+  coworkSource,
+];
 
 export function getAgentSource(kind: AgentKind): AgentSource | undefined {
   return agentSources.find((s) => s.kind === kind);

@@ -58,8 +58,11 @@ export default async function SavedInsightPage({
   const monthMatch = MONTH_KEY.exec(key);
   if (monthMatch) {
     const yearMonth = monthMatch[1]!;
+    // Same in-memory-then-disk fallback as the week branch above:
+    // force-generated current-month digests get persisted by
+    // digest-month-pipeline, so this read survives the 10-min TTL.
     const cached = yearMonth === currentYearMonth()
-      ? getCurrentMonthDigestFromCache(yearMonth, Date.now())
+      ? (getCurrentMonthDigestFromCache(yearMonth, Date.now()) ?? readMonthDigest(yearMonth))
       : readMonthDigest(yearMonth);
 
     const prev = shiftYearMonth(yearMonth, -1);

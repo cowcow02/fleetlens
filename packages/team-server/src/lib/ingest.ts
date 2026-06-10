@@ -1,5 +1,5 @@
 import pg from "pg";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { getPool } from "../db/pool";
 import { IngestPayload, UsageHistoryPayload, type UsageSnapshot } from "./zod-schemas";
 import { refreshMembershipWeeklyUtilization } from "./scheduler";
@@ -153,6 +153,15 @@ export async function processIngest(
         ex?.goalMix ? JSON.stringify(ex.goalMix) : null,
         r.tokens.input, r.tokens.output, r.tokens.cacheRead, r.tokens.cacheWrite,
       ]);
+    }
+
+    if (payload.artifactSignals && payload.richRollup) {
+      await upsertDayArtifactSignals(client, teamId, membershipId, payload.richRollup.day, payload.artifactSignals);
+      await reconcileTeamSkillCatalog(client, teamId, membershipId, payload.richRollup.day, payload);
+    } else if (payload.richRollup) {
+      // Always reconcile the catalog from skills_loaded so adopters are
+      // tracked even when the file-system probe hasn't reported authorship.
+      await reconcileTeamSkillCatalog(client, teamId, membershipId, payload.richRollup.day, payload);
     }
 
     if (!dedupHit || historyInserted > 0) {
@@ -334,6 +343,119 @@ export async function processUsageHistory(
   // returns a snapshotHistory result block.
   const h = result.snapshotHistory!;
   return { accepted: true, received: h.received, inserted: h.inserted, skipped: h.skipped };
+}
+
+async function upsertDayArtifactSignals(
+  client: pg.PoolClient,
+  teamId: string,
+  membershipId: string,
+  day: string,
+  s: NonNullable<ReturnType<typeof IngestPayload.parse>["artifactSignals"]>,
+): Promise<void> {
+  await client.query(
+    `INSERT INTO day_artifact_signals (
+       team_id, membership_id, day,
+       skills_authored, skills_edited, subagents_authored,
+       slash_commands_authored, claudemd_line_delta
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (team_id, membership_id, day) DO UPDATE SET
+       skills_authored = EXCLUDED.skills_authored,
+       skills_edited = EXCLUDED.skills_edited,
+       subagents_authored = EXCLUDED.subagents_authored,
+       slash_commands_authored = EXCLUDED.slash_commands_authored,
+       claudemd_line_delta = EXCLUDED.claudemd_line_delta,
+       ingested_at = now()`,
+    [
+      teamId, membershipId, day,
+      JSON.stringify(s.skillsAuthored),
+      JSON.stringify(s.skillsEdited),
+      JSON.stringify(s.subagentsAuthored),
+      JSON.stringify(s.slashCommandsAuthored),
+      s.claudemdLineDelta,
+    ],
+  );
+}
+
+// Reconciles the team-wide skill catalog from a single member's daily push.
+// Originator is "first member observed publishing this path_hash" and stays
+// monotonic — once claimed it's preserved (handles out-of-order daemons).
+// Loaders of an existing entry are added to the adopter set if they're not
+// the originator. Skill loads (no authorship) still count toward `loads_total`
+// and the adopter set, which is what powers the L4-coaches detection.
+async function reconcileTeamSkillCatalog(
+  client: pg.PoolClient,
+  teamId: string,
+  membershipId: string,
+  day: string,
+  payload: ReturnType<typeof IngestPayload.parse>,
+): Promise<void> {
+  type Item = { pathHash: string; kind: "skill" | "subagent" | "slash-command"; authored: boolean; firstSeen?: string };
+  const items: Item[] = [];
+  if (payload.artifactSignals) {
+    for (const a of payload.artifactSignals.skillsAuthored ?? []) {
+      items.push({ pathHash: a.pathHash, kind: "skill", authored: true, firstSeen: a.firstSeenDate });
+    }
+    for (const a of payload.artifactSignals.subagentsAuthored ?? []) {
+      items.push({ pathHash: a.pathHash, kind: "subagent", authored: true, firstSeen: a.firstSeenDate });
+    }
+    for (const a of payload.artifactSignals.slashCommandsAuthored ?? []) {
+      items.push({ pathHash: a.pathHash, kind: "slash-command", authored: true, firstSeen: a.firstSeenDate });
+    }
+  }
+  // Also record any skills_loaded as adopter signals (path_hash here is the
+  // skill name hash so name-collision across kinds is acceptable for the demo
+  // path). The richer per-skill origin_path_hash arrives once the DaySignals
+  // shipping work lands.
+  if (payload.richRollup?.skillsLoaded) {
+    for (const s of payload.richRollup.skillsLoaded) {
+      const item = { pathHash: hashStable(`skill:${s.name}`), kind: "skill" as const, authored: false };
+      items.push(item);
+    }
+  }
+  for (const item of items) {
+    await client.query(
+      `INSERT INTO team_skill_catalog (
+         team_id, path_hash, kind,
+         originator_membership_id, originator_first_seen,
+         adopter_membership_ids, loads_total, last_seen_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+       ON CONFLICT (team_id, path_hash) DO UPDATE SET
+         originator_membership_id = COALESCE(team_skill_catalog.originator_membership_id, EXCLUDED.originator_membership_id),
+         originator_first_seen = COALESCE(team_skill_catalog.originator_first_seen, EXCLUDED.originator_first_seen),
+         adopter_membership_ids = (
+           SELECT ARRAY(
+             SELECT DISTINCT m FROM unnest(
+               team_skill_catalog.adopter_membership_ids
+               || CASE
+                    WHEN team_skill_catalog.originator_membership_id IS NULL THEN ARRAY[]::uuid[]
+                    WHEN $8::uuid = team_skill_catalog.originator_membership_id THEN ARRAY[]::uuid[]
+                    ELSE ARRAY[$8::uuid]
+                  END
+             ) AS m
+           )
+         ),
+         loads_total = team_skill_catalog.loads_total + 1,
+         last_seen_at = now()`,
+      [
+        teamId,
+        item.pathHash,
+        item.kind,
+        item.authored ? membershipId : null,
+        item.authored ? (item.firstSeen ?? day) : null,
+        [],
+        1,
+        membershipId,
+      ],
+    );
+  }
+}
+
+// Stable hash for matching skill identity across members. Matches the
+// truncation the personal-edition probe uses so server-side reconciliation
+// joins cleanly against shipped path_hash values.
+function hashStable(s: string): string {
+  return createHash("sha256").update(s).digest("hex").slice(0, 32);
 }
 
 // Audit-logged upsert. Skips the write when the value already matches so

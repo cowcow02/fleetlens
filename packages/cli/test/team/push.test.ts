@@ -410,12 +410,12 @@ describe("buildRichRollupBlocks", () => {
 
     const blocks = buildRichRollupBlocks(day, [s1, s2, s3], entries, new Set());
 
-    // Worktree rolled up into parent project.
-    const fleetlens = blocks.projects.find((p) => p.project === "/Users/x/Repo/fleetlens");
+    // Worktree rolled up into parent project (keyed by repo name).
+    const fleetlens = blocks.projects.find((p) => p.project === "fleetlens");
     expect(fleetlens?.sessions).toBe(2);
     expect(fleetlens?.agentTimeMs).toBe(60 * 60_000 + 90 * 60_000);
 
-    const topeka = blocks.projects.find((p) => p.project === "/Users/x/Repo/topeka");
+    const topeka = blocks.projects.find((p) => p.project === "topeka");
     expect(topeka?.sessions).toBe(1);
 
     const solo = blocks.workingShapes.find((s) => s.shape === "solo-build");
@@ -444,15 +444,28 @@ describe("buildRichRollupBlocks", () => {
     expect(blocks.parallelMinutes).toBeGreaterThan(0);
   });
 
-  it("filters projects via privateProjects set", () => {
+  it("filters projects private by repo name — the identity the consent UI writes", () => {
+    const entries: Entry[] = [
+      makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens" }),
+      makeEntry({ session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka" }),
+    ];
+    // groupByProject now surfaces the repo leaf, so the consent UI saves
+    // "topeka" — the push must honor that, not just the full path.
+    const blocks = buildRichRollupBlocks(day, [s1, s3], entries, new Set(["topeka"]));
+    const names = blocks.projects.map((p) => p.project);
+    expect(names).toContain("fleetlens");
+    expect(names).not.toContain("topeka");
+  });
+
+  it("still honors a legacy full-canonical-path privateProjects entry", () => {
     const entries: Entry[] = [
       makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens" }),
       makeEntry({ session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka" }),
     ];
     const blocks = buildRichRollupBlocks(day, [s1, s3], entries, new Set(["/Users/x/Repo/topeka"]));
     const names = blocks.projects.map((p) => p.project);
-    expect(names).toContain("/Users/x/Repo/fleetlens");
-    expect(names).not.toContain("/Users/x/Repo/topeka");
+    expect(names).toContain("fleetlens");
+    expect(names).not.toContain("topeka");
   });
 
   it("clips a cross-midnight session to each touched day", () => {
@@ -476,8 +489,8 @@ describe("buildRichRollupBlocks", () => {
 
     const a = buildRichRollupBlocks(dayA, [cross], entries, new Set());
     const b = buildRichRollupBlocks(dayB, [cross], entries, new Set());
-    const aProj = a.projects.find((p) => p.project === "/Users/x/Repo/fleetlens");
-    const bProj = b.projects.find((p) => p.project === "/Users/x/Repo/fleetlens");
+    const aProj = a.projects.find((p) => p.project === "fleetlens");
+    const bProj = b.projects.find((p) => p.project === "fleetlens");
     expect(aProj?.agentTimeMs).toBe(60 * 60_000);
     expect(bProj?.agentTimeMs).toBe(60 * 60_000);
     // Each side counts the session once because its clipped segments exist
@@ -556,7 +569,7 @@ describe("buildRichBlocksForDay", () => {
 
     const out = buildRichBlocksForDay(day, [session], new Set(), true);
     expect(out).toBeTruthy();
-    expect(out!.rich.projects[0]?.project).toBe("/Users/x/Repo/fleetlens");
+    expect(out!.rich.projects[0]?.project).toBe("fleetlens");
     expect(out!.enriched?.outcomeMix).toEqual({ shipped: 1 });
   });
 
