@@ -490,6 +490,66 @@ const V8_BLOCKS: DashboardBlock[] = [
     },
   },
   {
+    id: "github-delivery",
+    title: "Delivery · GitHub (merged PRs, AI vs other)",
+    short_description:
+      "Synced from the GitHub integration — merged PR counts, AI-assisted share, and cycle/review medians split AI vs non-AI",
+    category: "outcomes",
+    tier: "external-plug-in",
+    source_version: "v8",
+    defaultW: 4,
+    render: (r) => {
+      const g = r.live_extras?.github_delivery;
+      if (!g) {
+        return (
+          <div className="live-empty-row">
+            GitHub integration not connected — connect it in team settings to see merged-PR delivery metrics here.
+          </div>
+        );
+      }
+      const w = g.week;
+      const pw = g.prev_week;
+      const mergedDelta = w.merged - pw.merged;
+      const shareDelta = w.ai_share_pct - pw.ai_share_pct;
+      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+      const pair = (label: string, ai: number | null, other: number | null) => (
+        <div className="wow-tile">
+          <div className="wow-tile-label">{label}</div>
+          <div className="wow-tile-value" style={{ fontSize: 22 }}>
+            {fmtH(ai)} <span style={{ fontSize: 13, color: "var(--mute)" }}>AI-assisted</span>
+          </div>
+          <div className="wow-tile-delta">{fmtH(other)} other PRs</div>
+        </div>
+      );
+      return (
+        <>
+          <div className="wow-tile-row">
+            <div className="wow-tile">
+              <div className="wow-tile-label">Merged PRs</div>
+              <div className="wow-tile-value">{w.merged}</div>
+              <div className={`wow-tile-delta ${mergedDelta >= 0 ? "positive" : "negative"}`}>
+                {mergedDelta >= 0 ? "+" : ""}{mergedDelta} vs last wk ({pw.merged})
+              </div>
+            </div>
+            <div className="wow-tile">
+              <div className="wow-tile-label">AI-assisted share</div>
+              <div className="wow-tile-value">{w.ai_share_pct}%</div>
+              <div className={`wow-tile-delta ${shareDelta >= 0 ? "positive" : "negative"}`}>
+                {shareDelta >= 0 ? "+" : ""}{shareDelta}pp vs last wk · {w.ai_assisted} of {w.merged} PRs
+              </div>
+            </div>
+            {pair("Cycle time (first commit → merge)", w.median_cycle_hours_ai, w.median_cycle_hours_other)}
+            {pair("Review wait (created → first review)", w.median_review_wait_hours_ai, w.median_review_wait_hours_other)}
+          </div>
+          <div className="kicker" style={{ marginTop: 10 }}>
+            {g.repos.join(", ")} · {g.open_now} open now · merge-confirmed via GitHub, not transcript-counted ·
+            AI attribution from Co-Authored-By trailers (squash-merges that strip trailers undercount)
+          </div>
+        </>
+      );
+    },
+  },
+  {
     id: "live-plan-mode",
     title: "Plan-mode adoption",
     short_description: "Share of active members using plan-mode this week",

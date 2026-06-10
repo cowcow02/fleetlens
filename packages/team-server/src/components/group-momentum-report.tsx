@@ -113,10 +113,14 @@ export function GroupMomentumReport({
     {
       key: "shipping",
       heading: "Changing how we ship",
-      framing:
-        "Impact proxy — PR throughput and where the effort landed. Correlation, not causation: " +
-        "agent adoption is one input among many, not a measured cause of delivery.",
-      blockIds: ["live-prs-shipped", "per-project-time-bars"],
+      framing: report.live_extras?.github_delivery
+        ? "Impact — merge-confirmed delivery from the GitHub integration (team-wide), alongside " +
+          "transcript-side PR throughput and where the effort landed."
+        : "Impact proxy — PR throughput and where the effort landed. Correlation, not causation: " +
+          "agent adoption is one input among many, not a measured cause of delivery.",
+      blockIds: report.live_extras?.github_delivery
+        ? ["github-delivery", "live-prs-shipped", "per-project-time-bars"]
+        : ["live-prs-shipped", "per-project-time-bars"],
     },
   ];
 

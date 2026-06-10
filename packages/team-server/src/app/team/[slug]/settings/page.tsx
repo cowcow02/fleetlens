@@ -5,6 +5,7 @@ import { validateSession } from "../../../../lib/auth";
 import { listGroupsForTeam } from "../../../../lib/groups";
 import { getStatus } from "../../../../lib/self-update/service";
 import { SettingsPanel } from "../../../../components/settings-panel";
+import { IntegrationsPanel } from "../../../../components/integrations-panel";
 import { ServerUpdatePanel } from "../../../../components/server-update-panel";
 
 export default async function SettingsPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -65,6 +66,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
         groups={groups}
         allowedSignupDomains={team.allowed_signup_domains ?? []}
       />
+      <IntegrationsPanel teamSlug={slug} />
     </>
   );
 }

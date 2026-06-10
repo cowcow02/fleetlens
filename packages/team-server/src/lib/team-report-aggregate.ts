@@ -2,6 +2,8 @@ import type pg from "pg";
 import type {
   BreadthSnapshot,
   CadenceSnapshot,
+  GithubDeliveryStats,
+  GithubWeekDelivery,
   HarnessBreakdown,
   LiveExtras,
   MaturityEvidence,
@@ -11,6 +13,7 @@ import type {
   MemberMaturityPortrait,
   TeamInsightReport,
 } from "../app/team/[slug]/insights/types";
+import { medianHours } from "./github";
 import {
   isoMondayOf,
   perProjectTimeWoW,
@@ -167,6 +170,77 @@ async function weekAggregates(
 function pctDelta(current: number, prev: number): number {
   if (prev === 0) return current === 0 ? 0 : 100;
   return Math.round(((current - prev) / prev) * 100);
+}
+
+type GithubPrRow = {
+  created_at: string;
+  merged_at: string;
+  first_commit_at: string | null;
+  first_review_at: string | null;
+  ai_assisted: boolean;
+};
+
+function githubWeekDelivery(rows: GithubPrRow[]): GithubWeekDelivery {
+  const ai = rows.filter((r) => r.ai_assisted);
+  const other = rows.filter((r) => !r.ai_assisted);
+  const cycleMs = (rs: GithubPrRow[]) =>
+    rs
+      .filter((r) => r.first_commit_at)
+      .map((r) => new Date(r.merged_at).getTime() - new Date(r.first_commit_at!).getTime())
+      .filter((ms) => ms >= 0);
+  const reviewMs = (rs: GithubPrRow[]) =>
+    rs
+      .filter((r) => r.first_review_at)
+      .map((r) => new Date(r.first_review_at!).getTime() - new Date(r.created_at).getTime())
+      .filter((ms) => ms >= 0);
+  return {
+    merged: rows.length,
+    ai_assisted: ai.length,
+    ai_share_pct: rows.length === 0 ? 0 : Math.round((ai.length / rows.length) * 100),
+    median_cycle_hours_ai: medianHours(cycleMs(ai)),
+    median_cycle_hours_other: medianHours(cycleMs(other)),
+    median_review_wait_hours_ai: medianHours(reviewMs(ai)),
+    median_review_wait_hours_other: medianHours(reviewMs(other)),
+  };
+}
+
+// Team-level (not group-scoped): synced PRs carry no membership mapping until
+// the session↔commit-SHA join lands. Null when the integration isn't connected.
+async function githubDelivery(
+  teamId: string,
+  weekMonday: string,
+  pool: pg.Pool,
+): Promise<GithubDeliveryStats | null> {
+  const integ = await pool.query<{ config: { repos: string[] }; last_sync_at: string | null }>(
+    `SELECT config, last_sync_at::text FROM team_integrations
+     WHERE team_id = $1 AND provider = 'github'`,
+    [teamId],
+  );
+  if (!integ.rowCount) return null;
+
+  const prevMonday = previousIsoMonday(weekMonday);
+  const winEnd = weekEndExclusive(weekMonday);
+  const [prs, open] = await Promise.all([
+    pool.query<GithubPrRow & { in_current_week: boolean }>(
+      `SELECT created_at::text, merged_at::text, first_commit_at::text, first_review_at::text,
+              ai_assisted, (merged_at >= $3::date) AS in_current_week
+       FROM github_pull_requests
+       WHERE team_id = $1 AND merged_at >= $2::date AND merged_at < $4::date`,
+      [teamId, prevMonday, weekMonday, winEnd],
+    ),
+    pool.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM github_pull_requests WHERE team_id = $1 AND state = 'open'`,
+      [teamId],
+    ),
+  ]);
+
+  return {
+    repos: integ.rows[0].config.repos ?? [],
+    last_sync_at: integ.rows[0].last_sync_at,
+    open_now: open.rows[0].n,
+    week: githubWeekDelivery(prs.rows.filter((r) => r.in_current_week)),
+    prev_week: githubWeekDelivery(prs.rows.filter((r) => !r.in_current_week)),
+  };
 }
 
 // Build a typed-but-empty TeamInsightReport skeleton. Most catalog widgets read
@@ -1169,6 +1243,8 @@ export async function buildTeamInsightReport(
     data_freshness: freshnessRes.rows[0]?.ingested_at ?? new Date().toISOString(),
     member_portraits: portraits,
   };
+  const ghDelivery = await githubDelivery(teamId, weekMonday, pool);
+  if (ghDelivery) liveExtras.github_delivery = ghDelivery;
   report.live_extras = liveExtras;
 
   // Mirror PR totals on outcomes for any catalog widget that reads them.

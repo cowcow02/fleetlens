@@ -60,6 +60,15 @@ export function startScheduler(): void {
 
   setInterval(async () => {
     try {
+      const { syncAllGithubIntegrations } = await import("./integrations");
+      await syncAllGithubIntegrations(getPool());
+    } catch (err) {
+      console.error(`[scheduler] github sync sweep failed: ${(err as Error).message}`);
+    }
+  }, 60 * 60 * 1000);
+
+  setInterval(async () => {
+    try {
       const n = await prunePlanUtilization();
       if (n) console.log(`[scheduler] pruned ${n} plan_utilization rows`);
     } catch (err) {

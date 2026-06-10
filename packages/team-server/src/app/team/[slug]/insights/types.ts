@@ -1365,6 +1365,29 @@ export type LivePlanModeAdoption = {
   adoption_pct: number; // adopters / active_7d × 100
 };
 
+// GitHub-integration delivery stats (team-level — PRs aren't member-mapped
+// until the session↔commit join lands). AI attribution is Co-Authored-By
+// trailer-based; squash-merges that strip trailers undercount.
+export type GithubWeekDelivery = {
+  merged: number;
+  ai_assisted: number;
+  ai_share_pct: number; // ai_assisted / merged × 100
+  // First commit → merge, median hours. Split by AI-assisted flag.
+  median_cycle_hours_ai: number | null;
+  median_cycle_hours_other: number | null;
+  // PR created → first review submitted, median hours.
+  median_review_wait_hours_ai: number | null;
+  median_review_wait_hours_other: number | null;
+};
+
+export type GithubDeliveryStats = {
+  repos: string[];
+  last_sync_at: string | null;
+  open_now: number;
+  week: GithubWeekDelivery;
+  prev_week: GithubWeekDelivery;
+};
+
 export type LiveExtras = {
   active_rate: LiveActiveRate;
   maturity_mix: LiveMaturityMix;
@@ -1374,6 +1397,8 @@ export type LiveExtras = {
   // v9 — per-member qualitative portraits. Sorted by maturity level descending
   // so the eng lead's eye lands on multipliers first.
   member_portraits?: MemberMaturityPortrait[];
+  // Present only when the team's GitHub integration is connected.
+  github_delivery?: GithubDeliveryStats;
 };
 
 // ─── The whole report ─────────────────────────────────────────────────────

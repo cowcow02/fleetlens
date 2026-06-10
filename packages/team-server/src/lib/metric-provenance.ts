@@ -107,6 +107,13 @@ export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
     status: "live",
     llm: false,
   },
+  "github-delivery": {
+    description:
+      "Merge-confirmed delivery from the GitHub integration: merged PRs WoW, AI-assisted share, and median cycle (first commit → merge) / review-wait (created → first review) hours split AI vs non-AI. Team-wide, not group-scoped — synced PRs carry no member mapping yet. AI attribution is Co-Authored-By-trailer based and undercounts squash-merges that strip trailers.",
+    source: "github_pull_requests (hourly poll of the GitHub API via the team's encrypted token)",
+    status: "live",
+    llm: false,
+  },
   "per-project-time-bars": {
     description: "Agent time per project for the group, this week vs last.",
     source: `${ROLLUPS}.projects`,
