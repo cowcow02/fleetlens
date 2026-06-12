@@ -8450,7 +8450,7 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
 
 /* ── Settings page tabs (same idiom as the group settings modal) ──────────── */
 .settings-page-tabs {
-  margin: 26px 0 6px;
+  margin: 26px 0 34px;
 }
 a.group-settings-tab {
   text-decoration: none;
