@@ -13,10 +13,14 @@ export function GroupDataSources({
   teamSlug,
   groupSlug,
   isAdmin,
+  embedded = false,
 }: {
   teamSlug: string;
   groupSlug: string;
   isAdmin: boolean;
+  // When rendered inside the group settings modal the tab supplies its own
+  // heading + spacing, so drop the standalone section chrome.
+  embedded?: boolean;
 }) {
   const [github, setGithub] = useState<SourceRow[] | null>(null);
   const [linear, setLinear] = useState<SourceRow[] | null>(null);
@@ -79,13 +83,8 @@ export function GroupDataSources({
   if (github === null || linear === null) return null;
   const nothingConnected = !connected.github && !connected.linear;
 
-  return (
-    <section className="settings-section" style={{ marginTop: 40 }}>
-      <div className="subsection-head">
-        <h2>Data sources</h2>
-        <span className="kicker">What counts toward this group&rsquo;s insight report</span>
-      </div>
-
+  const body = (
+    <>
       {nothingConnected ? (
         <p className="help-note" style={{ border: "none", padding: 0 }}>
           No integrations connected yet.{" "}
@@ -143,6 +142,18 @@ export function GroupDataSources({
 
       {error && <div className="form-error" style={{ marginTop: 12, maxWidth: 680 }}>{error}</div>}
       {message && <div className="action-note">{message}</div>}
+    </>
+  );
+
+  if (embedded) return body;
+
+  return (
+    <section className="settings-section" style={{ marginTop: 40 }}>
+      <div className="subsection-head">
+        <h2>Data sources</h2>
+        <span className="kicker">What counts toward this group&rsquo;s insight report</span>
+      </div>
+      {body}
     </section>
   );
 }

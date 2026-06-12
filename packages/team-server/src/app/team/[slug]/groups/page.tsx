@@ -7,7 +7,7 @@ import {
   listGroupsManagedBy,
   listGroupMembersByGroupForTeam,
 } from "../../../../lib/groups";
-import { GroupsManagerPanel } from "../../../../components/groups-manager-panel";
+import { GroupsList } from "../../../../components/groups-list";
 
 export default async function GroupsListPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -56,11 +56,11 @@ export default async function GroupsListPage({ params }: { params: Promise<{ slu
                 <small style={{ opacity: 0.6 }}>/{g.slug}</small>
               </a>
               <a
-                href={`/team/${slug}/groups/${g.slug}/invite`}
+                href={`/team/${slug}/groups/${g.slug}?settings=members`}
                 className="btn secondary"
                 style={{ fontSize: 11 }}
               >
-                + Invite
+                ⚙ Settings
               </a>
             </li>
           ))}
@@ -82,7 +82,7 @@ export default async function GroupsListPage({ params }: { params: Promise<{ slu
   );
 
   return (
-    <GroupsManagerPanel
+    <GroupsList
       teamSlug={slug}
       groups={membersByGroup}
       allMembers={allMembers.rows}

@@ -8239,3 +8239,115 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
   margin-top: 12px;
 }
 .action-note.error { color: var(--danger); }
+
+/* ── Group settings modal + read-only list ────────────────────────────────── */
+
+.modal.group-settings { max-width: 720px; width: 92vw; }
+.group-settings-body { min-height: 320px; }
+/* The global `.modal button { width: 100% }` is for the simple CTA modals;
+   the settings modal has inline buttons (tabs, toggles, row actions). */
+.modal.group-settings button { width: auto; }
+
+.group-settings-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 18px;
+  border-bottom: 1px solid var(--rule);
+}
+.group-settings-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 8px 14px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 120ms, border-color 120ms;
+}
+.group-settings-tab:hover { color: var(--ink); }
+.group-settings-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+
+.group-settings-tab-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.group-settings-tab-head h3 {
+  font-family: "Instrument Serif", serif;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.group-member-list { display: flex; flex-direction: column; }
+.group-settings-trigger { white-space: nowrap; }
+
+/* Read-only group list */
+.group-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule);
+}
+.group-list-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--rule);
+  flex-wrap: wrap;
+}
+.group-list-main { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 220px; flex: 1; }
+.group-list-name {
+  font-family: "Instrument Serif", serif;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+}
+.group-list-name:hover { color: var(--accent); }
+.group-list-slug { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--mute-soft); }
+.group-list-counts {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mute);
+  width: 100%;
+}
+.group-list-counts .zero { color: var(--mute-soft); }
+.group-list-counts .sep { margin: 0 8px; color: var(--rule); }
+
+.group-list-avatars { display: flex; align-items: center; }
+.group-list-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--ink-soft);
+  background: var(--rule-soft);
+  border: 1px solid var(--paper);
+  margin-left: -6px;
+}
+.group-list-avatar:first-child { margin-left: 0; }
+.group-list-avatar.manager { background: var(--accent-soft); color: var(--accent); }
+.group-list-avatar.more { background: var(--paper); border: 1px solid var(--rule); color: var(--mute); }
+.group-list-empty { font-size: 12px; color: var(--mute-soft); font-style: italic; }
+
+.group-list-actions { display: flex; align-items: center; gap: 16px; margin-left: auto; }
+.group-list-settings { font-size: 11px; white-space: nowrap; }
+
+/* The global .modal "⚠ ONE-TIME DISPLAY" badge is only meaningful for the
+   secret-reveal modals (invite link / device token). Suppress it on the
+   group settings + compose modals, which show no one-time secret. */
+.modal.group-settings::before,
+.modal.compose::before { content: none; }
