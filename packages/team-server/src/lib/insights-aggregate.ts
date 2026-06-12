@@ -215,6 +215,9 @@ export type ProjectTimeRow = {
   agentHours: number;
   agentHoursPrev: number;
   sessions: number;
+  // owner/name identities members reported for this project (git-push /
+  // gh-pr output) — ground truth for repo canonicalization.
+  githubRepos?: string[];
 };
 
 export async function perProjectTimeWoW(
@@ -238,14 +241,16 @@ export async function perProjectTimeWoW(
     agent_time_ms: string;
     sessions: number;
     is_prev: boolean;
+    repo_lists: string[][] | null;
   }>(
     `SELECT p.project,
             SUM((p."agentTimeMs")::bigint)::text AS agent_time_ms,
             SUM((p.sessions)::int)::int AS sessions,
-            (r.day < $3::date) AS is_prev
+            (r.day < $3::date) AS is_prev,
+            jsonb_agg(p."githubRepos") FILTER (WHERE p."githubRepos" IS NOT NULL) AS repo_lists
      FROM rich_daily_rollups r
      CROSS JOIN LATERAL jsonb_to_recordset(r.projects)
-       AS p(project text, "agentTimeMs" bigint, sessions int)
+       AS p(project text, "agentTimeMs" bigint, sessions int, "githubRepos" jsonb)
      WHERE r.team_id = $1
        AND r.membership_id = ANY($2::uuid[])
        AND r.day >= $4::date
@@ -265,6 +270,10 @@ export async function perProjectTimeWoW(
     } else {
       cur.agentHours += hrs;
       cur.sessions += row.sessions;
+    }
+    if (row.repo_lists) {
+      const merged = new Set([...(cur.githubRepos ?? []), ...row.repo_lists.flat()]);
+      cur.githubRepos = [...merged];
     }
     byProject.set(row.project, cur);
   }

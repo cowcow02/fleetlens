@@ -182,15 +182,21 @@ function pctDelta(current: number, prev: number): number {
 export type CanonicalProjectRow = ProjectTimeRow & { repo?: string };
 
 // Member-reported project names are local clone-directory basenames. Fold a
-// row whose name matches a connected GitHub repo's basename onto the repo's
-// identity, and merge rows landing on the same repo — two members may have
-// cloned the same repo under different casing.
+// row onto a connected GitHub repo's identity and merge rows landing on the
+// same repo (two members may clone under different names). Two signals, in
+// reliability order:
+//   1. The row's reported githubRepos (owner/name harvested from git-push /
+//      gh-pr output on the member's machine) — ground truth.
+//   2. Directory-name == repo basename — the clone-default convention, kept
+//      as fallback for rollups submitted before githubRepos existed.
 export function canonicalizeProjects(rows: ProjectTimeRow[], repoNames: string[]): CanonicalProjectRow[] {
   if (repoNames.length === 0) return rows;
+  const byFull = new Map(repoNames.map((r) => [r.toLowerCase(), r]));
   const byBase = new Map(repoNames.map((r) => [r.split("/").pop()!.toLowerCase(), r]));
   const out = new Map<string, CanonicalProjectRow>();
   for (const row of rows) {
-    const repo = byBase.get(row.project.split("/").pop()!.toLowerCase());
+    const reported = (row.githubRepos ?? []).map((r) => byFull.get(r.toLowerCase())).find(Boolean);
+    const repo = reported ?? byBase.get(row.project.split("/").pop()!.toLowerCase());
     const key = repo ?? row.project;
     const cur = out.get(key);
     if (cur) {

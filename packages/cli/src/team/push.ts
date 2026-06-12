@@ -197,6 +197,10 @@ export function buildRichRollupBlocks(
     projects.set(name, cur);
   }
 
+  // owner/name identities per project (from git-push / gh-pr output in the
+  // entries) — lets the server canonicalize local directory names onto the
+  // actual remotes instead of guessing by clone-directory name.
+  const projectRepos = new Map<string, Set<string>>();
   const workingShapes = new Map<string, { sessions: number; agentTimeMs: number }>();
   const skills = new Map<string, number>();
   const subagents = new Map<string, number>();
@@ -232,6 +236,12 @@ export function buildRichRollupBlocks(
     prs += e.numbers.prs;
     commits += e.numbers.commits;
     pushes += e.numbers.pushes;
+    if (e.github_repos?.length) {
+      const key = projectRepoName(e.project);
+      const set = projectRepos.get(key) ?? new Set<string>();
+      for (const r of e.github_repos) set.add(r);
+      projectRepos.set(key, set);
+    }
     if (e.flags.includes("long_autonomous")) {
       longCount += 1;
       longTotalMin += e.numbers.active_min;
@@ -241,7 +251,10 @@ export function buildRichRollupBlocks(
 
   return {
     projects: Array.from(projects.entries())
-      .map(([project, v]) => ({ project, ...v }))
+      .map(([project, v]) => {
+        const repos = projectRepos.get(project);
+        return { project, ...v, ...(repos?.size ? { githubRepos: [...repos].slice(0, 5) } : {}) };
+      })
       .sort((a, b) => b.agentTimeMs - a.agentTimeMs),
     workingShapes: Array.from(workingShapes.entries())
       .map(([shape, v]) => ({ shape, ...v }))

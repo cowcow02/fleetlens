@@ -306,6 +306,13 @@ describe("buildEntries positive cases", () => {
     expect(entry!.numbers.prs).toBe(1);
   });
 
+  it("harvests github repo identities from gh pr create output", () => {
+    const sd = load("pr-ship-session.jsonl");
+    const [entry] = buildEntries(sd);
+    // The fixture's tool result is the created PR's URL.
+    expect(entry!.github_repos).toEqual(["org/repo"]);
+  });
+
   it("extracts subagent dispatches with type, description, prompt_preview", () => {
     const sd = load("subagent-dispatch.jsonl");
     const [entry] = buildEntries(sd);

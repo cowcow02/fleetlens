@@ -65,7 +65,11 @@ export const RICH_ROLLUP_SCHEMA_VERSION = 2 as const;
 // text). Project labels are filtered through `privateProjects` before being
 // included. See docs/superpowers/specs/2026-05-16-personal-to-team-bridge-design.md.
 export type RichDailyRollup = DailyRollup & {
-  projects: { project: string; agentTimeMs: number; sessions: number }[];
+  // githubRepos: owner/name identities observed in git-push / gh-pr tool
+  // OUTPUT for this project's sessions — lets the server canonicalize the
+  // local directory name onto the actual remote. Optional and additive;
+  // V2 servers without the field simply ignore it.
+  projects: { project: string; agentTimeMs: number; sessions: number; githubRepos?: string[] }[];
   workingShapes: { shape: string; sessions: number; agentTimeMs: number }[];
   concurrencyPeak: number;
   parallelMinutes: number;

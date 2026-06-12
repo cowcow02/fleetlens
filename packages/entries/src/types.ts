@@ -98,6 +98,10 @@ export type Entry = {
   first_user: string;
   final_agent: string;
   pr_titles: string[];
+  /** owner/name identities harvested from git-push / gh-pr tool output —
+   *  which GitHub repos this day's work actually touched. Absent on entries
+   *  built before this field existed and on days with no push/PR. */
+  github_repos?: string[];
   top_tools: string[];
   skills: Record<string, number>;
   subagents: EntrySubagent[];
