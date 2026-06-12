@@ -96,11 +96,33 @@ describe("workTimelineStats", () => {
     expect(s.size_classes[0].total_hours).toBe(10);
   });
 
-  it("returns empty classes and null stats for an empty week", () => {
+  it("carries last week's per-cohort total and count for comparison", () => {
+    const s = workTimelineStats(
+      [row({ lines_changed: 100, last_merged: h(10) })], // S, 8h
+      [
+        row({ lines_changed: 200, last_merged: h(6) }), // S, 4h
+        row({ lines_changed: 300, last_merged: h(8) }), // S, 6h
+        row({ lines_changed: 2000 }), // M — last week only
+      ],
+      0,
+    );
+    const sClass = s.size_classes.find((c) => c.size === "S")!;
+    expect(sClass.prev_tickets).toBe(2);
+    expect(sClass.prev_total_hours).toBe(5);
+    // A cohort with tickets only last week still shows, with zero this week.
+    const mClass = s.size_classes.find((c) => c.size === "M")!;
+    expect(mClass.tickets).toBe(0);
+    expect(mClass.prev_tickets).toBe(1);
+    expect(s.queue_median_hours_prev).toBe(2);
+  });
+
+  it("returns null stats for an empty week but keeps last week's cohorts visible", () => {
     const s = workTimelineStats([], [row()], 2);
     expect(s.tickets).toBe(0);
     expect(s.unjoined).toBe(2);
-    expect(s.size_classes).toEqual([]);
+    expect(s.size_classes).toEqual([
+      expect.objectContaining({ size: "S", tickets: 0, prev_tickets: 1 }),
+    ]);
     expect(s.week.build.median_hours).toBeNull();
     expect(s.prev_week.build.median_hours).toBe(4);
   });

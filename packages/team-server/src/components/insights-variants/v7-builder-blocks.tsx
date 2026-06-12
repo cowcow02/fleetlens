@@ -662,9 +662,13 @@ const V8_BLOCKS: DashboardBlock[] = [
       ] as const;
       const classVal = (c: (typeof t.size_classes)[number], key: (typeof PHASES)[number]["key"]) =>
         key === "build" ? c.build_hours : c.review_hours;
-      // Shared absolute scale across cohorts: bar length = the row's pickup →
-      // merge median; segments split it by the phase-median proportions.
-      const scaleMax = Math.max(1, ...t.size_classes.map((c) => c.total_hours ?? 0));
+      // Shared absolute scale across cohorts and both weeks: bar length = the
+      // cohort-week's pickup → merge median; this-week bars split by the
+      // phase-median proportions, last-week bars are a plain muted fill.
+      const scaleMax = Math.max(
+        1,
+        ...t.size_classes.flatMap((c) => [c.total_hours ?? 0, c.prev_total_hours ?? 0]),
+      );
       return (
         <>
           <div className="timeline-cohorts">
@@ -678,29 +682,47 @@ const V8_BLOCKS: DashboardBlock[] = [
                   </span>
                 </div>
                 <div className="timeline-cohort-bar">
-                  <div
-                    className="timeline-cohort-fill"
-                    style={{ width: `${Math.max(1.5, ((c.total_hours ?? 0) / scaleMax) * 100)}%` }}
-                  >
-                    {(() => {
-                      const phaseSum = PHASES.reduce((s, p) => s + (classVal(c, p.key) ?? 0), 0);
-                      if (phaseSum === 0) return null;
-                      return PHASES.map((p) => {
-                        const v = classVal(c, p.key);
-                        if (v == null || v === 0) return null;
-                        return (
-                          <div
-                            key={p.key}
-                            className="timeline-seg"
-                            title={`${p.label} · ${fmtH(v)} median`}
-                            style={{ width: `${(v / phaseSum) * 100}%`, background: p.color }}
-                          />
-                        );
-                      });
-                    })()}
+                  <div className="timeline-pair-track">
+                    <div
+                      className="timeline-cohort-fill"
+                      style={{ width: `${Math.max(1.5, ((c.total_hours ?? 0) / scaleMax) * 100)}%` }}
+                    >
+                      {(() => {
+                        const phaseSum = PHASES.reduce((s, p) => s + (classVal(c, p.key) ?? 0), 0);
+                        if (phaseSum === 0) return null;
+                        return PHASES.map((p) => {
+                          const v = classVal(c, p.key);
+                          if (v == null || v === 0) return null;
+                          return (
+                            <div
+                              key={p.key}
+                              className="timeline-seg"
+                              title={`${p.label} · ${fmtH(v)} median`}
+                              style={{ width: `${(v / phaseSum) * 100}%`, background: p.color }}
+                            />
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                  <div className="timeline-pair-track">
+                    <div
+                      className="timeline-cohort-fill last-week"
+                      title={
+                        c.prev_tickets === 0
+                          ? "No tickets in this cohort last week"
+                          : `Last week · ${fmtH(c.prev_total_hours)} median across ${c.prev_tickets} ${c.prev_tickets === 1 ? "ticket" : "tickets"}`
+                      }
+                      style={{ width: `${Math.max(c.prev_tickets === 0 ? 0 : 1.5, ((c.prev_total_hours ?? 0) / scaleMax) * 100)}%` }}
+                    />
                   </div>
                 </div>
-                <div className="timeline-cohort-total">{fmtH(c.total_hours)}</div>
+                <div className="timeline-cohort-total">
+                  {fmtH(c.total_hours)}
+                  <div className="timeline-cohort-prev">
+                    {c.prev_tickets === 0 ? "none last wk" : `${fmtH(c.prev_total_hours)} · ${c.prev_tickets} last wk`}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -726,9 +748,11 @@ const V8_BLOCKS: DashboardBlock[] = [
               `sized by ${t.sized_by === "estimate" ? "Linear estimate" : "lines changed across the ticket's PRs"}` +
               (t.unjoined > 0 ? ` · ${t.unjoined} more had no merged-PR match` : "") +
               (t.queue_median_hours != null
-                ? ` · creation → pickup median ${fmtH(t.queue_median_hours)} (planning cadence — excluded from the delivery phases)`
+                ? ` · creation → pickup median ${fmtH(t.queue_median_hours)}` +
+                  (t.queue_median_hours_prev != null ? ` vs ${fmtH(t.queue_median_hours_prev)} last wk` : "") +
+                  ` (planning cadence — excluded from the delivery phases)`
                 : "") +
-              ` · cohort bars share one time scale; row total is the per-ticket pickup → merge median.`}
+              ` · bars share one time scale, muted bar = last week; row total is the per-ticket pickup → merge median.`}
           </div>
         </>
       );

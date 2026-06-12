@@ -1436,6 +1436,8 @@ export type WorkTimelineSizeClass = {
   build_hours: number | null;
   review_hours: number | null;
   total_hours: number | null; // median pickup → merge, computed per ticket
+  prev_tickets: number;
+  prev_total_hours: number | null;
 };
 
 export type WorkTimelineStats = {
@@ -1443,9 +1445,10 @@ export type WorkTimelineStats = {
   unjoined: number; // completed this week with no merged-PR match
   sized_by: "estimate" | "lines";
   queue_median_hours: number | null; // footnote only, current week
+  queue_median_hours_prev: number | null;
   week: WorkTimelinePhases;
   prev_week: WorkTimelinePhases;
-  size_classes: WorkTimelineSizeClass[]; // current week, non-empty classes only
+  size_classes: WorkTimelineSizeClass[]; // classes with tickets in either week
 };
 
 export type LiveExtras = {

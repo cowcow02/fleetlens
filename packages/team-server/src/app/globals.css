@@ -8361,9 +8361,12 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
 }
 .timeline-cohort-row {
   display: grid;
-  grid-template-columns: 150px 1fr 56px;
+  grid-template-columns: 150px 1fr auto;
   align-items: center;
   gap: 12px;
+}
+.timeline-cohort-total {
+  min-width: 104px;
 }
 .timeline-cohort-head {
   display: flex;
@@ -8380,12 +8383,25 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
   font-size: 11.5px;
   margin-left: auto;
 }
-.timeline-cohort-bar {
-  height: 20px;
+.timeline-pair-track {
+  height: 12px;
+  background: var(--rule-soft);
+}
+.timeline-pair-track + .timeline-pair-track {
+  margin-top: 3px;
 }
 .timeline-cohort-fill {
   display: flex;
   height: 100%;
+}
+.timeline-cohort-fill.last-week {
+  background: color-mix(in srgb, var(--mute) 60%, var(--paper));
+}
+.timeline-cohort-prev {
+  color: var(--mute);
+  font-size: 11px;
+  font-family: "Instrument Sans", sans-serif;
+  white-space: nowrap;
 }
 .timeline-cohort-total {
   font-family: "JetBrains Mono", monospace;

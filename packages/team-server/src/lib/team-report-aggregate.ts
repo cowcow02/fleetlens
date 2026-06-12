@@ -361,24 +361,29 @@ export function workTimelineStats(
   const withEstimate = curr.filter((r) => r.estimate != null).length;
   const sizedBy: "estimate" | "lines" = curr.length > 0 && withEstimate * 2 >= curr.length ? "estimate" : "lines";
   const bounds = sizedBy === "estimate" ? POINT_BOUNDS : LINE_BOUNDS;
+  const totalMs = (r: WorkTimelineRow) => phaseMs(r.started_at, r.last_merged, true);
   const sizeClasses = (["S", "M", "L"] as const)
     .map((size) => {
       const rows = curr.filter((r) => sizeOf(r, sizedBy) === size);
+      const prevRows = prev.filter((r) => sizeOf(r, sizedBy) === size);
       return {
         size,
         bounds: bounds[size],
         tickets: rows.length,
         build_hours: medianHours(collect(rows, buildMs)),
         review_hours: medianHours(collect(rows, reviewMs)),
-        total_hours: medianHours(collect(rows, (r) => phaseMs(r.started_at, r.last_merged, true))),
+        total_hours: medianHours(collect(rows, totalMs)),
+        prev_tickets: prevRows.length,
+        prev_total_hours: medianHours(collect(prevRows, totalMs)),
       };
     })
-    .filter((c) => c.tickets > 0);
+    .filter((c) => c.tickets > 0 || c.prev_tickets > 0);
   return {
     tickets: curr.length,
     unjoined,
     sized_by: sizedBy,
     queue_median_hours: medianHours(collect(curr, (r) => phaseMs(r.created_at, r.started_at))),
+    queue_median_hours_prev: medianHours(collect(prev, (r) => phaseMs(r.created_at, r.started_at))),
     week: phaseStats(curr),
     prev_week: phaseStats(prev),
     size_classes: sizeClasses,
