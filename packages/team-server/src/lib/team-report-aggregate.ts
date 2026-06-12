@@ -14,6 +14,8 @@ import type {
   MaturityPath,
   MemberMaturityPortrait,
   TeamInsightReport,
+  WorkTimelinePhases,
+  WorkTimelineStats,
 } from "../app/team/[slug]/insights/types";
 import { medianHours } from "./github";
 import { normalizeGithubRepos, normalizeLinearTeams } from "./integrations";
@@ -297,6 +299,94 @@ async function linearVelocity(
     wip_now: wip.rows[0].n,
     week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
     prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),
+  };
+}
+
+export type WorkTimelineRow = {
+  created_at: string;
+  started_at: string | null;
+  completed_at: string;
+  first_commit: string | null; // MIN(first_commit_at) over matched merged PRs
+  first_pr_created: string | null; // MIN(created_at) over matched merged PRs
+  last_merged: string | null; // MAX(merged_at) over matched merged PRs
+};
+
+// Per-phase medians across joined tickets. Spin-up and resolution clamp at 0
+// (commit-before-status-flip, resolved-before-merge); a missing boundary drops
+// the ticket from that phase's median rather than zeroing it.
+export function workTimelinePhases(rows: WorkTimelineRow[]): WorkTimelinePhases {
+  const ms = (a: string | null, b: string | null, clamp = false): number | null => {
+    if (!a || !b) return null;
+    const d = new Date(b).getTime() - new Date(a).getTime();
+    return clamp ? Math.max(0, d) : d >= 0 ? d : null;
+  };
+  const phase = (pick: (r: WorkTimelineRow) => number | null) =>
+    medianHours(rows.map(pick).filter((v): v is number => v != null));
+  return {
+    queue_hours: phase((r) => ms(r.created_at, r.started_at)),
+    spin_up_hours: phase((r) => ms(r.started_at, r.first_commit, true)),
+    build_hours: phase((r) => ms(r.first_commit, r.first_pr_created)),
+    merge_wait_hours: phase((r) => ms(r.first_pr_created, r.last_merged)),
+    resolution_hours: phase((r) => ms(r.last_merged, r.completed_at, true)),
+  };
+}
+
+// Ticket-to-merge timeline, needing both integrations: Linear supplies
+// created/started/completed, GitHub supplies first-commit/PR-opened/merged for
+// the PRs carrying the ticket ref. Null unless both are connected AND both
+// have at least one source mapped into scope — the single-source blocks
+// already carry the fix-the-mapping guidance, so this one just stays hidden.
+async function workTimeline(
+  teamId: string,
+  scope: InsightsScope,
+  weekMonday: string,
+  pool: pg.Pool,
+): Promise<WorkTimelineStats | null> {
+  const integ = await pool.query<{ provider: string; config: { repos?: unknown; teams?: unknown; team_keys?: unknown } }>(
+    `SELECT provider, config FROM team_integrations
+     WHERE team_id = $1 AND provider IN ('github', 'linear')`,
+    [teamId],
+  );
+  const gh = integ.rows.find((r) => r.provider === "github");
+  const lin = integ.rows.find((r) => r.provider === "linear");
+  if (!gh || !lin) return null;
+
+  const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
+    scope.kind === "group"
+      ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
+      : xs;
+  const repoNames = inScope(normalizeGithubRepos(gh.config.repos)).map((r) => r.name);
+  const teamKeys = inScope(normalizeLinearTeams(lin.config)).map((t) => t.key);
+  if (repoNames.length === 0 || teamKeys.length === 0) return null;
+
+  const prevMonday = previousIsoMonday(weekMonday);
+  const winEnd = weekEndExclusive(weekMonday);
+  const res = await pool.query<WorkTimelineRow & { in_current_week: boolean }>(
+    `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
+            (i.completed_at >= $3::date) AS in_current_week,
+            pr.first_commit::text, pr.first_pr_created::text, pr.last_merged::text
+     FROM linear_issues i
+     LEFT JOIN LATERAL (
+       SELECT MIN(p.first_commit_at) AS first_commit,
+              MIN(p.created_at) AS first_pr_created,
+              MAX(p.merged_at) AS last_merged
+       FROM github_pull_requests p
+       WHERE p.team_id = i.team_id AND p.repo = ANY($6::text[])
+         AND p.state = 'merged' AND p.title ~* (i.identifier || '\\M')
+     ) pr ON true
+     WHERE i.team_id = $1 AND i.linear_team_key = ANY($5::text[])
+       AND i.state_type = 'completed'
+       AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
+    [teamId, prevMonday, weekMonday, winEnd, teamKeys, repoNames],
+  );
+
+  const joined = res.rows.filter((r) => r.last_merged != null);
+  const curr = joined.filter((r) => r.in_current_week);
+  return {
+    tickets: curr.length,
+    unjoined: res.rows.filter((r) => r.in_current_week && r.last_merged == null).length,
+    week: workTimelinePhases(curr),
+    prev_week: workTimelinePhases(joined.filter((r) => !r.in_current_week)),
   };
 }
 
@@ -1362,12 +1452,14 @@ export async function buildTeamInsightReport(
     data_freshness: freshnessRes.rows[0]?.ingested_at ?? new Date().toISOString(),
     member_portraits: portraits,
   };
-  const [ghDelivery, linVelocity] = await Promise.all([
+  const [ghDelivery, linVelocity, timeline] = await Promise.all([
     githubDelivery(teamId, scope, weekMonday, pool),
     linearVelocity(teamId, scope, weekMonday, pool),
+    workTimeline(teamId, scope, weekMonday, pool),
   ]);
   if (ghDelivery) liveExtras.github_delivery = ghDelivery;
   if (linVelocity) liveExtras.linear_velocity = linVelocity;
+  if (timeline) liveExtras.work_timeline = timeline;
   report.live_extras = liveExtras;
 
   // Mirror PR totals on outcomes for any catalog widget that reads them.

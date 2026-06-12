@@ -126,6 +126,7 @@ export function GroupMomentumReport({
           : "Impact proxy — PR throughput and where the effort landed. Correlation, not causation: " +
             "agent adoption is one input among many, not a measured cause of delivery.",
       blockIds: [
+        ...(report.live_extras?.work_timeline ? ["work-timeline"] : []),
         ...(report.live_extras?.github_delivery ? ["github-delivery"] : []),
         ...(report.live_extras?.linear_velocity ? ["linear-velocity"] : []),
         "live-prs-shipped",

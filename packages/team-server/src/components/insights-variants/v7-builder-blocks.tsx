@@ -628,6 +628,84 @@ const V8_BLOCKS: DashboardBlock[] = [
     },
   },
   {
+    id: "work-timeline",
+    title: "Work timeline · ticket → merge, phase medians",
+    short_description:
+      "Completed tickets joined to their merged PRs, decomposed into queue / spin-up / build / merge wait / resolution — the slowest phase is highlighted",
+    category: "outcomes",
+    tier: "external-plug-in",
+    source_version: "v8",
+    defaultW: 4,
+    render: (r) => {
+      const t = r.live_extras?.work_timeline;
+      if (!t) {
+        return (
+          <div className="live-empty-row">
+            The work timeline needs both GitHub and Linear connected (and mapped to this group) — it chains
+            ticket pickup, first commit, PR, merge, and resolution into one view.{" "}
+            <a href={`/team/${r.team_slug}/settings`}>Set up integrations in team settings</a>.
+          </div>
+        );
+      }
+      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+      const phases = [
+        { key: "queue_hours", label: "Queue", bounds: "created → picked up" },
+        { key: "spin_up_hours", label: "Spin-up", bounds: "picked up → first commit" },
+        { key: "build_hours", label: "Build", bounds: "first commit → PR opened" },
+        { key: "merge_wait_hours", label: "Merge wait", bounds: "PR opened → merged" },
+        { key: "resolution_hours", label: "Resolution", bounds: "merged → resolved" },
+      ] as const;
+      const val = (p: (typeof phases)[number], wk: typeof t.week) => wk[p.key];
+      const present = phases.filter((p) => val(p, t.week) != null);
+      if (t.tickets === 0 || present.length === 0) {
+        return (
+          <div className="live-empty-row">
+            No completed tickets joined to a merged PR this week — the timeline needs the ticket ref
+            (e.g. KIP-315) in the PR title to connect the two.
+          </div>
+        );
+      }
+      const total = present.reduce((s, p) => s + (val(p, t.week) ?? 0), 0);
+      const slowest = present.reduce((a, b) => ((val(a, t.week) ?? 0) >= (val(b, t.week) ?? 0) ? a : b));
+      // Monochrome ink ramp; the slowest phase — the bottleneck — gets the accent.
+      const ramp = [18, 32, 46, 60, 74];
+      const color = (p: (typeof phases)[number], i: number) =>
+        p.key === slowest.key ? "var(--accent)" : `color-mix(in srgb, var(--ink) ${ramp[i]}%, var(--paper))`;
+      return (
+        <>
+          <div className="timeline-bar">
+            {present.map((p, i) => (
+              <div
+                key={p.key}
+                className="timeline-seg"
+                title={`${p.label} · ${fmtH(val(p, t.week))} median`}
+                style={{ width: `${Math.max(1.5, ((val(p, t.week) ?? 0) / total) * 100)}%`, background: color(p, i) }}
+              />
+            ))}
+          </div>
+          <div className="timeline-legend">
+            {present.map((p, i) => (
+              <div key={p.key} className="timeline-legend-row">
+                <span className="timeline-swatch" style={{ background: color(p, i) }} />
+                <span className="timeline-phase">
+                  {p.label} <span className="timeline-bounds">{p.bounds}</span>
+                </span>
+                <span className="timeline-median">{fmtH(val(p, t.week))}</span>
+                <span className="timeline-prev">{val(p, t.prev_week) == null ? "—" : fmtH(val(p, t.prev_week))} last wk</span>
+              </div>
+            ))}
+          </div>
+          <div className="kicker" style={{ marginTop: 10 }}>
+            {`Median per phase across ${t.tickets} ${t.tickets === 1 ? "ticket" : "tickets"} completed this week` +
+              (t.unjoined > 0 ? ` (${t.unjoined} more had no merged-PR match)` : "") +
+              ` · slowest phase highlighted · multi-PR tickets span earliest commit → latest merge · ` +
+              `review stage appears in the GitHub delivery tile when reviews exist.`}
+          </div>
+        </>
+      );
+    },
+  },
+  {
     id: "live-plan-mode",
     title: "Plan-mode adoption",
     short_description: "Share of active members using plan-mode this week",

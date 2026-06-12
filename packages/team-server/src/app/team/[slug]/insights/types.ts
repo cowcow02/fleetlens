@@ -1407,6 +1407,27 @@ export type LinearVelocityStats = {
   prev_week: LinearWeekVelocity;
 };
 
+// Cross-source work timeline: completed tickets joined (by ticket ref in PR
+// title) to their merged PRs, decomposed into sequential phases. Per-phase
+// medians, hours. Multi-PR tickets use earliest first-commit / earliest PR
+// opened / latest merge. Spin-up and resolution clamp at 0 — agents often
+// commit minutes before flipping the ticket to started, and tickets are
+// sometimes resolved before their PR merges.
+export type WorkTimelinePhases = {
+  queue_hours: number | null; // ticket created → started
+  spin_up_hours: number | null; // started → first commit
+  build_hours: number | null; // first commit → PR opened
+  merge_wait_hours: number | null; // PR opened → merged
+  resolution_hours: number | null; // merged → ticket completed
+};
+
+export type WorkTimelineStats = {
+  tickets: number; // completed this week and joined to ≥1 merged PR
+  unjoined: number; // completed this week with no merged-PR match
+  week: WorkTimelinePhases;
+  prev_week: WorkTimelinePhases;
+};
+
 export type LiveExtras = {
   active_rate: LiveActiveRate;
   maturity_mix: LiveMaturityMix;
@@ -1420,6 +1441,8 @@ export type LiveExtras = {
   github_delivery?: GithubDeliveryStats;
   // Present only when the team's Linear integration is connected.
   linear_velocity?: LinearVelocityStats;
+  // Present only when BOTH integrations are connected and mapped to the scope.
+  work_timeline?: WorkTimelineStats;
 };
 
 // ─── The whole report ─────────────────────────────────────────────────────
