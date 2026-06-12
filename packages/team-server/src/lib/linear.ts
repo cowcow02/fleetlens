@@ -5,11 +5,16 @@
 
 const API = "https://api.linear.app/graphql";
 
+// 30s cap on every Linear call — a hung connection would otherwise stall the
+// hourly scheduler sweep (and the inline connect-flow sync) indefinitely.
+const FETCH_TIMEOUT_MS = 30_000;
+
 async function gql<T>(apiKey: string, query: string, variables: Record<string, unknown> = {}): Promise<T> {
   const res = await fetch(API, {
     method: "POST",
     headers: { Authorization: apiKey, "Content-Type": "application/json" },
     body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Linear rejected the request (HTTP ${res.status})`);
   const body = (await res.json()) as { data?: T; errors?: { message: string }[] };
@@ -62,6 +67,14 @@ export type LinearIssueRow = {
   canceledAt: string | null;
 };
 
+// Report queries interpolate stored identifiers into Postgres regexes
+// (`title ~* identifier || '\M'`), so only regex-safe identifiers may enter
+// the DB. Linear guarantees KEY-NUMBER with alphanumeric keys; this guard
+// makes that a local invariant instead of trusting the external API.
+export function isSafeIdentifier(identifier: string): boolean {
+  return /^[A-Za-z0-9]+-\d+$/.test(identifier);
+}
+
 export function toIssueRow(n: LinearIssueNode): LinearIssueRow {
   return {
     identifier: n.identifier,
@@ -111,7 +124,7 @@ export async function fetchLinearIssues(
     const d = await gql<{
       issues: { pageInfo: { hasNextPage: boolean; endCursor: string }; nodes: LinearIssueNode[] };
     }>(apiKey, ISSUES_QUERY, { filter, cursor });
-    rows.push(...d.issues.nodes.map(toIssueRow));
+    rows.push(...d.issues.nodes.filter((n) => isSafeIdentifier(n.identifier)).map(toIssueRow));
     if (!d.issues.pageInfo.hasNextPage) break;
     cursor = d.issues.pageInfo.endCursor;
   }

@@ -178,6 +178,29 @@ function pctDelta(current: number, prev: number): number {
   return Math.round(((current - prev) / prev) * 100);
 }
 
+// One row of team_integrations, fetched once per report build and passed into
+// every block that needs a provider config — they used to each re-query it.
+type IntegrationConfigRow = {
+  provider: string;
+  config: { login?: string; repos?: unknown; teams?: unknown; team_keys?: unknown; sync_days?: number };
+  last_sync_at: string | null;
+};
+
+async function loadIntegrationConfigs(
+  teamId: string,
+  pool: pg.Pool,
+): Promise<{ github?: IntegrationConfigRow; linear?: IntegrationConfigRow }> {
+  const res = await pool.query<IntegrationConfigRow>(
+    `SELECT provider, config, last_sync_at::text FROM team_integrations
+     WHERE team_id = $1 AND provider IN ('github', 'linear')`,
+    [teamId],
+  );
+  return {
+    github: res.rows.find((r) => r.provider === "github"),
+    linear: res.rows.find((r) => r.provider === "linear"),
+  };
+}
+
 type GithubPrRow = {
   created_at: string;
   merged_at: string;
@@ -247,15 +270,11 @@ async function linearVelocity(
   scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
+  integ: IntegrationConfigRow | undefined,
 ): Promise<LinearVelocityStats | null> {
-  const integ = await pool.query<{ config: { teams?: unknown; team_keys?: unknown }; last_sync_at: string | null }>(
-    `SELECT config, last_sync_at::text FROM team_integrations
-     WHERE team_id = $1 AND provider = 'linear'`,
-    [teamId],
-  );
-  if (!integ.rowCount) return null;
+  if (!integ) return null;
 
-  const allTeams = normalizeLinearTeams(integ.rows[0].config);
+  const allTeams = normalizeLinearTeams(integ.config);
   const scoped =
     scope.kind === "group"
       ? allTeams.filter((t) => t.group_ids.length === 0 || t.group_ids.includes(scope.groupId))
@@ -264,7 +283,7 @@ async function linearVelocity(
   if (teamKeys.length === 0) {
     return {
       team_keys: [],
-      last_sync_at: integ.rows[0].last_sync_at,
+      last_sync_at: integ.last_sync_at,
       wip_now: 0,
       week: linearWeekVelocity([]),
       prev_week: linearWeekVelocity([]),
@@ -296,7 +315,7 @@ async function linearVelocity(
 
   return {
     team_keys: teamKeys,
-    last_sync_at: integ.rows[0].last_sync_at,
+    last_sync_at: integ.last_sync_at,
     wip_now: wip.rows[0].n,
     week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
     prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),
@@ -402,14 +421,9 @@ async function workTimeline(
   scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
+  gh: IntegrationConfigRow | undefined,
+  lin: IntegrationConfigRow | undefined,
 ): Promise<WorkTimelineStats | null> {
-  const integ = await pool.query<{ provider: string; config: { repos?: unknown; teams?: unknown; team_keys?: unknown } }>(
-    `SELECT provider, config FROM team_integrations
-     WHERE team_id = $1 AND provider IN ('github', 'linear')`,
-    [teamId],
-  );
-  const gh = integ.rows.find((r) => r.provider === "github");
-  const lin = integ.rows.find((r) => r.provider === "linear");
   if (!gh || !lin) return null;
 
   const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
@@ -461,15 +475,11 @@ async function githubDelivery(
   scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
+  integ: IntegrationConfigRow | undefined,
 ): Promise<GithubDeliveryStats | null> {
-  const integ = await pool.query<{ config: { repos: unknown }; last_sync_at: string | null }>(
-    `SELECT config, last_sync_at::text FROM team_integrations
-     WHERE team_id = $1 AND provider = 'github'`,
-    [teamId],
-  );
-  if (!integ.rowCount) return null;
+  if (!integ) return null;
 
-  const allRepos = normalizeGithubRepos(integ.rows[0].config.repos);
+  const allRepos = normalizeGithubRepos(integ.config.repos);
   const scoped =
     scope.kind === "group"
       ? allRepos.filter((r) => r.group_ids.length === 0 || r.group_ids.includes(scope.groupId))
@@ -478,7 +488,7 @@ async function githubDelivery(
   if (repoNames.length === 0) {
     return {
       repos: [],
-      last_sync_at: integ.rows[0].last_sync_at,
+      last_sync_at: integ.last_sync_at,
       open_now: 0,
       week: githubWeekDelivery([]),
       prev_week: githubWeekDelivery([]),
@@ -505,7 +515,7 @@ async function githubDelivery(
 
   return {
     repos: repoNames,
-    last_sync_at: integ.rows[0].last_sync_at,
+    last_sync_at: integ.last_sync_at,
     open_now: open.rows[0].n,
     week: githubWeekDelivery(prs.rows.filter((r) => r.in_current_week)),
     prev_week: githubWeekDelivery(prs.rows.filter((r) => !r.in_current_week)),
@@ -1512,10 +1522,11 @@ export async function buildTeamInsightReport(
     data_freshness: freshnessRes.rows[0]?.ingested_at ?? new Date().toISOString(),
     member_portraits: portraits,
   };
+  const integ = await loadIntegrationConfigs(teamId, pool);
   const [ghDelivery, linVelocity, timeline] = await Promise.all([
-    githubDelivery(teamId, scope, weekMonday, pool),
-    linearVelocity(teamId, scope, weekMonday, pool),
-    workTimeline(teamId, scope, weekMonday, pool),
+    githubDelivery(teamId, scope, weekMonday, pool, integ.github),
+    linearVelocity(teamId, scope, weekMonday, pool, integ.linear),
+    workTimeline(teamId, scope, weekMonday, pool, integ.github, integ.linear),
   ]);
   if (ghDelivery) liveExtras.github_delivery = ghDelivery;
   if (linVelocity) liveExtras.linear_velocity = linVelocity;

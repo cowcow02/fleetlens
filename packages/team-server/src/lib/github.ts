@@ -90,6 +90,10 @@ export function toPullRow(n: PullNode): PullRow {
   };
 }
 
+// 30s cap on every GitHub call — a hung connection would otherwise stall the
+// hourly scheduler sweep (and the inline connect-flow sync) indefinitely.
+const FETCH_TIMEOUT_MS = 30_000;
+
 async function gh(token: string, path: string): Promise<Response> {
   return fetch(`${API}${path}`, {
     headers: {
@@ -97,6 +101,7 @@ async function gh(token: string, path: string): Promise<Response> {
       Accept: "application/vnd.github+json",
       "X-GitHub-Api-Version": "2022-11-28",
     },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
 }
 
@@ -168,6 +173,7 @@ export async function fetchRepoPulls(
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ query: PULLS_QUERY, variables: { owner, name, cursor } }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`GitHub GraphQL error for ${repo} (HTTP ${res.status})`);
     const body = (await res.json()) as {
