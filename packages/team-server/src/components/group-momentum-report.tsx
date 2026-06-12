@@ -130,7 +130,11 @@ export function GroupMomentumReport({
         ...(report.live_extras?.github_delivery ? ["github-delivery"] : []),
         ...(report.live_extras?.linear_velocity ? ["linear-velocity"] : []),
         "live-prs-shipped",
-        "per-project-time-bars",
+        // Repo-time breakdown only renders when GitHub resolution produced
+        // rows — without it the block would just echo local directory names.
+        ...(report.variants.wow_pulse.project_time.some((p) => p.repo && p.hours_this_week > 0)
+          ? ["per-project-time-bars"]
+          : []),
       ],
     },
   ];

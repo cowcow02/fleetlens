@@ -122,7 +122,8 @@ export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
     llm: false,
   },
   "per-project-time-bars": {
-    description: "Agent time per project for the group, this week vs last.",
+    description:
+      "Agent time per GitHub repo for the group, this week vs last (rows resolved from members' git remotes); “others” is agent time not associated with any GitHub project. Hidden when GitHub isn't connected.",
     source: `${ROLLUPS}.projects`,
     status: "live",
     llm: false,

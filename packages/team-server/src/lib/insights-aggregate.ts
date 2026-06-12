@@ -242,19 +242,22 @@ export async function perProjectTimeWoW(
 
   // jsonb_to_recordset unpacks the per-day projects array into rows we can
   // sum across. Each rich_daily_rollup row carries projects = [{project,
-  // agentTimeMs, sessions}, ...].
+  // agentTimeMs, sessions, githubRepos?}, ...]. githubRepos stays in the
+  // GROUP BY — a day-row's repo identity must never be unioned across
+  // same-named rows from different repos (two "~/Repo" sessions attributed
+  // to different remotes), or one repo's label swallows the other's hours.
   const res = await pool.query<{
     project: string;
+    repos: string[] | null;
     agent_time_ms: string;
     sessions: number;
     is_prev: boolean;
-    repo_lists: string[][] | null;
   }>(
     `SELECT p.project,
+            p."githubRepos" AS repos,
             SUM((p."agentTimeMs")::bigint)::text AS agent_time_ms,
             SUM((p.sessions)::int)::int AS sessions,
-            (r.day < $3::date) AS is_prev,
-            jsonb_agg(p."githubRepos") FILTER (WHERE p."githubRepos" IS NOT NULL) AS repo_lists
+            (r.day < $3::date) AS is_prev
      FROM rich_daily_rollups r
      CROSS JOIN LATERAL jsonb_to_recordset(r.projects)
        AS p(project text, "agentTimeMs" bigint, sessions int, "githubRepos" jsonb)
@@ -262,14 +265,19 @@ export async function perProjectTimeWoW(
        AND r.membership_id = ANY($2::uuid[])
        AND r.day >= $4::date
        AND r.day < $5::date
-     GROUP BY p.project, is_prev`,
+     GROUP BY p.project, p."githubRepos", is_prev`,
     [teamId, memberIds, weekMonday, prevMonday, winEnd],
   );
 
+  // Key by the row's primary repo identity — the member's resolver puts the
+  // .git-derived identity first — so same-repo rows merge across clone names
+  // and weeks, while repo-less rows stay keyed by name.
   const byProject = new Map<string, ProjectTimeRow>();
   for (const row of res.rows) {
-    const cur = byProject.get(row.project) ?? {
+    const key = row.repos?.[0]?.toLowerCase() ?? row.project;
+    const cur = byProject.get(key) ?? {
       project: row.project, agentHours: 0, agentHoursPrev: 0, sessions: 0,
+      ...(row.repos?.length ? { githubRepos: row.repos } : {}),
     };
     const hrs = Number(row.agent_time_ms) / 3_600_000;
     if (row.is_prev) {
@@ -278,11 +286,7 @@ export async function perProjectTimeWoW(
       cur.agentHours += hrs;
       cur.sessions += row.sessions;
     }
-    if (row.repo_lists) {
-      const merged = new Set([...(cur.githubRepos ?? []), ...row.repo_lists.flat()]);
-      cur.githubRepos = [...merged];
-    }
-    byProject.set(row.project, cur);
+    byProject.set(key, cur);
   }
   const rows = Array.from(byProject.values()).sort((a, b) => b.agentHours - a.agentHours);
   return opts.limit ? rows.slice(0, opts.limit) : rows;

@@ -75,16 +75,6 @@ export function defaultWidthFor(b: DashboardBlock): number {
 
 // ─── Small inline render helpers ─────────────────────────────────────────
 
-// Project identities are full canonical cwd paths (e.g.
-// /Users/x/conductor/workspaces/claude-lens). The leaf segment is the
-// meaningful repo/workspace name; the absolute prefix just overflows the
-// label column and collides with the bars. Show the leaf, keep the full path
-// as the title tooltip.
-function shortProjectLabel(project: string): string {
-  const segs = project.replace(/\/+$/, "").split("/").filter(Boolean);
-  return segs[segs.length - 1] || project;
-}
-
 // Percent-change is meaningless when a project/skill existed in only one of the
 // two weeks (division by ~zero produced +1599% / ±100% noise). Render the
 // transition instead.
@@ -978,17 +968,19 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
   },
   {
     id: "per-project-time-bars",
-    title: "Per-project time · paired bars",
-    short_description: "This week vs last week hours per project",
+    title: "Per-repo time · paired bars",
+    short_description: "This week vs last week hours per GitHub repo",
     category: "outcomes",
     tier: "deterministic",
-    source_version: "v4",
+    source_version: "v5",
     render: (r) => {
-      // Only projects active this week — a row that was busy last week but
-      // idle this week is just noise in a "this vs last" read.
-      const projects = r.variants.wow_pulse.project_time.filter((p) => p.hours_this_week > 0);
+      // Only repos active this week — a row that was busy last week but idle
+      // this week is just noise in a "this vs last" read. "others" (agent
+      // time with no resolvable GitHub repo) renders last, muted.
+      const projects = r.variants.wow_pulse.project_time.filter(
+        (p) => (p.repo || p.unlinked) && p.hours_this_week > 0,
+      );
       const max = Math.max(...projects.flatMap((p) => [p.hours_this_week, p.hours_last_week]), 1);
-      const anyRepo = projects.some((p) => p.repo);
       return (
         <div className="bar-chart paired-bar-chart">
           {projects.map((p) => {
@@ -999,14 +991,12 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
                 <code
                   title={
                     p.unlinked
-                      ? `No resolvable GitHub repo — folds in: ${(p.local_names ?? []).join(", ")}`
-                      : p.repo
-                        ? `${p.repo} — GitHub repo (from members' git remotes)`
-                        : `${p.project} — member-reported local directory name`
+                      ? "Agent time not associated with any GitHub project"
+                      : `${p.repo} — GitHub repo (from members' git remotes)`
                   }
                   style={p.unlinked ? { color: "var(--mute)", fontStyle: "italic" } : undefined}
                 >
-                  {p.repo ?? (p.unlinked ? "unlinked local work" : shortProjectLabel(p.project))}
+                  {p.unlinked ? "others" : p.repo}
                 </code>
               </div>
               <div className="paired-bar-tracks">
@@ -1029,12 +1019,10 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
             <span><span className="paired-bar-swatch this-week" /> This week</span>
             <span><span className="paired-bar-swatch last-week" /> Last week</span>
           </div>
-          {anyRepo && (
-            <div className="kicker" style={{ marginTop: 10 }}>
-              owner/name rows come from members&rsquo; git remotes (checkouts of the same repo merged);
-              work with no resolvable repo is folded into &ldquo;unlinked local work&rdquo;.
-            </div>
-          )}
+          <div className="kicker" style={{ marginTop: 10 }}>
+            owner/name rows come from members&rsquo; git remotes (checkouts of the same repo merged);
+            &ldquo;others&rdquo; is agent time not associated with any GitHub project.
+          </div>
         </div>
       );
     },

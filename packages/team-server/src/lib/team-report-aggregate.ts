@@ -181,24 +181,26 @@ function pctDelta(current: number, prev: number): number {
 
 export type CanonicalProjectRow = ProjectTimeRow & {
   repo?: string;
-  /** Bucket row holding every project with no resolvable GitHub repo. */
+  /** "others" bucket — agent time not associated with any GitHub project.
+   *  The member-reported local names it folds in are deliberately dropped
+   *  here so they never reach the client. */
   unlinked?: boolean;
-  /** Member-reported local names folded into the unlinked bucket. */
-  localNames?: string[];
 };
 
 // Member-reported project names are local clone-directory basenames. Fold a
 // row onto a GitHub repo's identity and merge rows landing on the same repo
 // (two members may clone under different names). Signals, in reliability
 // order:
-//   1. The row's reported githubRepos (the project's own .git remote resolved
-//      on the member's machine, or harvested from git-push / gh-pr output) —
-//      ground truth, trusted whether or not the repo is in the connected
-//      list; a connected match is preferred for display casing.
+//   1. The FIRST reported repo in githubRepos — the member's resolver puts
+//      the .git-derived identity at position 0 (harvested push/PR extras
+//      follow). Trusted whether or not it's in the connected list; the
+//      connected list only normalizes display casing. Never scan past
+//      position 0 for a connected match — a harvested extra (a URL another
+//      repo's session merely printed) would relabel the row.
 //   2. Directory-name == connected-repo basename — the clone-default
 //      convention, kept as fallback for rollups submitted before githubRepos
 //      existed.
-// Rows with no repo collapse into a single "unlinked" bucket so local
+// Rows with no repo collapse into a single "others" bucket so local
 // directory names never compete with repo identities in the report.
 export function canonicalizeProjects(rows: ProjectTimeRow[], repoNames: string[]): CanonicalProjectRow[] {
   if (repoNames.length === 0) return rows;
@@ -207,18 +209,17 @@ export function canonicalizeProjects(rows: ProjectTimeRow[], repoNames: string[]
   const out = new Map<string, CanonicalProjectRow>();
   let bucket: CanonicalProjectRow | undefined;
   for (const row of rows) {
-    const reportedList = row.githubRepos ?? [];
-    const reported =
-      reportedList.map((r) => byFull.get(r.toLowerCase())).find(Boolean) ?? reportedList[0];
-    const repo = reported ?? byBase.get(row.project.split("/").pop()!.toLowerCase());
+    const first = row.githubRepos?.[0];
+    const repo = first
+      ? byFull.get(first.toLowerCase()) ?? first.toLowerCase()
+      : byBase.get(row.project.split("/").pop()!.toLowerCase());
     if (!repo) {
       if (bucket) {
         bucket.agentHours += row.agentHours;
         bucket.agentHoursPrev += row.agentHoursPrev;
         bucket.sessions += row.sessions;
-        if (!bucket.localNames!.includes(row.project)) bucket.localNames!.push(row.project);
       } else {
-        bucket = { ...row, project: "unlinked local work", unlinked: true, localNames: [row.project] };
+        bucket = { ...row, project: "others", unlinked: true };
       }
       continue;
     }
@@ -1084,7 +1085,7 @@ export async function buildTeamInsightReport(
   wp.project_time = projects.map((p) => ({
     project: p.project,
     ...(p.repo ? { repo: p.repo } : {}),
-    ...(p.unlinked ? { unlinked: true, local_names: (p.localNames ?? []).slice(0, 12) } : {}),
+    ...(p.unlinked ? { unlinked: true } : {}),
     hours_this_week: Number(p.agentHours.toFixed(1)),
     hours_last_week: Number(p.agentHoursPrev.toFixed(1)),
     delta_pct: pctDelta(p.agentHours, p.agentHoursPrev),

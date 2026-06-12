@@ -62,15 +62,26 @@ describe("canonicalizeProjects", () => {
     expect(out[0].project).toBe("personal/other-repo");
   });
 
-  it("prefers the connected match when the reported list contains one", () => {
+  it("trusts only the FIRST reported repo — harvested extras never relabel the row", () => {
+    // Position 0 is the .git-derived identity; "ACME/Web-App" here is just a
+    // URL this session printed (e.g. reviewing another repo's PR). Scanning
+    // the list for a connected match would swallow this row into web-app.
     const out = canonicalizeProjects(
-      [{ ...row("web-app", 5), githubRepos: ["personal/scratch", "ACME/Web-App"] }],
+      [{ ...row("side-project", 5), githubRepos: ["personal/scratch", "ACME/Web-App"] }],
+      ["acme/web-app"],
+    );
+    expect(out[0].repo).toBe("personal/scratch");
+  });
+
+  it("normalizes the first reported repo's casing via the connected list", () => {
+    const out = canonicalizeProjects(
+      [{ ...row("web-app", 5), githubRepos: ["ACME/Web-App", "personal/scratch"] }],
       ["acme/web-app"],
     );
     expect(out[0].repo).toBe("acme/web-app");
   });
 
-  it("folds repo-less rows into a single unlinked bucket rendered last", () => {
+  it("folds repo-less rows into a single 'others' bucket rendered last, without local names", () => {
     const out = canonicalizeProjects(
       [row("scratch", 1, 1, 2), row("web-app", 5), row("notes", 7, 2, 3)],
       ["acme/web-app"],
@@ -78,11 +89,13 @@ describe("canonicalizeProjects", () => {
     expect(out).toHaveLength(2);
     expect(out[0]).toMatchObject({ project: "acme/web-app", repo: "acme/web-app" });
     expect(out[1]).toMatchObject({
+      project: "others",
       unlinked: true,
       agentHours: 8,
       agentHoursPrev: 3,
       sessions: 5,
-      localNames: ["scratch", "notes"],
     });
+    // Local directory names must not leak through the bucket.
+    expect(JSON.stringify(out[1])).not.toMatch(/scratch|notes/);
   });
 });

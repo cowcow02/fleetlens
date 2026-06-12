@@ -1073,10 +1073,9 @@ export type WowProjectTime = {
   // Canonical owner/name when the row resolved to a GitHub repo (the
   // member's .git remote, or a connected-repo match); absent = local name.
   repo?: string;
-  // Bucket row aggregating every project with no resolvable repo. Rendered
-  // last with a muted label; local_names lists what it folded in.
+  // "others" bucket — agent time not associated with any GitHub project.
+  // Rendered last, muted. Local directory names are never included.
   unlinked?: boolean;
-  local_names?: string[];
   hours_this_week: number;
   hours_last_week: number;
   delta_pct: number;

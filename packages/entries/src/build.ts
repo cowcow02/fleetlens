@@ -332,7 +332,12 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
                 : Array.isArray(rc)
                   ? rc.map((b) => (b && typeof b === "object" && typeof (b as { text?: string }).text === "string" ? (b as { text: string }).text : "")).join("\n")
                   : "";
-              for (const m of text.matchAll(/github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git\b|[/\s"'),]|$)/g)) {
+              // Lookbehind rejects api.github.com / docs.github.com — their
+              // path segments (repos/<owner>, rest/<topic>) parse as fake
+              // owner/name pairs otherwise. user-attachments is GitHub's
+              // image-CDN namespace, not a repo owner.
+              for (const m of text.matchAll(/(?<![.\w])github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git\b|[/\s"'),]|$)/g)) {
+                if (m[1]!.toLowerCase() === "user-attachments") continue;
                 githubRepos.add(`${m[1]}/${m[2]}`.toLowerCase());
               }
             }
