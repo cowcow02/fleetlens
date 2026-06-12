@@ -306,7 +306,6 @@ async function linearVelocity(
 export type WorkTimelineRow = {
   created_at: string;
   started_at: string | null;
-  first_commit: string | null; // MIN(first_commit_at) over matched merged PRs
   first_pr_created: string | null; // MIN(created_at) over matched merged PRs
   last_merged: string | null; // MAX(merged_at) over matched merged PRs
   estimate: number | null; // Linear points
@@ -318,12 +317,11 @@ const phaseMs = (a: string | null, b: string | null, clamp = false): number | nu
   const d = new Date(b).getTime() - new Date(a).getTime();
   return clamp ? Math.max(0, d) : d >= 0 ? d : null;
 };
-// Spin-up clamps at 0 (agents often commit minutes before flipping the ticket
-// to started); a negative non-clamped phase is bad data and drops from the
-// stats rather than zeroing them.
-const spinUpMs = (r: WorkTimelineRow) => phaseMs(r.started_at, r.first_commit, true);
-const buildMs = (r: WorkTimelineRow) => phaseMs(r.first_commit, r.first_pr_created);
-const mergeWaitMs = (r: WorkTimelineRow) => phaseMs(r.first_pr_created, r.last_merged);
+// Build clamps at 0 (tickets sometimes flip to started after the PR already
+// exists); a negative non-clamped phase is bad data and drops from the stats
+// rather than zeroing them.
+const buildMs = (r: WorkTimelineRow) => phaseMs(r.started_at, r.first_pr_created, true);
+const reviewMs = (r: WorkTimelineRow) => phaseMs(r.first_pr_created, r.last_merged);
 
 function collect(rows: WorkTimelineRow[], pick: (r: WorkTimelineRow) => number | null): number[] {
   return rows.map(pick).filter((v): v is number => v != null);
@@ -334,7 +332,7 @@ function phaseStats(rows: WorkTimelineRow[]): WorkTimelinePhases {
     const vals = collect(rows, pick);
     return { median_hours: medianHours(vals), p90_hours: percentileHours(vals, 0.9) };
   };
-  return { spin_up: stat(spinUpMs), build: stat(buildMs), merge_wait: stat(mergeWaitMs) };
+  return { build: stat(buildMs), review: stat(reviewMs) };
 }
 
 // Size cutoffs are tuned to agent-scale diffs — terciles of real agentic-team
@@ -370,9 +368,8 @@ export function workTimelineStats(
         size,
         bounds: bounds[size],
         tickets: rows.length,
-        spin_up_hours: medianHours(collect(rows, spinUpMs)),
         build_hours: medianHours(collect(rows, buildMs)),
-        merge_wait_hours: medianHours(collect(rows, mergeWaitMs)),
+        review_hours: medianHours(collect(rows, reviewMs)),
         total_hours: medianHours(collect(rows, (r) => phaseMs(r.started_at, r.last_merged, true))),
       };
     })
@@ -421,12 +418,11 @@ async function workTimeline(
   const res = await pool.query<WorkTimelineRow & { in_current_week: boolean }>(
     `SELECT i.created_at::text, i.started_at::text, i.estimate,
             (i.completed_at >= $3::date) AS in_current_week,
-            pr.first_commit::text, pr.first_pr_created::text, pr.last_merged::text,
+            pr.first_pr_created::text, pr.last_merged::text,
             pr.lines_changed::int
      FROM linear_issues i
      LEFT JOIN LATERAL (
-       SELECT MIN(p.first_commit_at) AS first_commit,
-              MIN(p.created_at) AS first_pr_created,
+       SELECT MIN(p.created_at) AS first_pr_created,
               MAX(p.merged_at) AS last_merged,
               SUM(p.additions + p.deletions) AS lines_changed
        FROM github_pull_requests p

@@ -631,7 +631,7 @@ const V8_BLOCKS: DashboardBlock[] = [
     id: "work-timeline",
     title: "Work timeline · pickup → merge, by task size",
     short_description:
-      "Completed tickets joined to their merged PRs, split into spin-up / build / merge phases and cohorted by task size — does bigger work take proportionally longer?",
+      "Completed tickets joined to their merged PRs, split into build (pickup → PR) and review (PR → merge) phases, cohorted by task size — does bigger work take proportionally longer?",
     category: "outcomes",
     tier: "external-plug-in",
     source_version: "v8",
@@ -642,7 +642,7 @@ const V8_BLOCKS: DashboardBlock[] = [
         return (
           <div className="live-empty-row">
             The work timeline needs both GitHub and Linear connected (and mapped to this group) — it chains
-            ticket pickup, first commit, PR, and merge into one view.{" "}
+            ticket pickup, PR, and merge into one view.{" "}
             <a href={`/team/${r.team_slug}/settings`}>Set up integrations in team settings</a>.
           </div>
         );
@@ -657,12 +657,11 @@ const V8_BLOCKS: DashboardBlock[] = [
       }
       const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
       const PHASES = [
-        { key: "spin_up", label: "Spin-up", bounds: "picked up → first commit", color: "color-mix(in srgb, var(--ink) 28%, var(--paper))" },
-        { key: "build", label: "Build", bounds: "first commit → PR opened", color: "var(--accent)" },
-        { key: "merge_wait", label: "Merge", bounds: "PR opened → merged", color: "color-mix(in srgb, var(--ink) 62%, var(--paper))" },
+        { key: "build", label: "Build", bounds: "picked up → PR opened", color: "var(--accent)" },
+        { key: "review", label: "Review", bounds: "PR opened → merged", color: "color-mix(in srgb, var(--ink) 62%, var(--paper))" },
       ] as const;
       const classVal = (c: (typeof t.size_classes)[number], key: (typeof PHASES)[number]["key"]) =>
-        key === "spin_up" ? c.spin_up_hours : key === "build" ? c.build_hours : c.merge_wait_hours;
+        key === "build" ? c.build_hours : c.review_hours;
       // Shared absolute scale across cohorts: bar length = the row's pickup →
       // merge median; segments split it by the phase-median proportions.
       const scaleMax = Math.max(1, ...t.size_classes.map((c) => c.total_hours ?? 0));

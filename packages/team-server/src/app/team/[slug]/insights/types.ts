@@ -1408,21 +1408,22 @@ export type LinearVelocityStats = {
 };
 
 // Cross-source work timeline: completed tickets joined (by ticket ref in PR
-// title) to their merged PRs, decomposed into the three delivery phases that
-// start at pickup. Queue (created → picked up) is deliberately excluded from
-// the phases — it reflects planning cadence, not delivery — and surfaces only
-// as a footnote median. Multi-PR tickets use earliest first-commit / earliest
-// PR opened / latest merge. Spin-up clamps at 0 — agents often commit minutes
-// before flipping the ticket to started.
+// title) to their merged PRs, decomposed into two delivery phases starting at
+// pickup. First-commit boundaries are useless for agent flows (agents commit
+// and open the PR in the same breath, so the real work hides before the first
+// commit) — pickup → PR opened captures all of it. Queue (created → picked
+// up) is deliberately excluded from the phases — it reflects planning
+// cadence, not delivery — and surfaces only as a footnote median. Multi-PR
+// tickets use earliest PR opened / latest merge. Build clamps at 0 — tickets
+// are sometimes flipped to started after the PR already exists.
 export type WorkPhaseStat = {
   median_hours: number | null;
   p90_hours: number | null;
 };
 
 export type WorkTimelinePhases = {
-  spin_up: WorkPhaseStat; // picked up → first commit
-  build: WorkPhaseStat; // first commit → PR opened
-  merge_wait: WorkPhaseStat; // PR opened → merged
+  build: WorkPhaseStat; // picked up → PR opened
+  review: WorkPhaseStat; // PR opened → merged
 };
 
 // Task-size cohort. Sized by Linear estimate when at least half the joined
@@ -1432,9 +1433,8 @@ export type WorkTimelineSizeClass = {
   size: "S" | "M" | "L";
   bounds: string; // human label, e.g. "<1k lines" or "≤2 pts"
   tickets: number;
-  spin_up_hours: number | null;
   build_hours: number | null;
-  merge_wait_hours: number | null;
+  review_hours: number | null;
   total_hours: number | null; // median pickup → merge, computed per ticket
 };
 
