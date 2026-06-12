@@ -1408,24 +1408,44 @@ export type LinearVelocityStats = {
 };
 
 // Cross-source work timeline: completed tickets joined (by ticket ref in PR
-// title) to their merged PRs, decomposed into sequential phases. Per-phase
-// medians, hours. Multi-PR tickets use earliest first-commit / earliest PR
-// opened / latest merge. Spin-up and resolution clamp at 0 — agents often
-// commit minutes before flipping the ticket to started, and tickets are
-// sometimes resolved before their PR merges.
+// title) to their merged PRs, decomposed into the three delivery phases that
+// start at pickup. Queue (created → picked up) is deliberately excluded from
+// the phases — it reflects planning cadence, not delivery — and surfaces only
+// as a footnote median. Multi-PR tickets use earliest first-commit / earliest
+// PR opened / latest merge. Spin-up clamps at 0 — agents often commit minutes
+// before flipping the ticket to started.
+export type WorkPhaseStat = {
+  median_hours: number | null;
+  p90_hours: number | null;
+};
+
 export type WorkTimelinePhases = {
-  queue_hours: number | null; // ticket created → started
-  spin_up_hours: number | null; // started → first commit
-  build_hours: number | null; // first commit → PR opened
-  merge_wait_hours: number | null; // PR opened → merged
-  resolution_hours: number | null; // merged → ticket completed
+  spin_up: WorkPhaseStat; // picked up → first commit
+  build: WorkPhaseStat; // first commit → PR opened
+  merge_wait: WorkPhaseStat; // PR opened → merged
+};
+
+// Task-size cohort. Sized by Linear estimate when at least half the joined
+// tickets carry one, else by total lines changed across the ticket's merged
+// PRs. Medians only — weekly per-class samples are too small for tails.
+export type WorkTimelineSizeClass = {
+  size: "S" | "M" | "L";
+  bounds: string; // human label, e.g. "<1k lines" or "≤2 pts"
+  tickets: number;
+  spin_up_hours: number | null;
+  build_hours: number | null;
+  merge_wait_hours: number | null;
+  total_hours: number | null; // median pickup → merge, computed per ticket
 };
 
 export type WorkTimelineStats = {
   tickets: number; // completed this week and joined to ≥1 merged PR
   unjoined: number; // completed this week with no merged-PR match
+  sized_by: "estimate" | "lines";
+  queue_median_hours: number | null; // footnote only, current week
   week: WorkTimelinePhases;
   prev_week: WorkTimelinePhases;
+  size_classes: WorkTimelineSizeClass[]; // current week, non-empty classes only
 };
 
 export type LiveExtras = {

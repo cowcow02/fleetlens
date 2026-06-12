@@ -27,6 +27,16 @@ export function medianHours(ms: number[]): number | null {
   return Math.round((m / 3_600_000) * 10) / 10;
 }
 
+// Linear-interpolated percentile (p in 0..1), hours to one decimal.
+export function percentileHours(ms: number[], p: number): number | null {
+  if (ms.length === 0) return null;
+  const s = [...ms].sort((a, b) => a - b);
+  const idx = (s.length - 1) * p;
+  const lo = Math.floor(idx);
+  const v = lo === idx ? s[lo] : s[lo] + (s[lo + 1] - s[lo]) * (idx - lo);
+  return Math.round((v / 3_600_000) * 10) / 10;
+}
+
 export type PullNode = {
   number: number;
   title: string;

@@ -629,9 +629,9 @@ const V8_BLOCKS: DashboardBlock[] = [
   },
   {
     id: "work-timeline",
-    title: "Work timeline · ticket → merge, phase medians",
+    title: "Work timeline · pickup → merge, by task size",
     short_description:
-      "Completed tickets joined to their merged PRs, decomposed into queue / spin-up / build / merge wait / resolution — the slowest phase is highlighted",
+      "Completed tickets joined to their merged PRs, split into spin-up / build / merge phases and cohorted by task size — does bigger work take proportionally longer?",
     category: "outcomes",
     tier: "external-plug-in",
     source_version: "v8",
@@ -642,22 +642,12 @@ const V8_BLOCKS: DashboardBlock[] = [
         return (
           <div className="live-empty-row">
             The work timeline needs both GitHub and Linear connected (and mapped to this group) — it chains
-            ticket pickup, first commit, PR, merge, and resolution into one view.{" "}
+            ticket pickup, first commit, PR, and merge into one view.{" "}
             <a href={`/team/${r.team_slug}/settings`}>Set up integrations in team settings</a>.
           </div>
         );
       }
-      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
-      const phases = [
-        { key: "queue_hours", label: "Queue", bounds: "created → picked up" },
-        { key: "spin_up_hours", label: "Spin-up", bounds: "picked up → first commit" },
-        { key: "build_hours", label: "Build", bounds: "first commit → PR opened" },
-        { key: "merge_wait_hours", label: "Merge wait", bounds: "PR opened → merged" },
-        { key: "resolution_hours", label: "Resolution", bounds: "merged → resolved" },
-      ] as const;
-      const val = (p: (typeof phases)[number], wk: typeof t.week) => wk[p.key];
-      const present = phases.filter((p) => val(p, t.week) != null);
-      if (t.tickets === 0 || present.length === 0) {
+      if (t.tickets === 0) {
         return (
           <div className="live-empty-row">
             No completed tickets joined to a merged PR this week — the timeline needs the ticket ref
@@ -665,41 +655,81 @@ const V8_BLOCKS: DashboardBlock[] = [
           </div>
         );
       }
-      const total = present.reduce((s, p) => s + (val(p, t.week) ?? 0), 0);
-      const slowest = present.reduce((a, b) => ((val(a, t.week) ?? 0) >= (val(b, t.week) ?? 0) ? a : b));
-      // Monochrome ink ramp; the slowest phase — the bottleneck — gets the accent.
-      const ramp = [18, 32, 46, 60, 74];
-      const color = (p: (typeof phases)[number], i: number) =>
-        p.key === slowest.key ? "var(--accent)" : `color-mix(in srgb, var(--ink) ${ramp[i]}%, var(--paper))`;
+      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+      const PHASES = [
+        { key: "spin_up", label: "Spin-up", bounds: "picked up → first commit", color: "color-mix(in srgb, var(--ink) 28%, var(--paper))" },
+        { key: "build", label: "Build", bounds: "first commit → PR opened", color: "var(--accent)" },
+        { key: "merge_wait", label: "Merge", bounds: "PR opened → merged", color: "color-mix(in srgb, var(--ink) 62%, var(--paper))" },
+      ] as const;
+      const classVal = (c: (typeof t.size_classes)[number], key: (typeof PHASES)[number]["key"]) =>
+        key === "spin_up" ? c.spin_up_hours : key === "build" ? c.build_hours : c.merge_wait_hours;
+      // Shared absolute scale across cohorts: bar length = the row's pickup →
+      // merge median; segments split it by the phase-median proportions.
+      const scaleMax = Math.max(1, ...t.size_classes.map((c) => c.total_hours ?? 0));
       return (
         <>
-          <div className="timeline-bar">
-            {present.map((p, i) => (
-              <div
-                key={p.key}
-                className="timeline-seg"
-                title={`${p.label} · ${fmtH(val(p, t.week))} median`}
-                style={{ width: `${Math.max(1.5, ((val(p, t.week) ?? 0) / total) * 100)}%`, background: color(p, i) }}
-              />
-            ))}
-          </div>
-          <div className="timeline-legend">
-            {present.map((p, i) => (
-              <div key={p.key} className="timeline-legend-row">
-                <span className="timeline-swatch" style={{ background: color(p, i) }} />
-                <span className="timeline-phase">
-                  {p.label} <span className="timeline-bounds">{p.bounds}</span>
-                </span>
-                <span className="timeline-median">{fmtH(val(p, t.week))}</span>
-                <span className="timeline-prev">{val(p, t.prev_week) == null ? "—" : fmtH(val(p, t.prev_week))} last wk</span>
+          <div className="timeline-cohorts">
+            {t.size_classes.map((c) => (
+              <div key={c.size} className="timeline-cohort-row">
+                <div className="timeline-cohort-head">
+                  <span className="timeline-cohort-size">{c.size}</span>
+                  <span className="timeline-bounds">{c.bounds}</span>
+                  <span className="timeline-cohort-n">
+                    {c.tickets} {c.tickets === 1 ? "ticket" : "tickets"}
+                  </span>
+                </div>
+                <div className="timeline-cohort-bar">
+                  <div
+                    className="timeline-cohort-fill"
+                    style={{ width: `${Math.max(1.5, ((c.total_hours ?? 0) / scaleMax) * 100)}%` }}
+                  >
+                    {(() => {
+                      const phaseSum = PHASES.reduce((s, p) => s + (classVal(c, p.key) ?? 0), 0);
+                      if (phaseSum === 0) return null;
+                      return PHASES.map((p) => {
+                        const v = classVal(c, p.key);
+                        if (v == null || v === 0) return null;
+                        return (
+                          <div
+                            key={p.key}
+                            className="timeline-seg"
+                            title={`${p.label} · ${fmtH(v)} median`}
+                            style={{ width: `${(v / phaseSum) * 100}%`, background: p.color }}
+                          />
+                        );
+                      });
+                    })()}
+                  </div>
+                </div>
+                <div className="timeline-cohort-total">{fmtH(c.total_hours)}</div>
               </div>
             ))}
           </div>
+          <div className="timeline-legend">
+            {PHASES.map((p) => {
+              const wk = t.week[p.key];
+              const pw = t.prev_week[p.key];
+              return (
+                <div key={p.key} className="timeline-legend-row">
+                  <span className="timeline-swatch" style={{ background: p.color }} />
+                  <span className="timeline-phase">
+                    {p.label} <span className="timeline-bounds">{p.bounds}</span>
+                  </span>
+                  <span className="timeline-median">{fmtH(wk.median_hours)} med</span>
+                  <span className="timeline-median">{fmtH(wk.p90_hours)} p90</span>
+                  <span className="timeline-prev">{fmtH(pw.median_hours)} med last wk</span>
+                </div>
+              );
+            })}
+          </div>
           <div className="kicker" style={{ marginTop: 10 }}>
-            {`Median per phase across ${t.tickets} ${t.tickets === 1 ? "ticket" : "tickets"} completed this week` +
-              (t.unjoined > 0 ? ` (${t.unjoined} more had no merged-PR match)` : "") +
-              ` · slowest phase highlighted · multi-PR tickets span earliest commit → latest merge · ` +
-              `review stage appears in the GitHub delivery tile when reviews exist.`}
+            {`${t.tickets} ${t.tickets === 1 ? "ticket" : "tickets"} completed this week, ` +
+              `sized by ${t.sized_by === "estimate" ? "Linear estimate" : "lines changed across the ticket's PRs"}` +
+              (t.unjoined > 0 ? ` · ${t.unjoined} more had no merged-PR match` : "") +
+              (t.queue_median_hours != null
+                ? ` · creation → pickup median ${fmtH(t.queue_median_hours)} (planning cadence — excluded from the delivery phases)`
+                : "") +
+              ` · cohort bars share one time scale; row total is the per-ticket pickup → merge median.`}
           </div>
         </>
       );

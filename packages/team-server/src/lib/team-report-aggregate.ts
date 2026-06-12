@@ -14,10 +14,11 @@ import type {
   MaturityPath,
   MemberMaturityPortrait,
   TeamInsightReport,
+  WorkPhaseStat,
   WorkTimelinePhases,
   WorkTimelineStats,
 } from "../app/team/[slug]/insights/types";
-import { medianHours } from "./github";
+import { medianHours, percentileHours } from "./github";
 import { normalizeGithubRepos, normalizeLinearTeams } from "./integrations";
 import {
   isoMondayOf,
@@ -305,29 +306,85 @@ async function linearVelocity(
 export type WorkTimelineRow = {
   created_at: string;
   started_at: string | null;
-  completed_at: string;
   first_commit: string | null; // MIN(first_commit_at) over matched merged PRs
   first_pr_created: string | null; // MIN(created_at) over matched merged PRs
   last_merged: string | null; // MAX(merged_at) over matched merged PRs
+  estimate: number | null; // Linear points
+  lines_changed: number | null; // SUM(additions+deletions) over matched merged PRs
 };
 
-// Per-phase medians across joined tickets. Spin-up and resolution clamp at 0
-// (commit-before-status-flip, resolved-before-merge); a missing boundary drops
-// the ticket from that phase's median rather than zeroing it.
-export function workTimelinePhases(rows: WorkTimelineRow[]): WorkTimelinePhases {
-  const ms = (a: string | null, b: string | null, clamp = false): number | null => {
-    if (!a || !b) return null;
-    const d = new Date(b).getTime() - new Date(a).getTime();
-    return clamp ? Math.max(0, d) : d >= 0 ? d : null;
+const phaseMs = (a: string | null, b: string | null, clamp = false): number | null => {
+  if (!a || !b) return null;
+  const d = new Date(b).getTime() - new Date(a).getTime();
+  return clamp ? Math.max(0, d) : d >= 0 ? d : null;
+};
+// Spin-up clamps at 0 (agents often commit minutes before flipping the ticket
+// to started); a negative non-clamped phase is bad data and drops from the
+// stats rather than zeroing them.
+const spinUpMs = (r: WorkTimelineRow) => phaseMs(r.started_at, r.first_commit, true);
+const buildMs = (r: WorkTimelineRow) => phaseMs(r.first_commit, r.first_pr_created);
+const mergeWaitMs = (r: WorkTimelineRow) => phaseMs(r.first_pr_created, r.last_merged);
+
+function collect(rows: WorkTimelineRow[], pick: (r: WorkTimelineRow) => number | null): number[] {
+  return rows.map(pick).filter((v): v is number => v != null);
+}
+
+function phaseStats(rows: WorkTimelineRow[]): WorkTimelinePhases {
+  const stat = (pick: (r: WorkTimelineRow) => number | null): WorkPhaseStat => {
+    const vals = collect(rows, pick);
+    return { median_hours: medianHours(vals), p90_hours: percentileHours(vals, 0.9) };
   };
-  const phase = (pick: (r: WorkTimelineRow) => number | null) =>
-    medianHours(rows.map(pick).filter((v): v is number => v != null));
+  return { spin_up: stat(spinUpMs), build: stat(buildMs), merge_wait: stat(mergeWaitMs) };
+}
+
+// Size cutoffs are tuned to agent-scale diffs — terciles of real agentic-team
+// data sit near 1k/1.7k lines, so the conventional 100/500 PR-size buckets
+// would put everything in L.
+const LINE_BOUNDS: Record<"S" | "M" | "L", string> = { S: "<1k lines", M: "1–3k lines", L: ">3k lines" };
+const POINT_BOUNDS: Record<"S" | "M" | "L", string> = { S: "≤2 pts", M: "3–5 pts", L: "≥6 pts" };
+
+function sizeOf(r: WorkTimelineRow, sizedBy: "estimate" | "lines"): "S" | "M" | "L" | null {
+  if (sizedBy === "estimate") {
+    if (r.estimate == null) return null;
+    return r.estimate <= 2 ? "S" : r.estimate <= 5 ? "M" : "L";
+  }
+  if (r.lines_changed == null) return null;
+  return r.lines_changed < 1000 ? "S" : r.lines_changed <= 3000 ? "M" : "L";
+}
+
+// Pure assembly from joined-row sets; exported for tests. Tickets that can't
+// be sized (no estimate in estimate mode) drop from size_classes but still
+// count in the phase stats.
+export function workTimelineStats(
+  curr: WorkTimelineRow[],
+  prev: WorkTimelineRow[],
+  unjoined: number,
+): WorkTimelineStats {
+  const withEstimate = curr.filter((r) => r.estimate != null).length;
+  const sizedBy: "estimate" | "lines" = curr.length > 0 && withEstimate * 2 >= curr.length ? "estimate" : "lines";
+  const bounds = sizedBy === "estimate" ? POINT_BOUNDS : LINE_BOUNDS;
+  const sizeClasses = (["S", "M", "L"] as const)
+    .map((size) => {
+      const rows = curr.filter((r) => sizeOf(r, sizedBy) === size);
+      return {
+        size,
+        bounds: bounds[size],
+        tickets: rows.length,
+        spin_up_hours: medianHours(collect(rows, spinUpMs)),
+        build_hours: medianHours(collect(rows, buildMs)),
+        merge_wait_hours: medianHours(collect(rows, mergeWaitMs)),
+        total_hours: medianHours(collect(rows, (r) => phaseMs(r.started_at, r.last_merged, true))),
+      };
+    })
+    .filter((c) => c.tickets > 0);
   return {
-    queue_hours: phase((r) => ms(r.created_at, r.started_at)),
-    spin_up_hours: phase((r) => ms(r.started_at, r.first_commit, true)),
-    build_hours: phase((r) => ms(r.first_commit, r.first_pr_created)),
-    merge_wait_hours: phase((r) => ms(r.first_pr_created, r.last_merged)),
-    resolution_hours: phase((r) => ms(r.last_merged, r.completed_at, true)),
+    tickets: curr.length,
+    unjoined,
+    sized_by: sizedBy,
+    queue_median_hours: medianHours(collect(curr, (r) => phaseMs(r.created_at, r.started_at))),
+    week: phaseStats(curr),
+    prev_week: phaseStats(prev),
+    size_classes: sizeClasses,
   };
 }
 
@@ -362,14 +419,16 @@ async function workTimeline(
   const prevMonday = previousIsoMonday(weekMonday);
   const winEnd = weekEndExclusive(weekMonday);
   const res = await pool.query<WorkTimelineRow & { in_current_week: boolean }>(
-    `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
+    `SELECT i.created_at::text, i.started_at::text, i.estimate,
             (i.completed_at >= $3::date) AS in_current_week,
-            pr.first_commit::text, pr.first_pr_created::text, pr.last_merged::text
+            pr.first_commit::text, pr.first_pr_created::text, pr.last_merged::text,
+            pr.lines_changed::int
      FROM linear_issues i
      LEFT JOIN LATERAL (
        SELECT MIN(p.first_commit_at) AS first_commit,
               MIN(p.created_at) AS first_pr_created,
-              MAX(p.merged_at) AS last_merged
+              MAX(p.merged_at) AS last_merged,
+              SUM(p.additions + p.deletions) AS lines_changed
        FROM github_pull_requests p
        WHERE p.team_id = i.team_id AND p.repo = ANY($6::text[])
          AND p.state = 'merged' AND p.title ~* (i.identifier || '\\M')
@@ -381,13 +440,11 @@ async function workTimeline(
   );
 
   const joined = res.rows.filter((r) => r.last_merged != null);
-  const curr = joined.filter((r) => r.in_current_week);
-  return {
-    tickets: curr.length,
-    unjoined: res.rows.filter((r) => r.in_current_week && r.last_merged == null).length,
-    week: workTimelinePhases(curr),
-    prev_week: workTimelinePhases(joined.filter((r) => !r.in_current_week)),
-  };
+  return workTimelineStats(
+    joined.filter((r) => r.in_current_week),
+    joined.filter((r) => !r.in_current_week),
+    res.rows.filter((r) => r.in_current_week && r.last_merged == null).length,
+  );
 }
 
 // PRs carry no membership mapping (that needs the session↔commit-SHA join),

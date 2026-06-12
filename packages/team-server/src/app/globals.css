@@ -8352,12 +8352,45 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
 .modal.group-settings::before,
 .modal.compose::before { content: none; }
 
-/* ── Work timeline (ticket → merge phase waterfall) ───────────────────────── */
-.timeline-bar {
+/* ── Work timeline (pickup → merge phase bars, size cohorts) ──────────────── */
+.timeline-cohorts {
   display: flex;
-  height: 26px;
-  border: 1px solid var(--rule);
-  overflow: hidden;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.timeline-cohort-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 56px;
+  align-items: center;
+  gap: 12px;
+}
+.timeline-cohort-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.timeline-cohort-size {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 600;
+}
+.timeline-cohort-n {
+  color: var(--mute);
+  font-size: 11.5px;
+  margin-left: auto;
+}
+.timeline-cohort-bar {
+  height: 20px;
+}
+.timeline-cohort-fill {
+  display: flex;
+  height: 100%;
+}
+.timeline-cohort-total {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  text-align: right;
 }
 .timeline-seg + .timeline-seg {
   border-left: 1px solid var(--paper);
@@ -8370,7 +8403,7 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
 }
 .timeline-legend-row {
   display: grid;
-  grid-template-columns: 12px 1fr auto auto;
+  grid-template-columns: 12px 1fr auto auto auto;
   align-items: baseline;
   gap: 10px;
   font-size: 13px;
@@ -8387,13 +8420,13 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
 }
 .timeline-median {
   font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
+  font-size: 12.5px;
   text-align: right;
-  min-width: 48px;
+  min-width: 72px;
 }
 .timeline-prev {
   color: var(--mute);
   font-size: 11.5px;
   text-align: right;
-  min-width: 84px;
+  min-width: 112px;
 }
