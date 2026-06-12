@@ -581,6 +581,15 @@ const V8_BLOCKS: DashboardBlock[] = [
           </div>
         );
       }
+      if (l.team_keys.length === 0) {
+        return (
+          <div className="live-empty-row">
+            Linear is connected, but no Linear team is mapped to this group yet — in{" "}
+            <a href={`/team/${r.team_slug}/settings`}>team settings → Integrations</a>, set each Linear team&rsquo;s
+            &ldquo;counts toward&rdquo; to this group (or to all groups).
+          </div>
+        );
+      }
       const w = l.week;
       const pw = l.prev_week;
       const completedDelta = w.completed - pw.completed;

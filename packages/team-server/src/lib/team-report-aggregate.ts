@@ -16,7 +16,7 @@ import type {
   TeamInsightReport,
 } from "../app/team/[slug]/insights/types";
 import { medianHours } from "./github";
-import { normalizeGithubRepos } from "./integrations";
+import { normalizeGithubRepos, normalizeLinearTeams } from "./integrations";
 import {
   isoMondayOf,
   perProjectTimeWoW,
@@ -232,21 +232,41 @@ function linearWeekVelocity(rows: LinearIssueAggRow[]): LinearWeekVelocity {
   };
 }
 
-// Team-level ticket velocity from the Linear integration. AI linkage joins a
-// completed ticket to any AI-assisted synced PR whose title carries the ticket
-// ref ("KIP-315" + word boundary, so KIP-3150 doesn't match). Null when the
-// integration isn't connected.
+// Ticket velocity from the Linear integration. Linear teams are group-mapped
+// like repos (empty group_ids = all groups); group-scoped reports only see
+// their mapped teams' issues. AI linkage joins a completed ticket to any
+// AI-assisted synced PR whose title carries the ticket ref ("KIP-315" + word
+// boundary, so KIP-3150 doesn't match). Null when not connected; connected
+// with zero mapped teams returns empty-keys stats so the widget can point the
+// admin at the mapping.
 async function linearVelocity(
   teamId: string,
+  scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
 ): Promise<LinearVelocityStats | null> {
-  const integ = await pool.query<{ config: { team_keys?: string[] }; last_sync_at: string | null }>(
+  const integ = await pool.query<{ config: { teams?: unknown; team_keys?: unknown }; last_sync_at: string | null }>(
     `SELECT config, last_sync_at::text FROM team_integrations
      WHERE team_id = $1 AND provider = 'linear'`,
     [teamId],
   );
   if (!integ.rowCount) return null;
+
+  const allTeams = normalizeLinearTeams(integ.rows[0].config);
+  const scoped =
+    scope.kind === "group"
+      ? allTeams.filter((t) => t.group_ids.length === 0 || t.group_ids.includes(scope.groupId))
+      : allTeams;
+  const teamKeys = scoped.map((t) => t.key);
+  if (teamKeys.length === 0) {
+    return {
+      team_keys: [],
+      last_sync_at: integ.rows[0].last_sync_at,
+      wip_now: 0,
+      week: linearWeekVelocity([]),
+      prev_week: linearWeekVelocity([]),
+    };
+  }
 
   const prevMonday = previousIsoMonday(weekMonday);
   const winEnd = weekEndExclusive(weekMonday);
@@ -260,17 +280,19 @@ async function linearVelocity(
                   AND p.title ~* (i.identifier || '\\M')
               ) AS ai_linked
        FROM linear_issues i
-       WHERE i.team_id = $1 AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
-      [teamId, prevMonday, weekMonday, winEnd],
+       WHERE i.team_id = $1 AND i.linear_team_key = ANY($5::text[])
+         AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
+      [teamId, prevMonday, weekMonday, winEnd, teamKeys],
     ),
     pool.query<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM linear_issues WHERE team_id = $1 AND state_type = 'started'`,
-      [teamId],
+      `SELECT COUNT(*)::int AS n FROM linear_issues
+       WHERE team_id = $1 AND linear_team_key = ANY($2::text[]) AND state_type = 'started'`,
+      [teamId, teamKeys],
     ),
   ]);
 
   return {
-    team_keys: integ.rows[0].config.team_keys ?? [],
+    team_keys: teamKeys,
     last_sync_at: integ.rows[0].last_sync_at,
     wip_now: wip.rows[0].n,
     week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
@@ -1342,7 +1364,7 @@ export async function buildTeamInsightReport(
   };
   const [ghDelivery, linVelocity] = await Promise.all([
     githubDelivery(teamId, scope, weekMonday, pool),
-    linearVelocity(teamId, weekMonday, pool),
+    linearVelocity(teamId, scope, weekMonday, pool),
   ]);
   if (ghDelivery) liveExtras.github_delivery = ghDelivery;
   if (linVelocity) liveExtras.linear_velocity = linVelocity;

@@ -3,9 +3,9 @@ import { requireTeamMembership, requireAdmin, type TeamContext } from "../../../
 import {
   deleteIntegration,
   getIntegration,
+  normalizeLinearTeams,
   runLinearSync,
   saveLinearIntegration,
-  type LinearIntegrationConfig,
 } from "../../../../../../lib/integrations";
 
 async function adminCtx(req: NextRequest): Promise<TeamContext | NextResponse> {
@@ -24,25 +24,33 @@ export async function GET(req: NextRequest) {
 
   const integration = await getIntegration(ctx.membership.team_id, "linear", ctx.pool);
   if (!integration) return NextResponse.json({ connected: false });
-  const config = integration.config as unknown as LinearIntegrationConfig;
+  const config = integration.config as { login?: string };
 
-  const counts = await ctx.pool.query<{ total: number; completed: number; started: number }>(
-    `SELECT COUNT(*)::int AS total,
+  const counts = await ctx.pool.query<{ linear_team_key: string; total: number; completed: number; started: number }>(
+    `SELECT linear_team_key, COUNT(*)::int AS total,
             COUNT(*) FILTER (WHERE state_type = 'completed')::int AS completed,
             COUNT(*) FILTER (WHERE state_type = 'started')::int AS started
-     FROM linear_issues WHERE team_id = $1`,
+     FROM linear_issues WHERE team_id = $1 GROUP BY linear_team_key`,
     [ctx.membership.team_id],
   );
+  const byKey = new Map(counts.rows.map((r) => [r.linear_team_key, r]));
+  const teams = normalizeLinearTeams(integration.config).map((t) => ({
+    ...t,
+    issues_synced: byKey.get(t.key)?.total ?? 0,
+    issues_completed: byKey.get(t.key)?.completed ?? 0,
+    issues_in_progress: byKey.get(t.key)?.started ?? 0,
+  }));
+
   return NextResponse.json({
     connected: true,
     login: config.login ?? null,
-    team_keys: config.team_keys ?? [],
+    teams,
     status: integration.status,
     last_error: integration.last_error,
     last_sync_at: integration.last_sync_at,
-    issues_synced: counts.rows[0].total,
-    issues_completed: counts.rows[0].completed,
-    issues_in_progress: counts.rows[0].started,
+    issues_synced: teams.reduce((s, t) => s + t.issues_synced, 0),
+    issues_completed: teams.reduce((s, t) => s + t.issues_completed, 0),
+    issues_in_progress: teams.reduce((s, t) => s + t.issues_in_progress, 0),
   });
 }
 
@@ -57,16 +65,16 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  const body = (await req.json()) as { apiKey?: string; teamKeys?: string[] };
-  const teamKeys = (body.teamKeys ?? []).map((k) => k.trim()).filter(Boolean);
-  if (teamKeys.length === 0) return NextResponse.json({ error: "select at least one Linear team" }, { status: 400 });
+  const body = (await req.json()) as { apiKey?: string; teams?: unknown; teamKeys?: string[] };
+  const teams = normalizeLinearTeams({ teams: body.teams, team_keys: body.teamKeys });
+  if (teams.length === 0) return NextResponse.json({ error: "select at least one Linear team" }, { status: 400 });
 
   let login: string;
   try {
     ({ login } = await saveLinearIntegration(
       ctx.membership.team_id,
       body.apiKey?.trim() || null,
-      teamKeys,
+      teams,
       ctx.user.id,
       ctx.pool,
     ));

@@ -35,7 +35,9 @@ export function normalizeGithubRepos(raw: unknown): GithubRepoMapping[] {
 
 export type IntegrationRow = {
   provider: string;
-  config: GithubIntegrationConfig;
+  // Provider-shaped jsonb — narrow with normalizeGithubRepos /
+  // normalizeLinearTeams rather than trusting the stored shape.
+  config: { login?: string; repos?: unknown; teams?: unknown; team_keys?: unknown; sync_days?: number };
   status: "active" | "error";
   last_error: string | null;
   last_sync_at: string | null;
@@ -161,11 +163,35 @@ export async function runGithubSync(teamId: string, pool: pg.Pool): Promise<Gith
 
 // ── Linear ────────────────────────────────────────────────────────────────
 
+// A Linear team and which groups it counts toward in the insight report.
+// Empty group_ids = counts toward every group (same semantics as repos).
+export type LinearTeamMapping = { key: string; group_ids: string[] };
+
 export type LinearIntegrationConfig = {
-  team_keys: string[]; // Linear team keys (e.g. ["KIP"]); empty = all visible
+  teams: LinearTeamMapping[];
   sync_days: number;
   login?: string; // viewer name at save time — display only
+  // Legacy shape (pre-mapping connects): plain team keys.
+  team_keys?: string[];
 };
+
+export function normalizeLinearTeams(config: { teams?: unknown; team_keys?: unknown }): LinearTeamMapping[] {
+  if (Array.isArray(config.teams)) {
+    return config.teams
+      .filter((t): t is { key: string; group_ids?: unknown } => !!t && typeof (t as { key?: unknown }).key === "string")
+      .map((t) => ({
+        key: t.key.trim(),
+        group_ids: Array.isArray(t.group_ids) ? t.group_ids.filter((g): g is string => typeof g === "string") : [],
+      }))
+      .filter((t) => t.key);
+  }
+  if (Array.isArray(config.team_keys)) {
+    return config.team_keys
+      .filter((k): k is string => typeof k === "string" && !!k.trim())
+      .map((k) => ({ key: k.trim(), group_ids: [] }));
+  }
+  return [];
+}
 
 export async function storedLinearKey(teamId: string, pool: pg.Pool): Promise<string | null> {
   const res = await pool.query(
@@ -179,7 +205,7 @@ export async function storedLinearKey(teamId: string, pool: pg.Pool): Promise<st
 export async function saveLinearIntegration(
   teamId: string,
   apiKey: string | null,
-  teamKeys: string[],
+  teams: LinearTeamMapping[],
   createdBy: string,
   pool: pg.Pool,
 ): Promise<{ login: string }> {
@@ -187,7 +213,7 @@ export async function saveLinearIntegration(
   const effective = apiKey ?? (await storedLinearKey(teamId, pool));
   if (!effective) throw new Error("Linear API key required — no stored credentials to reuse");
   const viewer = await validateLinearKey(effective);
-  const config: LinearIntegrationConfig = { team_keys: teamKeys, sync_days: 60, login: viewer.name };
+  const config: LinearIntegrationConfig = { teams, sync_days: 60, login: viewer.name };
   await pool.query(
     `INSERT INTO team_integrations (team_id, provider, credentials_enc, config, status, last_error, created_by)
      VALUES ($1, 'linear', $2, $3, 'active', NULL, $4)
@@ -210,7 +236,11 @@ export async function runLinearSync(teamId: string, pool: pg.Pool): Promise<Line
   const apiKey = decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
 
   try {
-    const rows = await fetchLinearIssues(apiKey, config.team_keys ?? [], config.sync_days ?? 60);
+    const rows = await fetchLinearIssues(
+      apiKey,
+      normalizeLinearTeams(config).map((t) => t.key),
+      config.sync_days ?? 60,
+    );
     for (const r of rows) {
       await pool.query(
         `INSERT INTO linear_issues (

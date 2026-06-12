@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmModal } from "./confirm-modal";
 import { LinearCard } from "./linear-card";
-import { Callout, CheckChip, PickerRow, StatusStrip } from "./ui";
+import { Callout, CheckChip, isAuthSyncError, PickerRow, StatusStrip } from "./ui";
 
 type GroupOpt = { id: string; slug: string; name: string };
 
@@ -295,21 +295,28 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
           <span key="vol" className="mono-meta">
             {gh.prs_synced ?? 0} PRs · {gh.prs_ai_assisted ?? 0} AI-assisted
           </span>,
-          <span key="last" className="mono-meta">last sync {fmtSync(gh.last_sync_at)}</span>,
+          <span key="last" className="mono-meta">last successful sync {fmtSync(gh.last_sync_at)}</span>,
         ]}
       />
 
-      {gh.status === "error" && (
-        <Callout tone="error">
-          Last sync failed: {gh.last_error ?? "unknown error"}. If the token expired or lost repo access, reconnect
-          with a fresh one — your repo list and group mapping are kept.
-          <div style={{ marginTop: 10 }}>
-            <button className="btn secondary" onClick={() => setReconnecting(true)} disabled={busy || reconnecting}>
-              Reconnect with a new token
-            </button>
-          </div>
-        </Callout>
-      )}
+      {gh.status === "error" &&
+        (isAuthSyncError(gh.last_error) ? (
+          <Callout tone="error">
+            GitHub rejected the stored token on the last sync ({gh.last_error}). It likely expired or lost repo
+            access — reconnect with a fresh one; your repo list and group mapping are kept.
+            <div style={{ marginTop: 10 }}>
+              <button className="btn secondary" onClick={() => setReconnecting(true)} disabled={busy || reconnecting}>
+                Reconnect with a new token
+              </button>
+            </div>
+          </Callout>
+        ) : (
+          <Callout>
+            Couldn&rsquo;t reach GitHub on the last sync attempt ({gh.last_error ?? "network error"}) — usually a
+            dropped connection or the machine being offline. It retries automatically every hour, or press
+            &ldquo;Sync now&rdquo; to retry immediately.
+          </Callout>
+        ))}
       {reconnecting && (
         <div className="form-group" style={{ maxWidth: 420, marginTop: 14 }}>
           <label htmlFor="gh-token-re">New GitHub token</label>
@@ -446,7 +453,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
       {error && <div className="form-error" style={{ marginTop: 14, maxWidth: 680 }}>{error}</div>}
       {message && <div className="action-note">{message}</div>}
 
-      <LinearCard teamSlug={teamSlug} />
+      <LinearCard teamSlug={teamSlug} groups={groups} />
 
       <ConfirmModal
         open={confirmDisconnect}

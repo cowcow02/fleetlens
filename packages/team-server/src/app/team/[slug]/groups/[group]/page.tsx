@@ -6,6 +6,7 @@ import { loadGroupBySlug } from "../../../../../lib/groups";
 import { loadGroupRoster, parseRange, RANGE_DAYS } from "../../../../../lib/queries";
 import { RosterCard } from "../../../../../components/roster-card";
 import { RangeTabs } from "../../../../../components/range-tabs";
+import { GroupDataSources } from "../../../../../components/group-data-sources";
 
 export default async function GroupDetailPage({
   params,
@@ -71,6 +72,7 @@ export default async function GroupDetailPage({
       <div className="roster-grid">
         {roster.map((r) => <RosterCard key={r.id} member={r} teamSlug={slug} />)}
       </div>
+      <GroupDataSources teamSlug={slug} groupSlug={group.slug} isAdmin={isAdminOrStaff} />
     </>
   );
 }

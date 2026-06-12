@@ -47,6 +47,13 @@ export function Callout({ tone = "info", children }: { tone?: "info" | "error"; 
   return <div className={`callout ${tone === "error" ? "error" : ""}`}>{children}</div>;
 }
 
+/** Provider auth failures carry the upstream status; anything else (DNS,
+ *  offline laptop, timeouts → "fetch failed") is transient and self-heals on
+ *  the hourly sweep — don't tell the admin to rotate credentials for those. */
+export function isAuthSyncError(lastError: string | null | undefined): boolean {
+  return /HTTP 40[13]/.test(lastError ?? "");
+}
+
 /** Selectable row for picker lists (custom check mark, name, right-aligned meta). */
 export function PickerRow({
   selected,
