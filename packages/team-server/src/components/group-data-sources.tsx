@@ -90,7 +90,7 @@ export function GroupDataSources({
           No integrations connected yet.{" "}
           {isAdmin ? (
             <>
-              <a href={`/team/${teamSlug}/settings`}>Connect GitHub or Linear in team settings</a> to add
+              <a href={`/team/${teamSlug}/settings?tab=integrations`}>Connect GitHub or Linear in team settings</a> to add
               merge-confirmed delivery and ticket velocity to this group&rsquo;s report.
             </>
           ) : (
@@ -128,7 +128,7 @@ export function GroupDataSources({
             source currently counts toward every group (the default) — toggling it here scopes it explicitly.
             {isAdmin && (
               <>
-                {" "}The cross-group matrix lives in <a href={`/team/${teamSlug}/settings`}>team settings → Integrations</a>.
+                {" "}The cross-group matrix lives in <a href={`/team/${teamSlug}/settings?tab=integrations`}>team settings → Integrations</a>.
               </>
             )}
           </p>

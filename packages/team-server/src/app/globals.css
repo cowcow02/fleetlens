@@ -8447,3 +8447,15 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
   text-align: right;
   min-width: 112px;
 }
+
+/* ── Settings page tabs (same idiom as the group settings modal) ──────────── */
+.settings-page-tabs {
+  margin: 26px 0 6px;
+}
+a.group-settings-tab {
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+a.group-settings-tab.active {
+  border-bottom-color: var(--accent);
+}

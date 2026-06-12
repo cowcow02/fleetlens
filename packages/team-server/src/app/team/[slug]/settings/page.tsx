@@ -8,8 +8,26 @@ import { SettingsPanel } from "../../../../components/settings-panel";
 import { IntegrationsPanel } from "../../../../components/integrations-panel";
 import { ServerUpdatePanel } from "../../../../components/server-update-panel";
 
-export default async function SettingsPage({ params }: { params: Promise<{ slug: string }> }) {
+// Page-level tabs mirror the per-group settings modal so org and group
+// configuration read as one system. Server tab appears for staff only.
+const TABS = [
+  { key: "profile", label: "Profile" },
+  { key: "members", label: "Members" },
+  { key: "invites", label: "Invites & sign-up" },
+  { key: "integrations", label: "Integrations" },
+  { key: "server", label: "Server" },
+] as const;
+type TabKey = (typeof TABS)[number]["key"];
+
+export default async function SettingsPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const { slug } = await params;
+  const { tab: tabParam } = await searchParams;
   const pool = getPool();
 
   const cookieStore = await cookies();
@@ -48,6 +66,9 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
     listGroupsForTeam(team.id, pool),
   ]);
 
+  const visibleTabs = TABS.filter((t) => t.key !== "server" || updateStatus !== null);
+  const tab: TabKey = visibleTabs.some((t) => t.key === tabParam) ? (tabParam as TabKey) : "profile";
+
   return (
     <>
       <div className="section-head">
@@ -58,15 +79,29 @@ export default async function SettingsPage({ params }: { params: Promise<{ slug:
           </div>
         </div>
       </div>
-      {updateStatus && <ServerUpdatePanel status={updateStatus} />}
-      <SettingsPanel
-        team={team}
-        members={members.rows}
-        teamSlug={slug}
-        groups={groups}
-        allowedSignupDomains={team.allowed_signup_domains ?? []}
-      />
-      <IntegrationsPanel teamSlug={slug} groups={groups} />
+      <nav className="group-settings-tabs settings-page-tabs" aria-label="Settings sections">
+        {visibleTabs.map((t) => (
+          <a
+            key={t.key}
+            className={`group-settings-tab ${tab === t.key ? "active" : ""}`}
+            href={`/team/${slug}/settings${t.key === "profile" ? "" : `?tab=${t.key}`}`}
+          >
+            {t.label}
+          </a>
+        ))}
+      </nav>
+      {tab === "server" && updateStatus && <ServerUpdatePanel status={updateStatus} />}
+      {(tab === "profile" || tab === "members" || tab === "invites") && (
+        <SettingsPanel
+          team={team}
+          members={members.rows}
+          teamSlug={slug}
+          groups={groups}
+          allowedSignupDomains={team.allowed_signup_domains ?? []}
+          section={tab}
+        />
+      )}
+      {tab === "integrations" && <IntegrationsPanel teamSlug={slug} groups={groups} />}
     </>
   );
 }

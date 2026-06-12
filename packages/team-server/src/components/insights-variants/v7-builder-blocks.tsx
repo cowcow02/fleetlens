@@ -504,7 +504,7 @@ const V8_BLOCKS: DashboardBlock[] = [
         return (
           <div className="live-empty-row">
             GitHub isn&rsquo;t connected yet, so PR counts here are transcript-side estimates.{" "}
-            <a href={`/team/${r.team_slug}/settings`}>Connect GitHub in team settings</a> to see merge-confirmed
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>Connect GitHub in team settings</a> to see merge-confirmed
             delivery — including how AI-assisted PRs compare with the rest.
           </div>
         );
@@ -513,7 +513,7 @@ const V8_BLOCKS: DashboardBlock[] = [
         return (
           <div className="live-empty-row">
             GitHub is connected, but no repository is mapped to this group yet — in{" "}
-            <a href={`/team/${r.team_slug}/settings`}>team settings → Integrations</a>, set each repo&rsquo;s
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>team settings → Integrations</a>, set each repo&rsquo;s
             &ldquo;counts toward&rdquo; to this group (or to all groups).
           </div>
         );
@@ -576,7 +576,7 @@ const V8_BLOCKS: DashboardBlock[] = [
         return (
           <div className="live-empty-row">
             Linear isn&rsquo;t connected.{" "}
-            <a href={`/team/${r.team_slug}/settings`}>Connect it in team settings</a> to see ticket cycle time and
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>Connect it in team settings</a> to see ticket cycle time and
             how much completed work ships through AI-assisted PRs.
           </div>
         );
@@ -585,7 +585,7 @@ const V8_BLOCKS: DashboardBlock[] = [
         return (
           <div className="live-empty-row">
             Linear is connected, but no Linear team is mapped to this group yet — in{" "}
-            <a href={`/team/${r.team_slug}/settings`}>team settings → Integrations</a>, set each Linear team&rsquo;s
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>team settings → Integrations</a>, set each Linear team&rsquo;s
             &ldquo;counts toward&rdquo; to this group (or to all groups).
           </div>
         );
@@ -643,7 +643,7 @@ const V8_BLOCKS: DashboardBlock[] = [
           <div className="live-empty-row">
             The work timeline needs both GitHub and Linear connected (and mapped to this group) — it chains
             ticket pickup, PR, and merge into one view.{" "}
-            <a href={`/team/${r.team_slug}/settings`}>Set up integrations in team settings</a>.
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>Set up integrations in team settings</a>.
           </div>
         );
       }

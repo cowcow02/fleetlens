@@ -16,18 +16,23 @@ type MemberRow = {
 };
 type GroupOpt = { id: string; slug: string; name: string };
 
+// One tab of the settings page at a time — the page routes ?tab= to a section.
+export type SettingsSection = "profile" | "invites" | "members";
+
 export function SettingsPanel({
   team,
   members,
   teamSlug,
   groups,
   allowedSignupDomains,
+  section,
 }: {
   team: TeamRow;
   members: MemberRow[];
   teamSlug: string;
   groups?: GroupOpt[];
   allowedSignupDomains: string[];
+  section: SettingsSection;
 }) {
   const [teamName, setTeamName] = useState(team.name);
   const [saving, setSaving] = useState(false);
@@ -53,9 +58,11 @@ export function SettingsPanel({
   const [reactivateErrorById, setReactivateErrorById] = useState<Record<string, string>>({});
   const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
+  const showInvites = section === "invites";
   useEffect(() => {
-    refreshInvites();
-  }, []);
+    if (showInvites) refreshInvites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showInvites]);
 
   async function refreshInvites() {
     setInvitesError(null);
@@ -173,6 +180,7 @@ export function SettingsPanel({
 
   return (
     <div>
+      {section === "profile" && (
       <section className="settings-section">
         <div className="subsection-head">
           <h2>Team profile</h2>
@@ -194,7 +202,10 @@ export function SettingsPanel({
           </div>
         )}
       </section>
+      )}
 
+      {section === "invites" && (
+      <>
       <section className="settings-section">
         <div className="subsection-head">
           <h2>Active invite links</h2>
@@ -276,7 +287,10 @@ export function SettingsPanel({
           </div>
         )}
       </section>
+      </>
+      )}
 
+      {section === "members" && (
       <section className="settings-section">
         <div className="subsection-head">
           <h2>Members</h2>
@@ -355,6 +369,7 @@ export function SettingsPanel({
           </tbody>
         </table>
       </section>
+      )}
 
       <InviteLinkModal
         open={showNewLink}
