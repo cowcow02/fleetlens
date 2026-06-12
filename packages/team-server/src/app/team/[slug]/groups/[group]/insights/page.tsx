@@ -13,6 +13,7 @@ import { buildMockGroupReport } from "../../../../../../lib/mock-group-report";
 import { ReportHeader } from "../../../../../../components/report-header";
 import { GroupMomentumReport } from "../../../../../../components/group-momentum-report";
 import { SeatRightSizing, type SeatCandidate } from "../../../../../../components/seat-right-sizing";
+import { ReportOptions } from "../../../../../../components/report-options";
 
 export const dynamic = "force-dynamic";
 
@@ -175,21 +176,37 @@ export default async function GroupInsightsPage({
   return (
     <>
       <div className="section-head" style={{ marginBottom: 4 }}>
-        <div className="kicker">
+        <div className="kicker report-breadcrumb">
           <a href={`/team/${slug}/groups/${group.slug}`}>← {group.name}</a>
-          {" · "}
-          {teamName}
+          <span className="sep" aria-hidden>·</span>
+          <a href={`/team/${slug}`}>{teamName}</a>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <a href={qs({ mock: !mock })} className="btn secondary">
-            {mock ? "Use real data" : "Mock data"}
-          </a>
-          <a href={qs({ explain: !explain })} className="btn secondary">
-            {explain ? "Hide explanations" : "ⓘ Explain metrics"}
-          </a>
-          <a href={qs({ coaching: !coaching })} className="btn secondary">
-            {coaching ? "Hide per-member detail" : "Show per-member coaching detail →"}
-          </a>
+          <ReportOptions
+            options={[
+              {
+                key: "mock",
+                label: "Mock data",
+                description: "Synthesized demo metrics from the real roster",
+                active: mock,
+                href: qs({ mock: !mock }),
+              },
+              {
+                key: "explain",
+                label: "Explain metrics",
+                description: "Inline notes on how each number is computed",
+                active: explain,
+                href: qs({ explain: !explain }),
+              },
+              {
+                key: "coaching",
+                label: "Per-member coaching detail",
+                description: "Per-member maturity portraits — manager reading",
+                active: coaching,
+                href: qs({ coaching: !coaching }),
+              },
+            ]}
+          />
           <a href={pdfHref} className="btn">Export PDF</a>
         </div>
       </div>

@@ -8246,7 +8246,8 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
 .group-settings-body { min-height: 320px; }
 /* The global `.modal button { width: 100% }` is for the simple CTA modals;
    the settings modal has inline buttons (tabs, toggles, row actions). */
-.modal.group-settings button { width: auto; }
+.modal.group-settings button,
+.modal.report-options button { width: auto; }
 
 .group-settings-tabs {
   display: flex;
@@ -8350,6 +8351,7 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
    secret-reveal modals (invite link / device token). Suppress it on the
    group settings + compose modals, which show no one-time secret. */
 .modal.group-settings::before,
+.modal.report-options::before,
 .modal.compose::before { content: none; }
 
 /* ── Work timeline (pickup → merge phase bars, size cohorts) ──────────────── */
@@ -8458,4 +8460,43 @@ a.group-settings-tab {
 }
 a.group-settings-tab.active {
   border-bottom-color: var(--accent);
+}
+
+/* ── Report breadcrumb (insights header) ──────────────────────────────────── */
+/* The kicker styling made these look like static labels; give them a real
+   hit area and an unmistakable hover so "← back" reads as navigation. */
+.report-breadcrumb a {
+  display: inline-block;
+  padding: 6px 2px;
+  margin: -6px 0;
+  color: var(--mute);
+  text-decoration: none;
+}
+.report-breadcrumb a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.report-breadcrumb .sep {
+  margin: 0 7px;
+}
+
+/* ── Report options modal ─────────────────────────────────────────────────── */
+/* Stack each option's description under its name — side-by-side, the long
+   labels wrap into a cramped two-column tangle. */
+.modal.report-options {
+  max-width: 470px;
+}
+.modal.report-options .picker-row {
+  flex-wrap: wrap;
+  padding: 12px;
+}
+.modal.report-options .pick-name {
+  white-space: nowrap;
+}
+.modal.report-options .pick-meta {
+  flex-basis: 100%;
+  margin-left: 21px;
+  margin-top: 3px;
+  text-align: left;
 }
