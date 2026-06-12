@@ -660,8 +660,34 @@ const V8_BLOCKS: DashboardBlock[] = [
         { key: "build", label: "Build", bounds: "picked up → PR opened", color: "var(--accent)" },
         { key: "review", label: "Review", bounds: "PR opened → merged", color: "color-mix(in srgb, var(--ink) 62%, var(--paper))" },
       ] as const;
-      const classVal = (c: (typeof t.size_classes)[number], key: (typeof PHASES)[number]["key"]) =>
-        key === "build" ? c.build_hours : c.review_hours;
+      // One week's bar: width = that week's pickup→merge median on the shared
+      // scale, split by the week's phase-median proportions.
+      const weekFill = (build: number | null, review: number | null, total: number | null, scaleMax: number, lastWeek: boolean, title?: string) => {
+        const vals = [
+          { ...PHASES[0], v: build },
+          { ...PHASES[1], v: review },
+        ];
+        const phaseSum = vals.reduce((s, p) => s + (p.v ?? 0), 0);
+        return (
+          <div
+            className={`timeline-cohort-fill${lastWeek ? " last-week" : ""}`}
+            title={title}
+            style={{ width: `${Math.max(total == null ? 0 : 1.5, ((total ?? 0) / scaleMax) * 100)}%` }}
+          >
+            {phaseSum > 0 &&
+              vals.map((p) =>
+                p.v == null || p.v === 0 ? null : (
+                  <div
+                    key={p.key}
+                    className="timeline-seg"
+                    title={`${p.label}${lastWeek ? " last wk" : ""} · ${fmtH(p.v)} median`}
+                    style={{ width: `${(p.v / phaseSum) * 100}%`, background: p.color }}
+                  />
+                ),
+              )}
+          </div>
+        );
+      };
       // Shared absolute scale across cohorts and both weeks: bar length = the
       // cohort-week's pickup → merge median; this-week bars split by the
       // phase-median proportions, last-week bars are a plain muted fill.
@@ -683,38 +709,17 @@ const V8_BLOCKS: DashboardBlock[] = [
                 </div>
                 <div className="timeline-cohort-bar">
                   <div className="timeline-pair-track">
-                    <div
-                      className="timeline-cohort-fill"
-                      style={{ width: `${Math.max(1.5, ((c.total_hours ?? 0) / scaleMax) * 100)}%` }}
-                    >
-                      {(() => {
-                        const phaseSum = PHASES.reduce((s, p) => s + (classVal(c, p.key) ?? 0), 0);
-                        if (phaseSum === 0) return null;
-                        return PHASES.map((p) => {
-                          const v = classVal(c, p.key);
-                          if (v == null || v === 0) return null;
-                          return (
-                            <div
-                              key={p.key}
-                              className="timeline-seg"
-                              title={`${p.label} · ${fmtH(v)} median`}
-                              style={{ width: `${(v / phaseSum) * 100}%`, background: p.color }}
-                            />
-                          );
-                        });
-                      })()}
-                    </div>
+                    {weekFill(c.build_hours, c.review_hours, c.total_hours, scaleMax, false)}
                   </div>
                   <div className="timeline-pair-track">
-                    <div
-                      className="timeline-cohort-fill last-week"
-                      title={
-                        c.prev_tickets === 0
-                          ? "No tickets in this cohort last week"
-                          : `Last week · ${fmtH(c.prev_total_hours)} median across ${c.prev_tickets} ${c.prev_tickets === 1 ? "ticket" : "tickets"}`
-                      }
-                      style={{ width: `${Math.max(c.prev_tickets === 0 ? 0 : 1.5, ((c.prev_total_hours ?? 0) / scaleMax) * 100)}%` }}
-                    />
+                    {weekFill(
+                      c.prev_build_hours,
+                      c.prev_review_hours,
+                      c.prev_total_hours,
+                      scaleMax,
+                      true,
+                      c.prev_tickets === 0 ? "No tickets in this cohort last week" : undefined,
+                    )}
                   </div>
                 </div>
                 <div className="timeline-cohort-total">

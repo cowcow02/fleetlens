@@ -8394,8 +8394,9 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
   display: flex;
   height: 100%;
 }
+/* Last week keeps the phase colors, just faded — same hues, half presence. */
 .timeline-cohort-fill.last-week {
-  background: color-mix(in srgb, var(--mute) 60%, var(--paper));
+  opacity: 0.4;
 }
 .timeline-cohort-prev {
   color: var(--mute);

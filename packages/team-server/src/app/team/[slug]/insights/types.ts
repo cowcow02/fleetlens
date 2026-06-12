@@ -1437,6 +1437,8 @@ export type WorkTimelineSizeClass = {
   review_hours: number | null;
   total_hours: number | null; // median pickup → merge, computed per ticket
   prev_tickets: number;
+  prev_build_hours: number | null;
+  prev_review_hours: number | null;
   prev_total_hours: number | null;
 };
 

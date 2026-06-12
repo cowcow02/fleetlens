@@ -109,6 +109,8 @@ describe("workTimelineStats", () => {
     const sClass = s.size_classes.find((c) => c.size === "S")!;
     expect(sClass.prev_tickets).toBe(2);
     expect(sClass.prev_total_hours).toBe(5);
+    expect(sClass.prev_build_hours).toBe(4); // both prev S rows: started h2 → PR h6
+    expect(sClass.prev_review_hours).toBe(1); // medians of 0h and 2h reviews
     // A cohort with tickets only last week still shows, with zero this week.
     const mClass = s.size_classes.find((c) => c.size === "M")!;
     expect(mClass.tickets).toBe(0);

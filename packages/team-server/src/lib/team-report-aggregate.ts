@@ -374,6 +374,8 @@ export function workTimelineStats(
         review_hours: medianHours(collect(rows, reviewMs)),
         total_hours: medianHours(collect(rows, totalMs)),
         prev_tickets: prevRows.length,
+        prev_build_hours: medianHours(collect(prevRows, buildMs)),
+        prev_review_hours: medianHours(collect(prevRows, reviewMs)),
         prev_total_hours: medianHours(collect(prevRows, totalMs)),
       };
     })
