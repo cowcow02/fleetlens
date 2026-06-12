@@ -11,6 +11,7 @@ import {
   resolveWeekMonday,
   skillUsageWeek,
   teamPulseWeek,
+  earliestWeekMonday,
   visibleMembershipIds,
   workingShapeDistribution,
 } from "../../src/lib/insights-aggregate.js";
@@ -292,5 +293,29 @@ describe("groupMomentumTrend", () => {
     const trend = await groupMomentumTrend(s.teamId, { kind: "group", groupId: g.id }, "2026-05-11", s.pool, 4);
     expect(trend).toHaveLength(4);
     expect(trend.every((t) => t.agentHours === 0 && t.activeMembers === 0)).toBe(true);
+  });
+});
+
+describe("earliestWeekMonday", () => {
+  it("returns the rollup floor when no integration data exists", async () => {
+    const s = await seed();
+    await insertRichRollup(s.pool, s.teamId, s.alice, "2026-05-13", { sessions: 1 });
+    expect(await earliestWeekMonday(s.teamId, [s.alice], s.pool)).toBe("2026-05-11");
+  });
+
+  it("widens the floor to synced integration history older than any rollup", async () => {
+    const s = await seed();
+    await insertRichRollup(s.pool, s.teamId, s.alice, "2026-05-13", { sessions: 1 });
+    await s.pool.query(
+      `INSERT INTO github_pull_requests (team_id, repo, number, title, state, created_at, merged_at)
+       VALUES ($1, 'acme/app', 1, 'KIP-1 fix', 'merged', '2026-04-14T10:00:00Z', '2026-04-15T10:00:00Z')`,
+      [s.teamId],
+    );
+    expect(await earliestWeekMonday(s.teamId, [s.alice], s.pool)).toBe("2026-04-13");
+  });
+
+  it("stays null for an empty scope", async () => {
+    const s = await seed();
+    expect(await earliestWeekMonday(s.teamId, [], s.pool)).toBeNull();
   });
 });

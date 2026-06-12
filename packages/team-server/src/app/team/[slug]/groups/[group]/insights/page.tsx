@@ -104,7 +104,7 @@ export default async function GroupInsightsPage({
       buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
       groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
       loadOptimizerInputs(teamId, pool),
-      earliestWeekMonday(groupMemberIds, pool),
+      earliestWeekMonday(teamId, groupMemberIds, pool),
     ]);
     report = rep;
     trend = tr;

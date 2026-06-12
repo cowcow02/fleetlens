@@ -80,16 +80,25 @@ export function resolveWeekMonday(param: string | null | undefined, now: Date = 
   return param > last ? last : param;
 }
 
-// Monday of the earliest week with any rich rollup for these members — the
-// floor for week navigation. Null when the scope has no data at all.
+// Monday of the earliest week with any data — the floor for week navigation.
+// Considers member rollups AND synced integration history (GitHub merges,
+// Linear completions), so older weeks stay browsable even where transcript
+// submissions hadn't started yet. Null when the scope has no data at all.
 export async function earliestWeekMonday(
+  teamId: string,
   membershipIds: string[],
   pool: pg.Pool,
 ): Promise<string | null> {
   if (membershipIds.length === 0) return null;
   const res = await pool.query<{ d: string | null }>(
-    `SELECT min(day)::text AS d FROM rich_daily_rollups WHERE membership_id = ANY($1::uuid[])`,
-    [membershipIds],
+    `SELECT min(d)::text AS d FROM (
+       SELECT min(day)::date AS d FROM rich_daily_rollups WHERE membership_id = ANY($2::uuid[])
+       UNION ALL
+       SELECT min(merged_at)::date FROM github_pull_requests WHERE team_id = $1 AND state = 'merged'
+       UNION ALL
+       SELECT min(completed_at)::date FROM linear_issues WHERE team_id = $1 AND state_type = 'completed'
+     ) t WHERE d IS NOT NULL`,
+    [teamId, membershipIds],
   );
   const d = res.rows[0]?.d;
   return d ? isoMondayOf(new Date(`${d}T00:00:00Z`)) : null;
