@@ -179,35 +179,61 @@ function pctDelta(current: number, prev: number): number {
   return Math.round(((current - prev) / prev) * 100);
 }
 
-export type CanonicalProjectRow = ProjectTimeRow & { repo?: string };
+export type CanonicalProjectRow = ProjectTimeRow & {
+  repo?: string;
+  /** Bucket row holding every project with no resolvable GitHub repo. */
+  unlinked?: boolean;
+  /** Member-reported local names folded into the unlinked bucket. */
+  localNames?: string[];
+};
 
 // Member-reported project names are local clone-directory basenames. Fold a
-// row onto a connected GitHub repo's identity and merge rows landing on the
-// same repo (two members may clone under different names). Two signals, in
-// reliability order:
-//   1. The row's reported githubRepos (owner/name harvested from git-push /
-//      gh-pr output on the member's machine) — ground truth.
-//   2. Directory-name == repo basename — the clone-default convention, kept
-//      as fallback for rollups submitted before githubRepos existed.
+// row onto a GitHub repo's identity and merge rows landing on the same repo
+// (two members may clone under different names). Signals, in reliability
+// order:
+//   1. The row's reported githubRepos (the project's own .git remote resolved
+//      on the member's machine, or harvested from git-push / gh-pr output) —
+//      ground truth, trusted whether or not the repo is in the connected
+//      list; a connected match is preferred for display casing.
+//   2. Directory-name == connected-repo basename — the clone-default
+//      convention, kept as fallback for rollups submitted before githubRepos
+//      existed.
+// Rows with no repo collapse into a single "unlinked" bucket so local
+// directory names never compete with repo identities in the report.
 export function canonicalizeProjects(rows: ProjectTimeRow[], repoNames: string[]): CanonicalProjectRow[] {
   if (repoNames.length === 0) return rows;
   const byFull = new Map(repoNames.map((r) => [r.toLowerCase(), r]));
   const byBase = new Map(repoNames.map((r) => [r.split("/").pop()!.toLowerCase(), r]));
   const out = new Map<string, CanonicalProjectRow>();
+  let bucket: CanonicalProjectRow | undefined;
   for (const row of rows) {
-    const reported = (row.githubRepos ?? []).map((r) => byFull.get(r.toLowerCase())).find(Boolean);
+    const reportedList = row.githubRepos ?? [];
+    const reported =
+      reportedList.map((r) => byFull.get(r.toLowerCase())).find(Boolean) ?? reportedList[0];
     const repo = reported ?? byBase.get(row.project.split("/").pop()!.toLowerCase());
-    const key = repo ?? row.project;
-    const cur = out.get(key);
+    if (!repo) {
+      if (bucket) {
+        bucket.agentHours += row.agentHours;
+        bucket.agentHoursPrev += row.agentHoursPrev;
+        bucket.sessions += row.sessions;
+        if (!bucket.localNames!.includes(row.project)) bucket.localNames!.push(row.project);
+      } else {
+        bucket = { ...row, project: "unlinked local work", unlinked: true, localNames: [row.project] };
+      }
+      continue;
+    }
+    const cur = out.get(repo);
     if (cur) {
       cur.agentHours += row.agentHours;
       cur.agentHoursPrev += row.agentHoursPrev;
       cur.sessions += row.sessions;
     } else {
-      out.set(key, repo ? { ...row, project: repo, repo } : { ...row });
+      out.set(repo, { ...row, project: repo, repo });
     }
   }
-  return [...out.values()].sort((a, b) => b.agentHours - a.agentHours);
+  const sorted = [...out.values()].sort((a, b) => b.agentHours - a.agentHours);
+  // Bucket always renders last — it's the residue, not a project.
+  return bucket ? [...sorted, bucket] : sorted;
 }
 
 // Mapped source names visible to a scope — the week-nav floor uses this so a
@@ -1058,6 +1084,7 @@ export async function buildTeamInsightReport(
   wp.project_time = projects.map((p) => ({
     project: p.project,
     ...(p.repo ? { repo: p.repo } : {}),
+    ...(p.unlinked ? { unlinked: true, local_names: (p.localNames ?? []).slice(0, 12) } : {}),
     hours_this_week: Number(p.agentHours.toFixed(1)),
     hours_last_week: Number(p.agentHoursPrev.toFixed(1)),
     delta_pct: pctDelta(p.agentHours, p.agentHoursPrev),

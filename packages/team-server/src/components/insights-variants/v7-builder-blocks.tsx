@@ -996,8 +996,17 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
             return (
             <div key={p.project} className="paired-bar-row">
               <div className="bar-chart-label">
-                <code title={p.repo ? `${p.repo} — connected GitHub repo` : `${p.project} — member-reported local directory name`}>
-                  {p.repo ?? shortProjectLabel(p.project)}
+                <code
+                  title={
+                    p.unlinked
+                      ? `No resolvable GitHub repo — folds in: ${(p.local_names ?? []).join(", ")}`
+                      : p.repo
+                        ? `${p.repo} — GitHub repo (from members' git remotes)`
+                        : `${p.project} — member-reported local directory name`
+                  }
+                  style={p.unlinked ? { color: "var(--mute)", fontStyle: "italic" } : undefined}
+                >
+                  {p.repo ?? (p.unlinked ? "unlinked local work" : shortProjectLabel(p.project))}
                 </code>
               </div>
               <div className="paired-bar-tracks">
@@ -1022,8 +1031,8 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
           </div>
           {anyRepo && (
             <div className="kicker" style={{ marginTop: 10 }}>
-              owner/name rows are canonicalized to connected GitHub repos (matched by clone-directory name,
-              members&rsquo; copies merged); other rows keep the member-reported local name.
+              owner/name rows come from members&rsquo; git remotes (checkouts of the same repo merged);
+              work with no resolvable repo is folded into &ldquo;unlinked local work&rdquo;.
             </div>
           )}
         </div>

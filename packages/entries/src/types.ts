@@ -102,6 +102,10 @@ export type Entry = {
    *  which GitHub repos this day's work actually touched. Absent on entries
    *  built before this field existed and on days with no push/PR. */
   github_repos?: string[];
+  /** Parent directories of files this day's Edit/Write calls touched, most-
+   *  edited first. Resolved to a GitHub repo at sync time (nearest .git) —
+   *  covers sessions whose cwd isn't itself a repo (e.g. a parent folder). */
+  edited_dirs?: string[];
   top_tools: string[];
   skills: Record<string, number>;
   subagents: EntrySubagent[];

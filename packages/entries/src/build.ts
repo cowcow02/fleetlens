@@ -247,6 +247,7 @@ type DayAggregate = {
   commits: number;
   pushes: number;
   githubRepos: string[];
+  editedDirs: string[];
   modelTurns: Map<string, number>;
   totalToolErrors: number;
   totalInterrupts: number;
@@ -266,6 +267,7 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
   // ground truth for which GitHub repo this day's work actually touched.
   const gitToolUseIds = new Set<string>();
   const githubRepos = new Set<string>();
+  const editedDirCounts = new Map<string, number>();
   const modelTurns = new Map<string, number>();
   let totalToolErrors = 0;
   let totalInterrupts = 0;
@@ -410,6 +412,14 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
             if (eventCwd && (name === "Bash" || name === "Edit" || name === "Write" || name === "Read")) {
               cwdCounts.set(eventCwd, (cwdCounts.get(eventCwd) ?? 0) + 1);
             }
+            if (name === "Edit" || name === "Write" || name === "MultiEdit" || name === "NotebookEdit") {
+              const fp = String((ct.input?.file_path ?? ct.input?.notebook_path ?? "") as string);
+              const slash = fp.lastIndexOf("/");
+              if (slash > 0) {
+                const dir = fp.slice(0, slash);
+                editedDirCounts.set(dir, (editedDirCounts.get(dir) ?? 0) + 1);
+              }
+            }
           }
         }
       }
@@ -438,6 +448,10 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
     commits,
     pushes,
     githubRepos: [...githubRepos].slice(0, 5),
+    editedDirs: [...editedDirCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([dir]) => dir),
     modelTurns,
     totalToolErrors,
     totalInterrupts,
@@ -613,6 +627,7 @@ export function buildEntries(sessionDetail: SessionDetail): Entry[] {
       final_agent,
       pr_titles: agg.prTitles,
       ...(agg.githubRepos.length ? { github_repos: agg.githubRepos } : {}),
+      ...(agg.editedDirs.length ? { edited_dirs: agg.editedDirs } : {}),
       top_tools,
       skills,
       subagents,

@@ -1,5 +1,6 @@
 import type { TeamConfig, ServerCommand, CommandResult } from "@claude-lens/parser/fs";
 import { buildRollupsForRange, buildIngestPayload, buildRichBlocksForDay, sessionTouchesDay, pushToTeamServer } from "./push.js";
+import { createRepoResolver } from "./git-remote.js";
 
 export type { ServerCommand, CommandResult };
 
@@ -71,12 +72,13 @@ async function runActivityBackfill(
   // richExtras), so a rollup-only payload would be silently dropped.
   const privateProjects = new Set(config.privateProjects ?? []);
   const enrichmentOptIn = !!config.enrichmentOptIn;
+  const resolveRepo = createRepoResolver();
   let pushed = 0;
   for (const rollup of rollups) {
     // Historical push: no live snapshot, no cyclePeaks, no planTier — those
     // belong on the latest rollup that the regular sync attaches.
     const daySessions = sessions.filter((s) => sessionTouchesDay(s, rollup.day));
-    const richBlocks = buildRichBlocksForDay(rollup.day, daySessions, privateProjects, enrichmentOptIn);
+    const richBlocks = buildRichBlocksForDay(rollup.day, daySessions, privateProjects, enrichmentOptIn, resolveRepo);
     let artifactSignals: ReturnType<typeof probeArtifactSignals> = null;
     try {
       artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: [process.cwd()] });

@@ -168,6 +168,7 @@ export function buildRichRollupBlocks(
   daySessions: SessionMeta[],
   entries: Entry[],
   privateProjects: ReadonlySet<string>,
+  resolveRepo?: (dir: string) => string | null,
 ): Omit<RichDailyRollup, keyof DailyRollup> {
   const bounds = dayBoundsMs(day);
   const clippedSessions: SessionMeta[] = [];
@@ -180,7 +181,34 @@ export function buildRichRollupBlocks(
   const bursts = computeBurstsFromSessions(clippedSessions);
   const stats = summarizeBursts(bursts);
 
-  const projects = new Map<string, { agentTimeMs: number; sessions: number }>();
+  // Repo identity per session, strongest signal first: the project cwd's own
+  // .git, then the repos its edited files live in (covers sessions run at a
+  // parent folder like ~/Repo), then an unambiguous harvested push/PR repo
+  // (covers checkouts deleted since the session ran).
+  const repoForEntry = (e: Entry): string | null => {
+    if (resolveRepo) {
+      const own = resolveRepo(e.project);
+      if (own) return own;
+      const counts = new Map<string, number>();
+      for (const d of e.edited_dirs ?? []) {
+        const r = resolveRepo(d);
+        if (r) counts.set(r, (counts.get(r) ?? 0) + 1);
+      }
+      const dominant = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (dominant) return dominant;
+    }
+    return e.github_repos?.length === 1 ? e.github_repos[0]! : null;
+  };
+  const sessionRepo = new Map<string, string>();
+  for (const e of entries) {
+    if (privateProjects.has(projectRepoName(e.project)) || privateProjects.has(e.project)) continue;
+    const r = repoForEntry(e);
+    if (r) sessionRepo.set(e.session_id, r);
+  }
+
+  // Rows keyed by resolved repo when one exists (so two checkouts of the same
+  // repo fold into one row) and by repo-directory basename otherwise.
+  const projects = new Map<string, { project: string; agentTimeMs: number; sessions: number; resolved?: string }>();
   for (const s of clippedSessions) {
     // Group the breakdown by repo name so the team edition never receives
     // absolute paths and same-repo-different-harness rows fold together.
@@ -190,11 +218,13 @@ export function buildRichRollupBlocks(
     // groupByProject now surfaces, so match on that — and still honor any
     // legacy full-canonical-path entry. Either match excludes the project.
     if (privateProjects.has(name) || privateProjects.has(canonical)) continue;
+    const repo = resolveRepo?.(canonical) ?? sessionRepo.get(s.id);
+    const key = repo ?? name;
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
-    const cur = projects.get(name) ?? { agentTimeMs: 0, sessions: 0 };
+    const cur = projects.get(key) ?? { project: name, agentTimeMs: 0, sessions: 0, ...(repo ? { resolved: repo } : {}) };
     cur.agentTimeMs += ms;
     cur.sessions += 1;
-    projects.set(name, cur);
+    projects.set(key, cur);
   }
 
   // owner/name identities per project (from git-push / gh-pr output in the
@@ -221,7 +251,9 @@ export function buildRichRollupBlocks(
     if (shape) {
       const cur = workingShapes.get(shape) ?? { sessions: 0, agentTimeMs: 0 };
       cur.sessions += 1;
-      cur.agentTimeMs += e.numbers.active_min * 60_000;
+      // active_min has 0.1 precision; ×60000 can yield 42000.000000000007 in
+      // FP, which the ingest schema rejects (integer). Round at the source.
+      cur.agentTimeMs += Math.round(e.numbers.active_min * 60_000);
       workingShapes.set(shape, cur);
     }
     for (const [name, count] of Object.entries(e.skills)) {
@@ -237,7 +269,8 @@ export function buildRichRollupBlocks(
     commits += e.numbers.commits;
     pushes += e.numbers.pushes;
     if (e.github_repos?.length) {
-      const key = projectRepoName(e.project);
+      // Same key rule as the projects map so the attachment lands on its row.
+      const key = sessionRepo.get(e.session_id) ?? projectRepoName(e.project);
       const set = projectRepos.get(key) ?? new Set<string>();
       for (const r of e.github_repos) set.add(r);
       projectRepos.set(key, set);
@@ -251,9 +284,16 @@ export function buildRichRollupBlocks(
 
   return {
     projects: Array.from(projects.entries())
-      .map(([project, v]) => {
-        const repos = projectRepos.get(project);
-        return { project, ...v, ...(repos?.size ? { githubRepos: [...repos].slice(0, 5) } : {}) };
+      .map(([key, v]) => {
+        // Resolved identity first — the server trusts reported order.
+        const extras = [...(projectRepos.get(key) ?? [])].filter((r) => r !== v.resolved);
+        const repos = v.resolved ? [v.resolved, ...extras] : extras;
+        return {
+          project: v.project,
+          agentTimeMs: v.agentTimeMs,
+          sessions: v.sessions,
+          ...(repos.length ? { githubRepos: repos.slice(0, 5) } : {}),
+        };
       })
       .sort((a, b) => b.agentTimeMs - a.agentTimeMs),
     workingShapes: Array.from(workingShapes.entries())
@@ -308,10 +348,11 @@ export function buildRichBlocksForDay(
   daySessions: SessionMeta[],
   privateProjects: ReadonlySet<string>,
   enrichmentOptIn: boolean,
+  resolveRepo?: (dir: string) => string | null,
 ): { rich: Omit<RichDailyRollup, keyof DailyRollup>; enriched?: EnrichedDailyExtras } | undefined {
   const entries = listEntriesForDay(day);
   if (entries.length === 0) return undefined;
-  const rich = buildRichRollupBlocks(day, daySessions, entries, privateProjects);
+  const rich = buildRichRollupBlocks(day, daySessions, entries, privateProjects, resolveRepo);
   const enriched = enrichmentOptIn ? buildEnrichedExtras(entries) : undefined;
   return enriched ? { rich, enriched } : { rich };
 }
