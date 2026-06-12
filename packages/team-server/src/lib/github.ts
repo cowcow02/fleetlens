@@ -72,6 +72,11 @@ export type PullRow = {
 export function toPullRow(n: PullNode): PullRow {
   const commitDates = n.commits.nodes.map((c) => c.commit.authoredDate).sort();
   const commitsAi = n.commits.nodes.filter((c) => isAiCommitMessage(c.commit.message)).length;
+  // AI attribution scans only the first commits page (100). Clamp the total
+  // to what was scanned so commitsAi/commitsTotal stays self-consistent on
+  // >100-commit PRs — the trailer may sit in an unscanned commit, so this is
+  // a documented undercount, not a silent skew.
+  const commitsScanned = Math.min(n.commits.totalCount, n.commits.nodes.length);
   return {
     number: n.number,
     title: n.title,
@@ -84,7 +89,7 @@ export function toPullRow(n: PullNode): PullRow {
     firstReviewAt: n.reviews.nodes[0]?.submittedAt ?? null,
     additions: n.additions,
     deletions: n.deletions,
-    commitsTotal: n.commits.totalCount,
+    commitsTotal: commitsScanned,
     commitsAi,
     aiAssisted: commitsAi > 0,
   };

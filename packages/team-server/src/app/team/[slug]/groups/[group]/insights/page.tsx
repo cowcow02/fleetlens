@@ -5,7 +5,7 @@ import { validateSession } from "../../../../../../lib/auth";
 import { loadGroupBySlug } from "../../../../../../lib/groups";
 import { groupMomentumTrend, resolveWeekMonday, lastCompletedWeekMonday, previousIsoMonday, nextIsoMonday, earliestWeekMonday, visibleMembershipIds, type MomentumTrendWeek } from "../../../../../../lib/insights-aggregate";
 import type { TeamInsightReport } from "../../../insights/types";
-import { buildTeamInsightReport } from "../../../../../../lib/team-report-aggregate";
+import { buildTeamInsightReport, scopedSourceNames } from "../../../../../../lib/team-report-aggregate";
 import { loadOptimizerInputs } from "../../../../../../lib/plan-queries";
 import { recommend } from "../../../../../../lib/plan-optimizer";
 import { tierEntry } from "../../../../../../lib/plan-tiers";
@@ -105,7 +105,7 @@ export default async function GroupInsightsPage({
       buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
       groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
       loadOptimizerInputs(teamId, pool),
-      earliestWeekMonday(teamId, groupMemberIds, pool),
+      scopedSourceNames(teamId, scope, pool).then((src) => earliestWeekMonday(teamId, groupMemberIds, pool, src)),
     ]);
     report = rep;
     trend = tr;

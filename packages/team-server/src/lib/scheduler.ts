@@ -13,6 +13,25 @@ export async function refreshMembershipWeeklyUtilization(): Promise<void> {
   );
 }
 
+// Synced integration history follows the same per-team retention as plan
+// utilization — the 60-day sync window bounds growth, but re-connected
+// integrations would otherwise accumulate rows merged before the window.
+export async function pruneIntegrationData(): Promise<number> {
+  const prs = await getPool().query(`
+    DELETE FROM github_pull_requests p
+    USING teams t
+    WHERE p.team_id = t.id
+      AND COALESCE(p.merged_at, p.closed_at, p.created_at) < now() - make_interval(days => t.retention_days)
+  `);
+  const issues = await getPool().query(`
+    DELETE FROM linear_issues i
+    USING teams t
+    WHERE i.team_id = t.id
+      AND COALESCE(i.completed_at, i.canceled_at, i.created_at) < now() - make_interval(days => t.retention_days)
+  `);
+  return (prs.rowCount ?? 0) + (issues.rowCount ?? 0);
+}
+
 export async function prunePlanUtilization(): Promise<number> {
   const res = await getPool().query(`
     DELETE FROM plan_utilization pu
@@ -71,6 +90,8 @@ export function startScheduler(): void {
     try {
       const n = await prunePlanUtilization();
       if (n) console.log(`[scheduler] pruned ${n} plan_utilization rows`);
+      const ni = await pruneIntegrationData();
+      if (ni) console.log(`[scheduler] pruned ${ni} integration rows`);
     } catch (err) {
       console.error(
         `[scheduler] plan_utilization prune failed: ${(err as Error).message}`,

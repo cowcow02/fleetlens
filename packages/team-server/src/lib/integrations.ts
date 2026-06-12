@@ -155,7 +155,7 @@ export async function runGithubSync(teamId: string, pool: pg.Pool): Promise<Gith
   } catch (err) {
     await pool.query(
       `UPDATE team_integrations SET status = 'error', last_error = $2 WHERE team_id = $1 AND provider = 'github'`,
-      [teamId, (err as Error).message],
+      [teamId, (err as Error).message.slice(0, 500)],
     );
     throw err;
   }
@@ -267,7 +267,7 @@ export async function runLinearSync(teamId: string, pool: pg.Pool): Promise<Line
   } catch (err) {
     await pool.query(
       `UPDATE team_integrations SET status = 'error', last_error = $2 WHERE team_id = $1 AND provider = 'linear'`,
-      [teamId, (err as Error).message],
+      [teamId, (err as Error).message.slice(0, 500)],
     );
     throw err;
   }

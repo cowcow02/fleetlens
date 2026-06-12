@@ -210,6 +210,24 @@ export function canonicalizeProjects(rows: ProjectTimeRow[], repoNames: string[]
   return [...out.values()].sort((a, b) => b.agentHours - a.agentHours);
 }
 
+// Mapped source names visible to a scope — the week-nav floor uses this so a
+// group's navigation doesn't reach into other groups' integration history.
+export async function scopedSourceNames(
+  teamId: string,
+  scope: InsightsScope,
+  pool: pg.Pool,
+): Promise<{ repoNames: string[] | null; teamKeys: string[] | null }> {
+  const integ = await loadIntegrationConfigs(teamId, pool);
+  const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
+    scope.kind === "group"
+      ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
+      : xs;
+  return {
+    repoNames: integ.github ? inScope(normalizeGithubRepos(integ.github.config.repos)).map((r) => r.name) : [],
+    teamKeys: integ.linear ? inScope(normalizeLinearTeams(integ.linear.config)).map((t) => t.key) : [],
+  };
+}
+
 // One row of team_integrations, fetched once per report build and passed into
 // every block that needs a provider config — they used to each re-query it.
 type IntegrationConfigRow = {

@@ -52,13 +52,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
 // Re-derive each mapping from the desired per-source boolean for this group.
 // Empty group_ids means "all groups", so excluding a source from one group
 // expands the default to the remaining groups first.
-function applyDesired<T extends { group_ids: string[] }>(
+export function applyDesired<T extends { group_ids: string[] }>(
   entries: T[],
   desired: Map<string, boolean>,
   keyOf: (e: T) => string,
   groupId: string,
   allGroupIds: string[],
 ): { updated: T[]; error?: string } {
+  let orphaned = false;
   const updated = entries.map((e) => {
     const want = desired.get(keyOf(e));
     if (want === undefined) return e;
@@ -72,11 +73,12 @@ function applyDesired<T extends { group_ids: string[] }>(
     const expanded = isAll ? allGroupIds : e.group_ids;
     const next = expanded.filter((g) => g !== groupId);
     if (next.length === 0) {
-      return { ...e, group_ids: ["__INVALID__"] };
+      orphaned = true;
+      return e;
     }
     return { ...e, group_ids: next };
   });
-  if (updated.some((e) => e.group_ids[0] === "__INVALID__")) {
+  if (orphaned) {
     return {
       updated: entries,
       error: "A source must count toward at least one group — remove it from the integration instead of excluding it everywhere.",

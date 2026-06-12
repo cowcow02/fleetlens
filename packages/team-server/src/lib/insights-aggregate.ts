@@ -83,22 +83,29 @@ export function resolveWeekMonday(param: string | null | undefined, now: Date = 
 // Monday of the earliest week with any data — the floor for week navigation.
 // Considers member rollups AND synced integration history (GitHub merges,
 // Linear completions), so older weeks stay browsable even where transcript
-// submissions hadn't started yet. Null when the scope has no data at all.
+// submissions hadn't started yet. Pass `sources` to scope the integration
+// floor to a group's mapped repos/Linear teams — null arrays mean team-wide.
+// Null result when the scope has no data at all.
 export async function earliestWeekMonday(
   teamId: string,
   membershipIds: string[],
   pool: pg.Pool,
+  sources?: { repoNames: string[] | null; teamKeys: string[] | null },
 ): Promise<string | null> {
   if (membershipIds.length === 0) return null;
+  const repoNames = sources?.repoNames ?? null;
+  const teamKeys = sources?.teamKeys ?? null;
   const res = await pool.query<{ d: string | null }>(
     `SELECT min(d)::text AS d FROM (
        SELECT min(day)::date AS d FROM rich_daily_rollups WHERE membership_id = ANY($2::uuid[])
        UNION ALL
-       SELECT min(merged_at)::date FROM github_pull_requests WHERE team_id = $1 AND state = 'merged'
+       SELECT min(merged_at)::date FROM github_pull_requests
+       WHERE team_id = $1 AND state = 'merged' AND ($3::text[] IS NULL OR repo = ANY($3::text[]))
        UNION ALL
-       SELECT min(completed_at)::date FROM linear_issues WHERE team_id = $1 AND state_type = 'completed'
+       SELECT min(completed_at)::date FROM linear_issues
+       WHERE team_id = $1 AND state_type = 'completed' AND ($4::text[] IS NULL OR linear_team_key = ANY($4::text[]))
      ) t WHERE d IS NOT NULL`,
-    [teamId, membershipIds],
+    [teamId, membershipIds, repoNames, teamKeys],
   );
   const d = res.rows[0]?.d;
   return d ? isoMondayOf(new Date(`${d}T00:00:00Z`)) : null;
