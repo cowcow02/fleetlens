@@ -1070,6 +1070,9 @@ export type WowDelta = {
 
 export type WowProjectTime = {
   project: string;
+  // Canonical owner/name when the member-reported local directory name
+  // matched a connected GitHub repo; absent = local name only.
+  repo?: string;
   hours_this_week: number;
   hours_last_week: number;
   delta_pct: number;

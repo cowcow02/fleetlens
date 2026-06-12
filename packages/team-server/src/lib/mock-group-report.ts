@@ -215,6 +215,14 @@ export function buildMockGroupReport(members: MockRealMember[]): MockGroupData {
   report.volume.agent_hours_total = Math.round(agentHoursWk * 10) / 10;
   report.variants.wow_pulse.agent_hours.current = Math.round(agentHoursWk * 10) / 10;
   report.variants.wow_pulse.sessions.current = sessionsWk;
+  // Two rows canonicalized onto the mock connected repos, two member-local —
+  // demos both states of the per-project block's name handling.
+  report.variants.wow_pulse.project_time = [
+    { project: "acme/web-app", repo: "acme/web-app", hours_this_week: 8.2, hours_last_week: 6.4, delta_pct: 28 },
+    { project: "acme/platform-api", repo: "acme/platform-api", hours_this_week: 5.1, hours_last_week: 4.9, delta_pct: 4 },
+    { project: "ops-runbooks", hours_this_week: 3.4, hours_last_week: 4.2, delta_pct: -19 },
+    { project: "infra-bootstrap", hours_this_week: 1.7, hours_last_week: 0.9, delta_pct: 89 },
+  ];
   report.live_extras = liveExtras;
 
   // 4-week trend — a gentle upward trajectory ending at this week's totals.

@@ -988,13 +988,18 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
       // idle this week is just noise in a "this vs last" read.
       const projects = r.variants.wow_pulse.project_time.filter((p) => p.hours_this_week > 0);
       const max = Math.max(...projects.flatMap((p) => [p.hours_this_week, p.hours_last_week]), 1);
+      const anyRepo = projects.some((p) => p.repo);
       return (
         <div className="bar-chart paired-bar-chart">
           {projects.map((p) => {
             const d = wowDelta(p.hours_this_week, p.hours_last_week, p.delta_pct);
             return (
             <div key={p.project} className="paired-bar-row">
-              <div className="bar-chart-label"><code title={p.project}>{shortProjectLabel(p.project)}</code></div>
+              <div className="bar-chart-label">
+                <code title={p.repo ? `${p.repo} — connected GitHub repo` : `${p.project} — member-reported local directory name`}>
+                  {p.repo ?? shortProjectLabel(p.project)}
+                </code>
+              </div>
               <div className="paired-bar-tracks">
                 <div className="paired-bar-track">
                   <div className="paired-bar-fill this-week" style={{ width: `${(p.hours_this_week / max) * 100}%` }}>
@@ -1015,6 +1020,12 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
             <span><span className="paired-bar-swatch this-week" /> This week</span>
             <span><span className="paired-bar-swatch last-week" /> Last week</span>
           </div>
+          {anyRepo && (
+            <div className="kicker" style={{ marginTop: 10 }}>
+              owner/name rows are canonicalized to connected GitHub repos (matched by clone-directory name,
+              members&rsquo; copies merged); other rows keep the member-reported local name.
+            </div>
+          )}
         </div>
       );
     },

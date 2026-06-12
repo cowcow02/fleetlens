@@ -23,6 +23,7 @@ import { normalizeGithubRepos, normalizeLinearTeams } from "./integrations";
 import {
   isoMondayOf,
   perProjectTimeWoW,
+  type ProjectTimeRow,
   previousIsoMonday,
   skillUsageWeek,
   teamPulseWeek,
@@ -176,6 +177,31 @@ async function weekAggregates(
 function pctDelta(current: number, prev: number): number {
   if (prev === 0) return current === 0 ? 0 : 100;
   return Math.round(((current - prev) / prev) * 100);
+}
+
+export type CanonicalProjectRow = ProjectTimeRow & { repo?: string };
+
+// Member-reported project names are local clone-directory basenames. Fold a
+// row whose name matches a connected GitHub repo's basename onto the repo's
+// identity, and merge rows landing on the same repo — two members may have
+// cloned the same repo under different casing.
+export function canonicalizeProjects(rows: ProjectTimeRow[], repoNames: string[]): CanonicalProjectRow[] {
+  if (repoNames.length === 0) return rows;
+  const byBase = new Map(repoNames.map((r) => [r.split("/").pop()!.toLowerCase(), r]));
+  const out = new Map<string, CanonicalProjectRow>();
+  for (const row of rows) {
+    const repo = byBase.get(row.project.split("/").pop()!.toLowerCase());
+    const key = repo ?? row.project;
+    const cur = out.get(key);
+    if (cur) {
+      cur.agentHours += row.agentHours;
+      cur.agentHoursPrev += row.agentHoursPrev;
+      cur.sessions += row.sessions;
+    } else {
+      out.set(key, repo ? { ...row, project: repo, repo } : { ...row });
+    }
+  }
+  return [...out.values()].sort((a, b) => b.agentHours - a.agentHours);
 }
 
 // One row of team_integrations, fetched once per report build and passed into
@@ -933,14 +959,21 @@ export async function buildTeamInsightReport(
         [teamId, memberIds, weekMonday, prevMonday, weekEndExclusive(weekMonday)],
       );
 
-  const [pulse, projects, skills, _shapes, thisWeek, prevWeek] = await Promise.all([
+  const [pulse, rawProjects, skills, _shapes, thisWeek, prevWeek, integ] = await Promise.all([
     teamPulseWeek(teamId, scope, weekMonday, pool),
     perProjectTimeWoW(teamId, scope, weekMonday, pool, { limit: 12 }),
     skillUsageWeek(teamId, scope, weekMonday, pool, { limit: 16 }),
     workingShapeDistribution(teamId, scope, weekMonday, pool),
     weekAggregates(teamId, memberIds, weekMonday, pool),
     weekAggregates(teamId, memberIds, prevMonday, pool),
+    loadIntegrationConfigs(teamId, pool),
   ]);
+  // Member-reported project names are local clone-directory basenames; with
+  // GitHub connected, fold them onto the connected repos' identities.
+  const projects = canonicalizeProjects(
+    rawProjects,
+    integ.github ? normalizeGithubRepos(integ.github.config.repos).map((r) => r.name) : [],
+  );
   const roster = { rows: perMemberRes.rows.map((r) => ({
     id: r.id,
     display_name: r.display_name,
@@ -1000,6 +1033,7 @@ export async function buildTeamInsightReport(
   };
   wp.project_time = projects.map((p) => ({
     project: p.project,
+    ...(p.repo ? { repo: p.repo } : {}),
     hours_this_week: Number(p.agentHours.toFixed(1)),
     hours_last_week: Number(p.agentHoursPrev.toFixed(1)),
     delta_pct: pctDelta(p.agentHours, p.agentHoursPrev),
@@ -1522,7 +1556,6 @@ export async function buildTeamInsightReport(
     data_freshness: freshnessRes.rows[0]?.ingested_at ?? new Date().toISOString(),
     member_portraits: portraits,
   };
-  const integ = await loadIntegrationConfigs(teamId, pool);
   const [ghDelivery, linVelocity, timeline] = await Promise.all([
     githubDelivery(teamId, scope, weekMonday, pool, integ.github),
     linearVelocity(teamId, scope, weekMonday, pool, integ.linear),
