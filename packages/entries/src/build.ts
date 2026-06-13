@@ -246,6 +246,8 @@ type DayAggregate = {
   prTitles: string[];
   commits: number;
   pushes: number;
+  githubRepos: string[];
+  editedDirs: string[];
   modelTurns: Map<string, number>;
   totalToolErrors: number;
   totalInterrupts: number;
@@ -261,6 +263,11 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
   const prTitles: string[] = [];
   let commits = 0;
   let pushes = 0;
+  // owner/name identities seen in the OUTPUT of git-push / gh-pr commands —
+  // ground truth for which GitHub repo this day's work actually touched.
+  const gitToolUseIds = new Set<string>();
+  const githubRepos = new Set<string>();
+  const editedDirCounts = new Map<string, number>();
   const modelTurns = new Map<string, number>();
   let totalToolErrors = 0;
   let totalInterrupts = 0;
@@ -309,13 +316,30 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
           firstUser = text;
         }
       } else {
-        // tool_result — count errors
+        // tool_result — count errors; harvest repo identities from git output
         if (Array.isArray(content)) {
           for (const c of content) {
-            if (c && typeof c === "object" && (c as { type?: string }).type === "tool_result"
-                && (c as { is_error?: boolean }).is_error) {
+            if (!c || typeof c !== "object" || (c as { type?: string }).type !== "tool_result") continue;
+            if ((c as { is_error?: boolean }).is_error) {
               totalToolErrors++;
               if (cur) cur.toolErrors++;
+            }
+            const tuId = (c as { tool_use_id?: string }).tool_use_id;
+            if (tuId && gitToolUseIds.has(tuId)) {
+              const rc = (c as { content?: unknown }).content;
+              const text = typeof rc === "string"
+                ? rc
+                : Array.isArray(rc)
+                  ? rc.map((b) => (b && typeof b === "object" && typeof (b as { text?: string }).text === "string" ? (b as { text: string }).text : "")).join("\n")
+                  : "";
+              // Lookbehind rejects api.github.com / docs.github.com — their
+              // path segments (repos/<owner>, rest/<topic>) parse as fake
+              // owner/name pairs otherwise. user-attachments is GitHub's
+              // image-CDN namespace, not a repo owner.
+              for (const m of text.matchAll(/(?<![.\w])github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git\b|[/\s"'),]|$)/g)) {
+                if (m[1]!.toLowerCase() === "user-attachments") continue;
+                githubRepos.add(`${m[1]}/${m[2]}`.toLowerCase());
+              }
             }
           }
         }
@@ -340,7 +364,7 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
       if (Array.isArray(content)) {
         for (const c of content) {
           if (!c || typeof c !== "object") continue;
-          const ct = c as { type?: string; text?: string; name?: string; input?: Record<string, unknown> };
+          const ct = c as { type?: string; id?: string; text?: string; name?: string; input?: Record<string, unknown> };
           if (ct.type === "text" && ct.text) {
             finalAgent = ct.text;
             if (cur) {
@@ -387,10 +411,19 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
               }
               if (/\bgit\s+commit\b/.test(cmd)) commits++;
               if (/\bgit\s+push\b/.test(cmd)) pushes++;
+              if (ct.id && /\bgit\s+push\b|\bgh\s+pr\s+/.test(cmd)) gitToolUseIds.add(ct.id);
             }
             // Track cwd from tool-use-heavy tool names for project detection
             if (eventCwd && (name === "Bash" || name === "Edit" || name === "Write" || name === "Read")) {
               cwdCounts.set(eventCwd, (cwdCounts.get(eventCwd) ?? 0) + 1);
+            }
+            if (name === "Edit" || name === "Write" || name === "MultiEdit" || name === "NotebookEdit") {
+              const fp = String((ct.input?.file_path ?? ct.input?.notebook_path ?? "") as string);
+              const slash = fp.lastIndexOf("/");
+              if (slash > 0) {
+                const dir = fp.slice(0, slash);
+                editedDirCounts.set(dir, (editedDirCounts.get(dir) ?? 0) + 1);
+              }
             }
           }
         }
@@ -419,6 +452,11 @@ function aggregateDay(dayEvents: SessionEvent[], _sessionFallbackProject: string
     prTitles,
     commits,
     pushes,
+    githubRepos: [...githubRepos].slice(0, 5),
+    editedDirs: [...editedDirCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([dir]) => dir),
     modelTurns,
     totalToolErrors,
     totalInterrupts,
@@ -593,6 +631,8 @@ export function buildEntries(sessionDetail: SessionDetail): Entry[] {
       first_user,
       final_agent,
       pr_titles: agg.prTitles,
+      ...(agg.githubRepos.length ? { github_repos: agg.githubRepos } : {}),
+      ...(agg.editedDirs.length ? { edited_dirs: agg.editedDirs } : {}),
       top_tools,
       skills,
       subagents,

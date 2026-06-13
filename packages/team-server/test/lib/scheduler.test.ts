@@ -30,10 +30,11 @@ describe("startScheduler", () => {
     const setIntervalSpy = vi.spyOn(global, "setInterval");
     startScheduler();
     startScheduler();
-    // Four setInterval calls from a single startScheduler invocation
-    // (ingest-log prune + checkForUpdates + mat view refresh + plan_utilization
-    // prune); the second startScheduler returns early and must not schedule more.
-    expect(setIntervalSpy).toHaveBeenCalledTimes(4);
+    // Five setInterval calls from a single startScheduler invocation
+    // (ingest-log prune + checkForUpdates + mat view refresh + github sync
+    // sweep + plan_utilization prune); the second startScheduler returns early
+    // and must not schedule more.
+    expect(setIntervalSpy).toHaveBeenCalledTimes(5);
     vi.useRealTimers();
   });
 

@@ -75,16 +75,6 @@ export function defaultWidthFor(b: DashboardBlock): number {
 
 // ─── Small inline render helpers ─────────────────────────────────────────
 
-// Project identities are full canonical cwd paths (e.g.
-// /Users/x/conductor/workspaces/claude-lens). The leaf segment is the
-// meaningful repo/workspace name; the absolute prefix just overflows the
-// label column and collides with the bars. Show the leaf, keep the full path
-// as the title tooltip.
-function shortProjectLabel(project: string): string {
-  const segs = project.replace(/\/+$/, "").split("/").filter(Boolean);
-  return segs[segs.length - 1] || project;
-}
-
 // Percent-change is meaningless when a project/skill existed in only one of the
 // two weeks (division by ~zero produced +1599% / ±100% noise). Render the
 // transition instead.
@@ -490,6 +480,280 @@ const V8_BLOCKS: DashboardBlock[] = [
     },
   },
   {
+    id: "github-delivery",
+    title: "Delivery · GitHub (merged PRs, AI vs other)",
+    short_description:
+      "Synced from the GitHub integration — merged PR counts, AI-assisted share, and cycle/review medians split AI vs non-AI",
+    category: "outcomes",
+    tier: "external-plug-in",
+    source_version: "v8",
+    defaultW: 4,
+    render: (r) => {
+      const g = r.live_extras?.github_delivery;
+      if (!g) {
+        return (
+          <div className="live-empty-row">
+            GitHub isn&rsquo;t connected yet, so PR counts here are transcript-side estimates.{" "}
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>Connect GitHub in team settings</a> to see merge-confirmed
+            delivery — including how AI-assisted PRs compare with the rest.
+          </div>
+        );
+      }
+      if (g.repos.length === 0) {
+        return (
+          <div className="live-empty-row">
+            GitHub is connected, but no repository is mapped to this group yet — in{" "}
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>team settings → Integrations</a>, set each repo&rsquo;s
+            &ldquo;counts toward&rdquo; to this group (or to all groups).
+          </div>
+        );
+      }
+      const w = g.week;
+      const pw = g.prev_week;
+      const mergedDelta = w.merged - pw.merged;
+      const shareDelta = w.ai_share_pct - pw.ai_share_pct;
+      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+      const pair = (label: string, ai: number | null, other: number | null) => (
+        <div className="wow-tile">
+          <div className="wow-tile-label">{label}</div>
+          <div className="wow-tile-value" style={{ fontSize: 22 }}>
+            {fmtH(ai)} <span style={{ fontSize: 13, color: "var(--mute)" }}>AI-assisted</span>
+          </div>
+          <div className="wow-tile-delta">{fmtH(other)} other PRs</div>
+        </div>
+      );
+      return (
+        <>
+          <div className="wow-tile-row">
+            <div className="wow-tile">
+              <div className="wow-tile-label">Merged PRs</div>
+              <div className="wow-tile-value">{w.merged}</div>
+              <div className={`wow-tile-delta ${mergedDelta >= 0 ? "positive" : "negative"}`}>
+                {mergedDelta >= 0 ? "+" : ""}{mergedDelta} vs last wk ({pw.merged})
+              </div>
+            </div>
+            <div className="wow-tile">
+              <div className="wow-tile-label">AI-assisted share</div>
+              <div className="wow-tile-value">{w.ai_share_pct}%</div>
+              <div className={`wow-tile-delta ${shareDelta >= 0 ? "positive" : "negative"}`}>
+                {shareDelta >= 0 ? "+" : ""}{shareDelta}pp vs last wk · {w.ai_assisted} of {w.merged} PRs
+              </div>
+            </div>
+            {pair("Cycle time (first commit → merge)", w.median_cycle_hours_ai, w.median_cycle_hours_other)}
+            {pair("Review wait (created → first review)", w.median_review_wait_hours_ai, w.median_review_wait_hours_other)}
+          </div>
+          <div className="kicker" style={{ marginTop: 10 }}>
+            {`Counting ${g.repos.join(", ")} (${g.open_now} open now) — manage which repos count toward this report ` +
+              `in team settings → Integrations. Merge-confirmed via GitHub, not transcript-counted; AI attribution ` +
+              `from Co-Authored-By trailers (squash-merges that strip trailers undercount).`}
+          </div>
+        </>
+      );
+    },
+  },
+  {
+    id: "linear-velocity",
+    title: "Ticket velocity · Linear",
+    short_description:
+      "Synced from the Linear integration — completed tickets, cycle/lead medians, WIP, and the share shipped via AI-assisted PRs",
+    category: "outcomes",
+    tier: "external-plug-in",
+    source_version: "v8",
+    defaultW: 4,
+    render: (r) => {
+      const l = r.live_extras?.linear_velocity;
+      if (!l) {
+        return (
+          <div className="live-empty-row">
+            Linear isn&rsquo;t connected.{" "}
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>Connect it in team settings</a> to see ticket cycle time and
+            how much completed work ships through AI-assisted PRs.
+          </div>
+        );
+      }
+      if (l.team_keys.length === 0) {
+        return (
+          <div className="live-empty-row">
+            Linear is connected, but no Linear team is mapped to this group yet — in{" "}
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>team settings → Integrations</a>, set each Linear team&rsquo;s
+            &ldquo;counts toward&rdquo; to this group (or to all groups).
+          </div>
+        );
+      }
+      const w = l.week;
+      const pw = l.prev_week;
+      const completedDelta = w.completed - pw.completed;
+      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+      const timeTile = (label: string, cur: number | null, prev: number | null) => (
+        <div className="wow-tile">
+          <div className="wow-tile-label">{label}</div>
+          <div className="wow-tile-value" style={{ fontSize: 22 }}>{fmtH(cur)}</div>
+          <div className="wow-tile-delta">{prev == null ? "no prior week" : `${fmtH(prev)} last wk`}</div>
+        </div>
+      );
+      return (
+        <>
+          <div className="wow-tile-row">
+            <div className="wow-tile">
+              <div className="wow-tile-label">Tickets completed</div>
+              <div className="wow-tile-value">{w.completed}</div>
+              <div className={`wow-tile-delta ${completedDelta >= 0 ? "positive" : "negative"}`}>
+                {completedDelta >= 0 ? "+" : ""}{completedDelta} vs last wk ({pw.completed})
+              </div>
+            </div>
+            <div className="wow-tile">
+              <div className="wow-tile-label">Shipped via AI-assisted PRs</div>
+              <div className="wow-tile-value">{w.ai_linked_share_pct}%</div>
+              <div className="wow-tile-delta">{w.ai_linked} of {w.completed} tickets · joined by ticket ref</div>
+            </div>
+            {timeTile("Cycle time (started → done)", w.median_cycle_hours, pw.median_cycle_hours)}
+            {timeTile("Lead time (created → done)", w.median_lead_hours, pw.median_lead_hours)}
+          </div>
+          <div className="kicker" style={{ marginTop: 10 }}>
+            {`Linear ${l.team_keys.join(", ")} · ${l.wip_now} in progress now · cycle/lead from Linear's native ` +
+              `started/completed timestamps · AI linkage requires the ticket ref in the PR title, so it undercounts.`}
+          </div>
+        </>
+      );
+    },
+  },
+  {
+    id: "work-timeline",
+    title: "Work timeline · pickup → merge, by task size",
+    short_description:
+      "Completed tickets joined to their merged PRs, split into build (pickup → PR) and review (PR → merge) phases, cohorted by task size — does bigger work take proportionally longer?",
+    category: "outcomes",
+    tier: "external-plug-in",
+    source_version: "v8",
+    defaultW: 4,
+    render: (r) => {
+      const t = r.live_extras?.work_timeline;
+      if (!t) {
+        return (
+          <div className="live-empty-row">
+            The work timeline needs both GitHub and Linear connected (and mapped to this group) — it chains
+            ticket pickup, PR, and merge into one view.{" "}
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>Set up integrations in team settings</a>.
+          </div>
+        );
+      }
+      if (t.tickets === 0) {
+        return (
+          <div className="live-empty-row">
+            No completed tickets joined to a merged PR this week — the timeline needs the ticket ref
+            (e.g. KIP-315) in the PR title to connect the two.
+          </div>
+        );
+      }
+      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+      const PHASES = [
+        { key: "build", label: "Build", bounds: "picked up → PR opened", color: "var(--accent)" },
+        { key: "review", label: "Review", bounds: "PR opened → merged", color: "color-mix(in srgb, var(--ink) 62%, var(--paper))" },
+      ] as const;
+      // One week's bar: width = that week's pickup→merge median on the shared
+      // scale, split by the week's phase-median proportions.
+      const weekFill = (build: number | null, review: number | null, total: number | null, scaleMax: number, lastWeek: boolean, title?: string) => {
+        const vals = [
+          { ...PHASES[0], v: build },
+          { ...PHASES[1], v: review },
+        ];
+        const phaseSum = vals.reduce((s, p) => s + (p.v ?? 0), 0);
+        return (
+          <div
+            className={`timeline-cohort-fill${lastWeek ? " last-week" : ""}`}
+            title={title}
+            style={{ width: `${Math.max(total == null ? 0 : 1.5, ((total ?? 0) / scaleMax) * 100)}%` }}
+          >
+            {phaseSum > 0 &&
+              vals.map((p) =>
+                p.v == null || p.v === 0 ? null : (
+                  <div
+                    key={p.key}
+                    className="timeline-seg"
+                    title={`${p.label}${lastWeek ? " last wk" : ""} · ${fmtH(p.v)} median`}
+                    style={{ width: `${(p.v / phaseSum) * 100}%`, background: p.color }}
+                  />
+                ),
+              )}
+          </div>
+        );
+      };
+      // Shared absolute scale across cohorts and both weeks: bar length = the
+      // cohort-week's pickup → merge median; this-week bars split by the
+      // phase-median proportions, last-week bars are a plain muted fill.
+      const scaleMax = Math.max(
+        1,
+        ...t.size_classes.flatMap((c) => [c.total_hours ?? 0, c.prev_total_hours ?? 0]),
+      );
+      return (
+        <>
+          <div className="timeline-cohorts">
+            {t.size_classes.map((c) => (
+              <div key={c.size} className="timeline-cohort-row">
+                <div className="timeline-cohort-head">
+                  <span className="timeline-cohort-size">{c.size}</span>
+                  <span className="timeline-bounds">{c.bounds}</span>
+                  <span className="timeline-cohort-n">
+                    {c.tickets} {c.tickets === 1 ? "ticket" : "tickets"}
+                  </span>
+                </div>
+                <div className="timeline-cohort-bar">
+                  <div className="timeline-pair-track">
+                    {weekFill(c.build_hours, c.review_hours, c.total_hours, scaleMax, false)}
+                  </div>
+                  <div className="timeline-pair-track">
+                    {weekFill(
+                      c.prev_build_hours,
+                      c.prev_review_hours,
+                      c.prev_total_hours,
+                      scaleMax,
+                      true,
+                      c.prev_tickets === 0 ? "No tickets in this cohort last week" : undefined,
+                    )}
+                  </div>
+                </div>
+                <div className="timeline-cohort-total">
+                  {fmtH(c.total_hours)}
+                  <div className="timeline-cohort-prev">
+                    {c.prev_tickets === 0 ? "none last wk" : `${fmtH(c.prev_total_hours)} · ${c.prev_tickets} last wk`}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="timeline-legend">
+            {PHASES.map((p) => {
+              const wk = t.week[p.key];
+              const pw = t.prev_week[p.key];
+              return (
+                <div key={p.key} className="timeline-legend-row">
+                  <span className="timeline-swatch" style={{ background: p.color }} />
+                  <span className="timeline-phase">
+                    {p.label} <span className="timeline-bounds">{p.bounds}</span>
+                  </span>
+                  <span className="timeline-median">{fmtH(wk.median_hours)} med</span>
+                  <span className="timeline-median">{fmtH(wk.p90_hours)} p90</span>
+                  <span className="timeline-prev">{fmtH(pw.median_hours)} med last wk</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="kicker" style={{ marginTop: 10 }}>
+            {`${t.tickets} ${t.tickets === 1 ? "ticket" : "tickets"} completed this week, ` +
+              `sized by ${t.sized_by === "estimate" ? "Linear estimate" : "lines changed across the ticket's PRs"}` +
+              (t.unjoined > 0 ? ` · ${t.unjoined} more had no merged-PR match` : "") +
+              (t.queue_median_hours != null
+                ? ` · creation → pickup median ${fmtH(t.queue_median_hours)}` +
+                  (t.queue_median_hours_prev != null ? ` vs ${fmtH(t.queue_median_hours_prev)} last wk` : "") +
+                  ` (planning cadence — excluded from the delivery phases)`
+                : "") +
+              ` · bars share one time scale, muted bar = last week; row total is the per-ticket pickup → merge median.`}
+          </div>
+        </>
+      );
+    },
+  },
+  {
     id: "live-plan-mode",
     title: "Plan-mode adoption",
     short_description: "Share of active members using plan-mode this week",
@@ -704,15 +968,18 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
   },
   {
     id: "per-project-time-bars",
-    title: "Per-project time · paired bars",
-    short_description: "This week vs last week hours per project",
+    title: "Per-repo time · paired bars",
+    short_description: "This week vs last week hours per GitHub repo",
     category: "outcomes",
     tier: "deterministic",
-    source_version: "v4",
+    source_version: "v5",
     render: (r) => {
-      // Only projects active this week — a row that was busy last week but
-      // idle this week is just noise in a "this vs last" read.
-      const projects = r.variants.wow_pulse.project_time.filter((p) => p.hours_this_week > 0);
+      // Only repos active this week — a row that was busy last week but idle
+      // this week is just noise in a "this vs last" read. "others" (agent
+      // time with no resolvable GitHub repo) renders last, muted.
+      const projects = r.variants.wow_pulse.project_time.filter(
+        (p) => (p.repo || p.unlinked) && p.hours_this_week > 0,
+      );
       const max = Math.max(...projects.flatMap((p) => [p.hours_this_week, p.hours_last_week]), 1);
       return (
         <div className="bar-chart paired-bar-chart">
@@ -720,7 +987,18 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
             const d = wowDelta(p.hours_this_week, p.hours_last_week, p.delta_pct);
             return (
             <div key={p.project} className="paired-bar-row">
-              <div className="bar-chart-label"><code title={p.project}>{shortProjectLabel(p.project)}</code></div>
+              <div className="bar-chart-label">
+                <code
+                  title={
+                    p.unlinked
+                      ? "Agent time not associated with any GitHub project"
+                      : `${p.repo} — GitHub repo (from members' git remotes)`
+                  }
+                  style={p.unlinked ? { color: "var(--mute)", fontStyle: "italic" } : undefined}
+                >
+                  {p.unlinked ? "others" : p.repo}
+                </code>
+              </div>
               <div className="paired-bar-tracks">
                 <div className="paired-bar-track">
                   <div className="paired-bar-fill this-week" style={{ width: `${(p.hours_this_week / max) * 100}%` }}>
@@ -740,6 +1018,10 @@ export const BLOCK_CATALOG: DashboardBlock[] = [
           <div className="paired-bar-legend">
             <span><span className="paired-bar-swatch this-week" /> This week</span>
             <span><span className="paired-bar-swatch last-week" /> Last week</span>
+          </div>
+          <div className="kicker" style={{ marginTop: 10 }}>
+            owner/name rows come from members&rsquo; git remotes (checkouts of the same repo merged);
+            &ldquo;others&rdquo; is agent time not associated with any GitHub project.
           </div>
         </div>
       );

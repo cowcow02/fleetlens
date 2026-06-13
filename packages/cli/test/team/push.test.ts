@@ -498,6 +498,57 @@ describe("buildRichRollupBlocks", () => {
     expect(aProj?.sessions).toBe(1);
     expect(bProj?.sessions).toBe(1);
   });
+
+  describe("repo resolution (resolveRepo)", () => {
+    it("keys rows by the cwd's resolved repo and merges checkouts of the same repo", () => {
+      const resolve = (dir: string) =>
+        dir === "/Users/x/Repo/fleetlens" || dir === "/Users/x/Repo/topeka"
+          ? "cowcow02/fleetlens"
+          : null;
+      const blocks = buildRichRollupBlocks(day, [s1, s2, s3], [], new Set(), resolve);
+      expect(blocks.projects).toHaveLength(1);
+      expect(blocks.projects[0]).toMatchObject({
+        sessions: 3,
+        githubRepos: ["cowcow02/fleetlens"],
+      });
+    });
+
+    it("falls back to the entry's edited-dir repos when the cwd isn't a repo", () => {
+      const parent = makeSession(day, {
+        id: "sp", projectName: "/Users/x/Repo", projectDir: "users-x-Repo",
+        activeSegments: [
+          { startMs: Date.parse(`${day}T10:00:00.000Z`), endMs: Date.parse(`${day}T11:00:00.000Z`) },
+        ],
+      });
+      const entries: Entry[] = [
+        makeEntry({
+          session_id: "sp", local_day: day, project: "/Users/x/Repo",
+          edited_dirs: ["/Users/x/Repo/web-app/src", "/Users/x/Repo/web-app/test"],
+        }),
+      ];
+      const resolve = (dir: string) => (dir.startsWith("/Users/x/Repo/web-app") ? "acme/web-app" : null);
+      const blocks = buildRichRollupBlocks(day, [parent], entries, new Set(), resolve);
+      expect(blocks.projects[0]).toMatchObject({ githubRepos: ["acme/web-app"] });
+    });
+
+    it("falls back to an unambiguous harvested repo when nothing resolves on disk", () => {
+      // Deleted checkout: resolver finds nothing, but the transcript saw a push.
+      const entries: Entry[] = [
+        makeEntry({
+          session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka",
+          github_repos: ["cowcow02/fleetlens"],
+        }),
+      ];
+      const blocks = buildRichRollupBlocks(day, [s3], entries, new Set(), () => null);
+      expect(blocks.projects[0]).toMatchObject({ githubRepos: ["cowcow02/fleetlens"] });
+    });
+
+    it("leaves rows keyed by basename when nothing resolves at all", () => {
+      const blocks = buildRichRollupBlocks(day, [s1, s3], [], new Set(), () => null);
+      expect(blocks.projects.map((p) => p.project).sort()).toEqual(["fleetlens", "topeka"]);
+      expect(blocks.projects.every((p) => !p.githubRepos)).toBe(true);
+    });
+  });
 });
 
 describe("buildEnrichedExtras", () => {

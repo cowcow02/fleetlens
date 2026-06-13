@@ -114,9 +114,28 @@ export function GroupMomentumReport({
       key: "shipping",
       heading: "Changing how we ship",
       framing:
-        "Impact proxy — PR throughput and where the effort landed. Correlation, not causation: " +
-        "agent adoption is one input among many, not a measured cause of delivery.",
-      blockIds: ["live-prs-shipped", "per-project-time-bars"],
+        report.live_extras?.github_delivery || report.live_extras?.linear_velocity
+          ? "Impact — delivery confirmed by this group's connected sources (" +
+            [
+              report.live_extras?.github_delivery && "GitHub merges",
+              report.live_extras?.linear_velocity && "Linear tickets",
+            ]
+              .filter(Boolean)
+              .join(", ") +
+            "), alongside transcript-side PR throughput and where the effort landed."
+          : "Impact proxy — PR throughput and where the effort landed. Correlation, not causation: " +
+            "agent adoption is one input among many, not a measured cause of delivery.",
+      blockIds: [
+        ...(report.live_extras?.work_timeline ? ["work-timeline"] : []),
+        ...(report.live_extras?.github_delivery ? ["github-delivery"] : []),
+        ...(report.live_extras?.linear_velocity ? ["linear-velocity"] : []),
+        "live-prs-shipped",
+        // Repo-time breakdown only renders when GitHub resolution produced
+        // rows — without it the block would just echo local directory names.
+        ...(report.variants.wow_pulse.project_time.some((p) => p.repo && p.hours_this_week > 0)
+          ? ["per-project-time-bars"]
+          : []),
+      ],
     },
   ];
 

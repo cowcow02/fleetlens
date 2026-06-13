@@ -85,6 +85,9 @@ export const RichDailyRollupSchema = DailyRollupSchema.extend({
     project: z.string(),
     agentTimeMs: z.number().int().nonnegative(),
     sessions: z.number().int().nonnegative(),
+    // owner/name identities from git-push / gh-pr output — lets the report
+    // canonicalize the local directory name onto the actual remote.
+    githubRepos: z.array(z.string().max(200)).max(5).optional(),
   }).passthrough()),
   workingShapes: z.array(z.object({
     shape: z.string(),

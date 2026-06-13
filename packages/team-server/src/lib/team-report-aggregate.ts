@@ -2,7 +2,11 @@ import type pg from "pg";
 import type {
   BreadthSnapshot,
   CadenceSnapshot,
+  GithubDeliveryStats,
+  GithubWeekDelivery,
   HarnessBreakdown,
+  LinearVelocityStats,
+  LinearWeekVelocity,
   LiveExtras,
   MaturityEvidence,
   MaturityLevel,
@@ -10,10 +14,16 @@ import type {
   MaturityPath,
   MemberMaturityPortrait,
   TeamInsightReport,
+  WorkPhaseStat,
+  WorkTimelinePhases,
+  WorkTimelineStats,
 } from "../app/team/[slug]/insights/types";
+import { medianHours, percentileHours } from "./github";
+import { normalizeGithubRepos, normalizeLinearTeams } from "./integrations";
 import {
   isoMondayOf,
   perProjectTimeWoW,
+  type ProjectTimeRow,
   previousIsoMonday,
   skillUsageWeek,
   teamPulseWeek,
@@ -167,6 +177,426 @@ async function weekAggregates(
 function pctDelta(current: number, prev: number): number {
   if (prev === 0) return current === 0 ? 0 : 100;
   return Math.round(((current - prev) / prev) * 100);
+}
+
+export type CanonicalProjectRow = ProjectTimeRow & {
+  repo?: string;
+  /** "others" bucket — agent time not associated with any GitHub project.
+   *  The member-reported local names it folds in are deliberately dropped
+   *  here so they never reach the client. */
+  unlinked?: boolean;
+};
+
+// Member-reported project names are local clone-directory basenames. Fold a
+// row onto a GitHub repo's identity and merge rows landing on the same repo
+// (two members may clone under different names). Signals, in reliability
+// order:
+//   1. The FIRST reported repo in githubRepos — the member's resolver puts
+//      the .git-derived identity at position 0 (harvested push/PR extras
+//      follow). Trusted whether or not it's in the connected list; the
+//      connected list only normalizes display casing. Never scan past
+//      position 0 for a connected match — a harvested extra (a URL another
+//      repo's session merely printed) would relabel the row.
+//   2. Directory-name == connected-repo basename — the clone-default
+//      convention, kept as fallback for rollups submitted before githubRepos
+//      existed.
+// Rows with no repo collapse into a single "others" bucket so local
+// directory names never compete with repo identities in the report.
+export function canonicalizeProjects(rows: ProjectTimeRow[], repoNames: string[]): CanonicalProjectRow[] {
+  if (repoNames.length === 0) return rows;
+  const byFull = new Map(repoNames.map((r) => [r.toLowerCase(), r]));
+  const byBase = new Map(repoNames.map((r) => [r.split("/").pop()!.toLowerCase(), r]));
+  const out = new Map<string, CanonicalProjectRow>();
+  let bucket: CanonicalProjectRow | undefined;
+  for (const row of rows) {
+    const first = row.githubRepos?.[0];
+    const repo = first
+      ? byFull.get(first.toLowerCase()) ?? first.toLowerCase()
+      : byBase.get(row.project.split("/").pop()!.toLowerCase());
+    if (!repo) {
+      if (bucket) {
+        bucket.agentHours += row.agentHours;
+        bucket.agentHoursPrev += row.agentHoursPrev;
+        bucket.sessions += row.sessions;
+      } else {
+        bucket = { ...row, project: "others", unlinked: true };
+      }
+      continue;
+    }
+    const cur = out.get(repo);
+    if (cur) {
+      cur.agentHours += row.agentHours;
+      cur.agentHoursPrev += row.agentHoursPrev;
+      cur.sessions += row.sessions;
+    } else {
+      out.set(repo, { ...row, project: repo, repo });
+    }
+  }
+  const sorted = [...out.values()].sort((a, b) => b.agentHours - a.agentHours);
+  // Bucket always renders last — it's the residue, not a project.
+  return bucket ? [...sorted, bucket] : sorted;
+}
+
+// Mapped source names visible to a scope — the week-nav floor uses this so a
+// group's navigation doesn't reach into other groups' integration history.
+export async function scopedSourceNames(
+  teamId: string,
+  scope: InsightsScope,
+  pool: pg.Pool,
+): Promise<{ repoNames: string[] | null; teamKeys: string[] | null }> {
+  const integ = await loadIntegrationConfigs(teamId, pool);
+  const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
+    scope.kind === "group"
+      ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
+      : xs;
+  return {
+    repoNames: integ.github ? inScope(normalizeGithubRepos(integ.github.config.repos)).map((r) => r.name) : [],
+    teamKeys: integ.linear ? inScope(normalizeLinearTeams(integ.linear.config)).map((t) => t.key) : [],
+  };
+}
+
+// One row of team_integrations, fetched once per report build and passed into
+// every block that needs a provider config — they used to each re-query it.
+type IntegrationConfigRow = {
+  provider: string;
+  config: { login?: string; repos?: unknown; teams?: unknown; team_keys?: unknown; sync_days?: number };
+  last_sync_at: string | null;
+};
+
+async function loadIntegrationConfigs(
+  teamId: string,
+  pool: pg.Pool,
+): Promise<{ github?: IntegrationConfigRow; linear?: IntegrationConfigRow }> {
+  const res = await pool.query<IntegrationConfigRow>(
+    `SELECT provider, config, last_sync_at::text FROM team_integrations
+     WHERE team_id = $1 AND provider IN ('github', 'linear')`,
+    [teamId],
+  );
+  return {
+    github: res.rows.find((r) => r.provider === "github"),
+    linear: res.rows.find((r) => r.provider === "linear"),
+  };
+}
+
+type GithubPrRow = {
+  created_at: string;
+  merged_at: string;
+  first_commit_at: string | null;
+  first_review_at: string | null;
+  ai_assisted: boolean;
+};
+
+function githubWeekDelivery(rows: GithubPrRow[]): GithubWeekDelivery {
+  const ai = rows.filter((r) => r.ai_assisted);
+  const other = rows.filter((r) => !r.ai_assisted);
+  const cycleMs = (rs: GithubPrRow[]) =>
+    rs
+      .filter((r) => r.first_commit_at)
+      .map((r) => new Date(r.merged_at).getTime() - new Date(r.first_commit_at!).getTime())
+      .filter((ms) => ms >= 0);
+  const reviewMs = (rs: GithubPrRow[]) =>
+    rs
+      .filter((r) => r.first_review_at)
+      .map((r) => new Date(r.first_review_at!).getTime() - new Date(r.created_at).getTime())
+      .filter((ms) => ms >= 0);
+  return {
+    merged: rows.length,
+    ai_assisted: ai.length,
+    ai_share_pct: rows.length === 0 ? 0 : Math.round((ai.length / rows.length) * 100),
+    median_cycle_hours_ai: medianHours(cycleMs(ai)),
+    median_cycle_hours_other: medianHours(cycleMs(other)),
+    median_review_wait_hours_ai: medianHours(reviewMs(ai)),
+    median_review_wait_hours_other: medianHours(reviewMs(other)),
+  };
+}
+
+type LinearIssueAggRow = {
+  created_at: string;
+  started_at: string | null;
+  completed_at: string;
+  ai_linked: boolean;
+};
+
+function linearWeekVelocity(rows: LinearIssueAggRow[]): LinearWeekVelocity {
+  const aiLinked = rows.filter((r) => r.ai_linked).length;
+  const cycleMs = rows
+    .filter((r) => r.started_at)
+    .map((r) => new Date(r.completed_at).getTime() - new Date(r.started_at!).getTime())
+    .filter((ms) => ms >= 0);
+  const leadMs = rows
+    .map((r) => new Date(r.completed_at).getTime() - new Date(r.created_at).getTime())
+    .filter((ms) => ms >= 0);
+  return {
+    completed: rows.length,
+    ai_linked: aiLinked,
+    ai_linked_share_pct: rows.length === 0 ? 0 : Math.round((aiLinked / rows.length) * 100),
+    median_cycle_hours: medianHours(cycleMs),
+    median_lead_hours: medianHours(leadMs),
+  };
+}
+
+// Ticket velocity from the Linear integration. Linear teams are group-mapped
+// like repos (empty group_ids = all groups); group-scoped reports only see
+// their mapped teams' issues. AI linkage joins a completed ticket to any
+// AI-assisted synced PR whose title carries the ticket ref ("KIP-315" + word
+// boundary, so KIP-3150 doesn't match). Null when not connected; connected
+// with zero mapped teams returns empty-keys stats so the widget can point the
+// admin at the mapping.
+async function linearVelocity(
+  teamId: string,
+  scope: InsightsScope,
+  weekMonday: string,
+  pool: pg.Pool,
+  integ: IntegrationConfigRow | undefined,
+): Promise<LinearVelocityStats | null> {
+  if (!integ) return null;
+
+  const allTeams = normalizeLinearTeams(integ.config);
+  const scoped =
+    scope.kind === "group"
+      ? allTeams.filter((t) => t.group_ids.length === 0 || t.group_ids.includes(scope.groupId))
+      : allTeams;
+  const teamKeys = scoped.map((t) => t.key);
+  if (teamKeys.length === 0) {
+    return {
+      team_keys: [],
+      last_sync_at: integ.last_sync_at,
+      wip_now: 0,
+      week: linearWeekVelocity([]),
+      prev_week: linearWeekVelocity([]),
+    };
+  }
+
+  const prevMonday = previousIsoMonday(weekMonday);
+  const winEnd = weekEndExclusive(weekMonday);
+  const [issues, wip] = await Promise.all([
+    pool.query<LinearIssueAggRow & { in_current_week: boolean }>(
+      `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
+              (i.completed_at >= $3::date) AS in_current_week,
+              EXISTS (
+                SELECT 1 FROM github_pull_requests p
+                WHERE p.team_id = i.team_id AND p.ai_assisted
+                  AND p.title ~* (i.identifier || '\\M')
+              ) AS ai_linked
+       FROM linear_issues i
+       WHERE i.team_id = $1 AND i.linear_team_key = ANY($5::text[])
+         AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
+      [teamId, prevMonday, weekMonday, winEnd, teamKeys],
+    ),
+    pool.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM linear_issues
+       WHERE team_id = $1 AND linear_team_key = ANY($2::text[]) AND state_type = 'started'`,
+      [teamId, teamKeys],
+    ),
+  ]);
+
+  return {
+    team_keys: teamKeys,
+    last_sync_at: integ.last_sync_at,
+    wip_now: wip.rows[0].n,
+    week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
+    prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),
+  };
+}
+
+export type WorkTimelineRow = {
+  created_at: string;
+  started_at: string | null;
+  first_pr_created: string | null; // MIN(created_at) over matched merged PRs
+  last_merged: string | null; // MAX(merged_at) over matched merged PRs
+  estimate: number | null; // Linear points
+  lines_changed: number | null; // SUM(additions+deletions) over matched merged PRs
+};
+
+const phaseMs = (a: string | null, b: string | null, clamp = false): number | null => {
+  if (!a || !b) return null;
+  const d = new Date(b).getTime() - new Date(a).getTime();
+  return clamp ? Math.max(0, d) : d >= 0 ? d : null;
+};
+// Build clamps at 0 (tickets sometimes flip to started after the PR already
+// exists); a negative non-clamped phase is bad data and drops from the stats
+// rather than zeroing them.
+const buildMs = (r: WorkTimelineRow) => phaseMs(r.started_at, r.first_pr_created, true);
+const reviewMs = (r: WorkTimelineRow) => phaseMs(r.first_pr_created, r.last_merged);
+
+function collect(rows: WorkTimelineRow[], pick: (r: WorkTimelineRow) => number | null): number[] {
+  return rows.map(pick).filter((v): v is number => v != null);
+}
+
+function phaseStats(rows: WorkTimelineRow[]): WorkTimelinePhases {
+  const stat = (pick: (r: WorkTimelineRow) => number | null): WorkPhaseStat => {
+    const vals = collect(rows, pick);
+    return { median_hours: medianHours(vals), p90_hours: percentileHours(vals, 0.9) };
+  };
+  return { build: stat(buildMs), review: stat(reviewMs) };
+}
+
+// Size cutoffs are tuned to agent-scale diffs — terciles of real agentic-team
+// data sit near 1k/1.7k lines, so the conventional 100/500 PR-size buckets
+// would put everything in L.
+const LINE_BOUNDS: Record<"S" | "M" | "L", string> = { S: "<1k lines", M: "1–3k lines", L: ">3k lines" };
+const POINT_BOUNDS: Record<"S" | "M" | "L", string> = { S: "≤2 pts", M: "3–5 pts", L: "≥6 pts" };
+
+function sizeOf(r: WorkTimelineRow, sizedBy: "estimate" | "lines"): "S" | "M" | "L" | null {
+  if (sizedBy === "estimate") {
+    if (r.estimate == null) return null;
+    return r.estimate <= 2 ? "S" : r.estimate <= 5 ? "M" : "L";
+  }
+  if (r.lines_changed == null) return null;
+  return r.lines_changed < 1000 ? "S" : r.lines_changed <= 3000 ? "M" : "L";
+}
+
+// Pure assembly from joined-row sets; exported for tests. Tickets that can't
+// be sized (no estimate in estimate mode) drop from size_classes but still
+// count in the phase stats.
+export function workTimelineStats(
+  curr: WorkTimelineRow[],
+  prev: WorkTimelineRow[],
+  unjoined: number,
+): WorkTimelineStats {
+  const withEstimate = curr.filter((r) => r.estimate != null).length;
+  const sizedBy: "estimate" | "lines" = curr.length > 0 && withEstimate * 2 >= curr.length ? "estimate" : "lines";
+  const bounds = sizedBy === "estimate" ? POINT_BOUNDS : LINE_BOUNDS;
+  const totalMs = (r: WorkTimelineRow) => phaseMs(r.started_at, r.last_merged, true);
+  const sizeClasses = (["S", "M", "L"] as const)
+    .map((size) => {
+      const rows = curr.filter((r) => sizeOf(r, sizedBy) === size);
+      const prevRows = prev.filter((r) => sizeOf(r, sizedBy) === size);
+      return {
+        size,
+        bounds: bounds[size],
+        tickets: rows.length,
+        build_hours: medianHours(collect(rows, buildMs)),
+        review_hours: medianHours(collect(rows, reviewMs)),
+        total_hours: medianHours(collect(rows, totalMs)),
+        prev_tickets: prevRows.length,
+        prev_build_hours: medianHours(collect(prevRows, buildMs)),
+        prev_review_hours: medianHours(collect(prevRows, reviewMs)),
+        prev_total_hours: medianHours(collect(prevRows, totalMs)),
+      };
+    })
+    .filter((c) => c.tickets > 0 || c.prev_tickets > 0);
+  return {
+    tickets: curr.length,
+    unjoined,
+    sized_by: sizedBy,
+    queue_median_hours: medianHours(collect(curr, (r) => phaseMs(r.created_at, r.started_at))),
+    queue_median_hours_prev: medianHours(collect(prev, (r) => phaseMs(r.created_at, r.started_at))),
+    week: phaseStats(curr),
+    prev_week: phaseStats(prev),
+    size_classes: sizeClasses,
+  };
+}
+
+// Ticket-to-merge timeline, needing both integrations: Linear supplies
+// created/started/completed, GitHub supplies first-commit/PR-opened/merged for
+// the PRs carrying the ticket ref. Null unless both are connected AND both
+// have at least one source mapped into scope — the single-source blocks
+// already carry the fix-the-mapping guidance, so this one just stays hidden.
+async function workTimeline(
+  teamId: string,
+  scope: InsightsScope,
+  weekMonday: string,
+  pool: pg.Pool,
+  gh: IntegrationConfigRow | undefined,
+  lin: IntegrationConfigRow | undefined,
+): Promise<WorkTimelineStats | null> {
+  if (!gh || !lin) return null;
+
+  const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
+    scope.kind === "group"
+      ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
+      : xs;
+  const repoNames = inScope(normalizeGithubRepos(gh.config.repos)).map((r) => r.name);
+  const teamKeys = inScope(normalizeLinearTeams(lin.config)).map((t) => t.key);
+  if (repoNames.length === 0 || teamKeys.length === 0) return null;
+
+  const prevMonday = previousIsoMonday(weekMonday);
+  const winEnd = weekEndExclusive(weekMonday);
+  const res = await pool.query<WorkTimelineRow & { in_current_week: boolean }>(
+    `SELECT i.created_at::text, i.started_at::text, i.estimate,
+            (i.completed_at >= $3::date) AS in_current_week,
+            pr.first_pr_created::text, pr.last_merged::text,
+            pr.lines_changed::int
+     FROM linear_issues i
+     LEFT JOIN LATERAL (
+       SELECT MIN(p.created_at) AS first_pr_created,
+              MAX(p.merged_at) AS last_merged,
+              SUM(p.additions + p.deletions) AS lines_changed
+       FROM github_pull_requests p
+       WHERE p.team_id = i.team_id AND p.repo = ANY($6::text[])
+         AND p.state = 'merged' AND p.title ~* (i.identifier || '\\M')
+     ) pr ON true
+     WHERE i.team_id = $1 AND i.linear_team_key = ANY($5::text[])
+       AND i.state_type = 'completed'
+       AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
+    [teamId, prevMonday, weekMonday, winEnd, teamKeys, repoNames],
+  );
+
+  const joined = res.rows.filter((r) => r.last_merged != null);
+  return workTimelineStats(
+    joined.filter((r) => r.in_current_week),
+    joined.filter((r) => !r.in_current_week),
+    res.rows.filter((r) => r.in_current_week && r.last_merged == null).length,
+  );
+}
+
+// PRs carry no membership mapping (that needs the session↔commit-SHA join),
+// but repos ARE group-mapped: each configured repo lists the group ids it
+// counts toward (empty = all groups). Group-scoped reports only see PRs from
+// their mapped repos. Null when the integration isn't connected; connected
+// with zero mapped repos returns an empty-repos stats object so the widget
+// can tell the admin to fix the mapping rather than silently showing nothing.
+async function githubDelivery(
+  teamId: string,
+  scope: InsightsScope,
+  weekMonday: string,
+  pool: pg.Pool,
+  integ: IntegrationConfigRow | undefined,
+): Promise<GithubDeliveryStats | null> {
+  if (!integ) return null;
+
+  const allRepos = normalizeGithubRepos(integ.config.repos);
+  const scoped =
+    scope.kind === "group"
+      ? allRepos.filter((r) => r.group_ids.length === 0 || r.group_ids.includes(scope.groupId))
+      : allRepos;
+  const repoNames = scoped.map((r) => r.name);
+  if (repoNames.length === 0) {
+    return {
+      repos: [],
+      last_sync_at: integ.last_sync_at,
+      open_now: 0,
+      week: githubWeekDelivery([]),
+      prev_week: githubWeekDelivery([]),
+    };
+  }
+
+  const prevMonday = previousIsoMonday(weekMonday);
+  const winEnd = weekEndExclusive(weekMonday);
+  const [prs, open] = await Promise.all([
+    pool.query<GithubPrRow & { in_current_week: boolean }>(
+      `SELECT created_at::text, merged_at::text, first_commit_at::text, first_review_at::text,
+              ai_assisted, (merged_at >= $3::date) AS in_current_week
+       FROM github_pull_requests
+       WHERE team_id = $1 AND repo = ANY($5::text[])
+         AND merged_at >= $2::date AND merged_at < $4::date`,
+      [teamId, prevMonday, weekMonday, winEnd, repoNames],
+    ),
+    pool.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM github_pull_requests
+       WHERE team_id = $1 AND repo = ANY($2::text[]) AND state = 'open'`,
+      [teamId, repoNames],
+    ),
+  ]);
+
+  return {
+    repos: repoNames,
+    last_sync_at: integ.last_sync_at,
+    open_now: open.rows[0].n,
+    week: githubWeekDelivery(prs.rows.filter((r) => r.in_current_week)),
+    prev_week: githubWeekDelivery(prs.rows.filter((r) => !r.in_current_week)),
+  };
 }
 
 // Build a typed-but-empty TeamInsightReport skeleton. Most catalog widgets read
@@ -580,14 +1010,21 @@ export async function buildTeamInsightReport(
         [teamId, memberIds, weekMonday, prevMonday, weekEndExclusive(weekMonday)],
       );
 
-  const [pulse, projects, skills, _shapes, thisWeek, prevWeek] = await Promise.all([
+  const [pulse, rawProjects, skills, _shapes, thisWeek, prevWeek, integ] = await Promise.all([
     teamPulseWeek(teamId, scope, weekMonday, pool),
     perProjectTimeWoW(teamId, scope, weekMonday, pool, { limit: 12 }),
     skillUsageWeek(teamId, scope, weekMonday, pool, { limit: 16 }),
     workingShapeDistribution(teamId, scope, weekMonday, pool),
     weekAggregates(teamId, memberIds, weekMonday, pool),
     weekAggregates(teamId, memberIds, prevMonday, pool),
+    loadIntegrationConfigs(teamId, pool),
   ]);
+  // Member-reported project names are local clone-directory basenames; with
+  // GitHub connected, fold them onto the connected repos' identities.
+  const projects = canonicalizeProjects(
+    rawProjects,
+    integ.github ? normalizeGithubRepos(integ.github.config.repos).map((r) => r.name) : [],
+  );
   const roster = { rows: perMemberRes.rows.map((r) => ({
     id: r.id,
     display_name: r.display_name,
@@ -647,6 +1084,8 @@ export async function buildTeamInsightReport(
   };
   wp.project_time = projects.map((p) => ({
     project: p.project,
+    ...(p.repo ? { repo: p.repo } : {}),
+    ...(p.unlinked ? { unlinked: true } : {}),
     hours_this_week: Number(p.agentHours.toFixed(1)),
     hours_last_week: Number(p.agentHoursPrev.toFixed(1)),
     delta_pct: pctDelta(p.agentHours, p.agentHoursPrev),
@@ -1169,6 +1608,14 @@ export async function buildTeamInsightReport(
     data_freshness: freshnessRes.rows[0]?.ingested_at ?? new Date().toISOString(),
     member_portraits: portraits,
   };
+  const [ghDelivery, linVelocity, timeline] = await Promise.all([
+    githubDelivery(teamId, scope, weekMonday, pool, integ.github),
+    linearVelocity(teamId, scope, weekMonday, pool, integ.linear),
+    workTimeline(teamId, scope, weekMonday, pool, integ.github, integ.linear),
+  ]);
+  if (ghDelivery) liveExtras.github_delivery = ghDelivery;
+  if (linVelocity) liveExtras.linear_velocity = linVelocity;
+  if (timeline) liveExtras.work_timeline = timeline;
   report.live_extras = liveExtras;
 
   // Mirror PR totals on outcomes for any catalog widget that reads them.

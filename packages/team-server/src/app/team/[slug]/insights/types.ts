@@ -1070,6 +1070,12 @@ export type WowDelta = {
 
 export type WowProjectTime = {
   project: string;
+  // Canonical owner/name when the row resolved to a GitHub repo (the
+  // member's .git remote, or a connected-repo match); absent = local name.
+  repo?: string;
+  // "others" bucket — agent time not associated with any GitHub project.
+  // Rendered last, muted. Local directory names are never included.
+  unlinked?: boolean;
   hours_this_week: number;
   hours_last_week: number;
   delta_pct: number;
@@ -1365,6 +1371,94 @@ export type LivePlanModeAdoption = {
   adoption_pct: number; // adopters / active_7d × 100
 };
 
+// GitHub-integration delivery stats (team-level — PRs aren't member-mapped
+// until the session↔commit join lands). AI attribution is Co-Authored-By
+// trailer-based; squash-merges that strip trailers undercount.
+export type GithubWeekDelivery = {
+  merged: number;
+  ai_assisted: number;
+  ai_share_pct: number; // ai_assisted / merged × 100
+  // First commit → merge, median hours. Split by AI-assisted flag.
+  median_cycle_hours_ai: number | null;
+  median_cycle_hours_other: number | null;
+  // PR created → first review submitted, median hours.
+  median_review_wait_hours_ai: number | null;
+  median_review_wait_hours_other: number | null;
+};
+
+export type GithubDeliveryStats = {
+  repos: string[];
+  last_sync_at: string | null;
+  open_now: number;
+  week: GithubWeekDelivery;
+  prev_week: GithubWeekDelivery;
+};
+
+// Linear-integration ticket velocity. Team-level. AI linkage joins completed
+// tickets to AI-assisted synced PRs whose title carries the ticket ref —
+// an undercount when PRs omit the ref.
+export type LinearWeekVelocity = {
+  completed: number;
+  ai_linked: number;
+  ai_linked_share_pct: number; // ai_linked / completed × 100
+  median_cycle_hours: number | null; // started → completed
+  median_lead_hours: number | null; // created → completed
+};
+
+export type LinearVelocityStats = {
+  team_keys: string[];
+  last_sync_at: string | null;
+  wip_now: number; // issues currently in a "started" state
+  week: LinearWeekVelocity;
+  prev_week: LinearWeekVelocity;
+};
+
+// Cross-source work timeline: completed tickets joined (by ticket ref in PR
+// title) to their merged PRs, decomposed into two delivery phases starting at
+// pickup. First-commit boundaries are useless for agent flows (agents commit
+// and open the PR in the same breath, so the real work hides before the first
+// commit) — pickup → PR opened captures all of it. Queue (created → picked
+// up) is deliberately excluded from the phases — it reflects planning
+// cadence, not delivery — and surfaces only as a footnote median. Multi-PR
+// tickets use earliest PR opened / latest merge. Build clamps at 0 — tickets
+// are sometimes flipped to started after the PR already exists.
+export type WorkPhaseStat = {
+  median_hours: number | null;
+  p90_hours: number | null;
+};
+
+export type WorkTimelinePhases = {
+  build: WorkPhaseStat; // picked up → PR opened
+  review: WorkPhaseStat; // PR opened → merged
+};
+
+// Task-size cohort. Sized by Linear estimate when at least half the joined
+// tickets carry one, else by total lines changed across the ticket's merged
+// PRs. Medians only — weekly per-class samples are too small for tails.
+export type WorkTimelineSizeClass = {
+  size: "S" | "M" | "L";
+  bounds: string; // human label, e.g. "<1k lines" or "≤2 pts"
+  tickets: number;
+  build_hours: number | null;
+  review_hours: number | null;
+  total_hours: number | null; // median pickup → merge, computed per ticket
+  prev_tickets: number;
+  prev_build_hours: number | null;
+  prev_review_hours: number | null;
+  prev_total_hours: number | null;
+};
+
+export type WorkTimelineStats = {
+  tickets: number; // completed this week and joined to ≥1 merged PR
+  unjoined: number; // completed this week with no merged-PR match
+  sized_by: "estimate" | "lines";
+  queue_median_hours: number | null; // footnote only, current week
+  queue_median_hours_prev: number | null;
+  week: WorkTimelinePhases;
+  prev_week: WorkTimelinePhases;
+  size_classes: WorkTimelineSizeClass[]; // classes with tickets in either week
+};
+
 export type LiveExtras = {
   active_rate: LiveActiveRate;
   maturity_mix: LiveMaturityMix;
@@ -1374,6 +1468,12 @@ export type LiveExtras = {
   // v9 — per-member qualitative portraits. Sorted by maturity level descending
   // so the eng lead's eye lands on multipliers first.
   member_portraits?: MemberMaturityPortrait[];
+  // Present only when the team's GitHub integration is connected.
+  github_delivery?: GithubDeliveryStats;
+  // Present only when the team's Linear integration is connected.
+  linear_velocity?: LinearVelocityStats;
+  // Present only when BOTH integrations are connected and mapped to the scope.
+  work_timeline?: WorkTimelineStats;
 };
 
 // ─── The whole report ─────────────────────────────────────────────────────

@@ -80,16 +80,32 @@ export function resolveWeekMonday(param: string | null | undefined, now: Date = 
   return param > last ? last : param;
 }
 
-// Monday of the earliest week with any rich rollup for these members — the
-// floor for week navigation. Null when the scope has no data at all.
+// Monday of the earliest week with any data — the floor for week navigation.
+// Considers member rollups AND synced integration history (GitHub merges,
+// Linear completions), so older weeks stay browsable even where transcript
+// submissions hadn't started yet. Pass `sources` to scope the integration
+// floor to a group's mapped repos/Linear teams — null arrays mean team-wide.
+// Null result when the scope has no data at all.
 export async function earliestWeekMonday(
+  teamId: string,
   membershipIds: string[],
   pool: pg.Pool,
+  sources?: { repoNames: string[] | null; teamKeys: string[] | null },
 ): Promise<string | null> {
   if (membershipIds.length === 0) return null;
+  const repoNames = sources?.repoNames ?? null;
+  const teamKeys = sources?.teamKeys ?? null;
   const res = await pool.query<{ d: string | null }>(
-    `SELECT min(day)::text AS d FROM rich_daily_rollups WHERE membership_id = ANY($1::uuid[])`,
-    [membershipIds],
+    `SELECT min(d)::text AS d FROM (
+       SELECT min(day)::date AS d FROM rich_daily_rollups WHERE membership_id = ANY($2::uuid[])
+       UNION ALL
+       SELECT min(merged_at)::date FROM github_pull_requests
+       WHERE team_id = $1 AND state = 'merged' AND ($3::text[] IS NULL OR repo = ANY($3::text[]))
+       UNION ALL
+       SELECT min(completed_at)::date FROM linear_issues
+       WHERE team_id = $1 AND state_type = 'completed' AND ($4::text[] IS NULL OR linear_team_key = ANY($4::text[]))
+     ) t WHERE d IS NOT NULL`,
+    [teamId, membershipIds, repoNames, teamKeys],
   );
   const d = res.rows[0]?.d;
   return d ? isoMondayOf(new Date(`${d}T00:00:00Z`)) : null;
@@ -206,6 +222,9 @@ export type ProjectTimeRow = {
   agentHours: number;
   agentHoursPrev: number;
   sessions: number;
+  // owner/name identities members reported for this project (git-push /
+  // gh-pr output) — ground truth for repo canonicalization.
+  githubRepos?: string[];
 };
 
 export async function perProjectTimeWoW(
@@ -223,32 +242,42 @@ export async function perProjectTimeWoW(
 
   // jsonb_to_recordset unpacks the per-day projects array into rows we can
   // sum across. Each rich_daily_rollup row carries projects = [{project,
-  // agentTimeMs, sessions}, ...].
+  // agentTimeMs, sessions, githubRepos?}, ...]. githubRepos stays in the
+  // GROUP BY — a day-row's repo identity must never be unioned across
+  // same-named rows from different repos (two "~/Repo" sessions attributed
+  // to different remotes), or one repo's label swallows the other's hours.
   const res = await pool.query<{
     project: string;
+    repos: string[] | null;
     agent_time_ms: string;
     sessions: number;
     is_prev: boolean;
   }>(
     `SELECT p.project,
+            p."githubRepos" AS repos,
             SUM((p."agentTimeMs")::bigint)::text AS agent_time_ms,
             SUM((p.sessions)::int)::int AS sessions,
             (r.day < $3::date) AS is_prev
      FROM rich_daily_rollups r
      CROSS JOIN LATERAL jsonb_to_recordset(r.projects)
-       AS p(project text, "agentTimeMs" bigint, sessions int)
+       AS p(project text, "agentTimeMs" bigint, sessions int, "githubRepos" jsonb)
      WHERE r.team_id = $1
        AND r.membership_id = ANY($2::uuid[])
        AND r.day >= $4::date
        AND r.day < $5::date
-     GROUP BY p.project, is_prev`,
+     GROUP BY p.project, p."githubRepos", is_prev`,
     [teamId, memberIds, weekMonday, prevMonday, winEnd],
   );
 
+  // Key by the row's primary repo identity — the member's resolver puts the
+  // .git-derived identity first — so same-repo rows merge across clone names
+  // and weeks, while repo-less rows stay keyed by name.
   const byProject = new Map<string, ProjectTimeRow>();
   for (const row of res.rows) {
-    const cur = byProject.get(row.project) ?? {
+    const key = row.repos?.[0]?.toLowerCase() ?? row.project;
+    const cur = byProject.get(key) ?? {
       project: row.project, agentHours: 0, agentHoursPrev: 0, sessions: 0,
+      ...(row.repos?.length ? { githubRepos: row.repos } : {}),
     };
     const hrs = Number(row.agent_time_ms) / 3_600_000;
     if (row.is_prev) {
@@ -257,7 +286,7 @@ export async function perProjectTimeWoW(
       cur.agentHours += hrs;
       cur.sessions += row.sessions;
     }
-    byProject.set(row.project, cur);
+    byProject.set(key, cur);
   }
   const rows = Array.from(byProject.values()).sort((a, b) => b.agentHours - a.agentHours);
   return opts.limit ? rows.slice(0, opts.limit) : rows;

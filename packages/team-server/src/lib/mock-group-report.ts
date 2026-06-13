@@ -164,6 +164,45 @@ export function buildMockGroupReport(members: MockRealMember[]): MockGroupData {
     },
     data_freshness: "mock",
     member_portraits: portraits,
+    // Integration-backed blocks, shaped to demo well: a non-degenerate AI
+    // split (unlike all-AI teams where the comparison collapses), bigger
+    // cohorts taking visibly longer, and everything improving WoW.
+    github_delivery: {
+      repos: ["acme/web-app", "acme/platform-api"],
+      last_sync_at: null,
+      open_now: 4,
+      week: {
+        merged: 18, ai_assisted: 14, ai_share_pct: 78,
+        median_cycle_hours_ai: 3.1, median_cycle_hours_other: 9.4,
+        median_review_wait_hours_ai: 1.2, median_review_wait_hours_other: 2.5,
+      },
+      prev_week: {
+        merged: 15, ai_assisted: 11, ai_share_pct: 73,
+        median_cycle_hours_ai: 3.8, median_cycle_hours_other: 10.2,
+        median_review_wait_hours_ai: 1.5, median_review_wait_hours_other: 2.9,
+      },
+    },
+    linear_velocity: {
+      team_keys: ["ENG"],
+      last_sync_at: null,
+      wip_now: 6,
+      week: { completed: 11, ai_linked: 9, ai_linked_share_pct: 82, median_cycle_hours: 4.2, median_lead_hours: 74.4 },
+      prev_week: { completed: 9, ai_linked: 6, ai_linked_share_pct: 67, median_cycle_hours: 6.8, median_lead_hours: 98.6 },
+    },
+    work_timeline: {
+      tickets: 11,
+      unjoined: 2,
+      sized_by: "lines",
+      queue_median_hours: 52.5,
+      queue_median_hours_prev: 60.2,
+      week: { build: { median_hours: 2.6, p90_hours: 7.4 }, review: { median_hours: 1.8, p90_hours: 12.5 } },
+      prev_week: { build: { median_hours: 3.4, p90_hours: 9 }, review: { median_hours: 2.6, p90_hours: 18 } },
+      size_classes: [
+        { size: "S", bounds: "<1k lines", tickets: 5, build_hours: 1.2, review_hours: 0.9, total_hours: 2.3, prev_tickets: 4, prev_build_hours: 1.6, prev_review_hours: 1.4, prev_total_hours: 3.2 },
+        { size: "M", bounds: "1–3k lines", tickets: 4, build_hours: 3.8, review_hours: 2.4, total_hours: 6.5, prev_tickets: 3, prev_build_hours: 4.6, prev_review_hours: 3.5, prev_total_hours: 8.4 },
+        { size: "L", bounds: ">3k lines", tickets: 2, build_hours: 6.9, review_hours: 4.1, total_hours: 11.8, prev_tickets: 2, prev_build_hours: 8.2, prev_review_hours: 6.8, prev_total_hours: 15.3 },
+      ],
+    },
   };
 
   const report = structuredClone(mockTeamInsightReport) as TeamInsightReport;
@@ -176,6 +215,14 @@ export function buildMockGroupReport(members: MockRealMember[]): MockGroupData {
   report.volume.agent_hours_total = Math.round(agentHoursWk * 10) / 10;
   report.variants.wow_pulse.agent_hours.current = Math.round(agentHoursWk * 10) / 10;
   report.variants.wow_pulse.sessions.current = sessionsWk;
+  // Repo rows resolved from members' git remotes, plus the "others" bucket
+  // (agent time not associated with any GitHub project).
+  report.variants.wow_pulse.project_time = [
+    { project: "acme/web-app", repo: "acme/web-app", hours_this_week: 8.2, hours_last_week: 6.4, delta_pct: 28 },
+    { project: "acme/platform-api", repo: "acme/platform-api", hours_this_week: 5.1, hours_last_week: 4.9, delta_pct: 4 },
+    { project: "acme/infra-tools", repo: "acme/infra-tools", hours_this_week: 3.4, hours_last_week: 4.2, delta_pct: -19 },
+    { project: "others", unlinked: true, hours_this_week: 1.7, hours_last_week: 0.9, delta_pct: 89 },
+  ];
   report.live_extras = liveExtras;
 
   // 4-week trend — a gentle upward trajectory ending at this week's totals.

@@ -388,3 +388,96 @@ export const memberCommands = pgTable(
       .on(t.teamId, sql`${t.issuedAt} DESC`),
   }),
 );
+
+// External-system integrations, one row per (team, provider). Credentials are
+// AES-256-GCM blobs under FLEETLENS_ENCRYPTION_KEY (same scheme as the Resend
+// key) — never stored or returned in plaintext. `config` is provider-shaped:
+// github → { repos: ["owner/name", …], sync_days: 60 }.
+export const teamIntegrations = pgTable(
+  "team_integrations",
+  {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    credentialsEnc: text("credentials_enc").notNull(),
+    config: jsonb("config").notNull().default(sql`'{}'::jsonb`),
+    status: text("status").notNull().default("active"),
+    lastError: text("last_error"),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => userAccounts.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.provider] }),
+    providerCheck: check(
+      "team_integrations_provider_check",
+      sql`${t.provider} IN ('github', 'jira', 'linear')`,
+    ),
+    statusCheck: check(
+      "team_integrations_status_check",
+      sql`${t.status} IN ('active', 'error')`,
+    ),
+  }),
+);
+
+// PR facts synced from the GitHub integration, upserted on every sync. The
+// AI-assisted flag comes from Co-Authored-By trailers in the PR's commits —
+// an undercount when squash-merges strip trailers; the session↔commit-SHA
+// join is the planned precise upgrade.
+export const githubPullRequests = pgTable(
+  "github_pull_requests",
+  {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    repo: text("repo").notNull(),
+    number: integer("number").notNull(),
+    title: text("title").notNull(),
+    authorLogin: text("author_login"),
+    state: text("state").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    mergedAt: timestamp("merged_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    firstCommitAt: timestamp("first_commit_at", { withTimezone: true }),
+    firstReviewAt: timestamp("first_review_at", { withTimezone: true }),
+    additions: integer("additions").notNull().default(0),
+    deletions: integer("deletions").notNull().default(0),
+    commitsTotal: integer("commits_total").notNull().default(0),
+    commitsAi: integer("commits_ai").notNull().default(0),
+    aiAssisted: boolean("ai_assisted").notNull().default(false),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.repo, t.number] }),
+    teamMerged: index("idx_github_prs_team_merged").on(t.teamId, sql`${t.mergedAt} DESC`),
+    stateCheck: check(
+      "github_pull_requests_state_check",
+      sql`${t.state} IN ('open', 'merged', 'closed')`,
+    ),
+  }),
+);
+
+// Issues synced from the Linear integration, upserted on every sync. Native
+// Linear timestamps (startedAt/completedAt) drive cycle/lead time — the full
+// per-status transition history (v6 phase spine) is a later expansion.
+export const linearIssues = pgTable(
+  "linear_issues",
+  {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    identifier: text("identifier").notNull(), // e.g. KIP-315
+    title: text("title").notNull(),
+    stateName: text("state_name").notNull(),
+    // Linear's canonical buckets: triage|backlog|unstarted|started|completed|canceled
+    stateType: text("state_type").notNull(),
+    linearTeamKey: text("linear_team_key").notNull(),
+    assignee: text("assignee"),
+    estimate: integer("estimate"),
+    url: text("url"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.identifier] }),
+    teamCompleted: index("idx_linear_issues_team_completed").on(t.teamId, sql`${t.completedAt} DESC`),
+  }),
+);

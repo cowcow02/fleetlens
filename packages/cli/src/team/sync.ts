@@ -9,6 +9,7 @@ import {
   sessionTouchesDay,
   type IngestPayload,
 } from "./push.js";
+import { createRepoResolver } from "./git-remote.js";
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
 import { runTeamBackfill, type BackfillOutcome } from "./backfill.js";
 import { writeLastPushSuccess, writeLastPushFailure } from "./last-push.js";
@@ -185,6 +186,7 @@ export async function runTeamSync(
 
     const privateProjects = new Set(config.privateProjects ?? []);
     const enrichmentOptIn = !!config.enrichmentOptIn;
+    const resolveRepo = createRepoResolver();
 
     const { probeArtifactSignals } = await import("../perception/file-probe.js");
     for (let i = 0; i < rollups.length; i++) {
@@ -196,6 +198,7 @@ export async function runTeamSync(
         daySessions,
         privateProjects,
         enrichmentOptIn,
+        resolveRepo,
       );
       // File-system probe: detect skill/sub-agent/slash-command authoring +
       // CLAUDE.md edits attributable to this member on `rollup.day`. Local
