@@ -13,7 +13,7 @@ import {
   prettyProjectName,
   shortId,
 } from "@/lib/format";
-import { Search, Wrench, MessagesSquare, Clock } from "lucide-react";
+import { Search, Wrench, MessagesSquare, Clock, Workflow as WorkflowIcon } from "lucide-react";
 import { LiveBadge } from "@/components/live-badge";
 import { TeamBadge } from "@/components/team-badge";
 import { AgentBadge } from "@/components/agent-badge";
@@ -533,6 +533,15 @@ function SessionCard({ row }: { row: SessionRow }) {
           label={`${s.turnCount ?? 0} turn${s.turnCount === 1 ? "" : "s"}`}
         />
         <Stat icon={<Wrench size={11} />} label={`${s.toolCallCount ?? 0} tools`} />
+        {(s.spawnedAgentCount ?? 0) > 0 && (
+          <span
+            style={{ display: "flex", alignItems: "center", gap: 4, color: "#EA580C", fontWeight: 600 }}
+            title={`${s.workflowCount} workflow${s.workflowCount === 1 ? "" : "s"} spawned ${s.spawnedAgentCount} agents`}
+          >
+            <WorkflowIcon size={11} />
+            {s.spawnedAgentCount} agents
+          </span>
+        )}
         <Stat icon={<Clock size={11} />} label={formatDuration(s.airTimeMs ?? s.durationMs)} />
         <span style={{ marginLeft: "auto" }}>{formatTokens(totalTokens)}</span>
       </div>

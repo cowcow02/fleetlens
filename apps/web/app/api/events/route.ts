@@ -110,6 +110,39 @@ export async function GET(request: Request) {
         );
       }
 
+      // Workflow journals (`<session>/workflows/wf_*.json`) aren't `.jsonl`
+      // and live a level down, so the main emit() path skips them. Map the
+      // journal back to its parent session, drop the parent's cached meta /
+      // detail (so the list re-reads the spawned-agent aggregate), and emit a
+      // session-updated for the parent — the run itself re-reads journals
+      // fresh, so the detail page reflects new fan-out without a parent write.
+      function emitWorkflow(fullPath: string) {
+        const rel = path.relative(DEFAULT_ROOT, fullPath);
+        const parts = rel.split(path.sep);
+        const wfIdx = parts.lastIndexOf("workflows");
+        if (wfIdx < 2) return;
+        const projectDir = parts[0]!;
+        const sessionId = parts[wfIdx - 1]!;
+        const parentJsonl = path.join(DEFAULT_ROOT, projectDir, `${sessionId}.jsonl`);
+        const prev = pending.get(parentJsonl);
+        if (prev) clearTimeout(prev);
+        pending.set(
+          parentJsonl,
+          setTimeout(async () => {
+            pending.delete(parentJsonl);
+            if (closed) return;
+            invalidateFile(parentJsonl);
+            let mtimeMs = Date.now();
+            try {
+              mtimeMs = (await fs.stat(parentJsonl)).mtimeMs;
+            } catch {
+              // parent .jsonl might not be flushed yet — fall back to now.
+            }
+            send({ type: "session-updated", sessionId, projectDir, mtimeMs });
+          }, DEBOUNCE_MS),
+        );
+      }
+
       let watcher: ReturnType<typeof watch> | null = null;
       try {
         watcher = watch(
@@ -118,8 +151,18 @@ export async function GET(request: Request) {
           (_eventType, filename) => {
             if (!filename) return;
             const fullPath = path.join(DEFAULT_ROOT, filename.toString());
-            if (!fullPath.endsWith(".jsonl")) return;
-            emit(fullPath);
+            if (fullPath.endsWith(".jsonl")) {
+              emit(fullPath);
+              return;
+            }
+            const base = path.basename(fullPath);
+            if (
+              base.startsWith("wf_") &&
+              base.endsWith(".json") &&
+              fullPath.includes(`${path.sep}workflows${path.sep}`)
+            ) {
+              emitWorkflow(fullPath);
+            }
           },
         );
       } catch (e) {

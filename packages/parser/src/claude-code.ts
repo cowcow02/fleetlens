@@ -22,6 +22,7 @@ import type {
   SessionMeta,
   SubagentRun,
   Usage,
+  WorkflowRun,
 } from "./types.js";
 import {
   type AgentMetadata,
@@ -323,6 +324,40 @@ async function computeSessionUsageWithSubagents(
   return usage;
 }
 
+/** Cheap aggregate over a session's `workflows/wf_*.json` journals — just
+ *  the run count + summed agentCount. Used on the list/meta path where we
+ *  want the "this session orchestrated N agents" badge without paying for a
+ *  full WorkflowRun build. Returns zeros when the dir is absent (the common
+ *  case — most sessions never dispatch a workflow). */
+async function scanWorkflowAggregate(
+  projectDirPath: string,
+  sessionId: string,
+): Promise<{ workflowCount: number; spawnedAgentCount: number }> {
+  const dir = path.join(projectDirPath, sessionId, "workflows");
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return { workflowCount: 0, spawnedAgentCount: 0 };
+  }
+  const jsonFiles = entries.filter((f) => f.startsWith("wf_") && f.endsWith(".json"));
+  if (jsonFiles.length === 0) return { workflowCount: 0, spawnedAgentCount: 0 };
+  let spawnedAgentCount = 0;
+  await Promise.all(
+    jsonFiles.map(async (f) => {
+      try {
+        const j = JSON.parse(await fs.readFile(path.join(dir, f), "utf8")) as {
+          agentCount?: unknown;
+        };
+        if (typeof j.agentCount === "number") spawnedAgentCount += j.agentCount;
+      } catch {
+        /* skip unreadable / malformed journal */
+      }
+    }),
+  );
+  return { workflowCount: jsonFiles.length, spawnedAgentCount };
+}
+
 async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
   const cached = metaCache.get(f.fullPath);
   if (cached && cached.mtimeMs === f.mtimeMs && cached.sizeBytes === f.sizeBytes) {
@@ -341,6 +376,8 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
       sessionId,
     );
 
+    const wf = await scanWorkflowAggregate(projectDirPath, sessionId);
+
     // Use the real cwd from the JSONL when available — the decoded dir name
     // is lossy (dashes in folder names become slashes).
     const full: SessionMeta = {
@@ -349,6 +386,9 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
       filePath: f.fullPath,
       projectDir: f.projectDir,
       projectName: meta.cwd ?? decodeProjectName(f.projectDir),
+      ...(wf.workflowCount > 0
+        ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
+        : {}),
     };
     metaCache.set(f.fullPath, { meta: full, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
     return full;
@@ -365,13 +405,21 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
   try {
     const rawLines = await readJsonlFile(f.fullPath);
     const { meta, events } = parseTranscript(rawLines);
+    const sessionId = sessionIdFromFileName(f.fileName);
+    // Keep the workflow aggregate on the detail (and thus the metaCache it
+    // backfills) so opening a session never strips the "N agents" badge that
+    // the list path computes.
+    const wf = await scanWorkflowAggregate(path.dirname(f.fullPath), sessionId);
     const detail: SessionDetail = {
       ...meta,
-      id: sessionIdFromFileName(f.fileName),
+      id: sessionId,
       filePath: f.fullPath,
       projectDir: f.projectDir,
       projectName: meta.cwd ?? decodeProjectName(f.projectDir),
       events,
+      ...(wf.workflowCount > 0
+        ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
+        : {}),
     };
     detailCache.set(f.fullPath, { detail, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
     // Populate the meta cache from the detail so a later listSessions
@@ -421,8 +469,27 @@ export async function getSession(
     sessionIdFromFileName(hit.fileName),
     "subagents",
   );
-  const subagents = await loadSubagents(subagentsDir, sessionStartMs, detail.events);
-  return { ...detail, subagents };
+  const workflowsDir = path.join(
+    path.dirname(hit.fullPath),
+    sessionIdFromFileName(hit.fileName),
+    "workflows",
+  );
+  const [subagents, workflows] = await Promise.all([
+    loadSubagents(subagentsDir, sessionStartMs, detail.events),
+    loadWorkflows(workflowsDir, sessionStartMs, detail.events),
+  ]);
+  // Recompute the aggregate from the fully-parsed runs so the detail view is
+  // self-consistent (a malformed journal that scanWorkflowAggregate counted
+  // but loadWorkflows dropped won't skew the header here).
+  const spawnedAgentCount = workflows.reduce((n, w) => n + w.agentCount, 0);
+  return {
+    ...detail,
+    subagents,
+    workflows,
+    ...(workflows.length > 0
+      ? { workflowCount: workflows.length, spawnedAgentCount }
+      : {}),
+  };
 }
 
 /* ================================================================= */
@@ -696,6 +763,139 @@ async function loadSubagents(
 
   return runs
     .filter((r): r is SubagentRun => r !== null)
+    .sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0));
+}
+
+/* ================================================================= */
+/*  Workflow loading                                                 */
+/* ================================================================= */
+
+type WorkflowJournal = {
+  runId?: unknown;
+  workflowName?: unknown;
+  summary?: unknown;
+  status?: unknown;
+  agentCount?: unknown;
+  totalToolCalls?: unknown;
+  totalTokens?: unknown;
+  durationMs?: unknown;
+  startTime?: unknown;
+  defaultModel?: unknown;
+  phases?: unknown;
+  logs?: unknown;
+};
+
+/** Walk a session's `workflows/` dir, parse each `wf_*.json` journal the
+ *  Workflow tool persists, and return one WorkflowRun per file. Each run is
+ *  matched back to the parent `Workflow` tool_use by dispatch time — the
+ *  journal's `startTime` lands a few seconds after the tool_use timestamp
+ *  (script compile + first agent spawn), so a generous 60s window is used.
+ *  A `scripts/` subdir and any non-`wf_` files are ignored. */
+async function loadWorkflows(
+  dir: string,
+  sessionStartMs: number | undefined,
+  parentEvents: SessionEvent[],
+): Promise<WorkflowRun[]> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
+  const jsonFiles = entries.filter((f) => f.startsWith("wf_") && f.endsWith(".json"));
+  if (jsonFiles.length === 0) return [];
+
+  type Dispatch = { toolUseId: string; parentUuid: string; tsMs: number };
+  const dispatches: Dispatch[] = [];
+  for (const e of parentEvents) {
+    if (e.role !== "tool-call" || e.toolName !== "Workflow") continue;
+    const tsMs = e.timestamp ? Date.parse(e.timestamp) : NaN;
+    if (Number.isNaN(tsMs)) continue;
+    for (const b of e.blocks) {
+      if (b?.type !== "tool_use" || b.name !== "Workflow") continue;
+      dispatches.push({ toolUseId: b.id, parentUuid: e.uuid ?? "", tsMs });
+    }
+  }
+  dispatches.sort((a, b) => a.tsMs - b.tsMs);
+
+  // The journal's startTime trails its Workflow tool_use, so match to the
+  // nearest dispatch at-or-before startTime within tolerance; fall back to
+  // absolute nearest if none precede (clock skew / resumed runs).
+  const matchDispatch = (startMs: number | undefined): Dispatch | undefined => {
+    if (startMs === undefined || dispatches.length === 0) return undefined;
+    const TOLERANCE_MS = 60_000;
+    let best: Dispatch | undefined;
+    let bestDelta = Infinity;
+    for (const d of dispatches) {
+      const delta = Math.abs(startMs - d.tsMs);
+      if (delta < bestDelta && delta <= TOLERANCE_MS) {
+        best = d;
+        bestDelta = delta;
+      }
+    }
+    return best;
+  };
+
+  const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" && v.length > 0 ? v : undefined;
+
+  const runs = await Promise.all(
+    jsonFiles.map(async (f): Promise<WorkflowRun | null> => {
+      let j: WorkflowJournal;
+      try {
+        j = JSON.parse(await fs.readFile(path.join(dir, f), "utf8")) as WorkflowJournal;
+      } catch {
+        return null;
+      }
+      const runId = str(j.runId) ?? f.replace(/\.json$/, "");
+      const startMs = num(j.startTime);
+      const durationMs = num(j.durationMs);
+      const endMs = startMs !== undefined && durationMs !== undefined ? startMs + durationMs : undefined;
+      const startTOffsetMs =
+        sessionStartMs !== undefined && startMs !== undefined
+          ? Math.max(0, startMs - sessionStartMs)
+          : undefined;
+      const endTOffsetMs =
+        sessionStartMs !== undefined && endMs !== undefined
+          ? Math.max(0, endMs - sessionStartMs)
+          : undefined;
+      const phases = Array.isArray(j.phases)
+        ? j.phases
+            .filter(
+              (p): p is { title: string; detail?: unknown } =>
+                !!p && typeof p === "object" && typeof (p as { title?: unknown }).title === "string",
+            )
+            .map((p) => ({ title: p.title, detail: str((p as { detail?: unknown }).detail) }))
+        : [];
+      const logs = Array.isArray(j.logs)
+        ? j.logs.filter((l): l is string => typeof l === "string")
+        : [];
+      const parent = matchDispatch(startMs);
+      return {
+        runId,
+        name: str(j.workflowName) ?? runId,
+        description: str(j.summary),
+        status: str(j.status) ?? "unknown",
+        agentCount: num(j.agentCount) ?? 0,
+        toolCallCount: num(j.totalToolCalls) ?? 0,
+        totalTokens: num(j.totalTokens) ?? 0,
+        durationMs,
+        startMs,
+        endMs,
+        startTOffsetMs,
+        endTOffsetMs,
+        model: str(j.defaultModel),
+        phases,
+        logs,
+        parentToolUseId: parent?.toolUseId,
+        parentUuid: parent?.parentUuid,
+      };
+    }),
+  );
+
+  return runs
+    .filter((r): r is WorkflowRun => r !== null)
     .sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0));
 }
 
