@@ -66,12 +66,17 @@ describe("isSafeProjectKey", () => {
   it("accepts letter-led alphanumeric keys, rejects JQL-breaking input", () => {
     expect(isSafeProjectKey("KAN")).toBe(true);
     expect(isSafeProjectKey("ENG2")).toBe(true);
-    expect(isSafeProjectKey("My_Proj")).toBe(true);
     expect(isSafeProjectKey('x" OR project = "OPS')).toBe(false);
     expect(isSafeProjectKey("ENG,OPS")).toBe(false);
     expect(isSafeProjectKey("has space")).toBe(false);
     expect(isSafeProjectKey("2ENG")).toBe(false);
     expect(isSafeProjectKey("")).toBe(false);
+  });
+  it("rejects underscores so the charset matches isSafeIdentifier's key portion", () => {
+    // A key like "My_Proj" would pass here but its issues "My_Proj-5" fail
+    // isSafeIdentifier (no underscore), silently dropping every issue.
+    expect(isSafeProjectKey("My_Proj")).toBe(false);
+    expect(isSafeProjectKey("My_Proj-1")).toBe(false);
   });
 });
 
@@ -114,6 +119,26 @@ describe("deriveCompletedAt", () => {
       },
     };
     expect(deriveCompletedAt(node, categories)).toBe("2026-06-09T10:00:00.000Z");
+  });
+
+  it("uses the LAST done-transition for a reopened-then-redone issue (no resolution)", () => {
+    const node: JiraIssueNode = {
+      key: "ENG-60",
+      fields: {
+        summary: "Reopened then redone",
+        created: "2026-06-01T08:00:00.000Z",
+        resolutiondate: null,
+        status: { name: "Done", statusCategory: { key: "done" } },
+        project: { key: "ENG" },
+      },
+      changelog: { histories: [
+        { created: "2026-06-03T10:00:00.000Z", items: [{ field: "status", from: "10001", to: "10002", fromString: "In Progress", toString: "Done" }] },
+        { created: "2026-06-04T09:00:00.000Z", items: [{ field: "status", from: "10002", to: "10001", fromString: "Done", toString: "In Progress" }] },
+        { created: "2026-06-07T15:00:00.000Z", items: [{ field: "status", from: "10001", to: "10002", fromString: "In Progress", toString: "Done" }] },
+      ] },
+    };
+    // final completion, not the first
+    expect(deriveCompletedAt(node, categories)).toBe("2026-06-07T15:00:00.000Z");
   });
 });
 
@@ -210,6 +235,22 @@ describe("toIssueRow", () => {
     // non-numeric string → null
     const bad = toIssueRow({ ...node, fields: { ...node.fields, customfield_10016: "n/a" } }, categories, SITE, SP);
     expect(bad.estimate).toBeNull();
+    // negative estimate (misconfigured custom field) → null, so it can't bucket as size S
+    const neg = toIssueRow({ ...node, fields: { ...node.fields, customfield_10016: -3 } }, categories, SITE, SP);
+    expect(neg.estimate).toBeNull();
+    const negStr = toIssueRow({ ...node, fields: { ...node.fields, customfield_10016: "-3" } }, categories, SITE, SP);
+    expect(negStr.estimate).toBeNull();
+  });
+
+  it("matches the no-space 'Won'tFix' resolution variant as canceled", () => {
+    const base: JiraIssueNode = {
+      key: "ENG-13",
+      fields: {
+        summary: "x", created: "2026-06-01T08:00:00.000Z", resolutiondate: "2026-06-03T08:00:00.000Z",
+        status: { name: "Done", statusCategory: { key: "done" } }, resolution: { name: "Won'tFix" }, project: { key: "ENG" },
+      },
+    };
+    expect(toIssueRow(base, categories, SITE, SP).stateType).toBe("canceled");
   });
 
   it("treats a 'Won't Do' resolution in the done category as canceled", () => {
@@ -274,13 +315,18 @@ describe("validateJiraCredentials", () => {
 });
 
 describe("listJiraProjects", () => {
-  it("pages through /project/search until isLast", async () => {
-    let call = 0;
-    stubFetch([["/rest/api/3/project/search", () => (call++ === 0
-      ? { values: [{ id: "1", key: "KAN", name: "Kanban" }], isLast: false }
-      : { values: [{ id: "2", key: "ENG", name: "Eng" }], isLast: true })]]);
+  it("pages through /project/search advancing startAt until isLast", async () => {
+    const startAts: string[] = [];
+    stubFetch([["/rest/api/3/project/search", (url) => {
+      startAts.push(new URL(url).searchParams.get("startAt") ?? "");
+      return startAts.length === 1
+        ? { values: [{ id: "1", key: "KAN", name: "Kanban" }, { id: "2", key: "ENG", name: "Eng" }], isLast: false }
+        : { values: [{ id: "3", key: "OPS", name: "Ops" }], isLast: true };
+    }]]);
     const projects = await listJiraProjects(...CREDS);
-    expect(projects.map((p) => p.key)).toEqual(["KAN", "ENG"]);
+    expect(projects.map((p) => p.key)).toEqual(["KAN", "ENG", "OPS"]);
+    // second page must request startAt advanced by the first page's length (2)
+    expect(startAts).toEqual(["0", "2"]);
   });
 });
 
@@ -354,6 +400,23 @@ describe("fetchJiraIssues", () => {
     ]);
     const rows = await fetchJiraIssues(...CREDS, ["KAN"], 60);
     // pickup time comes from the refetched full history, not the truncated inline copy
+    expect(rows[0].startedAt).toBe("2026-06-02T09:00:00.000Z");
+  });
+
+  it("keeps the inline changelog when a truncated issue's refetch returns empty", async () => {
+    // inline carries the In-Progress transition; total>returned flags truncation
+    const truncated = issue("KAN-13", {
+      changelog: { histories: [
+        { created: "2026-06-02T09:00:00.000Z", items: [{ field: "status", from: "10000", to: "10001", fromString: "To Do", toString: "In Progress" }] },
+      ], total: 5, maxResults: 1 },
+    });
+    stubFetch([
+      ["/rest/api/3/status", statuses],
+      ["/rest/api/3/search/jql", { issues: [truncated], isLast: true }],
+      // refetch comes back empty (transient) — must NOT wipe the inline copy
+      ["/rest/api/3/issue/KAN-13/changelog", { values: [], isLast: true }],
+    ]);
+    const rows = await fetchJiraIssues(...CREDS, ["KAN"], 60);
     expect(rows[0].startedAt).toBe("2026-06-02T09:00:00.000Z");
   });
 });

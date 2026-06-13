@@ -600,9 +600,9 @@ async function workTimeline(
     arms.push(`SELECT ${ticketCols} FROM jira_issues i WHERE ${window} AND i.jira_project_key = ANY($${params.length}::text[])`);
   }
 
-  const res = await pool.query<WorkTimelineRow & { in_current_week: boolean }>(
+  const res = await pool.query<WorkTimelineRow & { in_current_week: boolean; identifier: string }>(
     `WITH tickets AS (${arms.join(" UNION ALL ")})
-     SELECT t.created_at::text, t.started_at::text, t.estimate,
+     SELECT t.identifier, t.created_at::text, t.started_at::text, t.estimate,
             (t.completed_at >= $3::date) AS in_current_week,
             pr.first_pr_created::text, pr.last_merged::text,
             pr.lines_changed::int
@@ -618,11 +618,18 @@ async function workTimeline(
     params,
   );
 
-  const joined = res.rows.filter((r) => r.last_merged != null);
+  // Dedupe by identifier: when both Linear and Jira are connected and a key
+  // prefix collides (a Linear team and a Jira project sharing e.g. "ENG"), the
+  // same ticket id could surface from both arms and be counted twice. Keep the
+  // first occurrence (the linear arm precedes the jira arm in the UNION).
+  const seen = new Set<string>();
+  const rows = res.rows.filter((r) => (seen.has(r.identifier) ? false : seen.add(r.identifier)));
+
+  const joined = rows.filter((r) => r.last_merged != null);
   return workTimelineStats(
     joined.filter((r) => r.in_current_week),
     joined.filter((r) => !r.in_current_week),
-    res.rows.filter((r) => r.in_current_week && r.last_merged == null).length,
+    rows.filter((r) => r.in_current_week && r.last_merged == null).length,
   );
 }
 

@@ -130,12 +130,15 @@ export type JiraIssueNode = {
   changelog?: { histories: JiraChangelogHistory[]; total?: number; maxResults?: number };
 };
 
-// Jira project keys are letters/digits starting with a letter. fetchJiraIssues
-// interpolates them straight into JQL (`project in (...)`), so — unlike the
-// parameterised GraphQL of the Linear path — a key with quotes or spaces would
-// break or broaden the query. Validate before it ever reaches JQL or the DB.
+// Jira project keys are letters/digits starting with a letter (Jira itself
+// forbids underscores/punctuation). fetchJiraIssues interpolates them straight
+// into JQL (`project in (...)`), so a key with quotes or spaces would break or
+// broaden the query. The charset MUST match the project-key portion of
+// isSafeIdentifier (`[A-Za-z0-9]+-\d+`) — if this allowed a char that the
+// identifier guard rejects (e.g. `_`), every issue of that project would pass
+// the project filter but get dropped at the per-issue isSafeIdentifier check.
 export function isSafeProjectKey(key: string): boolean {
-  return /^[A-Za-z][A-Za-z0-9_]*$/.test(key);
+  return /^[A-Za-z][A-Za-z0-9]*$/.test(key);
 }
 
 export type JiraIssueRow = {
@@ -163,31 +166,38 @@ export function isSafeIdentifier(identifier: string): boolean {
 
 // "not really completed" resolutions — kept broad because the built-in Jira
 // set includes Won't Do, Won't Fix, Cannot Reproduce, Duplicate, Declined,
-// Rejected. `won'?t\b` catches both Won't Do and Won't Fix; the rest are
-// matched by stem so plurals/variants ("Duplicates", "Declined") still hit.
-const CANCEL_RESOLUTION_RE = /cancel|won'?t\b|abandon|duplicat|declin|reject|wontfix|cannot\s*reproduce|not\s*a\s*bug/i;
+// Rejected. `won'?t` (no trailing boundary) catches "Won't Do", "Won't Fix"
+// and the no-space "Won'tFix"; the rest are matched by stem so plurals/variants
+// ("Duplicates", "Declined") still hit.
+const CANCEL_RESOLUTION_RE = /cancel|won'?t|abandon|duplicat|declin|reject|cannot\s*reproduce|not\s*a\s*bug/i;
 
-// Timestamp of the first changelog transition INTO a status of `target`
-// category, or null. Used for pickup (indeterminate) and as a completion
-// fallback (done) when the issue carries no resolutiondate.
-function firstTransitionInto(
+// Timestamp of a changelog transition INTO a status of `target` category, or
+// null. `pick: "first"` for pickup (first time it entered In-Progress);
+// `pick: "last"` for completion (a reopened-then-redone issue should be dated
+// to its FINAL done transition, matching how Jira would update resolutiondate).
+function transitionInto(
   node: JiraIssueNode,
   categories: Map<string, JiraStatusCategory>,
   target: JiraStatusCategory,
+  pick: "first" | "last",
 ): string | null {
   const histories = node.changelog?.histories ?? [];
   // Jira returns histories ascending by created; sort defensively.
   const sorted = [...histories].sort((a, b) => Date.parse(a.created) - Date.parse(b.created));
+  let found: string | null = null;
   for (const h of sorted) {
     for (const it of h.items) {
       if (it.field !== "status") continue;
       const cat =
         (it.to && categories.get(it.to)) ??
         (it.toString && categories.get(it.toString.toLowerCase()));
-      if (cat === target) return h.created;
+      if (cat === target) {
+        if (pick === "first") return h.created;
+        found = h.created; // keep scanning to land on the last
+      }
     }
   }
-  return null;
+  return found;
 }
 
 // First changelog transition INTO an indeterminate-category status = pickup.
@@ -195,21 +205,22 @@ export function deriveStartedAt(
   node: JiraIssueNode,
   categories: Map<string, JiraStatusCategory>,
 ): string | null {
-  return firstTransitionInto(node, categories, "indeterminate");
+  return transitionInto(node, categories, "indeterminate", "first");
 }
 
 // Completion time, most reliable first: the resolution date, else the
-// changelog's first transition into a done-category status, else the field
-// Jira stamps when the status category last changed. Without this fallback a
-// Done workflow that sets no resolution would leave completed_at NULL and the
-// issue would silently drop out of the weekly velocity + timeline windows.
+// changelog's LAST transition into a done-category status (a reopened-then-
+// redone issue is dated to its final completion), else the field Jira stamps
+// when the status category last changed. Without this fallback a Done workflow
+// that sets no resolution would leave completed_at NULL and the issue would
+// silently drop out of the weekly velocity + timeline windows.
 export function deriveCompletedAt(
   node: JiraIssueNode,
   categories: Map<string, JiraStatusCategory>,
 ): string | null {
   return (
     (node.fields.resolutiondate ?? null) ||
-    firstTransitionInto(node, categories, "done") ||
+    transitionInto(node, categories, "done", "last") ||
     (node.fields.statuscategorychangedate ?? null)
   );
 }
@@ -235,10 +246,12 @@ export function toIssueRow(
   else stateType = "unstarted";
 
   // Story points may arrive as a number or, on some (team-managed / text) field
-  // configs, a numeric string — coerce both; the DB column is integer.
+  // configs, a numeric string — coerce both; the DB column is integer. Reject
+  // negatives (a misconfigured/imported custom field can hold one): a negative
+  // estimate would bucket as size "S" and skew the work-timeline size classes.
   const sp = f[storyPointsField];
   const spNum = typeof sp === "number" ? sp : typeof sp === "string" && sp.trim() !== "" ? Number(sp) : NaN;
-  const estimate = Number.isFinite(spNum) ? Math.round(spNum) : null;
+  const estimate = Number.isFinite(spNum) && spNum >= 0 ? Math.round(spNum) : null;
   // Both completed and canceled land in the done category; resolve the end
   // time the same way for either bucket.
   const endAt = stateType === "completed" || stateType === "canceled" ? deriveCompletedAt(node, categories) : null;
@@ -330,7 +343,11 @@ export async function fetchJiraIssues(
         : cl.maxResults != null && cl.histories.length >= cl.maxResults
       : false;
     if (cl && truncated) {
-      n.changelog = { histories: await fetchFullHistories(site, email, token, n.key) };
+      const full = await fetchFullHistories(site, email, token, n.key);
+      // Only replace when the refetch actually returned histories — a transient
+      // empty/short response must not wipe the (partial but present) inline copy,
+      // which would null out started_at/completed_at and persist via the upsert.
+      if (full.length) n.changelog = { histories: full };
     }
   }
 
