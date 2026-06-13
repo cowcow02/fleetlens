@@ -170,6 +170,44 @@ describe("toIssueRow", () => {
     expect(row.startedAt).toBe("2026-06-04T09:00:00.000Z");
   });
 
+  it("treats 'Won't Fix' / 'Rejected' / 'Cannot Reproduce' resolutions as canceled", () => {
+    const base: JiraIssueNode = {
+      key: "ENG-8",
+      fields: {
+        summary: "x",
+        created: "2026-06-01T08:00:00.000Z",
+        resolutiondate: "2026-06-03T08:00:00.000Z",
+        status: { name: "Done", statusCategory: { key: "done" } },
+        project: { key: "ENG" },
+      },
+    };
+    for (const name of ["Won't Fix", "Rejected", "Cannot Reproduce", "Duplicate"]) {
+      const row = toIssueRow({ ...base, fields: { ...base.fields, resolution: { name } } }, categories, SITE, SP);
+      expect(row.stateType, name).toBe("canceled");
+    }
+    // a genuine completion resolution stays completed
+    const done = toIssueRow({ ...base, fields: { ...base.fields, resolution: { name: "Fixed" } } }, categories, SITE, SP);
+    expect(done.stateType).toBe("completed");
+  });
+
+  it("coerces a numeric-string story-point estimate", () => {
+    const node: JiraIssueNode = {
+      key: "ENG-12",
+      fields: {
+        summary: "string points",
+        created: "2026-06-01T08:00:00.000Z",
+        resolutiondate: "2026-06-03T08:00:00.000Z",
+        status: { name: "Done", statusCategory: { key: "done" } },
+        project: { key: "ENG" },
+        customfield_10016: "5",
+      },
+    };
+    expect(toIssueRow(node, categories, SITE, SP).estimate).toBe(5);
+    // non-numeric string → null
+    const bad = toIssueRow({ ...node, fields: { ...node.fields, customfield_10016: "n/a" } }, categories, SITE, SP);
+    expect(bad.estimate).toBeNull();
+  });
+
   it("treats a 'Won't Do' resolution in the done category as canceled", () => {
     const node: JiraIssueNode = {
       key: "ENG-7",

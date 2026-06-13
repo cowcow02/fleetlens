@@ -161,7 +161,11 @@ export function isSafeIdentifier(identifier: string): boolean {
   return /^[A-Za-z0-9]+-\d+$/.test(identifier);
 }
 
-const CANCEL_RESOLUTION_RE = /cancel|won'?t\s*do|abandon|duplicate|declined/i;
+// "not really completed" resolutions — kept broad because the built-in Jira
+// set includes Won't Do, Won't Fix, Cannot Reproduce, Duplicate, Declined,
+// Rejected. `won'?t\b` catches both Won't Do and Won't Fix; the rest are
+// matched by stem so plurals/variants ("Duplicates", "Declined") still hit.
+const CANCEL_RESOLUTION_RE = /cancel|won'?t\b|abandon|duplicat|declin|reject|wontfix|cannot\s*reproduce|not\s*a\s*bug/i;
 
 // Timestamp of the first changelog transition INTO a status of `target`
 // category, or null. Used for pickup (indeterminate) and as a completion
@@ -230,8 +234,11 @@ export function toIssueRow(
   else if (category === "indeterminate") stateType = "started";
   else stateType = "unstarted";
 
+  // Story points may arrive as a number or, on some (team-managed / text) field
+  // configs, a numeric string — coerce both; the DB column is integer.
   const sp = f[storyPointsField];
-  const estimate = typeof sp === "number" ? Math.round(sp) : null;
+  const spNum = typeof sp === "number" ? sp : typeof sp === "string" && sp.trim() !== "" ? Number(sp) : NaN;
+  const estimate = Number.isFinite(spNum) ? Math.round(spNum) : null;
   // Both completed and canceled land in the done category; resolve the end
   // time the same way for either bucket.
   const endAt = stateType === "completed" || stateType === "canceled" ? deriveCompletedAt(node, categories) : null;
@@ -296,6 +303,9 @@ export async function fetchJiraIssues(
 
   const nodes: JiraIssueNode[] = [];
   let nextPageToken: string | undefined;
+  // Stop if a cursor ever repeats — guards against a misbehaving/proxied server
+  // returning a cyclic cursor (A→B→A) that the page cap alone would let spin.
+  const seenTokens = new Set<string>();
   // Page cap is a runaway guard; 30 × 100 ≫ any 60-day window.
   for (let page = 0; page < 30; page++) {
     const d = await api<{ issues: JiraIssueNode[]; isLast?: boolean; nextPageToken?: string }>(
@@ -303,18 +313,23 @@ export async function fetchJiraIssues(
       { method: "POST", body: { jql, maxResults: 100, fields, expand: "changelog", ...(nextPageToken ? { nextPageToken } : {}) } },
     );
     nodes.push(...d.issues.filter((n) => isSafeIdentifier(n.key)));
-    // Stop on last page, no token, empty page, OR a non-advancing token (a
-    // misbehaving server returning the same cursor would otherwise re-fetch
-    // the same page up to the cap).
-    if (d.isLast || !d.nextPageToken || d.nextPageToken === nextPageToken || d.issues.length === 0) break;
+    if (d.isLast || !d.nextPageToken || d.issues.length === 0 || seenTokens.has(d.nextPageToken)) break;
+    seenTokens.add(d.nextPageToken);
     nextPageToken = d.nextPageToken;
   }
 
   // Refetch the full changelog for issues whose inline copy was capped, so the
-  // earliest status transition (needed for pickup time) isn't missed.
+  // earliest status transition (needed for pickup time) isn't missed. Truncation
+  // shows as total>returned; when the server omits `total`, a page that exactly
+  // fills maxResults is treated as possibly-capped and refetched defensively.
   for (const n of nodes) {
     const cl = n.changelog;
-    if (cl && cl.total != null && cl.total > cl.histories.length) {
+    const truncated = cl
+      ? cl.total != null
+        ? cl.total > cl.histories.length
+        : cl.maxResults != null && cl.histories.length >= cl.maxResults
+      : false;
+    if (cl && truncated) {
       n.changelog = { histories: await fetchFullHistories(site, email, token, n.key) };
     }
   }
