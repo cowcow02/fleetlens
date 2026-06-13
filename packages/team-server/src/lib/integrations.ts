@@ -2,7 +2,7 @@ import type pg from "pg";
 import { encryptAesGcm, decryptAesGcm } from "./crypto";
 import { assertRepoAccess, fetchRepoPulls, validateGithubToken } from "./github";
 import { fetchLinearIssues, validateLinearKey } from "./linear";
-import { fetchJiraIssues, normalizeSite, validateJiraCredentials, DEFAULT_STORY_POINTS_FIELD } from "./jira";
+import { fetchJiraIssues, normalizeSite, validateJiraCredentials, isSafeProjectKey, DEFAULT_STORY_POINTS_FIELD } from "./jira";
 
 // A repo and which groups it counts toward in the insight report.
 // Empty group_ids = counts toward every group (the safe default).
@@ -296,6 +296,8 @@ export type JiraIntegrationConfig = {
 };
 
 export function normalizeJiraProjects(config: { projects?: unknown; project_keys?: unknown }): JiraProjectMapping[] {
+  // Project keys are interpolated into JQL downstream — drop any that aren't
+  // JQL-safe here so a malformed/injected key can never be stored or queried.
   if (Array.isArray(config.projects)) {
     return config.projects
       .filter((p): p is { key: string; group_ids?: unknown } => !!p && typeof (p as { key?: unknown }).key === "string")
@@ -303,12 +305,13 @@ export function normalizeJiraProjects(config: { projects?: unknown; project_keys
         key: p.key.trim(),
         group_ids: Array.isArray(p.group_ids) ? p.group_ids.filter((g): g is string => typeof g === "string") : [],
       }))
-      .filter((p) => p.key);
+      .filter((p) => isSafeProjectKey(p.key));
   }
   if (Array.isArray(config.project_keys)) {
     return config.project_keys
       .filter((k): k is string => typeof k === "string" && !!k.trim())
-      .map((k) => ({ key: k.trim(), group_ids: [] }));
+      .map((k) => ({ key: k.trim(), group_ids: [] }))
+      .filter((p) => isSafeProjectKey(p.key));
   }
   return [];
 }
@@ -357,8 +360,11 @@ export async function saveJiraIntegration(
   if (!effSite || !effEmail) throw new Error("Jira site and email are required");
   if (!effToken) throw new Error("Jira API token required — no stored credentials to reuse");
   const viewer = await validateJiraCredentials(effSite, effEmail, effToken);
+  // Defence in depth: never persist a key that isn't JQL-safe, even if a
+  // caller skipped normalizeJiraProjects. Reads + the query path filter too.
+  const safeProjects = projects.filter((p) => isSafeProjectKey(p.key));
   const config: JiraIntegrationConfig = {
-    site: effSite, email: effEmail, projects, sync_days: 60,
+    site: effSite, email: effEmail, projects: safeProjects, sync_days: 60,
     story_points_field: DEFAULT_STORY_POINTS_FIELD, login: viewer.name,
   };
   await pool.query(

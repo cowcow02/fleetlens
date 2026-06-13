@@ -118,14 +118,25 @@ export type JiraIssueNode = {
     summary?: string;
     created: string;
     resolutiondate?: string | null;
+    statuscategorychangedate?: string | null;
     status?: { name?: string; statusCategory?: { key?: string } };
     assignee?: { displayName?: string } | null;
     resolution?: { name?: string } | null;
     project?: { key?: string };
     [custom: string]: unknown;
   };
-  changelog?: { histories: JiraChangelogHistory[] };
+  // The search endpoint returns the changelog inline but capped at `maxResults`
+  // histories; `total` reveals when it's truncated so we can refetch in full.
+  changelog?: { histories: JiraChangelogHistory[]; total?: number; maxResults?: number };
 };
+
+// Jira project keys are letters/digits starting with a letter. fetchJiraIssues
+// interpolates them straight into JQL (`project in (...)`), so — unlike the
+// parameterised GraphQL of the Linear path — a key with quotes or spaces would
+// break or broaden the query. Validate before it ever reaches JQL or the DB.
+export function isSafeProjectKey(key: string): boolean {
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(key);
+}
 
 export type JiraIssueRow = {
   identifier: string;
@@ -152,10 +163,13 @@ export function isSafeIdentifier(identifier: string): boolean {
 
 const CANCEL_RESOLUTION_RE = /cancel|won'?t\s*do|abandon|duplicate|declined/i;
 
-// First changelog transition INTO an indeterminate-category status = pickup.
-export function deriveStartedAt(
+// Timestamp of the first changelog transition INTO a status of `target`
+// category, or null. Used for pickup (indeterminate) and as a completion
+// fallback (done) when the issue carries no resolutiondate.
+function firstTransitionInto(
   node: JiraIssueNode,
   categories: Map<string, JiraStatusCategory>,
+  target: JiraStatusCategory,
 ): string | null {
   const histories = node.changelog?.histories ?? [];
   // Jira returns histories ascending by created; sort defensively.
@@ -166,10 +180,34 @@ export function deriveStartedAt(
       const cat =
         (it.to && categories.get(it.to)) ??
         (it.toString && categories.get(it.toString.toLowerCase()));
-      if (cat === "indeterminate") return h.created;
+      if (cat === target) return h.created;
     }
   }
   return null;
+}
+
+// First changelog transition INTO an indeterminate-category status = pickup.
+export function deriveStartedAt(
+  node: JiraIssueNode,
+  categories: Map<string, JiraStatusCategory>,
+): string | null {
+  return firstTransitionInto(node, categories, "indeterminate");
+}
+
+// Completion time, most reliable first: the resolution date, else the
+// changelog's first transition into a done-category status, else the field
+// Jira stamps when the status category last changed. Without this fallback a
+// Done workflow that sets no resolution would leave completed_at NULL and the
+// issue would silently drop out of the weekly velocity + timeline windows.
+export function deriveCompletedAt(
+  node: JiraIssueNode,
+  categories: Map<string, JiraStatusCategory>,
+): string | null {
+  return (
+    (node.fields.resolutiondate ?? null) ||
+    firstTransitionInto(node, categories, "done") ||
+    (node.fields.statuscategorychangedate ?? null)
+  );
 }
 
 export function toIssueRow(
@@ -192,9 +230,11 @@ export function toIssueRow(
   else if (category === "indeterminate") stateType = "started";
   else stateType = "unstarted";
 
-  const resolvedAt = f.resolutiondate ?? null;
   const sp = f[storyPointsField];
   const estimate = typeof sp === "number" ? Math.round(sp) : null;
+  // Both completed and canceled land in the done category; resolve the end
+  // time the same way for either bucket.
+  const endAt = stateType === "completed" || stateType === "canceled" ? deriveCompletedAt(node, categories) : null;
 
   return {
     identifier: node.key,
@@ -207,15 +247,35 @@ export function toIssueRow(
     url: `${site}/browse/${node.key}`,
     createdAt: f.created,
     startedAt: deriveStartedAt(node, categories),
-    completedAt: stateType === "completed" ? resolvedAt : null,
-    canceledAt: stateType === "canceled" ? resolvedAt : null,
+    completedAt: stateType === "completed" ? endAt : null,
+    canceledAt: stateType === "canceled" ? endAt : null,
   };
+}
+
+// Full changelog for one issue via the dedicated paginated endpoint, used only
+// when the inline changelog from search came back truncated. Oldest-first, so
+// the first status transition is guaranteed present.
+async function fetchFullHistories(
+  site: string, email: string, token: string, key: string,
+): Promise<JiraChangelogHistory[]> {
+  const out: JiraChangelogHistory[] = [];
+  let startAt = 0;
+  for (let page = 0; page < 20; page++) {
+    const d = await api<{ values: JiraChangelogHistory[]; isLast?: boolean; total?: number }>(
+      site, email, token, `/rest/api/3/issue/${encodeURIComponent(key)}/changelog?startAt=${startAt}&maxResults=100`,
+    );
+    out.push(...(d.values ?? []));
+    startAt += d.values?.length ?? 0;
+    if (d.isLast || !d.values?.length || (d.total != null && startAt >= d.total)) break;
+  }
+  return out;
 }
 
 /** Issues updated within the trailing `sinceDays`, limited to the given Jira
  *  project keys. Pulls the changelog inline (`expand: "changelog"`) to derive
- *  pickup time. Uses the enhanced search endpoint `/rest/api/3/search/jql` —
- *  the classic `/rest/api/3/search` was removed from Jira Cloud (returns 410,
+ *  pickup/done times, refetching the full changelog for any issue whose inline
+ *  copy was truncated. Uses the enhanced search endpoint `/rest/api/3/search/jql`
+ *  — the classic `/rest/api/3/search` was removed from Jira Cloud (returns 410,
  *  Atlassian CHANGE-2046). That endpoint paginates by opaque `nextPageToken`
  *  (no `total`/`startAt`) and takes `expand` as a string, not an array. */
 export async function fetchJiraIssues(
@@ -226,13 +286,15 @@ export async function fetchJiraIssues(
   sinceDays: number,
   storyPointsField: string = DEFAULT_STORY_POINTS_FIELD,
 ): Promise<JiraIssueRow[]> {
-  if (projectKeys.length === 0) return [];
+  // Drop any key that isn't JQL-safe before it reaches the interpolated query.
+  const safeKeys = projectKeys.filter(isSafeProjectKey);
+  if (safeKeys.length === 0) return [];
   const categories = await fetchStatusCategories(site, email, token);
   const jql =
-    `project in (${projectKeys.join(",")}) AND updated >= -${sinceDays}d ORDER BY updated DESC`;
-  const fields = ["summary", "status", "assignee", "created", "resolutiondate", "resolution", "project", storyPointsField];
+    `project in (${safeKeys.join(",")}) AND updated >= -${sinceDays}d ORDER BY updated DESC`;
+  const fields = ["summary", "status", "assignee", "created", "resolutiondate", "statuscategorychangedate", "resolution", "project", storyPointsField];
 
-  const rows: JiraIssueRow[] = [];
+  const nodes: JiraIssueNode[] = [];
   let nextPageToken: string | undefined;
   // Page cap is a runaway guard; 30 × 100 ≫ any 60-day window.
   for (let page = 0; page < 30; page++) {
@@ -240,13 +302,22 @@ export async function fetchJiraIssues(
       site, email, token, "/rest/api/3/search/jql",
       { method: "POST", body: { jql, maxResults: 100, fields, expand: "changelog", ...(nextPageToken ? { nextPageToken } : {}) } },
     );
-    rows.push(
-      ...d.issues
-        .filter((n) => isSafeIdentifier(n.key))
-        .map((n) => toIssueRow(n, categories, site, storyPointsField)),
-    );
-    if (d.isLast || !d.nextPageToken || d.issues.length === 0) break;
+    nodes.push(...d.issues.filter((n) => isSafeIdentifier(n.key)));
+    // Stop on last page, no token, empty page, OR a non-advancing token (a
+    // misbehaving server returning the same cursor would otherwise re-fetch
+    // the same page up to the cap).
+    if (d.isLast || !d.nextPageToken || d.nextPageToken === nextPageToken || d.issues.length === 0) break;
     nextPageToken = d.nextPageToken;
   }
-  return rows;
+
+  // Refetch the full changelog for issues whose inline copy was capped, so the
+  // earliest status transition (needed for pickup time) isn't missed.
+  for (const n of nodes) {
+    const cl = n.changelog;
+    if (cl && cl.total != null && cl.total > cl.histories.length) {
+      n.changelog = { histories: await fetchFullHistories(site, email, token, n.key) };
+    }
+  }
+
+  return nodes.map((n) => toIssueRow(n, categories, site, storyPointsField));
 }
