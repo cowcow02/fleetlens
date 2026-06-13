@@ -1413,6 +1413,17 @@ export type LinearVelocityStats = {
   prev_week: LinearWeekVelocity;
 };
 
+// Jira-integration ticket velocity — structurally identical to Linear's
+// (Jira's started time is derived from the changelog; otherwise the metrics
+// are the same). Keyed by Jira project rather than Linear team.
+export type JiraVelocityStats = {
+  project_keys: string[];
+  last_sync_at: string | null;
+  wip_now: number;
+  week: LinearWeekVelocity;
+  prev_week: LinearWeekVelocity;
+};
+
 // Cross-source work timeline: completed tickets joined (by ticket ref in PR
 // title) to their merged PRs, decomposed into two delivery phases starting at
 // pickup. First-commit boundaries are useless for agent flows (agents commit
@@ -1472,7 +1483,10 @@ export type LiveExtras = {
   github_delivery?: GithubDeliveryStats;
   // Present only when the team's Linear integration is connected.
   linear_velocity?: LinearVelocityStats;
-  // Present only when BOTH integrations are connected and mapped to the scope.
+  // Present only when the team's Jira integration is connected.
+  jira_velocity?: JiraVelocityStats;
+  // Present only when GitHub plus a ticket source (Linear or Jira) are
+  // connected and mapped to the scope.
   work_timeline?: WorkTimelineStats;
 };
 

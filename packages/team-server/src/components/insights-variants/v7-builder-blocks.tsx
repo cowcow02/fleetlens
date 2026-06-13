@@ -618,6 +618,72 @@ const V8_BLOCKS: DashboardBlock[] = [
     },
   },
   {
+    id: "jira-velocity",
+    title: "Ticket velocity · Jira",
+    short_description:
+      "Synced from the Jira integration — completed tickets, cycle/lead medians, WIP, and the share shipped via AI-assisted PRs",
+    category: "outcomes",
+    tier: "external-plug-in",
+    source_version: "v8",
+    defaultW: 4,
+    render: (r) => {
+      const j = r.live_extras?.jira_velocity;
+      if (!j) {
+        return (
+          <div className="live-empty-row">
+            Jira isn&rsquo;t connected.{" "}
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>Connect it in team settings</a> to see ticket cycle time and
+            how much completed work ships through AI-assisted PRs.
+          </div>
+        );
+      }
+      if (j.project_keys.length === 0) {
+        return (
+          <div className="live-empty-row">
+            Jira is connected, but no Jira project is mapped to this group yet — in{" "}
+            <a href={`/team/${r.team_slug}/settings?tab=integrations`}>team settings → Integrations</a>, set each Jira project&rsquo;s
+            &ldquo;counts toward&rdquo; to this group (or to all groups).
+          </div>
+        );
+      }
+      const w = j.week;
+      const pw = j.prev_week;
+      const completedDelta = w.completed - pw.completed;
+      const fmtH = (v: number | null) => (v == null ? "—" : v >= 48 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+      const timeTile = (label: string, cur: number | null, prev: number | null) => (
+        <div className="wow-tile">
+          <div className="wow-tile-label">{label}</div>
+          <div className="wow-tile-value" style={{ fontSize: 22 }}>{fmtH(cur)}</div>
+          <div className="wow-tile-delta">{prev == null ? "no prior week" : `${fmtH(prev)} last wk`}</div>
+        </div>
+      );
+      return (
+        <>
+          <div className="wow-tile-row">
+            <div className="wow-tile">
+              <div className="wow-tile-label">Tickets completed</div>
+              <div className="wow-tile-value">{w.completed}</div>
+              <div className={`wow-tile-delta ${completedDelta >= 0 ? "positive" : "negative"}`}>
+                {completedDelta >= 0 ? "+" : ""}{completedDelta} vs last wk ({pw.completed})
+              </div>
+            </div>
+            <div className="wow-tile">
+              <div className="wow-tile-label">Shipped via AI-assisted PRs</div>
+              <div className="wow-tile-value">{w.ai_linked_share_pct}%</div>
+              <div className="wow-tile-delta">{w.ai_linked} of {w.completed} tickets · joined by ticket ref</div>
+            </div>
+            {timeTile("Cycle time (started → done)", w.median_cycle_hours, pw.median_cycle_hours)}
+            {timeTile("Lead time (created → done)", w.median_lead_hours, pw.median_lead_hours)}
+          </div>
+          <div className="kicker" style={{ marginTop: 10 }}>
+            {`Jira ${j.project_keys.join(", ")} · ${j.wip_now} in progress now · cycle time from the changelog's first ` +
+              `In-Progress transition · AI linkage requires the ticket ref in the PR title, so it undercounts.`}
+          </div>
+        </>
+      );
+    },
+  },
+  {
     id: "work-timeline",
     title: "Work timeline · pickup → merge, by task size",
     short_description:

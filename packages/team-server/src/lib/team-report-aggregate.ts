@@ -5,6 +5,7 @@ import type {
   GithubDeliveryStats,
   GithubWeekDelivery,
   HarnessBreakdown,
+  JiraVelocityStats,
   LinearVelocityStats,
   LinearWeekVelocity,
   LiveExtras,
@@ -19,7 +20,7 @@ import type {
   WorkTimelineStats,
 } from "../app/team/[slug]/insights/types";
 import { medianHours, percentileHours } from "./github";
-import { normalizeGithubRepos, normalizeLinearTeams } from "./integrations";
+import { normalizeGithubRepos, normalizeLinearTeams, normalizeJiraProjects } from "./integrations";
 import {
   isoMondayOf,
   perProjectTimeWoW,
@@ -243,7 +244,7 @@ export async function scopedSourceNames(
   teamId: string,
   scope: InsightsScope,
   pool: pg.Pool,
-): Promise<{ repoNames: string[] | null; teamKeys: string[] | null }> {
+): Promise<{ repoNames: string[] | null; teamKeys: string[] | null; projectKeys: string[] | null }> {
   const integ = await loadIntegrationConfigs(teamId, pool);
   const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
     scope.kind === "group"
@@ -252,6 +253,7 @@ export async function scopedSourceNames(
   return {
     repoNames: integ.github ? inScope(normalizeGithubRepos(integ.github.config.repos)).map((r) => r.name) : [],
     teamKeys: integ.linear ? inScope(normalizeLinearTeams(integ.linear.config)).map((t) => t.key) : [],
+    projectKeys: integ.jira ? inScope(normalizeJiraProjects(integ.jira.config)).map((p) => p.key) : [],
   };
 }
 
@@ -259,22 +261,26 @@ export async function scopedSourceNames(
 // every block that needs a provider config — they used to each re-query it.
 type IntegrationConfigRow = {
   provider: string;
-  config: { login?: string; repos?: unknown; teams?: unknown; team_keys?: unknown; sync_days?: number };
+  config: {
+    login?: string; repos?: unknown; teams?: unknown; team_keys?: unknown; sync_days?: number;
+    projects?: unknown; project_keys?: unknown;
+  };
   last_sync_at: string | null;
 };
 
 async function loadIntegrationConfigs(
   teamId: string,
   pool: pg.Pool,
-): Promise<{ github?: IntegrationConfigRow; linear?: IntegrationConfigRow }> {
+): Promise<{ github?: IntegrationConfigRow; linear?: IntegrationConfigRow; jira?: IntegrationConfigRow }> {
   const res = await pool.query<IntegrationConfigRow>(
     `SELECT provider, config, last_sync_at::text FROM team_integrations
-     WHERE team_id = $1 AND provider IN ('github', 'linear')`,
+     WHERE team_id = $1 AND provider IN ('github', 'linear', 'jira')`,
     [teamId],
   );
   return {
     github: res.rows.find((r) => r.provider === "github"),
     linear: res.rows.find((r) => r.provider === "linear"),
+    jira: res.rows.find((r) => r.provider === "jira"),
   };
 }
 
@@ -399,6 +405,70 @@ async function linearVelocity(
   };
 }
 
+// Ticket velocity from the Jira integration — the Jira mirror of
+// linearVelocity. Jira projects are group-mapped like Linear teams (empty
+// group_ids = all groups). Reuses linearWeekVelocity since jira_issues carries
+// the same normalized buckets (state_type) and timestamps; cycle time uses the
+// changelog-derived started_at. Null when not connected; connected with zero
+// mapped projects returns empty-keys stats so the widget can point the admin
+// at the mapping.
+async function jiraVelocity(
+  teamId: string,
+  scope: InsightsScope,
+  weekMonday: string,
+  pool: pg.Pool,
+  integ: IntegrationConfigRow | undefined,
+): Promise<JiraVelocityStats | null> {
+  if (!integ) return null;
+
+  const allProjects = normalizeJiraProjects(integ.config);
+  const scoped =
+    scope.kind === "group"
+      ? allProjects.filter((p) => p.group_ids.length === 0 || p.group_ids.includes(scope.groupId))
+      : allProjects;
+  const projectKeys = scoped.map((p) => p.key);
+  if (projectKeys.length === 0) {
+    return {
+      project_keys: [],
+      last_sync_at: integ.last_sync_at,
+      wip_now: 0,
+      week: linearWeekVelocity([]),
+      prev_week: linearWeekVelocity([]),
+    };
+  }
+
+  const prevMonday = previousIsoMonday(weekMonday);
+  const winEnd = weekEndExclusive(weekMonday);
+  const [issues, wip] = await Promise.all([
+    pool.query<LinearIssueAggRow & { in_current_week: boolean }>(
+      `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
+              (i.completed_at >= $3::date) AS in_current_week,
+              EXISTS (
+                SELECT 1 FROM github_pull_requests p
+                WHERE p.team_id = i.team_id AND p.ai_assisted
+                  AND p.title ~* (i.identifier || '\\M')
+              ) AS ai_linked
+       FROM jira_issues i
+       WHERE i.team_id = $1 AND i.jira_project_key = ANY($5::text[])
+         AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
+      [teamId, prevMonday, weekMonday, winEnd, projectKeys],
+    ),
+    pool.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM jira_issues
+       WHERE team_id = $1 AND jira_project_key = ANY($2::text[]) AND state_type = 'started'`,
+      [teamId, projectKeys],
+    ),
+  ]);
+
+  return {
+    project_keys: projectKeys,
+    last_sync_at: integ.last_sync_at,
+    wip_now: wip.rows[0].n,
+    week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
+    prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),
+  };
+}
+
 export type WorkTimelineRow = {
   created_at: string;
   started_at: string | null;
@@ -488,11 +558,13 @@ export function workTimelineStats(
   };
 }
 
-// Ticket-to-merge timeline, needing both integrations: Linear supplies
-// created/started/completed, GitHub supplies first-commit/PR-opened/merged for
-// the PRs carrying the ticket ref. Null unless both are connected AND both
-// have at least one source mapped into scope — the single-source blocks
-// already carry the fix-the-mapping guidance, so this one just stays hidden.
+// Ticket-to-merge timeline, needing GitHub plus a ticket source: the ticket
+// source (Linear and/or Jira) supplies created/started/completed, GitHub
+// supplies PR-opened/merged for the PRs carrying the ticket ref. Both ticket
+// tables share the same normalized columns, so they UNION into one ticket set.
+// Null unless GitHub plus at least one ticket source are connected AND each has
+// a source mapped into scope — the single-source blocks already carry the
+// fix-the-mapping guidance, so this one just stays hidden.
 async function workTimeline(
   teamId: string,
   scope: InsightsScope,
@@ -500,37 +572,50 @@ async function workTimeline(
   pool: pg.Pool,
   gh: IntegrationConfigRow | undefined,
   lin: IntegrationConfigRow | undefined,
+  jira: IntegrationConfigRow | undefined,
 ): Promise<WorkTimelineStats | null> {
-  if (!gh || !lin) return null;
+  if (!gh || (!lin && !jira)) return null;
 
   const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
     scope.kind === "group"
       ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
       : xs;
   const repoNames = inScope(normalizeGithubRepos(gh.config.repos)).map((r) => r.name);
-  const teamKeys = inScope(normalizeLinearTeams(lin.config)).map((t) => t.key);
-  if (repoNames.length === 0 || teamKeys.length === 0) return null;
+  const teamKeys = lin ? inScope(normalizeLinearTeams(lin.config)).map((t) => t.key) : [];
+  const projectKeys = jira ? inScope(normalizeJiraProjects(jira.config)).map((p) => p.key) : [];
+  if (repoNames.length === 0 || (teamKeys.length === 0 && projectKeys.length === 0)) return null;
 
-  const prevMonday = previousIsoMonday(weekMonday);
-  const winEnd = weekEndExclusive(weekMonday);
+  // Shared window params; per-source key arrays are appended and the matching
+  // UNION arm is included only when that source has mapped keys in scope.
+  const params: unknown[] = [teamId, previousIsoMonday(weekMonday), weekMonday, weekEndExclusive(weekMonday), repoNames];
+  const arms: string[] = [];
+  const ticketCols = "team_id, identifier, created_at, started_at, estimate, completed_at";
+  const window = "i.team_id = $1 AND i.state_type = 'completed' AND i.completed_at >= $2::date AND i.completed_at < $4::date";
+  if (teamKeys.length > 0) {
+    params.push(teamKeys);
+    arms.push(`SELECT ${ticketCols} FROM linear_issues i WHERE ${window} AND i.linear_team_key = ANY($${params.length}::text[])`);
+  }
+  if (projectKeys.length > 0) {
+    params.push(projectKeys);
+    arms.push(`SELECT ${ticketCols} FROM jira_issues i WHERE ${window} AND i.jira_project_key = ANY($${params.length}::text[])`);
+  }
+
   const res = await pool.query<WorkTimelineRow & { in_current_week: boolean }>(
-    `SELECT i.created_at::text, i.started_at::text, i.estimate,
-            (i.completed_at >= $3::date) AS in_current_week,
+    `WITH tickets AS (${arms.join(" UNION ALL ")})
+     SELECT t.created_at::text, t.started_at::text, t.estimate,
+            (t.completed_at >= $3::date) AS in_current_week,
             pr.first_pr_created::text, pr.last_merged::text,
             pr.lines_changed::int
-     FROM linear_issues i
+     FROM tickets t
      LEFT JOIN LATERAL (
        SELECT MIN(p.created_at) AS first_pr_created,
               MAX(p.merged_at) AS last_merged,
               SUM(p.additions + p.deletions) AS lines_changed
        FROM github_pull_requests p
-       WHERE p.team_id = i.team_id AND p.repo = ANY($6::text[])
-         AND p.state = 'merged' AND p.title ~* (i.identifier || '\\M')
-     ) pr ON true
-     WHERE i.team_id = $1 AND i.linear_team_key = ANY($5::text[])
-       AND i.state_type = 'completed'
-       AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
-    [teamId, prevMonday, weekMonday, winEnd, teamKeys, repoNames],
+       WHERE p.team_id = t.team_id AND p.repo = ANY($5::text[])
+         AND p.state = 'merged' AND p.title ~* (t.identifier || '\\M')
+     ) pr ON true`,
+    params,
   );
 
   const joined = res.rows.filter((r) => r.last_merged != null);
@@ -1608,13 +1693,15 @@ export async function buildTeamInsightReport(
     data_freshness: freshnessRes.rows[0]?.ingested_at ?? new Date().toISOString(),
     member_portraits: portraits,
   };
-  const [ghDelivery, linVelocity, timeline] = await Promise.all([
+  const [ghDelivery, linVelocity, jiraVel, timeline] = await Promise.all([
     githubDelivery(teamId, scope, weekMonday, pool, integ.github),
     linearVelocity(teamId, scope, weekMonday, pool, integ.linear),
-    workTimeline(teamId, scope, weekMonday, pool, integ.github, integ.linear),
+    jiraVelocity(teamId, scope, weekMonday, pool, integ.jira),
+    workTimeline(teamId, scope, weekMonday, pool, integ.github, integ.linear, integ.jira),
   ]);
   if (ghDelivery) liveExtras.github_delivery = ghDelivery;
   if (linVelocity) liveExtras.linear_velocity = linVelocity;
+  if (jiraVel) liveExtras.jira_velocity = jiraVel;
   if (timeline) liveExtras.work_timeline = timeline;
   report.live_extras = liveExtras;
 

@@ -29,7 +29,13 @@ export async function pruneIntegrationData(): Promise<number> {
     WHERE i.team_id = t.id
       AND COALESCE(i.completed_at, i.canceled_at, i.created_at) < now() - make_interval(days => t.retention_days)
   `);
-  return (prs.rowCount ?? 0) + (issues.rowCount ?? 0);
+  const jiraIssues = await getPool().query(`
+    DELETE FROM jira_issues i
+    USING teams t
+    WHERE i.team_id = t.id
+      AND COALESCE(i.completed_at, i.canceled_at, i.created_at) < now() - make_interval(days => t.retention_days)
+  `);
+  return (prs.rowCount ?? 0) + (issues.rowCount ?? 0) + (jiraIssues.rowCount ?? 0);
 }
 
 export async function prunePlanUtilization(): Promise<number> {

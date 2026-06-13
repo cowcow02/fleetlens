@@ -4,6 +4,11 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [Unreleased]
+
+### Added
+- **Jira Cloud integration** — a third delivery source alongside GitHub and Linear. Connect in team settings → Integrations with your Jira site, account email and an Atlassian API token; pick projects and map each to groups (same "counts toward" model as repos and Linear teams). Adds a **Ticket velocity · Jira** block to group insight reports (completed tickets, cycle/lead medians, WIP, and the share shipped via AI-assisted PRs), and feeds the **Work timeline** alongside Linear — both ticket sources union into one pickup→merge view. Jira has no native "started" timestamp, so cycle time is derived from the changelog's first transition into an In-Progress status; story points read from `customfield_10016`. Synced hourly, encrypted at rest, and pruned on the same per-team retention as the other integrations.
+
 ## [0.12.2] — 2026-06-10
 
 ### Fixed

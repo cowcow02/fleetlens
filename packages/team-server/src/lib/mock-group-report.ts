@@ -189,6 +189,13 @@ export function buildMockGroupReport(members: MockRealMember[]): MockGroupData {
       week: { completed: 11, ai_linked: 9, ai_linked_share_pct: 82, median_cycle_hours: 4.2, median_lead_hours: 74.4 },
       prev_week: { completed: 9, ai_linked: 6, ai_linked_share_pct: 67, median_cycle_hours: 6.8, median_lead_hours: 98.6 },
     },
+    jira_velocity: {
+      project_keys: ["PLAT"],
+      last_sync_at: null,
+      wip_now: 4,
+      week: { completed: 8, ai_linked: 6, ai_linked_share_pct: 75, median_cycle_hours: 5.6, median_lead_hours: 81.2 },
+      prev_week: { completed: 7, ai_linked: 4, ai_linked_share_pct: 57, median_cycle_hours: 7.1, median_lead_hours: 102.4 },
+    },
     work_timeline: {
       tickets: 11,
       unjoined: 2,

@@ -90,11 +90,12 @@ export async function earliestWeekMonday(
   teamId: string,
   membershipIds: string[],
   pool: pg.Pool,
-  sources?: { repoNames: string[] | null; teamKeys: string[] | null },
+  sources?: { repoNames: string[] | null; teamKeys: string[] | null; projectKeys?: string[] | null },
 ): Promise<string | null> {
   if (membershipIds.length === 0) return null;
   const repoNames = sources?.repoNames ?? null;
   const teamKeys = sources?.teamKeys ?? null;
+  const projectKeys = sources?.projectKeys ?? null;
   const res = await pool.query<{ d: string | null }>(
     `SELECT min(d)::text AS d FROM (
        SELECT min(day)::date AS d FROM rich_daily_rollups WHERE membership_id = ANY($2::uuid[])
@@ -104,8 +105,11 @@ export async function earliestWeekMonday(
        UNION ALL
        SELECT min(completed_at)::date FROM linear_issues
        WHERE team_id = $1 AND state_type = 'completed' AND ($4::text[] IS NULL OR linear_team_key = ANY($4::text[]))
+       UNION ALL
+       SELECT min(completed_at)::date FROM jira_issues
+       WHERE team_id = $1 AND state_type = 'completed' AND ($5::text[] IS NULL OR jira_project_key = ANY($5::text[]))
      ) t WHERE d IS NOT NULL`,
-    [teamId, membershipIds, repoNames, teamKeys],
+    [teamId, membershipIds, repoNames, teamKeys, projectKeys],
   );
   const d = res.rows[0]?.d;
   return d ? isoMondayOf(new Date(`${d}T00:00:00Z`)) : null;

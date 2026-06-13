@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConfirmModal } from "./confirm-modal";
 import { LinearCard } from "./linear-card";
+import { JiraCard } from "./jira-card";
 import { Callout, CheckChip, isAuthSyncError, PickerRow, StatusStrip } from "./ui";
 
 type GroupOpt = { id: string; slug: string; name: string };
@@ -438,7 +439,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
     <section className="settings-section">
       <div className="subsection-head">
         <h2>Integrations</h2>
-        <span className="kicker">GitHub + Linear · delivery signals for insight reports</span>
+        <span className="kicker">GitHub + Linear + Jira · delivery signals for insight reports</span>
       </div>
 
       <div className="provider-head">GitHub · merge-confirmed delivery</div>
@@ -454,6 +455,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
       {message && <div className="action-note">{message}</div>}
 
       <LinearCard teamSlug={teamSlug} groups={groups} />
+      <JiraCard teamSlug={teamSlug} groups={groups} />
 
       <ConfirmModal
         open={confirmDisconnect}

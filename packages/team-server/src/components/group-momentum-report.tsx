@@ -114,11 +114,12 @@ export function GroupMomentumReport({
       key: "shipping",
       heading: "Changing how we ship",
       framing:
-        report.live_extras?.github_delivery || report.live_extras?.linear_velocity
+        report.live_extras?.github_delivery || report.live_extras?.linear_velocity || report.live_extras?.jira_velocity
           ? "Impact — delivery confirmed by this group's connected sources (" +
             [
               report.live_extras?.github_delivery && "GitHub merges",
               report.live_extras?.linear_velocity && "Linear tickets",
+              report.live_extras?.jira_velocity && "Jira tickets",
             ]
               .filter(Boolean)
               .join(", ") +
@@ -129,6 +130,7 @@ export function GroupMomentumReport({
         ...(report.live_extras?.work_timeline ? ["work-timeline"] : []),
         ...(report.live_extras?.github_delivery ? ["github-delivery"] : []),
         ...(report.live_extras?.linear_velocity ? ["linear-velocity"] : []),
+        ...(report.live_extras?.jira_velocity ? ["jira-velocity"] : []),
         "live-prs-shipped",
         // Repo-time breakdown only renders when GitHub resolution produced
         // rows — without it the block would just echo local directory names.
