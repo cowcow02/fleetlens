@@ -24,7 +24,8 @@ import {
 
 const rawSite = process.env.JIRA_SITE;
 const email = process.env.JIRA_EMAIL;
-const token = process.env.JIRA_TOKEN;
+// JIRA_API_TOKEN is the name jira-cli uses; accept either.
+const token = process.env.JIRA_TOKEN || process.env.JIRA_API_TOKEN;
 const spField = process.env.JIRA_STORY_POINTS_FIELD || DEFAULT_STORY_POINTS_FIELD;
 const syncDays = Number(process.env.JIRA_SYNC_DAYS || "60");
 

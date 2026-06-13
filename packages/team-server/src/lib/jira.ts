@@ -213,7 +213,11 @@ export function toIssueRow(
 }
 
 /** Issues updated within the trailing `sinceDays`, limited to the given Jira
- *  project keys. Pulls the changelog inline to derive pickup time. */
+ *  project keys. Pulls the changelog inline (`expand: "changelog"`) to derive
+ *  pickup time. Uses the enhanced search endpoint `/rest/api/3/search/jql` —
+ *  the classic `/rest/api/3/search` was removed from Jira Cloud (returns 410,
+ *  Atlassian CHANGE-2046). That endpoint paginates by opaque `nextPageToken`
+ *  (no `total`/`startAt`) and takes `expand` as a string, not an array. */
 export async function fetchJiraIssues(
   site: string,
   email: string,
@@ -229,20 +233,20 @@ export async function fetchJiraIssues(
   const fields = ["summary", "status", "assignee", "created", "resolutiondate", "resolution", "project", storyPointsField];
 
   const rows: JiraIssueRow[] = [];
-  let startAt = 0;
+  let nextPageToken: string | undefined;
   // Page cap is a runaway guard; 30 × 100 ≫ any 60-day window.
   for (let page = 0; page < 30; page++) {
-    const d = await api<{ issues: JiraIssueNode[]; total: number; maxResults: number }>(
-      site, email, token, "/rest/api/3/search",
-      { method: "POST", body: { jql, startAt, maxResults: 100, fields, expand: ["changelog"] } },
+    const d = await api<{ issues: JiraIssueNode[]; isLast?: boolean; nextPageToken?: string }>(
+      site, email, token, "/rest/api/3/search/jql",
+      { method: "POST", body: { jql, maxResults: 100, fields, expand: "changelog", ...(nextPageToken ? { nextPageToken } : {}) } },
     );
     rows.push(
       ...d.issues
         .filter((n) => isSafeIdentifier(n.key))
         .map((n) => toIssueRow(n, categories, site, storyPointsField)),
     );
-    startAt += d.issues.length;
-    if (d.issues.length === 0 || startAt >= d.total) break;
+    if (d.isLast || !d.nextPageToken || d.issues.length === 0) break;
+    nextPageToken = d.nextPageToken;
   }
   return rows;
 }
