@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   deriveStartedAt,
   deriveCompletedAt,
@@ -6,6 +6,10 @@ import {
   isSafeProjectKey,
   normalizeSite,
   toIssueRow,
+  validateJiraCredentials,
+  listJiraProjects,
+  fetchStatusCategories,
+  fetchJiraIssues,
   type JiraIssueNode,
   type JiraStatusCategory,
 } from "../../src/lib/jira.js";
@@ -224,5 +228,132 @@ describe("toIssueRow", () => {
     expect(row.stateType).toBe("canceled");
     expect(row.canceledAt).toBe("2026-06-03T08:00:00.000Z");
     expect(row.completedAt).toBeNull();
+  });
+});
+
+// ── network functions (fetch mocked) ────────────────────────────────────────
+
+type MockRoute = (url: string, init: { method?: string; body?: string } | undefined) => unknown;
+
+// Route fetch by URL fragment; first match wins. A route returning {__status}
+// simulates a non-2xx response.
+function stubFetch(routes: Array<[string, MockRoute | unknown]>) {
+  const fn = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+    for (const [frag, payload] of routes) {
+      if (url.includes(frag)) {
+        const body = typeof payload === "function" ? (payload as MockRoute)(url, init) : payload;
+        const status = (body as { __status?: number })?.__status ?? 200;
+        return { ok: status >= 200 && status < 300, status, json: async () => body } as Response;
+      }
+    }
+    return { ok: false, status: 404, json: async () => ({}) } as Response;
+  });
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+const CREDS = ["https://acme.atlassian.net", "me@acme.dev", "tok"] as const;
+
+describe("validateJiraCredentials", () => {
+  it("returns the viewer name/email from /myself", async () => {
+    stubFetch([["/rest/api/3/myself", { displayName: "Charlie Mak", emailAddress: "c@acme.dev" }]]);
+    expect(await validateJiraCredentials(...CREDS)).toEqual({ name: "Charlie Mak", email: "c@acme.dev" });
+  });
+
+  it("throws a credentials error on 401", async () => {
+    stubFetch([["/rest/api/3/myself", { __status: 401 }]]);
+    await expect(validateJiraCredentials(...CREDS)).rejects.toThrow(/credentials \(HTTP 401\)/);
+  });
+
+  it("throws a generic error on 500", async () => {
+    stubFetch([["/rest/api/3/myself", { __status: 500 }]]);
+    await expect(validateJiraCredentials(...CREDS)).rejects.toThrow(/HTTP 500/);
+  });
+});
+
+describe("listJiraProjects", () => {
+  it("pages through /project/search until isLast", async () => {
+    let call = 0;
+    stubFetch([["/rest/api/3/project/search", () => (call++ === 0
+      ? { values: [{ id: "1", key: "KAN", name: "Kanban" }], isLast: false }
+      : { values: [{ id: "2", key: "ENG", name: "Eng" }], isLast: true })]]);
+    const projects = await listJiraProjects(...CREDS);
+    expect(projects.map((p) => p.key)).toEqual(["KAN", "ENG"]);
+  });
+});
+
+describe("fetchStatusCategories", () => {
+  it("indexes statuses by id and lowercased name", async () => {
+    stubFetch([["/rest/api/3/status", [
+      { id: "10001", name: "In Progress", statusCategory: { key: "indeterminate" } },
+      { id: "10002", name: "Done", statusCategory: { key: "done" } },
+      { id: "9", name: "Weird", statusCategory: { key: "bogus" } },
+    ]]]);
+    const cats = await fetchStatusCategories(...CREDS);
+    expect(cats.get("10001")).toBe("indeterminate");
+    expect(cats.get("in progress")).toBe("indeterminate");
+    expect(cats.get("done")).toBe("done");
+    expect(cats.has("9")).toBe(false); // unknown category skipped
+  });
+});
+
+describe("fetchJiraIssues", () => {
+  const statuses = [
+    { id: "10000", name: "To Do", statusCategory: { key: "new" } },
+    { id: "10001", name: "In Progress", statusCategory: { key: "indeterminate" } },
+    { id: "10002", name: "Done", statusCategory: { key: "done" } },
+  ];
+  const issue = (key: string, extra: Record<string, unknown> = {}) => ({
+    key,
+    fields: {
+      summary: key, created: "2026-06-01T08:00:00.000Z", resolutiondate: "2026-06-05T08:00:00.000Z",
+      status: { name: "Done", statusCategory: { key: "done" } }, project: { key: "KAN" },
+    },
+    changelog: { histories: [
+      { created: "2026-06-02T09:00:00.000Z", items: [{ field: "status", from: "10000", to: "10001", fromString: "To Do", toString: "In Progress" }] },
+    ], total: 1, maxResults: 1 },
+    ...extra,
+  });
+
+  it("returns [] without any network call when no key is JQL-safe", async () => {
+    const fn = stubFetch([["x", {}]]);
+    expect(await fetchJiraIssues(...CREDS, ['bad" OR 1=1', "2bad"], 60)).toEqual([]);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it("fetches, derives pickup time, and pages by nextPageToken", async () => {
+    let page = 0;
+    stubFetch([
+      ["/rest/api/3/status", statuses],
+      ["/rest/api/3/search/jql", () => (page++ === 0
+        ? { issues: [issue("KAN-1")], isLast: false, nextPageToken: "t1" }
+        : { issues: [issue("KAN-2")], isLast: true })],
+    ]);
+    const rows = await fetchJiraIssues(...CREDS, ["KAN"], 60);
+    expect(rows.map((r) => r.identifier)).toEqual(["KAN-1", "KAN-2"]);
+    expect(rows[0].startedAt).toBe("2026-06-02T09:00:00.000Z");
+    expect(rows[0].stateType).toBe("completed");
+  });
+
+  it("refetches the full changelog when the inline copy is truncated", async () => {
+    const truncated = issue("KAN-9", {
+      changelog: { histories: [
+        // inline only has the most-recent (Done) transition; total>returned
+        { created: "2026-06-05T08:00:00.000Z", items: [{ field: "status", from: "10001", to: "10002", fromString: "In Progress", toString: "Done" }] },
+      ], total: 3, maxResults: 1 },
+    });
+    stubFetch([
+      ["/rest/api/3/status", statuses],
+      ["/rest/api/3/search/jql", { issues: [truncated], isLast: true }],
+      ["/rest/api/3/issue/KAN-9/changelog", { values: [
+        { created: "2026-06-02T09:00:00.000Z", items: [{ field: "status", from: "10000", to: "10001", fromString: "To Do", toString: "In Progress" }] },
+        { created: "2026-06-05T08:00:00.000Z", items: [{ field: "status", from: "10001", to: "10002", fromString: "In Progress", toString: "Done" }] },
+      ], isLast: true }],
+    ]);
+    const rows = await fetchJiraIssues(...CREDS, ["KAN"], 60);
+    // pickup time comes from the refetched full history, not the truncated inline copy
+    expect(rows[0].startedAt).toBe("2026-06-02T09:00:00.000Z");
   });
 });
