@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { getSession, clearClaudeCodeCaches } from "../src/claude-code.js";
+import { getSession, listSessions, clearClaudeCodeCaches } from "../src/claude-code.js";
 
 beforeEach(() => clearClaudeCodeCaches());
 
@@ -12,10 +12,9 @@ const DISPATCH_TS = "2026-06-13T13:12:45.000Z";
 const dispatchMs = Date.parse(DISPATCH_TS);
 
 /** Build a root with a parent session that dispatched two Workflow tool
- *  calls, plus a `workflows/` dir holding three journals (one matches each
- *  dispatch by time; a third — a resumed run — falls back to nearest). A
- *  `scripts/` subdir and a stray non-`wf_` file are present to confirm they're
- *  ignored. */
+ *  calls, plus a `workflows/` dir holding two journals (one per dispatch,
+ *  matched by time). A `scripts/` subdir and a stray non-`wf_` file are
+ *  present to confirm they're ignored. */
 async function makeFixture(): Promise<{ root: string }> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "wf-fixture-"));
   const projDir = path.join(root, PROJECT_DIR);
@@ -186,5 +185,54 @@ describe("workflow journals", () => {
     expect(s!.workflows).toEqual([]);
     expect(s!.workflowCount).toBeUndefined();
     expect(s!.spawnedAgentCount).toBeUndefined();
+  });
+
+  it("list and detail paths agree on workflowCount when a journal is malformed", async () => {
+    const { root } = await makeFixture();
+    const wfDir = path.join(root, PROJECT_DIR, SESSION_ID, "workflows");
+    // truncated mid-append → invalid JSON; both paths must ignore it identically.
+    await fs.writeFile(path.join(wfDir, "wf_truncated.json"), '{"runId":"wf_truncated","agentCount":7,');
+    clearClaudeCodeCaches();
+
+    const list = await listSessions({ root });
+    const meta = list.find((m) => m.sessionId === SESSION_ID)!;
+    const detail = await getSession(SESSION_ID, { root });
+
+    expect(meta.workflowCount).toBe(2); // not 3 — the unparseable file is dropped
+    expect(detail!.workflowCount).toBe(2);
+    expect(meta.spawnedAgentCount).toBe(detail!.spawnedAgentCount);
+    expect(meta.spawnedAgentCount).toBe(51);
+  });
+
+  it("matches a run to the dispatch at-or-before its start, not a nearer one after", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "wf-bracket-"));
+    const projDir = path.join(root, PROJECT_DIR);
+    const id = "22222222-3333-4444-5555-666666666666";
+    const startMs = Date.parse("2026-06-13T13:12:50.000Z");
+    const mkWf = (uuid: string, id2: string, ts: string) => ({
+      type: "assistant", uuid, parentUuid: "u0", timestamp: ts, sessionId: id, requestId: uuid,
+      message: { id: "m" + uuid, model: "claude-opus-4-8[1m]", role: "assistant",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        content: [{ type: "tool_use", id: id2, name: "Workflow", input: { script: "…" } }] },
+    });
+    const lines = [
+      { type: "user", uuid: "u0", parentUuid: null, timestamp: "2026-06-13T13:12:40.000Z",
+        sessionId: id, cwd: "/Users/me/Repo/demo", message: { role: "user", content: "go" } },
+      mkWf("a_before", "toolu_before", "2026-06-13T13:12:45.000Z"), // 5s before start
+      mkWf("a_after", "toolu_after", "2026-06-13T13:12:52.000Z"),   // 2s after start (nearer)
+    ];
+    await fs.mkdir(projDir, { recursive: true });
+    await fs.writeFile(path.join(projDir, `${id}.jsonl`), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    const wfDir = path.join(projDir, id, "workflows");
+    await fs.mkdir(wfDir, { recursive: true });
+    await fs.writeFile(path.join(wfDir, "wf_x.json"), JSON.stringify({
+      runId: "wf_x", workflowName: "x", status: "completed", agentCount: 3,
+      totalToolCalls: 1, totalTokens: 1, durationMs: 1000, startTime: startMs,
+    }));
+
+    const s = await getSession(id, { root });
+    // toolu_after is closer in absolute time, but only toolu_before could have
+    // launched a run that started at 13:12:50.
+    expect(s!.workflows![0].parentToolUseId).toBe("toolu_before");
   });
 });

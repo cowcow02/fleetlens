@@ -132,11 +132,16 @@ export async function GET(request: Request) {
             pending.delete(parentJsonl);
             if (closed) return;
             invalidateFile(parentJsonl);
+            // Report the JOURNAL's mtime, not the parent .jsonl's. A
+            // journal-only write leaves the parent .jsonl untouched, so its
+            // (stale) mtime would lose LiveRefresher's monotonic-per-source
+            // dedup and the refresh would be silently dropped. The journal we
+            // just saw change always carries a fresh mtime.
             let mtimeMs = Date.now();
             try {
-              mtimeMs = (await fs.stat(parentJsonl)).mtimeMs;
+              mtimeMs = (await fs.stat(fullPath)).mtimeMs;
             } catch {
-              // parent .jsonl might not be flushed yet — fall back to now.
+              // journal might be gone already — fall back to now.
             }
             send({ type: "session-updated", sessionId, projectDir, mtimeMs });
           }, DEBOUNCE_MS),

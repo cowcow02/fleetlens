@@ -343,19 +343,23 @@ async function scanWorkflowAggregate(
   const jsonFiles = entries.filter((f) => f.startsWith("wf_") && f.endsWith(".json"));
   if (jsonFiles.length === 0) return { workflowCount: 0, spawnedAgentCount: 0 };
   let spawnedAgentCount = 0;
-  await Promise.all(
+  // Count only journals that actually parse, so this matches the full
+  // loadWorkflows() path (which drops unparseable files) — otherwise the list
+  // badge and the detail header would disagree on a truncated/mid-write file.
+  const parsed = await Promise.all(
     jsonFiles.map(async (f) => {
       try {
         const j = JSON.parse(await fs.readFile(path.join(dir, f), "utf8")) as {
           agentCount?: unknown;
         };
         if (typeof j.agentCount === "number") spawnedAgentCount += j.agentCount;
+        return true;
       } catch {
-        /* skip unreadable / malformed journal */
+        return false; // skip unreadable / malformed journal
       }
     }),
   );
-  return { workflowCount: jsonFiles.length, spawnedAgentCount };
+  return { workflowCount: parsed.filter(Boolean).length, spawnedAgentCount };
 }
 
 async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
@@ -818,22 +822,31 @@ async function loadWorkflows(
   }
   dispatches.sort((a, b) => a.tsMs - b.tsMs);
 
-  // The journal's startTime trails its Workflow tool_use, so match to the
-  // nearest dispatch at-or-before startTime within tolerance; fall back to
-  // absolute nearest if none precede (clock skew / resumed runs).
+  // The journal's startTime trails its Workflow tool_use (script compile +
+  // first spawn), so the true parent fired at-or-before startMs. Prefer the
+  // nearest dispatch at-or-before startMs within tolerance; only if none
+  // precede (clock skew / resumed run) fall back to absolute nearest. This
+  // stops a run being attributed to a Workflow call that fired *after* it.
   const matchDispatch = (startMs: number | undefined): Dispatch | undefined => {
     if (startMs === undefined || dispatches.length === 0) return undefined;
     const TOLERANCE_MS = 60_000;
-    let best: Dispatch | undefined;
-    let bestDelta = Infinity;
+    let before: Dispatch | undefined;
+    let beforeDelta = Infinity;
+    let nearest: Dispatch | undefined;
+    let nearestDelta = Infinity;
     for (const d of dispatches) {
       const delta = Math.abs(startMs - d.tsMs);
-      if (delta < bestDelta && delta <= TOLERANCE_MS) {
-        best = d;
-        bestDelta = delta;
+      if (delta > TOLERANCE_MS) continue;
+      if (delta < nearestDelta) {
+        nearest = d;
+        nearestDelta = delta;
+      }
+      if (d.tsMs <= startMs && delta < beforeDelta) {
+        before = d;
+        beforeDelta = delta;
       }
     }
-    return best;
+    return before ?? nearest;
   };
 
   const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);

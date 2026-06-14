@@ -1875,17 +1875,23 @@ function Minimap({
   // milestones, so this usually collapses to one lane — but overlap is
   // handled if two runs ever ran concurrently.
   const { wfLaneOf, wfLaneCount } = useMemo(() => {
-    if (!workflows || workflows.length === 0) {
+    // Only place workflows we can actually draw (startTOffsetMs known). A
+    // running run has no end yet — it extends to the session end (safeDur),
+    // matching the open-ended bar the render draws. Counting only placeable
+    // runs keeps wfLaneCount in lockstep with what renders, so no empty
+    // reserved band appears.
+    const placeable = (workflows ?? []).filter((w) => w.startTOffsetMs !== undefined);
+    if (placeable.length === 0) {
       return { wfLaneOf: new Map<string, number>(), wfLaneCount: 0 };
     }
-    const sorted = [...workflows].sort(
+    const sorted = [...placeable].sort(
       (a, b) => (a.startTOffsetMs ?? 0) - (b.startTOffsetMs ?? 0),
     );
     const laneEnds: number[] = [];
     const wfLaneOf = new Map<string, number>();
     for (const w of sorted) {
       const start = w.startTOffsetMs ?? 0;
-      const end = w.endTOffsetMs ?? start + 1;
+      const end = w.endTOffsetMs ?? safeDur;
       let assigned = -1;
       for (let i = 0; i < laneEnds.length; i++) {
         if (laneEnds[i]! <= start) {
@@ -1897,11 +1903,11 @@ function Minimap({
         assigned = laneEnds.length;
         laneEnds.push(0);
       }
-      laneEnds[assigned] = end;
+      laneEnds[assigned] = Math.max(end, start + 1);
       wfLaneOf.set(w.runId, assigned);
     }
     return { wfLaneOf, wfLaneCount: laneEnds.length };
-  }, [workflows]);
+  }, [workflows, safeDur]);
 
   const SUB_BLOCK_BOTTOM = MAIN_H + (laneCount > 0 ? SUB_LANE_GAP + SUB_LANES_H : 0);
   const WF_BLOCK_TOP = SUB_BLOCK_BOTTOM + (wfLaneCount > 0 ? SUB_LANE_GAP : 0);
@@ -2118,10 +2124,14 @@ function Minimap({
               strokeDasharray="2 4"
             />
             {workflows.map((w) => {
-              if (w.startTOffsetMs === undefined || w.endTOffsetMs === undefined) return null;
+              if (w.startTOffsetMs === undefined) return null;
               const lane = wfLaneOf.get(w.runId) ?? 0;
               const startX = msToX(w.startTOffsetMs);
-              const endX = msToX(w.endTOffsetMs);
+              // A still-running run has no endTOffsetMs — draw it open-ended to
+              // the session end so it's visible (and dashed, to read as ongoing)
+              // rather than vanishing while still occupying a reserved lane.
+              const inProgress = w.endTOffsetMs === undefined;
+              const endX = msToX(w.endTOffsetMs ?? safeDur);
               const wWidth = Math.max(endX - startX, 8);
               const y = WF_BLOCK_TOP + lane * WF_LANE_H;
               const h = WF_LANE_H - 2;
@@ -2137,6 +2147,10 @@ function Minimap({
                     width={wWidth}
                     height={h}
                     fill={fill}
+                    fillOpacity={inProgress ? 0.55 : 1}
+                    stroke={inProgress ? fill : "transparent"}
+                    strokeWidth={inProgress ? 0.8 : 0}
+                    strokeDasharray={inProgress ? "2 2" : undefined}
                     rx="2"
                     onMouseEnter={(e) => setHover({ clientX: e.clientX, workflow: w })}
                     onClick={() => onWorkflowClick?.(w.parentToolUseId)}
