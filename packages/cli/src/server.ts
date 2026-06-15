@@ -54,18 +54,39 @@ export async function ensureCurrentServer(
   if (status.running && !isServerStale(status)) {
     return { pid: status.pid, port: status.port, restarted: false };
   }
-
-  let previousVersion: string | undefined;
-  let port = opts.port;
-  if (status.running) {
-    previousVersion = status.version;
-    port = port ?? status.port;
-    stopServer();
-    await waitForPortFree(port, 5_000);
+  if (!status.running) {
+    const result = await startServer({ port: opts.port });
+    return { ...result, restarted: false };
   }
 
-  const result = await startServer({ port });
-  return { ...result, restarted: status.running, previousVersion };
+  // Stale server (older/unknown version) → cycle it on the same port.
+  const previousVersion = status.version;
+  const oldPid = status.pid;
+  const port = opts.port ?? status.port;
+
+  stopServer();
+  await waitForPortFree(port, 5_000);
+  // If SIGTERM didn't free the port (slow drain / ignored signal), escalate to
+  // SIGKILL so the relaunch can't fail just because the old server lingered.
+  if (await checkPort(port)) {
+    try {
+      process.kill(oldPid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+    await waitForPortFree(port, 3_000);
+  }
+
+  try {
+    const result = await startServer({ port });
+    return { ...result, restarted: true, previousVersion };
+  } catch (err) {
+    // Relaunch failed and the old server may still be alive holding the port —
+    // re-stamp its pid so `status`/`stop` can still see and kill it instead of
+    // leaving an untracked orphan serving the stale bundle.
+    if (isProcessAlive(oldPid)) writePid(PID_FILE, oldPid, port, previousVersion);
+    throw err;
+  }
 }
 
 export async function startServer(opts: { port?: number } = {}): Promise<{ pid: number; port: number }> {

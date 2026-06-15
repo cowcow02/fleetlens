@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { mkdtempSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -59,5 +59,24 @@ describe("digest-fs", () => {
     const d = mkDigest("2026-04-24");
     setTodayDigestInCache("2026-04-24", d, Date.now());
     expect(getTodayDigestFromCache("2026-04-25", Date.now())).toBeNull();
+  });
+
+  // A stale/corrupt digest file must be ignored (return null), not crash the
+  // consumers that dereference d.shipped.length on the home/day/index routes.
+  it("readDayDigest returns null for a file missing the shipped array", () => {
+    const bad = { version: 2, scope: "day", key: "2026-05-01", headline: "x" };
+    writeFileSync(join(tmp, "day", "2026-05-01.json"), JSON.stringify(bad), "utf8");
+    expect(readDayDigest("2026-05-01")).toBeNull();
+  });
+
+  it("readDayDigest returns null for an incompatible schema version", () => {
+    const stale = { ...mkDigest("2026-05-02"), version: 1 };
+    writeFileSync(join(tmp, "day", "2026-05-02.json"), JSON.stringify(stale), "utf8");
+    expect(readDayDigest("2026-05-02")).toBeNull();
+  });
+
+  it("readDayDigest returns null for malformed JSON", () => {
+    writeFileSync(join(tmp, "day", "2026-05-03.json"), "{ not valid json", "utf8");
+    expect(readDayDigest("2026-05-03")).toBeNull();
   });
 });

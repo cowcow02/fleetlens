@@ -51,6 +51,16 @@ async function printStats(sinceDate: Date | null): Promise<void> {
   console.log("");
 }
 
+/**
+ * Normalize a raw model id to a short, stable label used for BOTH dedup and
+ * display so the two can never diverge (which produced "opus-4, opus-4" when
+ * one regex collapsed the version digit and the other didn't). Strips a
+ * trailing 8-digit date and the "claude-" prefix; keeps the version suffix.
+ */
+function displayModel(raw: string): string {
+  return raw.replace(/-\d{8}$/, "").replace(/^claude-/, "");
+}
+
 function aggregateByDay(sessions: SessionMeta[]): TableRow[] {
   const byDay = new Map<string, { sessions: SessionMeta[]; models: Set<string> }>();
 
@@ -59,14 +69,19 @@ function aggregateByDay(sessions: SessionMeta[]): TableRow[] {
     if (!byDay.has(day)) byDay.set(day, { sessions: [], models: new Set() });
     const bucket = byDay.get(day)!;
     bucket.sessions.push(s);
-    if (s.model) bucket.models.add(s.model.replace(/-\d{8}$/, ""));
+    if (s.model) bucket.models.add(displayModel(s.model));
   }
 
   const sorted = [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0]));
 
   return sorted.map(([date, { sessions, models }]) => {
     const usage: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-    let cost: number | null = 0;
+    // Sum the cost of priced sessions and remember if any session couldn't be
+    // priced. One unpriced session (e.g. "<synthetic>") must NOT null the whole
+    // day's recoverable spend \u2014 it just makes the day's cost a lower bound.
+    let cost = 0;
+    let anyPriced = false;
+    let anyUnpriced = false;
 
     for (const s of sessions) {
       usage.input += s.totalUsage.input;
@@ -76,12 +91,16 @@ function aggregateByDay(sessions: SessionMeta[]): TableRow[] {
 
       if (s.model) {
         const c = estimateCost(s.model, s.totalUsage);
-        if (c !== null && cost !== null) cost += c;
-        else cost = null;
+        if (c !== null) {
+          cost += c;
+          anyPriced = true;
+        } else {
+          anyUnpriced = true;
+        }
       }
     }
 
-    const modelNames = [...models].map((m) => m.replace("claude-", "").replace(/-\d+$/, "")).join(", ");
+    const modelNames = [...models].join(", ");
 
     return {
       date,
@@ -91,7 +110,8 @@ function aggregateByDay(sessions: SessionMeta[]): TableRow[] {
       cacheCreate: usage.cacheWrite,
       cacheRead: usage.cacheRead,
       totalTokens: usage.input + usage.output + usage.cacheRead + usage.cacheWrite,
-      cost,
+      cost: anyPriced ? cost : null,
+      costPartial: anyPriced && anyUnpriced,
     };
   });
 }

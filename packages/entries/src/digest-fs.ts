@@ -2,8 +2,32 @@ import { readFileSync, readdirSync, writeFileSync, renameSync, chmodSync, mkdirS
 import { dirname, join } from "node:path";
 import { cclensPath } from "@claude-lens/parser/fs";
 import type { DayDigest, WeekDigest, MonthDigest } from "./types.js";
+import {
+  CURRENT_DAY_DIGEST_SCHEMA_VERSION,
+  CURRENT_WEEK_DIGEST_SCHEMA_VERSION,
+  CURRENT_MONTH_DIGEST_SCHEMA_VERSION,
+} from "./types.js";
 
 let digestsDirCached: string | null = null;
+
+/**
+ * Parse a cached digest file, returning null for anything we can't trust: bad
+ * JSON, a stale/incompatible schema version, or a missing required `shipped`
+ * array (every consumer dereferences `.shipped.length`). This honors the
+ * "a schema-version bump regenerates digests" invariant — an old or corrupt
+ * file is ignored and the page renders without it, instead of 500-ing.
+ */
+function parseDigestFile<T>(path: string, expectedVersion: number): T | null {
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (parsed.version !== expectedVersion) return null;
+    if (!Array.isArray((parsed as { shipped?: unknown }).shipped)) return null;
+    return parsed as T;
+  } catch {
+    return null;
+  }
+}
 
 function digestsDir(): string {
   if (digestsDirCached) return digestsDirCached;
@@ -46,11 +70,7 @@ export function writeDayDigest(digest: DayDigest): void {
 export function readDayDigest(date: string): DayDigest | null {
   const p = dayDigestPath(date);
   if (!existsSync(p)) return null;
-  try {
-    return JSON.parse(readFileSync(p, "utf8")) as DayDigest;
-  } catch {
-    return null;
-  }
+  return parseDigestFile<DayDigest>(p, CURRENT_DAY_DIGEST_SCHEMA_VERSION);
 }
 
 // ─── Today's digest: in-memory TTL cache (10 minutes) ─────────────────────
@@ -93,11 +113,7 @@ export function writeWeekDigest(digest: WeekDigest): void {
 export function readWeekDigest(monday: string): WeekDigest | null {
   const p = weekDigestPath(monday);
   if (!existsSync(p)) return null;
-  try {
-    return JSON.parse(readFileSync(p, "utf8")) as WeekDigest;
-  } catch {
-    return null;
-  }
+  return parseDigestFile<WeekDigest>(p, CURRENT_WEEK_DIGEST_SCHEMA_VERSION);
 }
 
 export function listWeekDigestKeys(): string[] {
@@ -140,11 +156,7 @@ export function writeMonthDigest(digest: MonthDigest): void {
 export function readMonthDigest(yearMonth: string): MonthDigest | null {
   const p = monthDigestPath(yearMonth);
   if (!existsSync(p)) return null;
-  try {
-    return JSON.parse(readFileSync(p, "utf8")) as MonthDigest;
-  } catch {
-    return null;
-  }
+  return parseDigestFile<MonthDigest>(p, CURRENT_MONTH_DIGEST_SCHEMA_VERSION);
 }
 
 export function listMonthDigestKeys(): string[] {

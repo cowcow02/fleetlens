@@ -12,7 +12,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseTranscript } from "./parser.js";
+import { parseTranscript, type ParseResult } from "./parser.js";
 import { worktreeName, projectRepoName, toLocalDay } from "./analytics.js";
 import { groupByTeam, type TeamView } from "./team.js";
 import type {
@@ -473,6 +473,32 @@ function foldWorkflowAgentTime(
   return { activeSegments: merged, airTimeMs };
 }
 
+/**
+ * Recompute a parsed meta's totals to be subagent-inclusive (so they match
+ * ccusage) and rebuild its per-day token split to keep the invariant
+ * sum(dailyBreakdown.tokens) === totalUsage. BOTH the list path
+ * (getCachedMeta) and the detail path (getCachedDetail) must apply this:
+ * getCachedDetail backfills the shared metaCache, so if it skipped this the
+ * cache would be poisoned with parent-only totals and a later listSessions
+ * would undercount that session's tokens by the entire subagent contribution.
+ * Mutates `meta` in place.
+ */
+async function applySubagentUsage(meta: ParseResult["meta"], rawLines: unknown[], f: FileRef): Promise<void> {
+  const sessionId = sessionIdFromFileName(f.fileName);
+  const projectDirPath = path.dirname(f.fullPath);
+  const fallbackDay = meta.firstTimestamp
+    ? toLocalDay(Date.parse(meta.firstTimestamp))
+    : undefined;
+  const { usage, perDay: perDayTokens } = await computeSessionUsageWithSubagents(
+    rawLines,
+    projectDirPath,
+    sessionId,
+    fallbackDay,
+  );
+  meta.totalUsage = usage;
+  meta.dailyBreakdown = mergeDailyTokens(meta.dailyBreakdown, perDayTokens, usage);
+}
+
 async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
   const cached = metaCache.get(f.fullPath);
   if (cached && cached.mtimeMs === f.mtimeMs && cached.sizeBytes === f.sizeBytes) {
@@ -482,24 +508,10 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
     const rawLines = await readJsonlFile(f.fullPath);
     const { meta } = parseTranscript(rawLines);
 
-    // Recompute usage with parent + subagent dedup so totals match ccusage.
-    // The per-day map mirrors that same (deduped) set of lines, so we can
-    // overwrite dailyBreakdown's parent-only token split with the subagent-
-    // inclusive one without breaking the invariant sum(perDay) === totalUsage.
+    await applySubagentUsage(meta, rawLines, f);
+
     const sessionId = sessionIdFromFileName(f.fileName);
     const projectDirPath = path.dirname(f.fullPath);
-    const fallbackDay = meta.firstTimestamp
-      ? toLocalDay(Date.parse(meta.firstTimestamp))
-      : undefined;
-    const { usage, perDay: perDayTokens } = await computeSessionUsageWithSubagents(
-      rawLines,
-      projectDirPath,
-      sessionId,
-      fallbackDay,
-    );
-    meta.totalUsage = usage;
-    meta.dailyBreakdown = mergeDailyTokens(meta.dailyBreakdown, perDayTokens, usage);
-
     const wf = await scanWorkflowAggregate(projectDirPath, sessionId);
 
     // Use the real cwd from the JSONL when available — the decoded dir name
@@ -531,6 +543,11 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
     const rawLines = await readJsonlFile(f.fullPath);
     const { meta, events } = parseTranscript(rawLines);
     const sessionId = sessionIdFromFileName(f.fileName);
+
+    // Subagent-inclusive totals, same as the list path — otherwise the detail
+    // (and the metaCache it backfills below) would carry parent-only tokens.
+    await applySubagentUsage(meta, rawLines, f);
+
     // Keep the workflow aggregate on the detail (and thus the metaCache it
     // backfills) so opening a session never strips the "N agents" badge that
     // the list path computes.

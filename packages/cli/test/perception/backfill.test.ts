@@ -107,7 +107,7 @@ describe("backfillLastWeekDigest gates", () => {
     const weekDir = join(digestsDir, "week");
     mkdirSync(weekDir, { recursive: true });
     writeFileSync(join(weekDir, `${EXPECTED_MONDAY}.json`), JSON.stringify({
-      schema_version: 1, scope: "week", key: EXPECTED_MONDAY,
+      version: 2, scope: "week", key: EXPECTED_MONDAY,
       window: { start_local_day: EXPECTED_MONDAY, end_local_day: "2026-04-19" },
       agent_min_total: 0, projects: [], shipped: [], outcome_mix: {},
       generated_iso: "2026-04-20T00:00:00.000Z", generation_ms: 1, model: null,
@@ -241,7 +241,7 @@ describe("backfillYesterdayDigest gates", () => {
     const dayDir = join(digestsDir, "day");
     mkdirSync(dayDir, { recursive: true });
     writeFileSync(join(dayDir, `${EXPECTED_YESTERDAY}.json`), JSON.stringify({
-      schema_version: 1, scope: "day", key: EXPECTED_YESTERDAY,
+      version: 2, scope: "day", key: EXPECTED_YESTERDAY,
       window: { start_local_day: EXPECTED_YESTERDAY, end_local_day: EXPECTED_YESTERDAY },
       agent_min: 0, projects: [], shipped: [],
       generated_iso: "2026-04-27T00:00:00.000Z", generation_ms: 1, model: null,

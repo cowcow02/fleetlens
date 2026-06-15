@@ -11,15 +11,18 @@ export type TableRow = {
   cacheRead: number;
   totalTokens: number;
   cost: number | null;
+  // True when the day had priced sessions AND \u22651 unpriced session, so `cost`
+  // is the priced subtotal (a lower bound), not the full spend for the day.
+  costPartial?: boolean;
 };
 
 function fmtNum(n: number): string {
   return n.toLocaleString("en-US");
 }
 
-function fmtCost(cost: number | null): string {
+function fmtCost(cost: number | null, partial = false): string {
   if (cost === null) return "\u2014";
-  return `$${cost.toFixed(2)}`;
+  return `${partial ? "\u2265" : ""}$${cost.toFixed(2)}`;
 }
 
 function pad(s: string, width: number, align: "left" | "right" = "right"): string {
@@ -48,9 +51,9 @@ export function renderTable(rows: TableRow[], title: string): string {
   lines.push(`${DIM}${header}${RESET}`);
   lines.push(`${DIM}${"─".repeat(header.length)}${RESET}`);
 
-  let hasUnknownCost = false;
+  let costIncomplete = false; // any day with no priced session (—) or a partial subtotal (≥)
   for (const r of rows) {
-    if (r.cost === null) hasUnknownCost = true;
+    if (r.cost === null || r.costPartial) costIncomplete = true;
     lines.push([
       pad(r.date, 12, "left"),
       pad(r.models, 20, "left"),
@@ -59,11 +62,13 @@ export function renderTable(rows: TableRow[], title: string): string {
       pad(fmtNum(r.cacheCreate), 14),
       pad(fmtNum(r.cacheRead), 14),
       pad(fmtNum(r.totalTokens), 14),
-      pad(fmtCost(r.cost), 12),
+      pad(fmtCost(r.cost, r.costPartial), 12),
     ].join("  "));
   }
 
-  // Total row
+  // Total row. Cost sums every day's priced amount (tokens always sum in full);
+  // when any day was unpriced/partial it's a lower bound, marked ≥, so Total
+  // cost and Total tokens don't silently imply different scopes.
   const totals = rows.reduce(
     (acc, r) => ({
       input: acc.input + r.input,
@@ -71,9 +76,10 @@ export function renderTable(rows: TableRow[], title: string): string {
       cacheCreate: acc.cacheCreate + r.cacheCreate,
       cacheRead: acc.cacheRead + r.cacheRead,
       totalTokens: acc.totalTokens + r.totalTokens,
-      cost: r.cost !== null && acc.cost !== null ? acc.cost + r.cost : acc.cost,
+      cost: acc.cost + (r.cost ?? 0),
+      anyCost: acc.anyCost || r.cost !== null,
     }),
-    { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, totalTokens: 0, cost: 0 as number | null },
+    { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, totalTokens: 0, cost: 0, anyCost: false },
   );
 
   lines.push(`${DIM}${"─".repeat(header.length)}${RESET}`);
@@ -86,13 +92,15 @@ export function renderTable(rows: TableRow[], title: string): string {
       pad(fmtNum(totals.cacheCreate), 14),
       pad(fmtNum(totals.cacheRead), 14),
       pad(fmtNum(totals.totalTokens), 14),
-      pad(fmtCost(totals.cost), 12),
+      pad(totals.anyCost ? fmtCost(totals.cost, costIncomplete) : fmtCost(null), 12),
     ].join("  ")}${RESET}`,
   );
 
-  if (hasUnknownCost) {
+  if (costIncomplete) {
     lines.push("");
-    lines.push(`${DIM}  Note: some models had unknown pricing (shown as \u2014)${RESET}`);
+    lines.push(
+      `${DIM}  Cost covers priced usage only \u2014 "\u2014" = no priced sessions that day, "\u2265" = lower bound (some sessions had unknown pricing).${RESET}`,
+    );
   }
 
   lines.push("");

@@ -4,6 +4,17 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.12.3] — 2026-06-15
+
+### Fixed
+- **Opening a session under-counted its tokens everywhere afterward.** Viewing a session that spawned subagents returned parent-only token totals and overwrote the shared in-memory cache with them, so the dashboard, estimated cost, daily heatmap, and project rollups all dropped that session's subagent tokens until the server restarted. The detail path now applies the same subagent-inclusive recompute as the list path, so totals stay correct and consistent no matter which page you open first.
+- **`fleetlens usage --history` cost accuracy.** A single session on an unpriced model (e.g. `<synthetic>`) no longer nulls a whole day's cost — each day now sums the cost of its priced sessions and marks the figure as a lower bound (`≥`) when some sessions couldn't be priced. The Total row sums every priced day (it previously dropped them while still counting their tokens) and is likewise marked `≥` when any usage was unpriced, so Total cost and Total tokens no longer imply different scopes.
+- **`fleetlens usage --history` model labels.** A day with two minor model versions could render a duplicated/inconsistent label (e.g. `opus-4, opus-4`); model names now use one normalization for both de-duplication and display.
+- **Sidebar project count matches the Projects page.** The sidebar nav badge and footer counted Claude Code projects only, disagreeing with the all-source `/projects` page and omitting Codex / Cowork / Gemini / Antigravity projects. Both now reflect every agent source.
+- **A stale or corrupt digest file no longer 500s the dashboard.** Cached day/week/month digests are now validated on read (schema version + shape); an incompatible or damaged file is ignored and the page renders without it, honoring the "a schema bump regenerates digests" contract.
+- **A failed stale-server restart can't leave an invisible orphan.** If the replacement server can't take the port, `fleetlens start`/`web` now escalate to a force-kill and re-record the old server's pid so `status`/`stop` can still see and stop it, instead of leaving an untracked process serving the old bundle.
+- **Live-sessions count hydration.** The "Live · N" badge is time-derived and could briefly mismatch between server render and hydration; it's now marked so React doesn't warn.
+
 ## [0.12.2] — 2026-06-15
 
 ### Fixed
