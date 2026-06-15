@@ -96,8 +96,8 @@ const FILTER_MODES: { value: FilterMode; label: string }[] = [
 /** Drawer width in px — reserved on the transcript's right edge when open. */
 const DRAWER_WIDTH = 460;
 
-type TabId = "transcript" | "team" | "debug";
-const VALID_TABS: TabId[] = ["transcript", "team", "debug"];
+type TabId = "transcript" | "workflows" | "team" | "debug";
+const VALID_TABS: TabId[] = ["transcript", "workflows", "team", "debug"];
 
 export function SessionView({
   session,
@@ -160,6 +160,16 @@ export function SessionView({
    *  intent separately so selection via row-click doesn't auto-scroll. */
   const [scrollIntent, setScrollIntent] = useState(0);
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  // The event/subagent drawers are transcript-scoped (position: fixed, shown
+  // whenever a selection exists). Clear the selection when leaving the
+  // transcript so a stale drawer doesn't overlay the Workflows/Team/Debug tabs.
+  useEffect(() => {
+    if (tab !== "transcript") {
+      setSelectedIndex(null);
+      setSelectedSubagentId(null);
+    }
+  }, [tab]);
 
   /** Measured height of the sticky header — used both as the drawer's
    *  top offset (so it sits exactly below the header) and as the
@@ -267,6 +277,8 @@ export function SessionView({
 
   const { events, durationMs, totalUsage, model, eventCount, projectName } = session;
   const airTimeMs = session.airTimeMs ?? durationMs;
+  const workflowCount = session.workflows?.length ?? 0;
+  const hasWorkflows = workflowCount > 0;
 
   /** Inbound `<teammate-message>` events are cross-session team traffic
    *  wrapped in a synthetic user event. On the LEAD's transcript these are
@@ -542,6 +554,9 @@ export function SessionView({
     );
     if (ev) {
       setSelectedSubagentId(null);
+      // The Workflow row lives in the transcript — switch there first (e.g.
+      // when jumping from the Workflows tab) so the scroll target exists.
+      if (tab !== "transcript") setTab("transcript");
       scrollToIndex(ev.index);
     }
   }
@@ -620,6 +635,28 @@ export function SessionView({
             >
               Transcript
             </button>
+            {hasWorkflows && (
+              <button
+                className={`af-tab-btn ${tab === "workflows" ? "active" : ""}`}
+                onClick={() => setTab("workflows")}
+              >
+                Workflows
+                <span
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "1px 6px",
+                    borderRadius: 100,
+                    background: "rgba(234,88,12,0.16)",
+                    color: "#EA580C",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  {workflowCount}
+                </span>
+              </button>
+            )}
             {team && (
               <button
                 className={`af-tab-btn ${tab === "team" ? "active" : ""}`}
@@ -919,19 +956,22 @@ export function SessionView({
             onVisibleTrackIdsChange={setTeamVisibleTrackIds}
             seekTarget={teamSeekTarget}
           />
-        ) : tab === "transcript" ? (
+        ) : tab === "workflows" && hasWorkflows ? (
+          <div style={{ paddingBottom: 24 }}>
+            <WorkflowsPanel
+              workflows={session.workflows!}
+              spawnedAgentCount={session.spawnedAgentCount ?? 0}
+              onJumpToParent={jumpToToolUse}
+            />
+          </div>
+        ) : tab === "debug" ? (
+          <DebugList events={events} />
+        ) : (
           <>
             {entries.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
                 {entries.map((e) => <EntryDayStrip key={e.local_day} entry={e} />)}
               </div>
-            )}
-            {session.workflows && session.workflows.length > 0 && (
-              <WorkflowsPanel
-                workflows={session.workflows}
-                spawnedAgentCount={session.spawnedAgentCount ?? 0}
-                onJumpToParent={jumpToToolUse}
-              />
             )}
             {teammateCount > 0 && (
               <div
@@ -977,8 +1017,6 @@ export function SessionView({
               rawIdleBands={rawIdleBands}
             />
           </>
-        ) : (
-          <DebugList events={events} />
         )}
       </div>
 
