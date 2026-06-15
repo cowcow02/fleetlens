@@ -81,6 +81,54 @@ describe("dailyActivity", () => {
     expect(nonEmpty[0]!.toolCalls).toBe(8);
     expect(nonEmpty[0]!.turns).toBe(3);
   });
+
+  it("attributes tokens/tools per day from dailyBreakdown across a cross-midnight session", () => {
+    // 23:00 Jun 1 → 01:00 Jun 2 local; built from local Dates for TZ independence.
+    const startMs = new Date(2026, 5, 1, 23, 0, 0, 0).getTime();
+    const endMs = new Date(2026, 5, 2, 1, 0, 0, 0).getTime();
+    const s = mkMeta("x", "foo", new Date(startMs).toISOString(), new Date(endMs).toISOString(), {
+      activeSegments: [{ startMs, endMs }],
+      toolCallCount: 12,
+      turnCount: 4,
+      totalUsage: { input: 60, output: 30, cacheRead: 600, cacheWrite: 90 },
+      dailyBreakdown: [
+        { day: "2026-06-01", toolCalls: 7, turns: 3, tokens: { input: 10, output: 5, cacheRead: 100, cacheWrite: 15 } },
+        { day: "2026-06-02", toolCalls: 5, turns: 1, tokens: { input: 50, output: 25, cacheRead: 500, cacheWrite: 75 } },
+      ],
+    });
+    const buckets = dailyActivity([s]);
+    const b1 = buckets.find((b) => b.date === "2026-06-01")!;
+    const b2 = buckets.find((b) => b.date === "2026-06-02")!;
+    // Session counted on both days; usage attributed to the day it happened.
+    expect(b1.sessions).toBe(1);
+    expect(b2.sessions).toBe(1);
+    expect(b1.toolCalls).toBe(7);
+    expect(b2.toolCalls).toBe(5);
+    expect(b2.tokens.input).toBe(50);
+    expect(b2.tokens.cacheRead).toBe(500);
+    // The continuation day has agent time AND real tokens — the reported bug.
+    expect(b2.airTimeMs).toBeGreaterThan(0);
+    expect(b2.tokens.input + b2.tokens.output + b2.tokens.cacheRead + b2.tokens.cacheWrite).toBe(650);
+  });
+
+  it("counts a session on a token-only day even if active segments never reached it", () => {
+    // Mirror of the original bug: a subagent ran on Jun 2 while the parent's
+    // active segments only cover Jun 1. That day must not show tokens with 0
+    // sessions.
+    const startMs = new Date(2026, 5, 1, 10, 0, 0, 0).getTime();
+    const endMs = new Date(2026, 5, 1, 11, 0, 0, 0).getTime();
+    const s = mkMeta("orchestrator", "foo", new Date(startMs).toISOString(), new Date(endMs).toISOString(), {
+      activeSegments: [{ startMs, endMs }], // Jun 1 only
+      dailyBreakdown: [
+        { day: "2026-06-01", toolCalls: 2, turns: 1, tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } },
+        { day: "2026-06-02", toolCalls: 0, turns: 0, tokens: { input: 9000, output: 4000, cacheRead: 0, cacheWrite: 0 } },
+      ],
+    });
+    const buckets = dailyActivity([s]);
+    const b2 = buckets.find((b) => b.date === "2026-06-02")!;
+    expect(b2.tokens.input).toBe(9000);
+    expect(b2.sessions).toBe(1); // ← would be 0 without the union fix
+  });
 });
 
 describe("computeParallelism", () => {

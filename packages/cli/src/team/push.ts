@@ -100,27 +100,22 @@ export function bucketToRollup(b: DailyBucket): DailyRollup {
   };
 }
 
-// dailyActivity counts a session in every day its agent-time touched (so
-// summing across days double-counts cross-midnight sessions). For the
-// daily_rollups table we want start-day-only attribution so that SUM(sessions)
-// equals the total unique session count, matching the solo edition's headline
-// metric. airTime / tokens / tool_calls / turns still use dailyActivity's
-// semantics (split agent time across days; attribute session-scoped totals
-// to the starting day).
+// Each day row reflects what actually happened that day: dailyActivity splits
+// agent time, tokens, tool calls and turns by event timestamp, and counts a
+// session on every local day its agent worked. So `sessions` is session-days —
+// a cross-midnight session is +1 on both days and its tokens/tools land on the
+// day they occurred (no more "agent time but 0 tokens / 0 sessions" days).
+// `uniqueSessions` carries the start-day count so SUM(uniqueSessions) over a
+// range stays equal to the real unique-session total for aggregate consumers.
 export function buildRollupsForRange(sessions: SessionMeta[], sinceDay?: string): DailyRollup[] {
-  const buckets = dailyActivity(sessions);
   const startCounts = new Map<string, number>();
   for (const s of sessions) {
     const d = sessionDay(s);
     if (d) startCounts.set(d, (startCounts.get(d) ?? 0) + 1);
   }
-
-  return buckets
+  return dailyActivity(sessions)
     .filter((b) => !sinceDay || b.date >= sinceDay)
-    .map((b) => ({
-      ...bucketToRollup(b),
-      sessions: startCounts.get(b.date) ?? 0,
-    }));
+    .map((b) => ({ ...bucketToRollup(b), uniqueSessions: startCounts.get(b.date) ?? 0 }));
 }
 
 // Bounds of a local-time YYYY-MM-DD as [startMs, endMs).

@@ -196,6 +196,11 @@ export type SessionMeta = {
    *  journal's `agentCount`). The real fleet size a session orchestrated —
    *  invisible in the parent transcript, which only logs the Workflow call. */
   spawnedAgentCount?: number;
+  /** derived: per-local-day split of tokens/tool-calls/turns, bucketed by each
+   *  event's own timestamp so a cross-midnight session reports real usage on
+   *  each day. Invariant: sum(dailyBreakdown.tokens) === totalUsage. Absent for
+   *  sources that don't populate it (codex/gemini/antigravity) → start-day fallback. */
+  dailyBreakdown?: { day: string; toolCalls: number; turns: number; tokens: Usage }[];
 };
 
 /**

@@ -168,7 +168,8 @@ export async function teamPulseWeek(
     parallel_minutes: number;
     prs: number;
   }>(
-    `SELECT membership_id, day::text, agent_time_ms::text, sessions,
+    `SELECT membership_id, day::text, agent_time_ms::text,
+            COALESCE(unique_sessions, sessions) AS sessions,
             concurrency_peak, parallel_minutes, prs
      FROM rich_daily_rollups
      WHERE team_id = $1
@@ -429,7 +430,7 @@ export async function groupMomentumTrend(
     // weekMonday strings directly.
     `SELECT date_trunc('week', day)::date::text AS week_monday,
             COALESCE(SUM(agent_time_ms), 0)::text AS agent_ms,
-            COALESCE(SUM(sessions), 0)::int AS sessions,
+            COALESCE(SUM(COALESCE(unique_sessions, sessions)), 0)::int AS sessions,
             COALESCE(SUM(prs), 0)::int AS prs,
             COUNT(DISTINCT membership_id) FILTER (WHERE agent_time_ms > 0)::int AS active_members
      FROM rich_daily_rollups

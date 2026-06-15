@@ -132,7 +132,8 @@ async function weekAggregates(
     tokens_cache_read: string;
     tokens_cache_write: string;
   }>(
-    `SELECT day::text, agent_time_ms::text, sessions, prs, commits, pushes,
+    `SELECT day::text, agent_time_ms::text,
+            COALESCE(unique_sessions, sessions) AS sessions, prs, commits, pushes,
             parallel_minutes, concurrency_peak,
             long_auto_count, long_auto_total_min, long_auto_max_single_min,
             tool_errors, plan_mode_used, brainstorm_warmup_sessions,
@@ -944,7 +945,10 @@ export async function buildTeamInsightReport(
         // from the this-week-vs-last-week numeric block which still drives
         // the headline tiles. Both share the same memberships filter.
         `WITH window_30d AS (
-           SELECT r.membership_id, r.day, r.agent_time_ms, r.sessions,
+           -- unique-session count (start-day), not session-days, so the
+           -- maturity gates / cadence keep their unique-session semantics.
+           SELECT r.membership_id, r.day, r.agent_time_ms,
+                  COALESCE(r.unique_sessions, r.sessions) AS sessions,
                   r.projects, r.skills_loaded, r.subagents_dispatched
            FROM rich_daily_rollups r
            WHERE r.team_id = $1
@@ -974,7 +978,8 @@ export async function buildTeamInsightReport(
          window_rows AS (
            SELECT m.id AS membership_id,
                   COALESCE(NULLIF(ua.display_name, ''), split_part(ua.email, '@', 1)) AS display_name,
-                  r.day, r.agent_time_ms, r.sessions, r.prs,
+                  -- unique-session count (start-day), see window_30d note above
+                  r.day, r.agent_time_ms, COALESCE(r.unique_sessions, r.sessions) AS sessions, r.prs,
                   jsonb_array_length(r.subagents_dispatched) AS subagent_kinds,
                   jsonb_array_length(r.projects) AS project_count,
                   jsonb_array_length(r.skills_loaded) AS skill_count,

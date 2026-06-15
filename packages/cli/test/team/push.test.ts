@@ -121,18 +121,89 @@ describe("buildRollupsForRange", () => {
     expect(days).toContain("2026-04-16");
   });
 
-  it("attributes sessions to start-day only (no multi-day double count)", () => {
-    // Two sessions that started the same day
+  it("counts a multi-day session on every local day it touched (+1 per day)", () => {
+    // A single session whose active segments span three local days.
     const day = "2026-04-14";
-    const startMs = Date.parse(`${day}T10:00:00.000Z`);
+    const startMs = new Date(2026, 3, 14, 10, 0, 0, 0).getTime();
     const longSession = makeSession(day, {
       id: "long",
-      activeSegments: [{ startMs, endMs: startMs + 3 * 24 * 3600 * 1000 }], // 3-day span
+      firstTimestamp: new Date(startMs).toISOString(),
+      activeSegments: [{ startMs, endMs: startMs + 2 * 24 * 3600 * 1000 + 3600_000 }], // ~Apr 14 → Apr 16
     });
     const rollups = buildRollupsForRange([longSession]);
-    const totalSessions = rollups.reduce((sum, r) => sum + r.sessions, 0);
-    expect(totalSessions).toBe(1);
-    expect(rollups.find((r) => r.day === day)?.sessions).toBe(1);
+    // One session-day per calendar day the agent worked.
+    expect(rollups.find((r) => r.day === "2026-04-14")?.sessions).toBe(1);
+    expect(rollups.find((r) => r.day === "2026-04-15")?.sessions).toBe(1);
+    expect(rollups.find((r) => r.day === "2026-04-16")?.sessions).toBe(1);
+    // uniqueSessions is start-day only, so SUM stays equal to the real unique
+    // count (1) — the figure aggregate consumers use.
+    expect(rollups.find((r) => r.day === "2026-04-14")?.uniqueSessions).toBe(1);
+    expect(rollups.find((r) => r.day === "2026-04-15")?.uniqueSessions).toBe(0);
+    expect(rollups.find((r) => r.day === "2026-04-16")?.uniqueSessions).toBe(0);
+    expect(rollups.reduce((s, r) => s + (r.uniqueSessions ?? 0), 0)).toBe(1);
+  });
+
+  it("REGRESSION: a cross-midnight session's continuation day has real tokens/tools, not zeros", () => {
+    // 23:30 Jun 1 → 02:30 Jun 2 local. dailyBreakdown attributes Jun-1 work to
+    // Jun 1 and Jun-2 work to Jun 2 — so neither day is "agent time but 0 tokens".
+    const startMs = new Date(2026, 5, 1, 23, 30, 0, 0).getTime();
+    const endMs = new Date(2026, 5, 2, 2, 30, 0, 0).getTime();
+    const cross = makeSession("2026-06-01", {
+      id: "cross",
+      firstTimestamp: new Date(startMs).toISOString(),
+      activeSegments: [{ startMs, endMs }],
+      totalUsage: { input: 6000, output: 3000, cacheRead: 80000, cacheWrite: 11000 },
+      toolCallCount: 150,
+      turnCount: 24,
+      dailyBreakdown: [
+        { day: "2026-06-01", toolCalls: 40, turns: 9, tokens: { input: 1000, output: 500, cacheRead: 20000, cacheWrite: 3000 } },
+        { day: "2026-06-02", toolCalls: 110, turns: 15, tokens: { input: 5000, output: 2500, cacheRead: 60000, cacheWrite: 8000 } },
+      ],
+    });
+    const rollups = buildRollupsForRange([cross]);
+    const d1 = rollups.find((r) => r.day === "2026-06-01")!;
+    const d2 = rollups.find((r) => r.day === "2026-06-02")!;
+    const tok = (r: typeof d2) => r.tokens.input + r.tokens.output + r.tokens.cacheRead + r.tokens.cacheWrite;
+
+    // The continuation day now carries its real share — the reported bug is gone.
+    expect(d2.agentTimeMs).toBeGreaterThan(0);
+    expect(d2.sessions).toBe(1);
+    expect(d2.toolCalls).toBe(110);
+    expect(d2.turns).toBe(15);
+    expect(tok(d2)).toBe(75500);
+
+    // Day 1 keeps its own share — nothing is lost or double-counted.
+    expect(d1.toolCalls).toBe(40);
+    expect(tok(d1)).toBe(24500);
+
+    // Sum across days is exactly the session totals (sum-preserving split).
+    expect(d1.toolCalls + d2.toolCalls).toBe(cross.toolCallCount);
+    expect(tok(d1) + tok(d2)).toBe(
+      cross.totalUsage.input + cross.totalUsage.output + cross.totalUsage.cacheRead + cross.totalUsage.cacheWrite,
+    );
+  });
+
+  it("falls back to start-day attribution when a session has no dailyBreakdown", () => {
+    // Sources without per-event data (codex/gemini) keep the prior behavior.
+    const startMs = new Date(2026, 5, 1, 23, 30, 0, 0).getTime();
+    const endMs = new Date(2026, 5, 2, 2, 30, 0, 0).getTime();
+    const cross = makeSession("2026-06-01", {
+      id: "nobreakdown",
+      firstTimestamp: new Date(startMs).toISOString(),
+      activeSegments: [{ startMs, endMs }],
+      toolCallCount: 100,
+      totalUsage: { input: 1000, output: 0, cacheRead: 0, cacheWrite: 0 },
+      // dailyBreakdown intentionally omitted
+    });
+    const rollups = buildRollupsForRange([cross]);
+    const d1 = rollups.find((r) => r.day === "2026-06-01")!;
+    const d2 = rollups.find((r) => r.day === "2026-06-02")!;
+    // Tokens/tools all land on the start day; both days still count the session.
+    expect(d1.toolCalls).toBe(100);
+    expect(d1.tokens.input).toBe(1000);
+    expect(d2.toolCalls).toBe(0);
+    expect(d1.sessions).toBe(1);
+    expect(d2.sessions).toBe(1);
   });
 
   it("respects sinceDay filter", () => {
