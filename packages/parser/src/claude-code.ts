@@ -357,21 +357,42 @@ async function computeSessionUsageWithSubagents(
 
 /** Overwrite dailyBreakdown's parent-only token split with the subagent-
  *  inclusive per-day map so sum(tokens) stays === totalUsage. Unions both day
- *  sets so a day with only subagent token activity isn't dropped. */
+ *  sets so a day with only subagent token activity isn't dropped. Any usage
+ *  that couldn't be dated (parent lines with no parseable timestamp while a
+ *  subagent supplied the only days) is folded onto the earliest day, so the
+ *  invariant holds even on malformed transcripts. */
 function mergeDailyTokens(
   base: SessionMeta["dailyBreakdown"],
   perDayTokens: Map<string, Usage>,
+  totalUsage: Usage,
 ): SessionMeta["dailyBreakdown"] {
   const counts = new Map((base ?? []).map((d) => [d.day, d]));
   const days = new Set<string>([...counts.keys(), ...perDayTokens.keys()]);
-  return [...days]
+  const out = [...days]
     .sort((a, b) => a.localeCompare(b))
     .map((day) => ({
       day,
       toolCalls: counts.get(day)?.toolCalls ?? 0,
       turns: counts.get(day)?.turns ?? 0,
-      tokens: perDayTokens.get(day) ?? { ...BLANK_USAGE },
+      tokens: { ...(perDayTokens.get(day) ?? BLANK_USAGE) },
     }));
+  if (out.length > 0) {
+    const summed = out.reduce(
+      (a, r) => ({
+        input: a.input + r.tokens.input,
+        output: a.output + r.tokens.output,
+        cacheRead: a.cacheRead + r.tokens.cacheRead,
+        cacheWrite: a.cacheWrite + r.tokens.cacheWrite,
+      }),
+      { ...BLANK_USAGE },
+    );
+    const first = out[0]!.tokens;
+    first.input += totalUsage.input - summed.input;
+    first.output += totalUsage.output - summed.output;
+    first.cacheRead += totalUsage.cacheRead - summed.cacheRead;
+    first.cacheWrite += totalUsage.cacheWrite - summed.cacheWrite;
+  }
+  return out;
 }
 
 type WorkflowAggregate = {
@@ -477,7 +498,7 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
       fallbackDay,
     );
     meta.totalUsage = usage;
-    meta.dailyBreakdown = mergeDailyTokens(meta.dailyBreakdown, perDayTokens);
+    meta.dailyBreakdown = mergeDailyTokens(meta.dailyBreakdown, perDayTokens, usage);
 
     const wf = await scanWorkflowAggregate(projectDirPath, sessionId);
 
