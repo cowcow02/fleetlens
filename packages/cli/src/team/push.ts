@@ -102,15 +102,20 @@ export function bucketToRollup(b: DailyBucket): DailyRollup {
 
 // Each day row reflects what actually happened that day: dailyActivity splits
 // agent time, tokens, tool calls and turns by event timestamp, and counts a
-// session on every local day its agent worked. So a cross-midnight session is
-// +1 session on both days and its tokens/tools land on the day they occurred —
-// no more "agent time but 0 tokens / 0 sessions" continuation days. SUM(sessions)
-// across the range therefore counts a multi-day session once per day it touched
-// (a session-day), which is the per-day shape the team dashboard wants.
+// session on every local day its agent worked. So `sessions` is session-days —
+// a cross-midnight session is +1 on both days and its tokens/tools land on the
+// day they occurred (no more "agent time but 0 tokens / 0 sessions" days).
+// `uniqueSessions` carries the start-day count so SUM(uniqueSessions) over a
+// range stays equal to the real unique-session total for aggregate consumers.
 export function buildRollupsForRange(sessions: SessionMeta[], sinceDay?: string): DailyRollup[] {
+  const startCounts = new Map<string, number>();
+  for (const s of sessions) {
+    const d = sessionDay(s);
+    if (d) startCounts.set(d, (startCounts.get(d) ?? 0) + 1);
+  }
   return dailyActivity(sessions)
     .filter((b) => !sinceDay || b.date >= sinceDay)
-    .map(bucketToRollup);
+    .map((b) => ({ ...bucketToRollup(b), uniqueSessions: startCounts.get(b.date) ?? 0 }));
 }
 
 // Bounds of a local-time YYYY-MM-DD as [startMs, endMs).

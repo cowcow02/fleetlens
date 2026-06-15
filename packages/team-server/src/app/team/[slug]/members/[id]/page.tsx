@@ -75,7 +75,9 @@ export default async function MemberPage({
   // 30-day rollup totals — surfaced inline in the header card so admins
   // don't have to scroll to find "is this seat actually being used?"
   const totalAgentMs = headerRollups.reduce((s, r) => s + Number(r.agent_time_ms), 0);
-  const totalSessions = headerRollups.reduce((s, r) => s + r.sessions, 0);
+  // Unique sessions (start-day), not session-days, for the headline seat-usage
+  // figure. Falls back to the session-days column for pre-split rows.
+  const totalSessions = headerRollups.reduce((s, r) => s + (r.unique_sessions ?? r.sessions), 0);
   const totalTokens = headerRollups.reduce(
     (s, r) =>
       s +

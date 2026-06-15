@@ -41,19 +41,20 @@ export async function processIngest(
       if (payload.dailyRollup) {
         const r = payload.dailyRollup;
         await client.query(`
-          INSERT INTO daily_rollups (team_id, membership_id, day, agent_time_ms, sessions, tool_calls, turns,
+          INSERT INTO daily_rollups (team_id, membership_id, day, agent_time_ms, sessions, unique_sessions, tool_calls, turns,
                                      tokens_input, tokens_output, tokens_cache_read, tokens_cache_write)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
           ON CONFLICT (team_id, membership_id, day) DO UPDATE SET
             agent_time_ms = EXCLUDED.agent_time_ms,
             sessions = EXCLUDED.sessions,
+            unique_sessions = EXCLUDED.unique_sessions,
             tool_calls = EXCLUDED.tool_calls,
             turns = EXCLUDED.turns,
             tokens_input = EXCLUDED.tokens_input,
             tokens_output = EXCLUDED.tokens_output,
             tokens_cache_read = EXCLUDED.tokens_cache_read,
             tokens_cache_write = EXCLUDED.tokens_cache_write
-        `, [teamId, membershipId, r.day, r.agentTimeMs, r.sessions, r.toolCalls, r.turns,
+        `, [teamId, membershipId, r.day, r.agentTimeMs, r.sessions, r.uniqueSessions ?? null, r.toolCalls, r.turns,
             r.tokens.input, r.tokens.output, r.tokens.cacheRead, r.tokens.cacheWrite]);
       }
 
@@ -96,7 +97,8 @@ export async function processIngest(
           tool_errors, brainstorm_warmup_sessions, plan_mode_used,
           projects, working_shapes, skills_loaded, subagents_dispatched,
           outcome_mix, helpfulness_mix, goal_mix,
-          tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
+          tokens_input, tokens_output, tokens_cache_read, tokens_cache_write,
+          unique_sessions
         )
         VALUES (
           $1, $2, $3,
@@ -107,7 +109,8 @@ export async function processIngest(
           $14, $15, $16,
           $17, $18, $19, $20,
           $21, $22, $23,
-          $24, $25, $26, $27
+          $24, $25, $26, $27,
+          $28
         )
         ON CONFLICT (team_id, membership_id, day) DO UPDATE SET
           agent_time_ms = EXCLUDED.agent_time_ms,
@@ -138,6 +141,7 @@ export async function processIngest(
           tokens_output = EXCLUDED.tokens_output,
           tokens_cache_read = EXCLUDED.tokens_cache_read,
           tokens_cache_write = EXCLUDED.tokens_cache_write,
+          unique_sessions = EXCLUDED.unique_sessions,
           ingested_at = now()
       `, [
         teamId, membershipId, r.day,
@@ -152,6 +156,7 @@ export async function processIngest(
         ex?.helpfulnessMix ? JSON.stringify(ex.helpfulnessMix) : null,
         ex?.goalMix ? JSON.stringify(ex.goalMix) : null,
         r.tokens.input, r.tokens.output, r.tokens.cacheRead, r.tokens.cacheWrite,
+        r.uniqueSessions ?? null,
       ]);
     }
 

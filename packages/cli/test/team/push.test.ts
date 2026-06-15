@@ -135,6 +135,12 @@ describe("buildRollupsForRange", () => {
     expect(rollups.find((r) => r.day === "2026-04-14")?.sessions).toBe(1);
     expect(rollups.find((r) => r.day === "2026-04-15")?.sessions).toBe(1);
     expect(rollups.find((r) => r.day === "2026-04-16")?.sessions).toBe(1);
+    // uniqueSessions is start-day only, so SUM stays equal to the real unique
+    // count (1) — the figure aggregate consumers use.
+    expect(rollups.find((r) => r.day === "2026-04-14")?.uniqueSessions).toBe(1);
+    expect(rollups.find((r) => r.day === "2026-04-15")?.uniqueSessions).toBe(0);
+    expect(rollups.find((r) => r.day === "2026-04-16")?.uniqueSessions).toBe(0);
+    expect(rollups.reduce((s, r) => s + (r.uniqueSessions ?? 0), 0)).toBe(1);
   });
 
   it("REGRESSION: a cross-midnight session's continuation day has real tokens/tools, not zeros", () => {

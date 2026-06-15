@@ -55,7 +55,7 @@ export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
   },
   "trend-sessions": {
     description: "Agent sessions the group started per week — a usage-volume signal, deliberately NOT used to grade maturity.",
-    source: `${ROLLUPS}.sessions, summed per ISO week`,
+    source: `${ROLLUPS}.unique_sessions (start-day count, falls back to sessions), summed per ISO week`,
     status: "live",
     llm: false,
   },
