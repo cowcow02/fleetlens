@@ -38,10 +38,9 @@ export const dynamic = "force-dynamic";
 
 export default async function ProjectDetail({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  // Slugs are URL-encoded canonical project names (e.g.
-  // Slugs are repo names (e.g. `claude-lens`). Match any session in that repo,
-  // which folds the parent repo, every `/.worktrees/<name>` subdir, and the
-  // same repo reached via Conductor / Superset into one view.
+  // Slugs are repo names (e.g. `claude-lens`) — see projectRepoName. Match any
+  // session in that repo, which folds the parent repo, every `/.worktrees/<name>`
+  // subdir, and the same repo reached via Conductor / Superset into one view.
   const decodedCanonical = decodeURIComponent(slug);
   const all = await listSessions();
   const projectSessions = all.filter(

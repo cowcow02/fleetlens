@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.12.2] — 2026-06-15
+
+### Fixed
+- **A stale web server could survive an update and serve a broken dashboard.** After `fleetlens` updated itself, the CLI binary and usage daemon came up on the new version, but a web server that was already running kept serving the old build. Once npm removed the previous install directory, any dashboard route the old server hadn't already loaded into memory returned a 500 (Insights was the usual casualty). `fleetlens start` and `fleetlens web` now record the running server's version in the pid file and automatically restart it when it no longer matches the installed CLI; `fleetlens status` shows the served version and warns when it's stale.
+
 ## [0.12.1] — 2026-06-15
 
 ### Fixed

@@ -155,16 +155,24 @@ async function findTeamLeadSession() {
 }
 
 /**
- * Project URL slugs are now canonical cwd paths (worktrees rolled up to
- * their parent repo), not raw filesystem dirs. To build a valid URL we
- * need to read a session file and pull its real cwd out of the JSONL.
+ * Project URL slugs are repo names — the last path segment of the canonical
+ * cwd (worktrees rolled up to their parent repo). This mirrors the parser's
+ * `projectRepoName`, which the /projects list and [slug] route both key off.
+ * To build a valid URL we read a session file, pull its real cwd, strip any
+ * `/.worktrees/<name>` suffix, then take the basename.
  */
 function canonicalProjectName(cwd) {
   const wtIdx = cwd.lastIndexOf("/.worktrees/");
   return wtIdx >= 0 ? cwd.slice(0, wtIdx) : cwd;
 }
 
-async function pickFirstProjectCanonicalPath() {
+function projectRepoName(cwd) {
+  const canonical = canonicalProjectName(cwd).replace(/\/+$/, "");
+  const segs = canonical.split("/").filter(Boolean);
+  return segs[segs.length - 1] || canonical;
+}
+
+async function pickFirstProjectSlug() {
   try {
     const root = join(homedir(), ".claude", "projects");
     const projects = await readdir(root, { withFileTypes: true });
@@ -181,7 +189,7 @@ async function pickFirstProjectCanonicalPath() {
           try {
             const obj = JSON.parse(line);
             if (typeof obj?.cwd === "string") {
-              return canonicalProjectName(obj.cwd);
+              return projectRepoName(obj.cwd);
             }
           } catch {
             // skip malformed line
@@ -207,9 +215,9 @@ async function main() {
     process.exit(1);
   }
 
-  const [sessionId, projectDir, teamLead] = await Promise.all([
+  const [sessionId, projectSlug, teamLead] = await Promise.all([
     pickFirstSessionId(),
-    pickFirstProjectCanonicalPath(),
+    pickFirstProjectSlug(),
     findTeamLeadSession(),
   ]);
 
@@ -234,9 +242,9 @@ async function main() {
   } else {
     console.log(`${DIM}— skipping session detail (no .claude/projects data)${RESET}`);
   }
-  if (projectDir) {
+  if (projectSlug) {
     results.push(
-      await hit(`/projects/${encodeURIComponent(projectDir)}`, "Project detail"),
+      await hit(`/projects/${encodeURIComponent(projectSlug)}`, "Project detail"),
     );
   } else {
     console.log(`${DIM}— skipping project detail (no .claude/projects data)${RESET}`);

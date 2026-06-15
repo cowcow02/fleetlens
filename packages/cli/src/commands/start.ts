@@ -1,4 +1,4 @@
-import { getServerStatus, startServer, openBrowser } from "../server.js";
+import { ensureCurrentServer, openBrowser } from "../server.js";
 import { checkForUpdate } from "../updater.js";
 import { startDaemonSilent } from "./daemon.js";
 
@@ -27,24 +27,26 @@ export async function start(args: string[]): Promise<void> {
   }
 
   // --- Web server ---
-  const status = getServerStatus();
+  // ensureCurrentServer reuses a healthy same-version server, or cycles a
+  // stale one (older version / unknown) so an updated install never keeps
+  // serving an old, possibly broken, bundle.
   let serverUrl: string;
   let serverPid: number;
-  if (status.running) {
-    serverUrl = `http://localhost:${status.port}`;
-    serverPid = status.pid;
-    console.log(`Server:  already running on ${serverUrl} (PID ${serverPid})`);
-  } else {
+  try {
     console.log("Starting Fleetlens...");
-    try {
-      const result = await startServer({ port });
-      serverUrl = `http://localhost:${result.port}`;
-      serverPid = result.pid;
-      console.log(`Server:  started on ${serverUrl} (PID ${serverPid})`);
-    } catch (err) {
-      console.error(`Failed to start server: ${(err as Error).message}`);
-      process.exit(1);
+    const result = await ensureCurrentServer({ port });
+    serverUrl = `http://localhost:${result.port}`;
+    serverPid = result.pid;
+    if (result.restarted) {
+      console.log(
+        `Server:  restarted on ${serverUrl} (PID ${serverPid}) — replaced stale ${result.previousVersion ?? "unknown"} server`,
+      );
+    } else {
+      console.log(`Server:  running on ${serverUrl} (PID ${serverPid})`);
     }
+  } catch (err) {
+    console.error(`Failed to start server: ${(err as Error).message}`);
+    process.exit(1);
   }
 
   // --- Usage daemon ---
