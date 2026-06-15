@@ -251,6 +251,44 @@ export type SubagentRun = {
 };
 
 /**
+ * One agent the workflow spawned, from a `workflow_agent` entry in the
+ * journal's `workflowProgress`. Each carries the phase it ran in plus the
+ * task prompt, result, and per-agent metering — enough to review what
+ * actually happened inside a run, even though the agent has no standalone
+ * transcript file.
+ */
+export type WorkflowAgentRun = {
+  /** Spawn order within the run (1-based). */
+  index: number;
+  /** Short label, e.g. "build:s-r2-silent-enrich" / "review:…" / "ci:…". */
+  label: string;
+  /** 1-based phase this agent belongs to (matches WorkflowRun.phases order). */
+  phaseIndex?: number;
+  /** Phase title as recorded on the agent entry. */
+  phaseTitle?: string;
+  /** Internal agent id from the runtime. */
+  agentId?: string;
+  /** Model the agent ran on. */
+  model?: string;
+  /** Terminal/last state: "done" | "running" | "error" | "failed" | … */
+  state?: string;
+  /** Wall-clock start (epoch ms). */
+  startedAt?: number;
+  /** Agent duration in ms. */
+  durationMs?: number;
+  /** Tokens the agent consumed. */
+  tokens?: number;
+  /** Tool calls the agent made. */
+  toolCalls?: number;
+  /** Last tool summary line (one-liner of its final action). */
+  lastToolSummary?: string;
+  /** The task prompt the agent was dispatched with (truncated). */
+  promptPreview?: string;
+  /** The agent's returned result (truncated). */
+  resultPreview?: string;
+};
+
+/**
  * One dynamic-workflow run dispatched via the `Workflow` tool. Unlike a
  * subagent (a single background transcript), a workflow orchestrates many
  * internal agents and persists an aggregate journal to a sibling
@@ -291,6 +329,9 @@ export type WorkflowRun = {
   phases: { title: string; detail?: string }[];
   /** Human progress log lines (▶ / ✓ task markers) emitted during the run. */
   logs: string[];
+  /** Per-agent runs (from `workflowProgress`), grouped in the UI by phase.
+   *  Empty for older journals that predate `workflowProgress`. */
+  agents: WorkflowAgentRun[];
   /** Parent `Workflow` tool_use id, when matchable by dispatch time. */
   parentToolUseId?: string;
   /** Parent assistant message uuid that issued the Workflow tool_use. */

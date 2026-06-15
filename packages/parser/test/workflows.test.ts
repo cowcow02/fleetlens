@@ -93,6 +93,27 @@ async function makeFixture(): Promise<{ root: string }> {
         { title: "no-detail" },
       ],
       logs: ["▶ Task A1", "✓ Task A1 done"],
+      workflowProgress: [
+        { type: "workflow_phase", index: 1, title: "A" },
+        { type: "workflow_phase", index: 2, title: "B" },
+        {
+          type: "workflow_agent", index: 2, label: "build:two", phaseIndex: 1, phaseTitle: "A",
+          agentId: "ag2", model: "claude-opus-4-8[1m]", state: "done",
+          startedAt: dispatchMs + 5_000, durationMs: 120_000, tokens: 5000, toolCalls: 12,
+          lastToolSummary: "done two", promptPreview: "do two", resultPreview: "ok two",
+        },
+        {
+          type: "workflow_agent", index: 1, label: "build:one", phaseIndex: 1, phaseTitle: "A",
+          agentId: "ag1", model: "claude-opus-4-8[1m]", state: "done",
+          startedAt: dispatchMs + 4_000, durationMs: 60_000, tokens: 3000, toolCalls: 7,
+          lastToolSummary: "done one", promptPreview: "do one", resultPreview: "ok one",
+        },
+        {
+          type: "workflow_agent", index: 3, label: "wire:three", phaseIndex: 2, phaseTitle: "B",
+          agentId: "ag3", model: "claude-haiku-4-5-20251001", state: "error",
+          startedAt: dispatchMs + 8_000, durationMs: 30_000, tokens: 1000, toolCalls: 2,
+        },
+      ],
     }),
   );
 
@@ -234,5 +255,40 @@ describe("workflow journals", () => {
     // toolu_after is closer in absolute time, but only toolu_before could have
     // launched a run that started at 13:12:50.
     expect(s!.workflows![0].parentToolUseId).toBe("toolu_before");
+  });
+
+  it("parses workflowProgress agents (sorted by spawn index, with phase tags)", async () => {
+    const { root } = await makeFixture();
+    const s = await getSession(SESSION_ID, { root });
+    const alpha = s!.workflows!.find((w) => w.runId === "wf_alpha")!;
+    expect(alpha.agents).toHaveLength(3);
+    // sorted by index → one, two, three
+    expect(alpha.agents.map((a) => a.label)).toEqual(["build:one", "build:two", "wire:three"]);
+    const one = alpha.agents[0];
+    expect(one.phaseIndex).toBe(1);
+    expect(one.phaseTitle).toBe("A");
+    expect(one.state).toBe("done");
+    expect(one.tokens).toBe(3000);
+    expect(one.toolCalls).toBe(7);
+    expect(one.promptPreview).toBe("do one");
+    expect(one.resultPreview).toBe("ok one");
+    // phase grouping: phase A (index 1) has 2 agents, phase B has 1
+    expect(alpha.agents.filter((a) => a.phaseIndex === 1)).toHaveLength(2);
+    expect(alpha.agents.filter((a) => a.phaseIndex === 2)).toHaveLength(1);
+    // beta has no workflowProgress → empty agents, not undefined
+    const beta = s!.workflows!.find((w) => w.runId === "wf_beta")!;
+    expect(beta.agents).toEqual([]);
+  });
+
+  it("folds workflow execution spans into the session's agent time", async () => {
+    const { root } = await makeFixture();
+    const s = await getSession(SESSION_ID, { root });
+    // Parent transcript alone is ~idle (a 47-min gap between dispatch and the
+    // last event). After folding the two workflow spans (37m + 10m) the agent
+    // time must reflect that wall-clock work.
+    expect(s!.airTimeMs!).toBeGreaterThan(2_700_000); // > 45 min, not ~5 s
+    // The merged active segments include the workflow spans.
+    const total = (s!.activeSegments ?? []).reduce((n, seg) => n + (seg.endMs - seg.startMs), 0);
+    expect(total).toBe(s!.airTimeMs);
   });
 });

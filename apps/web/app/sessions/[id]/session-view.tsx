@@ -154,6 +154,9 @@ export function SessionView({
   const [filter, setFilter] = useState<FilterMode>("turns");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
+  /** Workflow run to focus (auto-expand + scroll) on the Workflows tab —
+   *  set when a workflow lane on the minimap is clicked. */
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set());
   /** When a timeline click sets the index we also want to scroll. Track that
@@ -169,6 +172,7 @@ export function SessionView({
       setSelectedIndex(null);
       setSelectedSubagentId(null);
     }
+    if (tab !== "workflows") setSelectedWorkflowId(null);
   }, [tab]);
 
   /** Measured height of the sticky header — used both as the drawer's
@@ -351,13 +355,23 @@ export function SessionView({
     anchors.sort((a, b) => a.ms - b.ms);
     const sessionStartMs = anchors[0]!.ms - (events.find((e) => e.timestamp)?.tOffsetMs ?? 0);
 
-    const subagentSpans = (session.subagents ?? [])
-      .filter(
-        (s): s is SubagentRun & { startTOffsetMs: number; endTOffsetMs: number } =>
-          s.startTOffsetMs !== undefined && s.endTOffsetMs !== undefined,
-      )
-      .map((s) => ({ start: s.startTOffsetMs, end: s.endTOffsetMs }))
-      .sort((a, b) => a.start - b.start);
+    // "Busy" spans = delegated agent work that means the parent isn't idle:
+    // subagent runs AND dynamic-workflow execution. Both are carved out of the
+    // idle bands so a long Workflow run (during which the parent just waits)
+    // reads as active agent time, not dead air. A still-running workflow has
+    // no end offset yet — extend it to the last anchor.
+    const lastAnchorOff = anchors[anchors.length - 1]!.ms - sessionStartMs;
+    const busySpans = [
+      ...(session.subagents ?? [])
+        .filter((s) => s.startTOffsetMs !== undefined && s.endTOffsetMs !== undefined)
+        .map((s) => ({ start: s.startTOffsetMs as number, end: s.endTOffsetMs as number })),
+      ...(session.workflows ?? [])
+        .filter((w) => w.startTOffsetMs !== undefined)
+        .map((w) => ({
+          start: w.startTOffsetMs as number,
+          end: (w.endTOffsetMs ?? lastAnchorOff) as number,
+        })),
+    ].sort((a, b) => a.start - b.start);
 
     /** Subtract subagent spans from [start, end] in offset coordinates,
      *  returning 0+ remaining slices in time order. */
@@ -366,7 +380,7 @@ export function SessionView({
       end: number,
     ): { start: number; end: number }[] => {
       let pieces: { start: number; end: number }[] = [{ start, end }];
-      for (const span of subagentSpans) {
+      for (const span of busySpans) {
         if (span.end <= start) continue;
         if (span.start >= end) break;
         const next: { start: number; end: number }[] = [];
@@ -384,9 +398,9 @@ export function SessionView({
     };
 
     const overlapsSubagent = (start: number, end: number): boolean => {
-      for (const span of subagentSpans) {
+      for (const span of busySpans) {
         if (span.end <= start) continue;
-        // subagentSpans is sorted by start, so once span.start >= end no
+        // busySpans is sorted by start, so once span.start >= end no
         // later span can overlap [start, end] either — bail out cleanly.
         if (span.start >= end) return false;
         return true;
@@ -447,7 +461,7 @@ export function SessionView({
       }
     }
     return bands;
-  }, [events, session.subagents]);
+  }, [events, session.subagents, session.workflows]);
 
   const coldResumeMarkers = useMemo(() => {
     const seen = new Set<string>();
@@ -918,7 +932,10 @@ export function SessionView({
             headerOffset={headerH}
             subagents={session.subagents}
             workflows={session.workflows}
-            onWorkflowClick={jumpToToolUse}
+            onWorkflowClick={(runId) => {
+              setSelectedWorkflowId(runId);
+              setTab("workflows");
+            }}
             collapsed={collapsed}
             prMarkers={prMarkers}
             coldResumeMarkers={coldResumeMarkers}
@@ -961,6 +978,7 @@ export function SessionView({
             <WorkflowsPanel
               workflows={session.workflows!}
               spawnedAgentCount={session.spawnedAgentCount ?? 0}
+              focusRunId={selectedWorkflowId}
               onJumpToParent={jumpToToolUse}
             />
           </div>
@@ -1547,7 +1565,7 @@ function Minimap({
   headerOffset: number;
   subagents?: SubagentRun[];
   workflows?: WorkflowRun[];
-  onWorkflowClick?: (toolUseId?: string) => void;
+  onWorkflowClick?: (runId: string) => void;
   collapsed?: boolean;
   selectedSubagentId?: string | null;
   onSelectSubagent?: (id: string | null) => void;
@@ -2191,7 +2209,7 @@ function Minimap({
                     strokeDasharray={inProgress ? "2 2" : undefined}
                     rx="2"
                     onMouseEnter={(e) => setHover({ clientX: e.clientX, workflow: w })}
-                    onClick={() => onWorkflowClick?.(w.parentToolUseId)}
+                    onClick={() => onWorkflowClick?.(w.runId)}
                   />
                   {showLabel && (
                     <text
@@ -2517,7 +2535,7 @@ function MinimapHoverCard({
           )}
         </div>
         <div style={{ marginTop: 6, fontSize: 10, opacity: 0.55, fontStyle: "italic" }}>
-          Click the bar to jump to the Workflow call.
+          Click to open this run in the Workflows tab.
         </div>
       </div>
     );
@@ -4768,10 +4786,12 @@ function SubagentDrawer({
 function WorkflowsPanel({
   workflows,
   spawnedAgentCount,
+  focusRunId,
   onJumpToParent,
 }: {
   workflows: WorkflowRun[];
   spawnedAgentCount: number;
+  focusRunId?: string | null;
   onJumpToParent: (toolUseId?: string) => void;
 }) {
   const totalTokens = workflows.reduce((n, w) => n + w.totalTokens, 0);
@@ -4824,7 +4844,12 @@ function WorkflowsPanel({
       </div>
       <div style={{ display: "flex", flexDirection: "column" }}>
         {workflows.map((w) => (
-          <WorkflowCard key={w.runId} w={w} onJumpToParent={onJumpToParent} />
+          <WorkflowCard
+            key={w.runId}
+            w={w}
+            focused={focusRunId === w.runId}
+            onJumpToParent={onJumpToParent}
+          />
         ))}
       </div>
     </section>
@@ -4833,18 +4858,36 @@ function WorkflowsPanel({
 
 function WorkflowCard({
   w,
+  focused = false,
   onJumpToParent,
 }: {
   w: WorkflowRun;
+  focused?: boolean;
   onJumpToParent: (toolUseId?: string) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(focused);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Focused via a minimap lane click — expand and scroll this run into view.
+  useEffect(() => {
+    if (focused) {
+      setOpen(true);
+      cardRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [focused]);
   const color = workflowColor(w.status);
   const dur = w.durationMs !== undefined ? formatGap(w.durationMs) : "—";
   const startOff = formatOffset(w.startTOffsetMs);
 
   return (
-    <div style={{ borderTop: "1px solid var(--af-border-subtle)" }}>
+    <div
+      ref={cardRef}
+      style={{
+        borderTop: "1px solid var(--af-border-subtle)",
+        background: focused ? "rgba(234,88,12,0.07)" : "transparent",
+        transition: "background 0.5s ease",
+        scrollMarginTop: 120,
+      }}
+    >
       {/* Collapsed header — click to expand */}
       <button
         onClick={() => setOpen((v) => !v)}
@@ -4957,61 +5000,357 @@ function WorkflowCard({
             )}
           </div>
 
-          {w.phases.length > 0 && (
+          {w.agents.length > 0 ? (
+            <WorkflowPhaseTabs w={w} />
+          ) : (
+            w.phases.length > 0 && (
+              <div>
+                <SectionLabel>Phases</SectionLabel>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {w.phases.map((p, i) => (
+                    <span
+                      key={`${p.title}-${i}`}
+                      title={p.detail}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        fontSize: 11,
+                        padding: "3px 9px",
+                        borderRadius: 4,
+                        background: "var(--af-border-subtle)",
+                        color: "var(--af-text)",
+                      }}
+                    >
+                      <b style={{ fontWeight: 600, fontFamily: "var(--font-mono)" }}>{p.title}</b>
+                      {p.detail && (
+                        <span style={{ color: "var(--af-text-tertiary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {p.detail}
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+
+          {w.logs.length > 0 && <WorkflowRunLog logs={w.logs} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Compact model label: "claude-opus-4-8[1m]" → "opus-4-8", "claude-haiku-4-5-20251001" → "haiku-4-5". */
+function shortenModel(model: string): string {
+  return model
+    .replace(/^claude-/, "")
+    .replace(/\[1m\]$/, "")
+    .replace(/-\d{6,}$/, "")
+    .trim();
+}
+
+/** Status dot color for a single workflow-spawned agent. */
+function agentStateColor(state?: string): string {
+  const s = (state ?? "").toLowerCase();
+  if (s === "done" || s === "completed" || s === "success") return "#10B981";
+  if (s === "error" || s === "failed") return "#EF4444";
+  if (s === "running" || s === "active" || s === "in_progress") return "#F59E0B";
+  return "#8A8580";
+}
+
+/** Per-phase tabs for a workflow run. Each tab lists the agents (actions)
+ *  that ran in that phase so you can review what actually happened. */
+function WorkflowPhaseTabs({ w }: { w: WorkflowRun }) {
+  // Build the phase list from meta.phases (ordered), bucketing agents by
+  // phaseIndex. Agents whose phaseIndex isn't in meta.phases fall into an
+  // appended bucket keyed by their phaseTitle so nothing is dropped.
+  const groups = useMemo(() => {
+    const byIndex = new Map<number, WorkflowRun["agents"]>();
+    const extras = new Map<string, WorkflowRun["agents"]>();
+    for (const a of w.agents) {
+      if (a.phaseIndex && a.phaseIndex >= 1 && a.phaseIndex <= w.phases.length) {
+        const arr = byIndex.get(a.phaseIndex) ?? [];
+        arr.push(a);
+        byIndex.set(a.phaseIndex, arr);
+      } else {
+        const key = a.phaseTitle ?? "Other";
+        const arr = extras.get(key) ?? [];
+        arr.push(a);
+        extras.set(key, arr);
+      }
+    }
+    const out = w.phases.map((p, i) => ({
+      key: `p${i + 1}`,
+      title: p.title,
+      detail: p.detail,
+      agents: byIndex.get(i + 1) ?? [],
+    }));
+    for (const [title, agents] of extras) {
+      out.push({ key: `x-${title}`, title, detail: undefined, agents });
+    }
+    return out;
+  }, [w]);
+
+  // Default to the first phase that actually has agents.
+  const firstWithAgents = groups.find((g) => g.agents.length > 0)?.key ?? groups[0]?.key ?? "";
+  const [active, setActive] = useState(firstWithAgents);
+  const activeGroup = groups.find((g) => g.key === active) ?? groups[0];
+
+  return (
+    <div>
+      <SectionLabel>Phases &amp; actions</SectionLabel>
+      {/* Phase tab strip */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+        {groups.map((g) => {
+          const isActive = g.key === active;
+          return (
+            <button
+              key={g.key}
+              onClick={() => setActive(g.key)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11.5,
+                fontWeight: isActive ? 600 : 500,
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "1px solid",
+                borderColor: isActive ? "#EA580C" : "var(--af-border-subtle)",
+                background: isActive ? "rgba(234,88,12,0.12)" : "transparent",
+                color: isActive ? "#EA580C" : "var(--af-text-secondary)",
+                cursor: "pointer",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {g.title}
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: "0px 5px",
+                  borderRadius: 100,
+                  background: isActive ? "#EA580C" : "var(--af-border-subtle)",
+                  color: isActive ? "#fff" : "var(--af-text-tertiary)",
+                }}
+              >
+                {g.agents.length}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active phase body */}
+      {activeGroup && (
+        <div>
+          {activeGroup.detail && (
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "var(--af-text-tertiary)",
+                marginBottom: 8,
+                fontStyle: "italic",
+              }}
+            >
+              {activeGroup.detail}
+            </div>
+          )}
+          {activeGroup.agents.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--af-text-tertiary)", padding: "8px 0" }}>
+              No agents recorded for this phase.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {activeGroup.agents.map((a) => (
+                <WorkflowAgentRow key={`${a.index}-${a.agentId ?? a.label}`} a={a} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One agent (action) inside a phase — collapsed shows label + metering;
+ *  expanding reveals the task prompt and the returned result. */
+function WorkflowAgentRow({ a }: { a: WorkflowRun["agents"][number] }) {
+  const [open, setOpen] = useState(false);
+  const hasDetail = !!(a.promptPreview || a.resultPreview);
+  const dur = a.durationMs !== undefined ? formatGap(a.durationMs) : undefined;
+  return (
+    <div
+      style={{
+        border: "1px solid var(--af-border-subtle)",
+        borderRadius: 6,
+        background: "var(--af-surface-subtle, rgba(120,115,108,0.04))",
+      }}
+    >
+      <button
+        onClick={() => hasDetail && setOpen((v) => !v)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "7px 10px",
+          background: "transparent",
+          border: "none",
+          cursor: hasDetail ? "pointer" : "default",
+          textAlign: "left",
+          color: "inherit",
+          flexWrap: "wrap",
+        }}
+      >
+        <span
+          title={a.state}
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            background: agentStateColor(a.state),
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 12,
+            fontWeight: 600,
+            color: "var(--af-text)",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: 320,
+          }}
+          title={a.label}
+        >
+          {a.label}
+        </span>
+        {a.model && (
+          <span style={{ fontSize: 10, color: "var(--af-text-tertiary)", fontFamily: "var(--font-mono)" }}>
+            {shortenModel(a.model)}
+          </span>
+        )}
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 10 }}>
+          {dur && <WfMiniStat icon={<Clock size={10} />} value={dur} />}
+          {a.tokens !== undefined && <WfMiniStat value={`${formatTokens(a.tokens)} tok`} />}
+          {a.toolCalls !== undefined && <WfMiniStat icon={<Wrench size={10} />} value={`${a.toolCalls}`} />}
+          {hasDetail && (
+            <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>
+              {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </span>
+          )}
+        </span>
+      </button>
+      {a.lastToolSummary && !open && (
+        <div
+          style={{
+            padding: "0 10px 8px 25px",
+            fontSize: 11,
+            color: "var(--af-text-tertiary)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={a.lastToolSummary}
+        >
+          → {a.lastToolSummary}
+        </div>
+      )}
+      {open && hasDetail && (
+        <div style={{ padding: "0 10px 10px 25px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {a.promptPreview && (
             <div>
-              <SectionLabel>Phases</SectionLabel>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {w.phases.map((p, i) => (
-                  <span
-                    key={`${p.title}-${i}`}
-                    title={p.detail}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                      fontSize: 11,
-                      padding: "3px 9px",
-                      borderRadius: 4,
-                      background: "var(--af-border-subtle)",
-                      color: "var(--af-text)",
-                    }}
-                  >
-                    <b style={{ fontWeight: 600, fontFamily: "var(--font-mono)" }}>{p.title}</b>
-                    {p.detail && (
-                      <span style={{ color: "var(--af-text-tertiary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {p.detail}
-                      </span>
-                    )}
-                  </span>
-                ))}
+              <div style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--af-text-tertiary)", marginBottom: 3 }}>
+                Task
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--af-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+                {a.promptPreview}
               </div>
             </div>
           )}
-
-          {w.logs.length > 0 && (
+          {a.resultPreview && (
             <div>
-              <SectionLabel>Progress log</SectionLabel>
+              <div style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--af-text-tertiary)", marginBottom: 3 }}>
+                Result
+              </div>
               <div
                 style={{
                   fontFamily: "var(--font-mono)",
-                  fontSize: 11.5,
-                  lineHeight: 1.7,
+                  fontSize: 11,
                   color: "var(--af-text-secondary)",
-                  background: "var(--af-surface-subtle, rgba(120,115,108,0.05))",
-                  border: "1px solid var(--af-border-subtle)",
-                  borderRadius: 6,
-                  padding: "8px 12px",
-                  maxHeight: 240,
-                  overflowY: "auto",
                   whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  lineHeight: 1.5,
+                  background: "var(--af-surface)",
+                  border: "1px solid var(--af-border-subtle)",
+                  borderRadius: 4,
+                  padding: "6px 8px",
+                  maxHeight: 200,
+                  overflowY: "auto",
                 }}
               >
-                {w.logs.map((l, i) => (
-                  <div key={i}>{l}</div>
-                ))}
+                {a.resultPreview}
               </div>
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Collapsible coarse run log (▶ / ✓ task markers) — secondary to the
+ *  per-phase agent view. */
+function WorkflowRunLog({ logs }: { logs: string[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          fontSize: 10,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          color: "var(--af-text-tertiary)",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+        }}
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        Run log ({logs.length})
+      </button>
+      {open && (
+        <div
+          style={{
+            marginTop: 6,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11.5,
+            lineHeight: 1.7,
+            color: "var(--af-text-secondary)",
+            background: "var(--af-surface-subtle, rgba(120,115,108,0.05))",
+            border: "1px solid var(--af-border-subtle)",
+            borderRadius: 6,
+            padding: "8px 12px",
+            maxHeight: 240,
+            overflowY: "auto",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {logs.map((l, i) => (
+            <div key={i}>{l}</div>
+          ))}
         </div>
       )}
     </div>
@@ -5491,8 +5830,11 @@ function formatDurationHeader(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${m}m ${rem}s`;
+  if (m < 60) return `${m}m ${s % 60}s`;
+  // Roll up to hours — agent time can reach many hours once workflow
+  // execution is folded in, and "1116m" reads poorly.
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
 }
 
 function EntryDayStrip({ entry }: { entry: Entry }) {

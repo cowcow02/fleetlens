@@ -324,25 +324,35 @@ async function computeSessionUsageWithSubagents(
   return usage;
 }
 
-/** Cheap aggregate over a session's `workflows/wf_*.json` journals — just
- *  the run count + summed agentCount. Used on the list/meta path where we
- *  want the "this session orchestrated N agents" badge without paying for a
- *  full WorkflowRun build. Returns zeros when the dir is absent (the common
- *  case — most sessions never dispatch a workflow). */
+type WorkflowAggregate = {
+  workflowCount: number;
+  spawnedAgentCount: number;
+  /** Wall-clock execution spans (epoch ms) of completed runs — folded into
+   *  the session's active segments so workflow execution counts as agent
+   *  time (the parent transcript only shows a gap while the fleet works). */
+  spans: { startMs: number; endMs: number }[];
+};
+
+/** Cheap aggregate over a session's `workflows/wf_*.json` journals — run
+ *  count, summed agentCount, and execution spans. Used on the list/meta path
+ *  where we want the "this session orchestrated N agents" badge + agent-time
+ *  fold without paying for a full WorkflowRun build. Returns zeros when the
+ *  dir is absent (the common case — most sessions never dispatch a workflow). */
 async function scanWorkflowAggregate(
   projectDirPath: string,
   sessionId: string,
-): Promise<{ workflowCount: number; spawnedAgentCount: number }> {
+): Promise<WorkflowAggregate> {
   const dir = path.join(projectDirPath, sessionId, "workflows");
   let entries: string[];
   try {
     entries = await fs.readdir(dir);
   } catch {
-    return { workflowCount: 0, spawnedAgentCount: 0 };
+    return { workflowCount: 0, spawnedAgentCount: 0, spans: [] };
   }
   const jsonFiles = entries.filter((f) => f.startsWith("wf_") && f.endsWith(".json"));
-  if (jsonFiles.length === 0) return { workflowCount: 0, spawnedAgentCount: 0 };
+  if (jsonFiles.length === 0) return { workflowCount: 0, spawnedAgentCount: 0, spans: [] };
   let spawnedAgentCount = 0;
+  const spans: { startMs: number; endMs: number }[] = [];
   // Count only journals that actually parse, so this matches the full
   // loadWorkflows() path (which drops unparseable files) — otherwise the list
   // badge and the detail header would disagree on a truncated/mid-write file.
@@ -351,15 +361,45 @@ async function scanWorkflowAggregate(
       try {
         const j = JSON.parse(await fs.readFile(path.join(dir, f), "utf8")) as {
           agentCount?: unknown;
+          startTime?: unknown;
+          durationMs?: unknown;
         };
         if (typeof j.agentCount === "number") spawnedAgentCount += j.agentCount;
+        if (typeof j.startTime === "number" && typeof j.durationMs === "number" && j.durationMs > 0) {
+          spans.push({ startMs: j.startTime, endMs: j.startTime + j.durationMs });
+        }
         return true;
       } catch {
         return false; // skip unreadable / malformed journal
       }
     }),
   );
-  return { workflowCount: parsed.filter(Boolean).length, spawnedAgentCount };
+  return { workflowCount: parsed.filter(Boolean).length, spawnedAgentCount, spans };
+}
+
+/** Union the parent session's active segments with workflow execution spans
+ *  and recompute airTime, so a session's "agent time" reflects the wall-clock
+ *  the fleet was working — not just the parent transcript's own activity (the
+ *  parent just shows a gap while a Workflow tool call churns). Returns the
+ *  patch to apply, or `{}` when there's nothing to fold. */
+function foldWorkflowAgentTime(
+  activeSegments: { startMs: number; endMs: number }[] | undefined,
+  spans: { startMs: number; endMs: number }[],
+): { activeSegments?: { startMs: number; endMs: number }[]; airTimeMs?: number } {
+  if (spans.length === 0) return {};
+  const all = [...(activeSegments ?? []), ...spans]
+    .filter((s) => s.endMs > s.startMs)
+    .sort((a, b) => a.startMs - b.startMs);
+  if (all.length === 0) return {};
+  const merged: { startMs: number; endMs: number }[] = [{ ...all[0]! }];
+  for (let i = 1; i < all.length; i++) {
+    const cur = all[i]!;
+    const last = merged[merged.length - 1]!;
+    if (cur.startMs <= last.endMs) last.endMs = Math.max(last.endMs, cur.endMs);
+    else merged.push({ ...cur });
+  }
+  const airTimeMs = merged.reduce((n, s) => n + (s.endMs - s.startMs), 0);
+  return { activeSegments: merged, airTimeMs };
 }
 
 async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
@@ -393,6 +433,7 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
       ...(wf.workflowCount > 0
         ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
         : {}),
+      ...foldWorkflowAgentTime(meta.activeSegments, wf.spans),
     };
     metaCache.set(f.fullPath, { meta: full, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
     return full;
@@ -424,6 +465,7 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
       ...(wf.workflowCount > 0
         ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
         : {}),
+      ...foldWorkflowAgentTime(meta.activeSegments, wf.spans),
     };
     detailCache.set(f.fullPath, { detail, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
     // Populate the meta cache from the detail so a later listSessions
@@ -787,6 +829,7 @@ type WorkflowJournal = {
   defaultModel?: unknown;
   phases?: unknown;
   logs?: unknown;
+  workflowProgress?: unknown;
 };
 
 /** Walk a session's `workflows/` dir, parse each `wf_*.json` journal the
@@ -884,6 +927,36 @@ async function loadWorkflows(
       const logs = Array.isArray(j.logs)
         ? j.logs.filter((l): l is string => typeof l === "string")
         : [];
+      // Per-agent runs live in workflowProgress as `workflow_agent` entries,
+      // each tagged with the phase it ran in. Cap the free-text previews so a
+      // 200-agent run doesn't bloat the RSC payload.
+      const cap = (v: unknown, n: number): string | undefined => {
+        const s = str(v);
+        return s === undefined ? undefined : s.length > n ? s.slice(0, n) + "…" : s;
+      };
+      const progress = Array.isArray(j.workflowProgress) ? j.workflowProgress : [];
+      const agents = progress
+        .filter(
+          (e): e is Record<string, unknown> =>
+            !!e && typeof e === "object" && (e as { type?: unknown }).type === "workflow_agent",
+        )
+        .map((e) => ({
+          index: num(e.index) ?? 0,
+          label: str(e.label) ?? "(agent)",
+          phaseIndex: num(e.phaseIndex),
+          phaseTitle: str(e.phaseTitle),
+          agentId: str(e.agentId),
+          model: str(e.model),
+          state: str(e.state),
+          startedAt: num(e.startedAt),
+          durationMs: num(e.durationMs),
+          tokens: num(e.tokens),
+          toolCalls: num(e.toolCalls),
+          lastToolSummary: cap(e.lastToolSummary, 200),
+          promptPreview: cap(e.promptPreview, 600),
+          resultPreview: cap(e.resultPreview, 600),
+        }))
+        .sort((a, b) => a.index - b.index);
       const parent = matchDispatch(startMs);
       return {
         runId,
@@ -901,6 +974,7 @@ async function loadWorkflows(
         model: str(j.defaultModel),
         phases,
         logs,
+        agents,
         parentToolUseId: parent?.toolUseId,
         parentUuid: parent?.parentUuid,
       };
