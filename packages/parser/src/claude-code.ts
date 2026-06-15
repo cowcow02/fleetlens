@@ -22,6 +22,7 @@ import type {
   SessionMeta,
   SubagentRun,
   Usage,
+  WorkflowRun,
 } from "./types.js";
 import {
   type AgentMetadata,
@@ -323,6 +324,84 @@ async function computeSessionUsageWithSubagents(
   return usage;
 }
 
+type WorkflowAggregate = {
+  workflowCount: number;
+  spawnedAgentCount: number;
+  /** Wall-clock execution spans (epoch ms) of completed runs — folded into
+   *  the session's active segments so workflow execution counts as agent
+   *  time (the parent transcript only shows a gap while the fleet works). */
+  spans: { startMs: number; endMs: number }[];
+};
+
+/** Cheap aggregate over a session's `workflows/wf_*.json` journals — run
+ *  count, summed agentCount, and execution spans. Used on the list/meta path
+ *  where we want the "this session orchestrated N agents" badge + agent-time
+ *  fold without paying for a full WorkflowRun build. Returns zeros when the
+ *  dir is absent (the common case — most sessions never dispatch a workflow). */
+async function scanWorkflowAggregate(
+  projectDirPath: string,
+  sessionId: string,
+): Promise<WorkflowAggregate> {
+  const dir = path.join(projectDirPath, sessionId, "workflows");
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return { workflowCount: 0, spawnedAgentCount: 0, spans: [] };
+  }
+  const jsonFiles = entries.filter((f) => f.startsWith("wf_") && f.endsWith(".json"));
+  if (jsonFiles.length === 0) return { workflowCount: 0, spawnedAgentCount: 0, spans: [] };
+  let spawnedAgentCount = 0;
+  const spans: { startMs: number; endMs: number }[] = [];
+  // Count only journals that actually parse, so this matches the full
+  // loadWorkflows() path (which drops unparseable files) — otherwise the list
+  // badge and the detail header would disagree on a truncated/mid-write file.
+  const parsed = await Promise.all(
+    jsonFiles.map(async (f) => {
+      try {
+        const j = JSON.parse(await fs.readFile(path.join(dir, f), "utf8")) as {
+          agentCount?: unknown;
+          startTime?: unknown;
+          durationMs?: unknown;
+        };
+        if (typeof j.agentCount === "number") spawnedAgentCount += j.agentCount;
+        if (typeof j.startTime === "number" && typeof j.durationMs === "number" && j.durationMs > 0) {
+          spans.push({ startMs: j.startTime, endMs: j.startTime + j.durationMs });
+        }
+        return true;
+      } catch {
+        return false; // skip unreadable / malformed journal
+      }
+    }),
+  );
+  return { workflowCount: parsed.filter(Boolean).length, spawnedAgentCount, spans };
+}
+
+/** Union the parent session's active segments with workflow execution spans
+ *  and recompute airTime, so a session's "agent time" reflects the wall-clock
+ *  the fleet was working — not just the parent transcript's own activity (the
+ *  parent just shows a gap while a Workflow tool call churns). Returns the
+ *  patch to apply, or `{}` when there's nothing to fold. */
+function foldWorkflowAgentTime(
+  activeSegments: { startMs: number; endMs: number }[] | undefined,
+  spans: { startMs: number; endMs: number }[],
+): { activeSegments?: { startMs: number; endMs: number }[]; airTimeMs?: number } {
+  if (spans.length === 0) return {};
+  const all = [...(activeSegments ?? []), ...spans]
+    .filter((s) => s.endMs > s.startMs)
+    .sort((a, b) => a.startMs - b.startMs);
+  if (all.length === 0) return {};
+  const merged: { startMs: number; endMs: number }[] = [{ ...all[0]! }];
+  for (let i = 1; i < all.length; i++) {
+    const cur = all[i]!;
+    const last = merged[merged.length - 1]!;
+    if (cur.startMs <= last.endMs) last.endMs = Math.max(last.endMs, cur.endMs);
+    else merged.push({ ...cur });
+  }
+  const airTimeMs = merged.reduce((n, s) => n + (s.endMs - s.startMs), 0);
+  return { activeSegments: merged, airTimeMs };
+}
+
 async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
   const cached = metaCache.get(f.fullPath);
   if (cached && cached.mtimeMs === f.mtimeMs && cached.sizeBytes === f.sizeBytes) {
@@ -341,6 +420,8 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
       sessionId,
     );
 
+    const wf = await scanWorkflowAggregate(projectDirPath, sessionId);
+
     // Use the real cwd from the JSONL when available — the decoded dir name
     // is lossy (dashes in folder names become slashes).
     const full: SessionMeta = {
@@ -349,6 +430,10 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
       filePath: f.fullPath,
       projectDir: f.projectDir,
       projectName: meta.cwd ?? decodeProjectName(f.projectDir),
+      ...(wf.workflowCount > 0
+        ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
+        : {}),
+      ...foldWorkflowAgentTime(meta.activeSegments, wf.spans),
     };
     metaCache.set(f.fullPath, { meta: full, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
     return full;
@@ -365,13 +450,22 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
   try {
     const rawLines = await readJsonlFile(f.fullPath);
     const { meta, events } = parseTranscript(rawLines);
+    const sessionId = sessionIdFromFileName(f.fileName);
+    // Keep the workflow aggregate on the detail (and thus the metaCache it
+    // backfills) so opening a session never strips the "N agents" badge that
+    // the list path computes.
+    const wf = await scanWorkflowAggregate(path.dirname(f.fullPath), sessionId);
     const detail: SessionDetail = {
       ...meta,
-      id: sessionIdFromFileName(f.fileName),
+      id: sessionId,
       filePath: f.fullPath,
       projectDir: f.projectDir,
       projectName: meta.cwd ?? decodeProjectName(f.projectDir),
       events,
+      ...(wf.workflowCount > 0
+        ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
+        : {}),
+      ...foldWorkflowAgentTime(meta.activeSegments, wf.spans),
     };
     detailCache.set(f.fullPath, { detail, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
     // Populate the meta cache from the detail so a later listSessions
@@ -421,8 +515,27 @@ export async function getSession(
     sessionIdFromFileName(hit.fileName),
     "subagents",
   );
-  const subagents = await loadSubagents(subagentsDir, sessionStartMs, detail.events);
-  return { ...detail, subagents };
+  const workflowsDir = path.join(
+    path.dirname(hit.fullPath),
+    sessionIdFromFileName(hit.fileName),
+    "workflows",
+  );
+  const [subagents, workflows] = await Promise.all([
+    loadSubagents(subagentsDir, sessionStartMs, detail.events),
+    loadWorkflows(workflowsDir, sessionStartMs, detail.events),
+  ]);
+  // Recompute the aggregate from the fully-parsed runs so the detail view is
+  // self-consistent (a malformed journal that scanWorkflowAggregate counted
+  // but loadWorkflows dropped won't skew the header here).
+  const spawnedAgentCount = workflows.reduce((n, w) => n + w.agentCount, 0);
+  return {
+    ...detail,
+    subagents,
+    workflows,
+    ...(workflows.length > 0
+      ? { workflowCount: workflows.length, spawnedAgentCount }
+      : {}),
+  };
 }
 
 /* ================================================================= */
@@ -697,6 +810,390 @@ async function loadSubagents(
   return runs
     .filter((r): r is SubagentRun => r !== null)
     .sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0));
+}
+
+/* ================================================================= */
+/*  Workflow loading                                                 */
+/* ================================================================= */
+
+type WorkflowJournal = {
+  runId?: unknown;
+  workflowName?: unknown;
+  summary?: unknown;
+  status?: unknown;
+  agentCount?: unknown;
+  totalToolCalls?: unknown;
+  totalTokens?: unknown;
+  durationMs?: unknown;
+  startTime?: unknown;
+  defaultModel?: unknown;
+  phases?: unknown;
+  logs?: unknown;
+  workflowProgress?: unknown;
+};
+
+/** Walk a session's `workflows/` dir, parse each `wf_*.json` journal the
+ *  Workflow tool persists, and return one WorkflowRun per file. Each run is
+ *  matched back to the parent `Workflow` tool_use by dispatch time — the
+ *  journal's `startTime` lands a few seconds after the tool_use timestamp
+ *  (script compile + first agent spawn), so a generous 60s window is used.
+ *  A `scripts/` subdir and any non-`wf_` files are ignored. */
+async function loadWorkflows(
+  dir: string,
+  sessionStartMs: number | undefined,
+  parentEvents: SessionEvent[],
+): Promise<WorkflowRun[]> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir);
+  } catch {
+    return [];
+  }
+  const jsonFiles = entries.filter((f) => f.startsWith("wf_") && f.endsWith(".json"));
+  if (jsonFiles.length === 0) return [];
+
+  type Dispatch = { toolUseId: string; parentUuid: string; tsMs: number };
+  const dispatches: Dispatch[] = [];
+  for (const e of parentEvents) {
+    if (e.role !== "tool-call" || e.toolName !== "Workflow") continue;
+    const tsMs = e.timestamp ? Date.parse(e.timestamp) : NaN;
+    if (Number.isNaN(tsMs)) continue;
+    for (const b of e.blocks) {
+      if (b?.type !== "tool_use" || b.name !== "Workflow") continue;
+      dispatches.push({ toolUseId: b.id, parentUuid: e.uuid ?? "", tsMs });
+    }
+  }
+  dispatches.sort((a, b) => a.tsMs - b.tsMs);
+
+  // The journal's startTime trails its Workflow tool_use (script compile +
+  // first spawn), so the true parent fired at-or-before startMs. Prefer the
+  // nearest dispatch at-or-before startMs within tolerance; only if none
+  // precede (clock skew / resumed run) fall back to absolute nearest. This
+  // stops a run being attributed to a Workflow call that fired *after* it.
+  const matchDispatch = (startMs: number | undefined): Dispatch | undefined => {
+    if (startMs === undefined || dispatches.length === 0) return undefined;
+    const TOLERANCE_MS = 60_000;
+    let before: Dispatch | undefined;
+    let beforeDelta = Infinity;
+    let nearest: Dispatch | undefined;
+    let nearestDelta = Infinity;
+    for (const d of dispatches) {
+      const delta = Math.abs(startMs - d.tsMs);
+      if (delta > TOLERANCE_MS) continue;
+      if (delta < nearestDelta) {
+        nearest = d;
+        nearestDelta = delta;
+      }
+      if (d.tsMs <= startMs && delta < beforeDelta) {
+        before = d;
+        beforeDelta = delta;
+      }
+    }
+    return before ?? nearest;
+  };
+
+  const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" && v.length > 0 ? v : undefined;
+
+  const runs = await Promise.all(
+    jsonFiles.map(async (f): Promise<WorkflowRun | null> => {
+      let j: WorkflowJournal;
+      try {
+        j = JSON.parse(await fs.readFile(path.join(dir, f), "utf8")) as WorkflowJournal;
+      } catch {
+        return null;
+      }
+      const runId = str(j.runId) ?? f.replace(/\.json$/, "");
+      const startMs = num(j.startTime);
+      const durationMs = num(j.durationMs);
+      const endMs = startMs !== undefined && durationMs !== undefined ? startMs + durationMs : undefined;
+      const startTOffsetMs =
+        sessionStartMs !== undefined && startMs !== undefined
+          ? Math.max(0, startMs - sessionStartMs)
+          : undefined;
+      const endTOffsetMs =
+        sessionStartMs !== undefined && endMs !== undefined
+          ? Math.max(0, endMs - sessionStartMs)
+          : undefined;
+      const phases = Array.isArray(j.phases)
+        ? j.phases
+            .filter(
+              (p): p is { title: string; detail?: unknown } =>
+                !!p && typeof p === "object" && typeof (p as { title?: unknown }).title === "string",
+            )
+            .map((p) => ({ title: p.title, detail: str((p as { detail?: unknown }).detail) }))
+        : [];
+      const logs = Array.isArray(j.logs)
+        ? j.logs.filter((l): l is string => typeof l === "string")
+        : [];
+      // Per-agent runs live in workflowProgress as `workflow_agent` entries,
+      // each tagged with the phase it ran in. Cap the free-text previews so a
+      // 200-agent run doesn't bloat the RSC payload.
+      const cap = (v: unknown, n: number): string | undefined => {
+        const s = str(v);
+        return s === undefined ? undefined : s.length > n ? s.slice(0, n) + "…" : s;
+      };
+      const progress = Array.isArray(j.workflowProgress) ? j.workflowProgress : [];
+      const agents = progress
+        .filter(
+          (e): e is Record<string, unknown> =>
+            !!e && typeof e === "object" && (e as { type?: unknown }).type === "workflow_agent",
+        )
+        .map((e) => ({
+          index: num(e.index) ?? 0,
+          label: str(e.label) ?? "(agent)",
+          phaseIndex: num(e.phaseIndex),
+          phaseTitle: str(e.phaseTitle),
+          agentId: str(e.agentId),
+          model: str(e.model),
+          state: str(e.state),
+          startedAt: num(e.startedAt),
+          durationMs: num(e.durationMs),
+          tokens: num(e.tokens),
+          toolCalls: num(e.toolCalls),
+          lastToolSummary: cap(e.lastToolSummary, 200),
+          promptPreview: cap(e.promptPreview, 600),
+          resultPreview: cap(e.resultPreview, 600),
+        }))
+        .sort((a, b) => a.index - b.index);
+      const parent = matchDispatch(startMs);
+      return {
+        runId,
+        name: str(j.workflowName) ?? runId,
+        description: str(j.summary),
+        status: str(j.status) ?? "unknown",
+        agentCount: num(j.agentCount) ?? 0,
+        toolCallCount: num(j.totalToolCalls) ?? 0,
+        totalTokens: num(j.totalTokens) ?? 0,
+        durationMs,
+        startMs,
+        endMs,
+        startTOffsetMs,
+        endTOffsetMs,
+        model: str(j.defaultModel),
+        phases,
+        logs,
+        agents,
+        parentToolUseId: parent?.toolUseId,
+        parentUuid: parent?.parentUuid,
+      };
+    }),
+  );
+
+  return runs
+    .filter((r): r is WorkflowRun => r !== null)
+    .sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0));
+}
+
+/* ================================================================= */
+/*  Workflow-agent transcript (full step list, on demand)            */
+/* ================================================================= */
+
+export type WorkflowAgentStep = {
+  /** 1-based order within the agent's run. */
+  index: number;
+  /** Tool name (Bash, Read, Edit, …). */
+  tool: string;
+  /** Salient one-line preview of the tool input (collapsed-row display). */
+  preview: string;
+  /** Full salient input, newlines preserved — the complete bash command, file
+   *  path, etc. Shown when a step is expanded. Capped to keep the payload sane. */
+  full?: string;
+  /** True when the matching tool_result was an error. */
+  isError?: boolean;
+};
+
+export type WorkflowAgentDetail = {
+  agentId: string;
+  /** Full dispatched prompt (untruncated). */
+  prompt?: string;
+  /** Full final assistant text (untruncated). */
+  finalText?: string;
+  /** Every step the agent took, in order. */
+  steps: WorkflowAgentStep[];
+  /** Per-tool totals, by count desc. */
+  toolCalls: { name: string; count: number }[];
+  toolCallCount: number;
+  assistantMessageCount: number;
+  eventCount: number;
+  totalUsage: Usage;
+  model?: string;
+  durationMs?: number;
+};
+
+/** Pull the most informative field out of a tool_use input, untruncated and
+ *  with newlines preserved (e.g. a full multi-line bash command). */
+function salientToolInput(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const o = input as Record<string, unknown>;
+  const pick = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : undefined);
+  return (
+    pick("command") ??
+    pick("file_path") ??
+    pick("path") ??
+    pick("pattern") ??
+    pick("url") ??
+    pick("description") ??
+    pick("query") ??
+    pick("prompt") ??
+    pick("old_string") ??
+    JSON.stringify(o)
+  );
+}
+
+/** Load the full transcript of one workflow-spawned agent and return its
+ *  ordered step list + full prompt/result. These live in a nested
+ *  `<session>/subagents/workflows/<runId>/agent-<agentId>.jsonl` — written by
+ *  the Workflow runtime even though the agent has no top-level subagent file.
+ *  Loaded on demand (one transcript at a time) so a 200-agent session's detail
+ *  page stays light. */
+export async function loadWorkflowAgentDetail(
+  sessionId: string,
+  runId: string,
+  agentId: string,
+  opts: { root?: string } = {},
+): Promise<WorkflowAgentDetail | null> {
+  const { root = DEFAULT_ROOT } = opts;
+  // Filename-safe ids only — guard against path traversal.
+  if (!/^[\w.-]+$/.test(runId) || !/^[\w.-]+$/.test(agentId)) return null;
+  const files = await walkJsonlFiles(root);
+  const hit = files.find((f) => sessionIdFromFileName(f.fileName) === sessionId);
+  if (!hit) return null;
+  const file = path.join(
+    path.dirname(hit.fullPath),
+    sessionId,
+    "subagents",
+    "workflows",
+    runId,
+    `agent-${agentId}.jsonl`,
+  );
+  let lines: unknown[];
+  try {
+    lines = await readJsonlFile(file);
+  } catch {
+    return null;
+  }
+
+  // First pass: which tool_use ids errored (the tool_result.is_error lives in a
+  // later user message keyed by tool_use_id).
+  const errored = new Set<string>();
+  for (const raw of lines) {
+    if (!raw || typeof raw !== "object") continue;
+    const content = (raw as { message?: { content?: unknown } }).message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (
+        b && typeof b === "object" &&
+        (b as { type?: unknown }).type === "tool_result" &&
+        (b as { is_error?: unknown }).is_error === true &&
+        typeof (b as { tool_use_id?: unknown }).tool_use_id === "string"
+      ) {
+        errored.add((b as { tool_use_id: string }).tool_use_id);
+      }
+    }
+  }
+
+  const steps: WorkflowAgentStep[] = [];
+  const toolCounts = new Map<string, number>();
+  const totalUsage: Usage = { ...BLANK_USAGE };
+  const seen = new Set<string>();
+  let prompt: string | undefined;
+  let finalText: string | undefined;
+  let model: string | undefined;
+  let assistantMessageCount = 0;
+  let eventCount = 0;
+  let startMs: number | undefined;
+  let endMs: number | undefined;
+
+  for (const raw of lines) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    eventCount++;
+    const ts = typeof r.timestamp === "string" ? Date.parse(r.timestamp) : NaN;
+    if (!Number.isNaN(ts)) {
+      if (startMs === undefined || ts < startMs) startMs = ts;
+      if (endMs === undefined || ts > endMs) endMs = ts;
+    }
+
+    if (
+      prompt === undefined &&
+      r.type === "user" &&
+      (r.parentUuid === null || r.parentUuid === undefined)
+    ) {
+      const c = (r.message as Record<string, unknown> | undefined)?.content;
+      if (typeof c === "string") prompt = c;
+      else if (Array.isArray(c)) {
+        const t = c.find(
+          (b) => b && typeof b === "object" && (b as { type?: string }).type === "text",
+        ) as { text?: string } | undefined;
+        if (t?.text) prompt = t.text;
+      }
+    }
+
+    if (r.type !== "assistant") continue;
+    const m = r.message as Record<string, unknown> | undefined;
+    if (!m) continue;
+    if (!model && typeof m.model === "string") model = m.model;
+    const mid = typeof m.id === "string" ? m.id : undefined;
+    const rid = typeof r.requestId === "string" ? r.requestId : undefined;
+    const key = mid != null && rid != null ? `${mid}:${rid}` : undefined;
+    const fresh = key ? !seen.has(key) : true;
+    if (key && fresh) seen.add(key);
+    if (fresh) {
+      assistantMessageCount++;
+      const u = m.usage as Record<string, unknown> | undefined;
+      if (u) {
+        const n = (v: unknown) => (typeof v === "number" ? v : 0);
+        totalUsage.input += n(u.input_tokens);
+        totalUsage.output += n(u.output_tokens);
+        totalUsage.cacheRead += n(u.cache_read_input_tokens);
+        totalUsage.cacheWrite += n(u.cache_creation_input_tokens);
+      }
+    }
+    const content = m.content as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (!b || typeof b !== "object") continue;
+      if (b.type === "text" && typeof b.text === "string") {
+        finalText = b.text;
+      } else if (b.type === "tool_use" && typeof b.name === "string") {
+        toolCounts.set(b.name, (toolCounts.get(b.name) ?? 0) + 1);
+        // Defensive cap — a runaway agent shouldn't ship 10k step rows.
+        if (steps.length < 2000) {
+          const salient = salientToolInput(b.input);
+          const preview = salient.replace(/\s+/g, " ").trim().slice(0, 160);
+          const full = salient.length > 4000 ? salient.slice(0, 4000) + "…" : salient;
+          steps.push({
+            index: steps.length + 1,
+            tool: b.name,
+            preview,
+            // Only carry `full` when it adds something over the one-line preview.
+            full: full.length > preview.length || full.includes("\n") ? full : undefined,
+            isError: typeof b.id === "string" && errored.has(b.id),
+          });
+        }
+      }
+    }
+  }
+
+  const toolCalls = Array.from(toolCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    agentId,
+    prompt,
+    finalText,
+    steps,
+    toolCalls,
+    toolCallCount: steps.length,
+    assistantMessageCount,
+    eventCount,
+    totalUsage,
+    model,
+    durationMs: startMs !== undefined && endMs !== undefined ? endMs - startMs : undefined,
+  };
 }
 
 /* ================================================================= */

@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Added
+- **Dynamic workflow runs.** Sessions that orchestrate work with the `Workflow` tool now surface the real fan-out a single tool call hides. Each session reads its `workflows/wf_*.json` journals and shows a **Workflows panel** (expandable cards with spawned-agent count, tool calls, tokens, duration, phases, and the progress log), a **fleet stat** in the session header (`N workflows · M agents`), **orange workflow lanes** on the timeline minimap, and a spawned-agent badge on session-list cards. Live updates as new workflow journals are written.
+
 ## [0.11.2] — 2026-05-27
 
 ### Changed
