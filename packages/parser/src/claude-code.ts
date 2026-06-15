@@ -987,6 +987,207 @@ async function loadWorkflows(
 }
 
 /* ================================================================= */
+/*  Workflow-agent transcript (full step list, on demand)            */
+/* ================================================================= */
+
+export type WorkflowAgentStep = {
+  /** 1-based order within the agent's run. */
+  index: number;
+  /** Tool name (Bash, Read, Edit, …). */
+  tool: string;
+  /** Salient one-line preview of the tool input. */
+  preview: string;
+  /** True when the matching tool_result was an error. */
+  isError?: boolean;
+};
+
+export type WorkflowAgentDetail = {
+  agentId: string;
+  /** Full dispatched prompt (untruncated). */
+  prompt?: string;
+  /** Full final assistant text (untruncated). */
+  finalText?: string;
+  /** Every step the agent took, in order. */
+  steps: WorkflowAgentStep[];
+  /** Per-tool totals, by count desc. */
+  toolCalls: { name: string; count: number }[];
+  toolCallCount: number;
+  assistantMessageCount: number;
+  eventCount: number;
+  totalUsage: Usage;
+  model?: string;
+  durationMs?: number;
+};
+
+/** Pull the most informative single field out of a tool_use input. */
+function previewToolInput(input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const o = input as Record<string, unknown>;
+  const pick = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : undefined);
+  const salient =
+    pick("command") ??
+    pick("file_path") ??
+    pick("path") ??
+    pick("pattern") ??
+    pick("url") ??
+    pick("description") ??
+    pick("query") ??
+    pick("prompt") ??
+    pick("old_string") ??
+    JSON.stringify(o);
+  return salient.replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+/** Load the full transcript of one workflow-spawned agent and return its
+ *  ordered step list + full prompt/result. These live in a nested
+ *  `<session>/subagents/workflows/<runId>/agent-<agentId>.jsonl` — written by
+ *  the Workflow runtime even though the agent has no top-level subagent file.
+ *  Loaded on demand (one transcript at a time) so a 200-agent session's detail
+ *  page stays light. */
+export async function loadWorkflowAgentDetail(
+  sessionId: string,
+  runId: string,
+  agentId: string,
+  opts: { root?: string } = {},
+): Promise<WorkflowAgentDetail | null> {
+  const { root = DEFAULT_ROOT } = opts;
+  // Filename-safe ids only — guard against path traversal.
+  if (!/^[\w.-]+$/.test(runId) || !/^[\w.-]+$/.test(agentId)) return null;
+  const files = await walkJsonlFiles(root);
+  const hit = files.find((f) => sessionIdFromFileName(f.fileName) === sessionId);
+  if (!hit) return null;
+  const file = path.join(
+    path.dirname(hit.fullPath),
+    sessionId,
+    "subagents",
+    "workflows",
+    runId,
+    `agent-${agentId}.jsonl`,
+  );
+  let lines: unknown[];
+  try {
+    lines = await readJsonlFile(file);
+  } catch {
+    return null;
+  }
+
+  // First pass: which tool_use ids errored (the tool_result.is_error lives in a
+  // later user message keyed by tool_use_id).
+  const errored = new Set<string>();
+  for (const raw of lines) {
+    if (!raw || typeof raw !== "object") continue;
+    const content = (raw as { message?: { content?: unknown } }).message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (
+        b && typeof b === "object" &&
+        (b as { type?: unknown }).type === "tool_result" &&
+        (b as { is_error?: unknown }).is_error === true &&
+        typeof (b as { tool_use_id?: unknown }).tool_use_id === "string"
+      ) {
+        errored.add((b as { tool_use_id: string }).tool_use_id);
+      }
+    }
+  }
+
+  const steps: WorkflowAgentStep[] = [];
+  const toolCounts = new Map<string, number>();
+  const totalUsage: Usage = { ...BLANK_USAGE };
+  const seen = new Set<string>();
+  let prompt: string | undefined;
+  let finalText: string | undefined;
+  let model: string | undefined;
+  let assistantMessageCount = 0;
+  let eventCount = 0;
+  let startMs: number | undefined;
+  let endMs: number | undefined;
+
+  for (const raw of lines) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    eventCount++;
+    const ts = typeof r.timestamp === "string" ? Date.parse(r.timestamp) : NaN;
+    if (!Number.isNaN(ts)) {
+      if (startMs === undefined || ts < startMs) startMs = ts;
+      if (endMs === undefined || ts > endMs) endMs = ts;
+    }
+
+    if (
+      prompt === undefined &&
+      r.type === "user" &&
+      (r.parentUuid === null || r.parentUuid === undefined)
+    ) {
+      const c = (r.message as Record<string, unknown> | undefined)?.content;
+      if (typeof c === "string") prompt = c;
+      else if (Array.isArray(c)) {
+        const t = c.find(
+          (b) => b && typeof b === "object" && (b as { type?: string }).type === "text",
+        ) as { text?: string } | undefined;
+        if (t?.text) prompt = t.text;
+      }
+    }
+
+    if (r.type !== "assistant") continue;
+    const m = r.message as Record<string, unknown> | undefined;
+    if (!m) continue;
+    if (!model && typeof m.model === "string") model = m.model;
+    const mid = typeof m.id === "string" ? m.id : undefined;
+    const rid = typeof r.requestId === "string" ? r.requestId : undefined;
+    const key = mid != null && rid != null ? `${mid}:${rid}` : undefined;
+    const fresh = key ? !seen.has(key) : true;
+    if (key && fresh) seen.add(key);
+    if (fresh) {
+      assistantMessageCount++;
+      const u = m.usage as Record<string, unknown> | undefined;
+      if (u) {
+        const n = (v: unknown) => (typeof v === "number" ? v : 0);
+        totalUsage.input += n(u.input_tokens);
+        totalUsage.output += n(u.output_tokens);
+        totalUsage.cacheRead += n(u.cache_read_input_tokens);
+        totalUsage.cacheWrite += n(u.cache_creation_input_tokens);
+      }
+    }
+    const content = m.content as Array<Record<string, unknown>> | undefined;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (!b || typeof b !== "object") continue;
+      if (b.type === "text" && typeof b.text === "string") {
+        finalText = b.text;
+      } else if (b.type === "tool_use" && typeof b.name === "string") {
+        toolCounts.set(b.name, (toolCounts.get(b.name) ?? 0) + 1);
+        // Defensive cap — a runaway agent shouldn't ship 10k step rows.
+        if (steps.length < 2000) {
+          steps.push({
+            index: steps.length + 1,
+            tool: b.name,
+            preview: previewToolInput(b.input),
+            isError: typeof b.id === "string" && errored.has(b.id),
+          });
+        }
+      }
+    }
+  }
+
+  const toolCalls = Array.from(toolCounts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return {
+    agentId,
+    prompt,
+    finalText,
+    steps,
+    toolCalls,
+    toolCallCount: steps.length,
+    assistantMessageCount,
+    eventCount,
+    totalUsage,
+    model,
+    durationMs: startMs !== undefined && endMs !== undefined ? endMs - startMs : undefined,
+  };
+}
+
+/* ================================================================= */
 /*  Project rollup                                                   */
 /* ================================================================= */
 

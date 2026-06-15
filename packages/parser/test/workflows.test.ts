@@ -2,7 +2,12 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { getSession, listSessions, clearClaudeCodeCaches } from "../src/claude-code.js";
+import {
+  getSession,
+  listSessions,
+  loadWorkflowAgentDetail,
+  clearClaudeCodeCaches,
+} from "../src/claude-code.js";
 
 beforeEach(() => clearClaudeCodeCaches());
 
@@ -278,6 +283,65 @@ describe("workflow journals", () => {
     // beta has no workflowProgress → empty agents, not undefined
     const beta = s!.workflows!.find((w) => w.runId === "wf_beta")!;
     expect(beta.agents).toEqual([]);
+  });
+
+  it("loads a workflow agent's full step list + untruncated prompt/result on demand", async () => {
+    const { root } = await makeFixture();
+    // Write a nested workflow-agent transcript: subagents/workflows/<run>/agent-<id>.jsonl
+    const dir = path.join(root, PROJECT_DIR, SESSION_ID, "subagents", "workflows", "wf_alpha");
+    await fs.mkdir(dir, { recursive: true });
+    const lines = [
+      {
+        type: "user", uuid: "u0", parentUuid: null, timestamp: "2026-06-13T13:13:00.000Z",
+        message: { role: "user", content: "Build leaf X end to end with full detail here." },
+      },
+      {
+        type: "assistant", uuid: "a1", parentUuid: "u0", timestamp: "2026-06-13T13:13:05.000Z", requestId: "r1",
+        message: {
+          id: "m1", model: "claude-opus-4-8[1m]", role: "assistant",
+          usage: { input_tokens: 100, output_tokens: 20 },
+          content: [
+            { type: "tool_use", id: "t1", name: "Bash", input: { command: "git fetch origin" } },
+            { type: "tool_use", id: "t2", name: "Read", input: { file_path: "/repo/src/foo.ts" } },
+          ],
+        },
+      },
+      {
+        type: "user", uuid: "u1", parentUuid: "a1", timestamp: "2026-06-13T13:13:06.000Z",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t2", is_error: true, content: "ENOENT" }] },
+      },
+      {
+        type: "assistant", uuid: "a2", parentUuid: "u1", timestamp: "2026-06-13T13:13:30.000Z", requestId: "r2",
+        message: {
+          id: "m2", model: "claude-opus-4-8[1m]", role: "assistant",
+          usage: { input_tokens: 80, output_tokens: 40 },
+          content: [
+            { type: "tool_use", id: "t3", name: "Edit", input: { file_path: "/repo/src/foo.ts", old_string: "a" } },
+            { type: "text", text: "Done — built leaf X." },
+          ],
+        },
+      },
+    ];
+    await fs.writeFile(path.join(dir, "agent-ag1.jsonl"), lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    clearClaudeCodeCaches();
+
+    const d = await loadWorkflowAgentDetail(SESSION_ID, "wf_alpha", "ag1", { root });
+    expect(d).not.toBeNull();
+    expect(d!.steps.map((s) => s.tool)).toEqual(["Bash", "Read", "Edit"]);
+    expect(d!.steps[0].preview).toContain("git fetch origin");
+    expect(d!.steps.find((s) => s.tool === "Read")!.isError).toBe(true); // matched tool_result.is_error
+    expect(d!.steps.find((s) => s.tool === "Bash")!.isError).toBeFalsy();
+    expect(d!.toolCallCount).toBe(3);
+    expect(d!.prompt).toBe("Build leaf X end to end with full detail here.");
+    expect(d!.finalText).toBe("Done — built leaf X.");
+    expect(d!.totalUsage.input).toBe(180);
+    expect(d!.totalUsage.output).toBe(60);
+  });
+
+  it("rejects path-traversal ids in loadWorkflowAgentDetail", async () => {
+    const { root } = await makeFixture();
+    expect(await loadWorkflowAgentDetail(SESSION_ID, "../../etc", "ag1", { root })).toBeNull();
+    expect(await loadWorkflowAgentDetail(SESSION_ID, "wf_alpha", "../secret", { root })).toBeNull();
   });
 
   it("folds workflow execution spans into the session's agent time", async () => {

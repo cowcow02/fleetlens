@@ -91,8 +91,10 @@ export {
   loadTeamForSession,
   findTeamLead,
   loadCalibrationEvents,
+  loadWorkflowAgentDetail,
 } from "./claude-code.js";
 export type { FileRef, ListOptions, ProjectRefLite } from "./claude-code.js";
+export type { WorkflowAgentDetail, WorkflowAgentStep } from "./claude-code.js";
 
 export {
   DEFAULT_CODEX_ROOT,

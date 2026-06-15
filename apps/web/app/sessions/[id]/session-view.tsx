@@ -976,6 +976,7 @@ export function SessionView({
         ) : tab === "workflows" && hasWorkflows ? (
           <div style={{ paddingBottom: 24 }}>
             <WorkflowsPanel
+              sessionId={session.id}
               workflows={session.workflows!}
               spawnedAgentCount={session.spawnedAgentCount ?? 0}
               focusRunId={selectedWorkflowId}
@@ -4784,11 +4785,13 @@ function SubagentDrawer({
 /* ------------------------------------------------------------------ */
 
 function WorkflowsPanel({
+  sessionId,
   workflows,
   spawnedAgentCount,
   focusRunId,
   onJumpToParent,
 }: {
+  sessionId: string;
   workflows: WorkflowRun[];
   spawnedAgentCount: number;
   focusRunId?: string | null;
@@ -4846,6 +4849,7 @@ function WorkflowsPanel({
         {workflows.map((w) => (
           <WorkflowCard
             key={w.runId}
+            sessionId={sessionId}
             w={w}
             focused={focusRunId === w.runId}
             onJumpToParent={onJumpToParent}
@@ -4857,10 +4861,12 @@ function WorkflowsPanel({
 }
 
 function WorkflowCard({
+  sessionId,
   w,
   focused = false,
   onJumpToParent,
 }: {
+  sessionId: string;
   w: WorkflowRun;
   focused?: boolean;
   onJumpToParent: (toolUseId?: string) => void;
@@ -5001,7 +5007,7 @@ function WorkflowCard({
           </div>
 
           {w.agents.length > 0 ? (
-            <WorkflowPhaseTabs w={w} />
+            <WorkflowPhaseTabs sessionId={sessionId} w={w} />
           ) : (
             w.phases.length > 0 && (
               <div>
@@ -5062,7 +5068,7 @@ function agentStateColor(state?: string): string {
 
 /** Per-phase tabs for a workflow run. Each tab lists the agents (actions)
  *  that ran in that phase so you can review what actually happened. */
-function WorkflowPhaseTabs({ w }: { w: WorkflowRun }) {
+function WorkflowPhaseTabs({ sessionId, w }: { sessionId: string; w: WorkflowRun }) {
   // Build the phase list from meta.phases (ordered), bucketing agents by
   // phaseIndex. Agents whose phaseIndex isn't in meta.phases fall into an
   // appended bucket keyed by their phaseTitle so nothing is dropped.
@@ -5165,7 +5171,12 @@ function WorkflowPhaseTabs({ w }: { w: WorkflowRun }) {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {activeGroup.agents.map((a) => (
-                <WorkflowAgentRow key={`${a.index}-${a.agentId ?? a.label}`} a={a} />
+                <WorkflowAgentRow
+                  key={`${a.index}-${a.agentId ?? a.label}`}
+                  sessionId={sessionId}
+                  runId={w.runId}
+                  a={a}
+                />
               ))}
             </div>
           )}
@@ -5177,10 +5188,55 @@ function WorkflowPhaseTabs({ w }: { w: WorkflowRun }) {
 
 /** One agent (action) inside a phase — collapsed shows label + metering;
  *  expanding reveals the task prompt and the returned result. */
-function WorkflowAgentRow({ a }: { a: WorkflowRun["agents"][number] }) {
+/** Full transcript detail for one workflow agent — fetched on demand from
+ *  /api/workflow-agent. Mirrors the parser's WorkflowAgentDetail. */
+type WfAgentDetail = {
+  prompt?: string;
+  finalText?: string;
+  steps: { index: number; tool: string; preview: string; isError?: boolean }[];
+  toolCalls: { name: string; count: number }[];
+  toolCallCount: number;
+  assistantMessageCount: number;
+  eventCount: number;
+  totalUsage: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  model?: string;
+  durationMs?: number;
+};
+
+function WorkflowAgentRow({
+  sessionId,
+  runId,
+  a,
+}: {
+  sessionId: string;
+  runId: string;
+  a: WorkflowRun["agents"][number];
+}) {
   const [open, setOpen] = useState(false);
-  const hasDetail = !!(a.promptPreview || a.resultPreview);
+  const [detail, setDetail] = useState<WfAgentDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  // Expandable if we can fetch the full transcript (agentId) or at least have a
+  // journal preview to show.
+  const expandable = !!(a.agentId || a.promptPreview || a.resultPreview);
+
+  // Lazy-load the full transcript (steps + untruncated prompt/result) the first
+  // time the row is expanded — one agent at a time, never all up front.
+  useEffect(() => {
+    if (!open || detail || loading || failed || !a.agentId) return;
+    setLoading(true);
+    const url = `/api/workflow-agent?session=${encodeURIComponent(sessionId)}&run=${encodeURIComponent(runId)}&agent=${encodeURIComponent(a.agentId)}`;
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((d: WfAgentDetail) => setDetail(d))
+      .catch(() => setFailed(true))
+      .finally(() => setLoading(false));
+  }, [open, detail, loading, failed, a.agentId, sessionId, runId]);
+
   const dur = a.durationMs !== undefined ? formatGap(a.durationMs) : undefined;
+  const prompt = detail?.prompt ?? a.promptPreview;
+  const finalText = detail?.finalText ?? a.resultPreview;
+
   return (
     <div
       style={{
@@ -5190,7 +5246,7 @@ function WorkflowAgentRow({ a }: { a: WorkflowRun["agents"][number] }) {
       }}
     >
       <button
-        onClick={() => hasDetail && setOpen((v) => !v)}
+        onClick={() => expandable && setOpen((v) => !v)}
         style={{
           width: "100%",
           display: "flex",
@@ -5199,7 +5255,7 @@ function WorkflowAgentRow({ a }: { a: WorkflowRun["agents"][number] }) {
           padding: "7px 10px",
           background: "transparent",
           border: "none",
-          cursor: hasDetail ? "pointer" : "default",
+          cursor: expandable ? "pointer" : "default",
           textAlign: "left",
           color: "inherit",
           flexWrap: "wrap",
@@ -5240,7 +5296,7 @@ function WorkflowAgentRow({ a }: { a: WorkflowRun["agents"][number] }) {
           {dur && <WfMiniStat icon={<Clock size={10} />} value={dur} />}
           {a.tokens !== undefined && <WfMiniStat value={`${formatTokens(a.tokens)} tok`} />}
           {a.toolCalls !== undefined && <WfMiniStat icon={<Wrench size={10} />} value={`${a.toolCalls}`} />}
-          {hasDetail && (
+          {expandable && (
             <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>
               {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
             </span>
@@ -5262,23 +5318,93 @@ function WorkflowAgentRow({ a }: { a: WorkflowRun["agents"][number] }) {
           → {a.lastToolSummary}
         </div>
       )}
-      {open && hasDetail && (
-        <div style={{ padding: "0 10px 10px 25px", display: "flex", flexDirection: "column", gap: 8 }}>
-          {a.promptPreview && (
+      {open && (
+        <div style={{ padding: "0 10px 10px 25px", display: "flex", flexDirection: "column", gap: 10 }}>
+          {prompt && (
             <div>
-              <div style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--af-text-tertiary)", marginBottom: 3 }}>
-                Task
-              </div>
+              <AgentSectionLabel>Task{detail ? "" : a.promptPreview ? " (preview)" : ""}</AgentSectionLabel>
               <div style={{ fontSize: 11.5, color: "var(--af-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                {a.promptPreview}
+                {prompt}
               </div>
             </div>
           )}
-          {a.resultPreview && (
+
+          {/* Full ordered step list — every tool the agent invoked. */}
+          {loading && (
+            <div style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
+              Loading full steps…
+            </div>
+          )}
+          {detail && detail.steps.length > 0 && (
             <div>
-              <div style={{ fontSize: 9.5, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--af-text-tertiary)", marginBottom: 3 }}>
-                Result
+              <AgentSectionLabel>
+                Steps ({detail.steps.length})
+                {detail.toolCalls.length > 0 && (
+                  <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, marginLeft: 8, opacity: 0.8 }}>
+                    {detail.toolCalls.slice(0, 6).map((t) => `${shortenToolName(t.name)} ×${t.count}`).join("  ·  ")}
+                  </span>
+                )}
+              </AgentSectionLabel>
+              <div
+                style={{
+                  border: "1px solid var(--af-border-subtle)",
+                  borderRadius: 6,
+                  maxHeight: 320,
+                  overflowY: "auto",
+                  background: "var(--af-surface)",
+                }}
+              >
+                {detail.steps.map((s) => (
+                  <div
+                    key={s.index}
+                    style={{
+                      display: "flex",
+                      alignItems: "baseline",
+                      gap: 8,
+                      padding: "3px 10px",
+                      borderTop: s.index === 1 ? "none" : "1px solid var(--af-border-subtle)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                    }}
+                  >
+                    <span style={{ color: "var(--af-text-tertiary)", minWidth: 26, textAlign: "right", flexShrink: 0 }}>
+                      {s.index}
+                    </span>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: s.isError ? "#EF4444" : "var(--af-text)",
+                        flexShrink: 0,
+                        minWidth: 96,
+                      }}
+                    >
+                      {s.isError ? "⚠ " : ""}{shortenToolName(s.tool)}
+                    </span>
+                    <span
+                      style={{
+                        color: "var(--af-text-tertiary)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={s.preview}
+                    >
+                      {s.preview}
+                    </span>
+                  </div>
+                ))}
               </div>
+            </div>
+          )}
+          {failed && (
+            <div style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
+              Full transcript unavailable — showing the journal summary.
+            </div>
+          )}
+
+          {finalText && (
+            <div>
+              <AgentSectionLabel>Result{detail ? "" : a.resultPreview ? " (preview)" : ""}</AgentSectionLabel>
               <div
                 style={{
                   fontFamily: "var(--font-mono)",
@@ -5291,16 +5417,33 @@ function WorkflowAgentRow({ a }: { a: WorkflowRun["agents"][number] }) {
                   border: "1px solid var(--af-border-subtle)",
                   borderRadius: 4,
                   padding: "6px 8px",
-                  maxHeight: 200,
+                  maxHeight: 240,
                   overflowY: "auto",
                 }}
               >
-                {a.resultPreview}
+                {finalText}
               </div>
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function AgentSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 9.5,
+        fontWeight: 600,
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+        color: "var(--af-text-tertiary)",
+        marginBottom: 3,
+      }}
+    >
+      {children}
     </div>
   );
 }
