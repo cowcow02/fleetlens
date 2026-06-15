@@ -5258,7 +5258,7 @@ function WorkflowPhaseTabs({
 type WfAgentDetail = {
   prompt?: string;
   finalText?: string;
-  steps: { index: number; tool: string; preview: string; isError?: boolean }[];
+  steps: { index: number; tool: string; preview: string; full?: string; isError?: boolean }[];
   toolCalls: { name: string; count: number }[];
   toolCallCount: number;
   assistantMessageCount: number;
@@ -5459,77 +5459,43 @@ function WorkflowAgentDrawer({
         {tok !== undefined && <span>· {formatTokens(tok)} tok</span>}
       </div>
 
-      {/* Body */}
-      <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-        {prompt && (
-          <div>
-            <AgentSectionLabel>Task{detail ? "" : " (preview)"}</AgentSectionLabel>
-            <div style={{ fontSize: 12, color: "var(--af-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-              {prompt}
-            </div>
-          </div>
-        )}
-
+      {/* Body — each section collapsed by default; click to expand. */}
+      <div style={{ padding: "12px 18px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
         {loading && (
           <div style={{ fontSize: 11.5, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
             Loading full transcript…
           </div>
         )}
-
-        {detail && detail.steps.length > 0 && (
-          <div>
-            <AgentSectionLabel>
-              Steps ({detail.steps.length})
-              {detail.toolCalls.length > 0 && (
-                <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, marginLeft: 8, opacity: 0.8 }}>
-                  {detail.toolCalls.slice(0, 8).map((t) => `${shortenToolName(t.name)} ×${t.count}`).join("  ·  ")}
-                </span>
-              )}
-            </AgentSectionLabel>
-            <div style={{ border: "1px solid var(--af-border-subtle)", borderRadius: 6, background: "var(--af-surface)" }}>
-              {detail.steps.map((s) => (
-                <div
-                  key={s.index}
-                  style={{
-                    display: "flex",
-                    alignItems: "baseline",
-                    gap: 8,
-                    padding: "4px 10px",
-                    borderTop: s.index === 1 ? "none" : "1px solid var(--af-border-subtle)",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 11,
-                  }}
-                >
-                  <span style={{ color: "var(--af-text-tertiary)", minWidth: 28, textAlign: "right", flexShrink: 0 }}>
-                    {s.index}
-                  </span>
-                  <span
-                    style={{ fontWeight: 600, color: s.isError ? "#EF4444" : "var(--af-text)", flexShrink: 0, minWidth: 104 }}
-                  >
-                    {s.isError ? "⚠ " : ""}
-                    {shortenToolName(s.tool)}
-                  </span>
-                  <span
-                    style={{ color: "var(--af-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                    title={s.preview}
-                  >
-                    {s.preview}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {failed && (
           <div style={{ fontSize: 11.5, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
             Full transcript unavailable — showing the journal summary.
           </div>
         )}
 
+        {prompt && (
+          <DrawerCollapsible title="Task" hint={detail ? undefined : "preview"}>
+            <div style={{ fontSize: 12, color: "var(--af-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+              {prompt}
+            </div>
+          </DrawerCollapsible>
+        )}
+
+        {detail && detail.steps.length > 0 && (
+          <DrawerCollapsible
+            title="Steps"
+            count={detail.steps.length}
+            hint={detail.toolCalls.slice(0, 6).map((t) => `${shortenToolName(t.name)} ×${t.count}`).join("  ·  ")}
+          >
+            <div style={{ border: "1px solid var(--af-border-subtle)", borderRadius: 6, background: "var(--af-surface)" }}>
+              {detail.steps.map((s) => (
+                <WorkflowStepRow key={s.index} s={s} />
+              ))}
+            </div>
+          </DrawerCollapsible>
+        )}
+
         {finalText && (
-          <div>
-            <AgentSectionLabel>Result{detail ? "" : " (preview)"}</AgentSectionLabel>
+          <DrawerCollapsible title="Result" hint={detail ? undefined : "preview"}>
             <div
               style={{
                 fontFamily: "var(--font-mono)",
@@ -5546,26 +5512,143 @@ function WorkflowAgentDrawer({
             >
               {finalText}
             </div>
-          </div>
+          </DrawerCollapsible>
         )}
       </div>
     </div>
   );
 }
 
-function AgentSectionLabel({ children }: { children: React.ReactNode }) {
+/** Collapsible section inside the agent sheet — default collapsed. */
+function DrawerCollapsible({
+  title,
+  count,
+  hint,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  count?: number;
+  hint?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div
-      style={{
-        fontSize: 9.5,
-        fontWeight: 600,
-        textTransform: "uppercase",
-        letterSpacing: "0.04em",
-        color: "var(--af-text-tertiary)",
-        marginBottom: 3,
-      }}
-    >
-      {children}
+    <div style={{ border: "1px solid var(--af-border-subtle)", borderRadius: 8, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "9px 12px",
+          background: open ? "var(--af-surface-subtle, rgba(120,115,108,0.05))" : "transparent",
+          border: "none",
+          cursor: "pointer",
+          textAlign: "left",
+          color: "inherit",
+        }}
+      >
+        <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--af-text-secondary)" }}>
+          {title}
+        </span>
+        {count !== undefined && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: "1px 7px",
+              borderRadius: 100,
+              background: "rgba(234,88,12,0.14)",
+              color: "#EA580C",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            {count}
+          </span>
+        )}
+        {hint && (
+          <span
+            style={{
+              marginLeft: "auto",
+              fontSize: 10.5,
+              color: "var(--af-text-tertiary)",
+              fontFamily: "var(--font-mono)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: 280,
+            }}
+          >
+            {hint}
+          </span>
+        )}
+      </button>
+      {open && <div style={{ padding: "0 12px 12px" }}>{children}</div>}
+    </div>
+  );
+}
+
+/** One step row — click to reveal the full tool input (e.g. the complete
+ *  multi-line bash command) when it's longer than the one-line preview. */
+function WorkflowStepRow({ s }: { s: WfAgentDetail["steps"][number] }) {
+  const [open, setOpen] = useState(false);
+  const expandable = !!s.full;
+  return (
+    <div style={{ borderTop: s.index === 1 ? "none" : "1px solid var(--af-border-subtle)" }}>
+      <div
+        onClick={() => expandable && setOpen((v) => !v)}
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 8,
+          padding: "4px 10px",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          cursor: expandable ? "pointer" : "default",
+        }}
+      >
+        <span style={{ color: "var(--af-text-tertiary)", minWidth: 28, textAlign: "right", flexShrink: 0 }}>
+          {s.index}
+        </span>
+        <span style={{ fontWeight: 600, color: s.isError ? "#EF4444" : "var(--af-text)", flexShrink: 0, minWidth: 104 }}>
+          {s.isError ? "⚠ " : ""}
+          {shortenToolName(s.tool)}
+        </span>
+        <span
+          style={{ flex: 1, color: "var(--af-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          title={s.preview}
+        >
+          {s.preview}
+        </span>
+        {expandable && (
+          <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex", flexShrink: 0 }}>
+            {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          </span>
+        )}
+      </div>
+      {open && s.full && (
+        <pre
+          style={{
+            margin: 0,
+            padding: "6px 10px 10px 40px",
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            color: "var(--af-text-secondary)",
+            background: "var(--af-surface-subtle, rgba(120,115,108,0.05))",
+            lineHeight: 1.5,
+          }}
+        >
+          {s.full}
+        </pre>
+      )}
     </div>
   );
 }

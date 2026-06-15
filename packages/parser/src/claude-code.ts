@@ -995,8 +995,11 @@ export type WorkflowAgentStep = {
   index: number;
   /** Tool name (Bash, Read, Edit, …). */
   tool: string;
-  /** Salient one-line preview of the tool input. */
+  /** Salient one-line preview of the tool input (collapsed-row display). */
   preview: string;
+  /** Full salient input, newlines preserved — the complete bash command, file
+   *  path, etc. Shown when a step is expanded. Capped to keep the payload sane. */
+  full?: string;
   /** True when the matching tool_result was an error. */
   isError?: boolean;
 };
@@ -1019,12 +1022,13 @@ export type WorkflowAgentDetail = {
   durationMs?: number;
 };
 
-/** Pull the most informative single field out of a tool_use input. */
-function previewToolInput(input: unknown): string {
+/** Pull the most informative field out of a tool_use input, untruncated and
+ *  with newlines preserved (e.g. a full multi-line bash command). */
+function salientToolInput(input: unknown): string {
   if (!input || typeof input !== "object") return "";
   const o = input as Record<string, unknown>;
   const pick = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : undefined);
-  const salient =
+  return (
     pick("command") ??
     pick("file_path") ??
     pick("path") ??
@@ -1034,8 +1038,8 @@ function previewToolInput(input: unknown): string {
     pick("query") ??
     pick("prompt") ??
     pick("old_string") ??
-    JSON.stringify(o);
-  return salient.replace(/\s+/g, " ").trim().slice(0, 160);
+    JSON.stringify(o)
+  );
 }
 
 /** Load the full transcript of one workflow-spawned agent and return its
@@ -1157,10 +1161,15 @@ export async function loadWorkflowAgentDetail(
         toolCounts.set(b.name, (toolCounts.get(b.name) ?? 0) + 1);
         // Defensive cap — a runaway agent shouldn't ship 10k step rows.
         if (steps.length < 2000) {
+          const salient = salientToolInput(b.input);
+          const preview = salient.replace(/\s+/g, " ").trim().slice(0, 160);
+          const full = salient.length > 4000 ? salient.slice(0, 4000) + "…" : salient;
           steps.push({
             index: steps.length + 1,
             tool: b.name,
-            preview: previewToolInput(b.input),
+            preview,
+            // Only carry `full` when it adds something over the one-line preview.
+            full: full.length > preview.length || full.includes("\n") ? full : undefined,
             isError: typeof b.id === "string" && errored.has(b.id),
           });
         }

@@ -301,7 +301,7 @@ describe("workflow journals", () => {
           id: "m1", model: "claude-opus-4-8[1m]", role: "assistant",
           usage: { input_tokens: 100, output_tokens: 20 },
           content: [
-            { type: "tool_use", id: "t1", name: "Bash", input: { command: "git fetch origin" } },
+            { type: "tool_use", id: "t1", name: "Bash", input: { command: "git fetch origin\ngit log --oneline -3\necho done" } },
             { type: "tool_use", id: "t2", name: "Read", input: { file_path: "/repo/src/foo.ts" } },
           ],
         },
@@ -329,6 +329,11 @@ describe("workflow journals", () => {
     expect(d).not.toBeNull();
     expect(d!.steps.map((s) => s.tool)).toEqual(["Bash", "Read", "Edit"]);
     expect(d!.steps[0].preview).toContain("git fetch origin");
+    // preview is one-line/truncated; full keeps the complete multi-line command.
+    expect(d!.steps[0].preview).not.toContain("\n");
+    expect(d!.steps[0].full).toContain("git fetch origin\ngit log --oneline -3\necho done");
+    // a short single-line input carries no separate `full`.
+    expect(d!.steps.find((s) => s.tool === "Read")!.full).toBeUndefined();
     expect(d!.steps.find((s) => s.tool === "Read")!.isError).toBe(true); // matched tool_result.is_error
     expect(d!.steps.find((s) => s.tool === "Bash")!.isError).toBeFalsy();
     expect(d!.toolCallCount).toBe(3);
