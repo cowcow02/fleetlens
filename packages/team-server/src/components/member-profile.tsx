@@ -68,7 +68,10 @@ export function MemberProfile({
           style={{ cursor: "pointer", listStyle: "revert" }}
         >
           <h2 style={{ display: "inline" }}>Daily breakdown</h2>
-          <span className="kicker"> · per-day numbers · click to expand</span>
+          {/* Sessions here is per-day: a session that ran past midnight counts on
+              each day, so this column can sum higher than the unique 30-day
+              "sessions" total in the header above. */}
+          <span className="kicker"> · per-day numbers (a multi-day session counts on each day) · click to expand</span>
         </summary>
         {rollups.length === 0 ? (
           <div style={{ color: "var(--mute)", fontSize: 13, padding: "24px 0" }}>No data.</div>
