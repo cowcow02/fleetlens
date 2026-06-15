@@ -4,7 +4,13 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
-## [0.12.2] — 2026-06-10
+## [0.12.3] — 2026-06-15
+
+### Fixed
+- **Per-day breakdowns no longer show "agent time but 0 tokens / 0 sessions" on days that continue an overnight session.** A session that ran past midnight had its agent time split across calendar days but its tokens, tool calls and session count pinned to the start day, so each continuation day rendered as active-but-empty. Daily rollups now attribute tokens/tool-calls/turns to the day each event actually happened and count the session on every day it touched.
+
+### Added
+- **`unique_sessions` metric (expand migration `0009`).** Because the per-day `sessions` column is now "session-days" (a cross-midnight session counts on each day it touched), a new `unique_sessions` column carries the start-day count so roster/member-header totals, the L0–L4 maturity classifier, and the momentum/volume trends keep exact unique-session semantics. Nullable and read via `COALESCE(unique_sessions, sessions)`, so rows ingested by older CLIs fall back cleanly. Zero-downtime `ADD COLUMN` — safe to apply under the previous server revision.
 
 ### Fixed
 - **Update check could not see new releases.** The GHCR tags list is paginated at 100 tags (creation order, newest last); the checker read only the first page, so "Check for updates" froze at an old version (v0.10.0) and never offered anything newer. The checker now follows the pagination chain. **Instances running ≤ 0.12.1 carry the broken checker and need one manual redeploy to this version; self-update works again afterward.**
