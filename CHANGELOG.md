@@ -4,6 +4,14 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.12.1] — 2026-06-15
+
+### Fixed
+- **Per-day metrics for cross-midnight sessions.** A session that ran past midnight had its agent time split across calendar days but its tokens, tool calls, turns, and session count pinned to the start day — so on the dashboard (and team rollups) the continuation days showed agent time with 0 tokens / 0 sessions. Each tool call, turn, and token is now attributed to the day its own event happened, and a session counts on every local day it worked. The split is sum-preserving (totals are unchanged) and keeps `sum(per-day tokens) === session total` even across subagents that run past midnight.
+
+### Changed
+- **Team push carries a `unique_sessions` count.** Because the per-day `sessions` figure is now "session-days" (a cross-midnight session counts on each day it touched), the daemon also pushes the start-day count so the team-server's roster/header/maturity aggregates keep exact unique-session semantics. Requires team-server ≥ 0.12.3; older servers ignore the extra field.
+
 ## [0.12.0] — 2026-06-15
 
 ### Added
