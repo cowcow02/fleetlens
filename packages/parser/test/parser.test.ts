@@ -94,6 +94,38 @@ describe("parseTranscript", () => {
     expect(meta.totalUsage.cacheRead).toBe(5000);
   });
 
+  it("splits dailyBreakdown across local days by each event's timestamp", () => {
+    // Built from local-time Date objects so the test is timezone-independent.
+    const lateNight = new Date(2026, 5, 1, 23, 30, 0, 0).toISOString(); // Jun 1 23:30 local
+    const afterMidnight = new Date(2026, 5, 2, 0, 30, 0, 0).toISOString(); // Jun 2 00:30 local
+    const lines = [
+      makeUser("night work", lateNight, "u1"),
+      makeAssistantTool("Bash", { command: "ls" }, lateNight, { messageId: "mt1" }),
+      makeAssistantText("done", lateNight, {
+        messageId: "m1",
+        usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100, cache_creation_input_tokens: 20 },
+      }),
+      makeUser("more", afterMidnight, "u2"),
+      makeAssistantTool("Read", { file_path: "x" }, afterMidnight, { messageId: "mt2" }),
+      makeAssistantText("ok", afterMidnight, {
+        messageId: "m2",
+        usage: { input_tokens: 50, output_tokens: 25, cache_read_input_tokens: 500, cache_creation_input_tokens: 80 },
+      }),
+    ];
+    const { meta } = parseTranscript(lines);
+    const bd = meta.dailyBreakdown!;
+    expect(bd.map((d) => d.day)).toEqual(["2026-06-01", "2026-06-02"]);
+    const d1 = bd.find((d) => d.day === "2026-06-01")!;
+    const d2 = bd.find((d) => d.day === "2026-06-02")!;
+    expect(d1).toMatchObject({ toolCalls: 1, turns: 1, tokens: { input: 10, output: 5, cacheRead: 100, cacheWrite: 20 } });
+    expect(d2).toMatchObject({ toolCalls: 1, turns: 1, tokens: { input: 50, output: 25, cacheRead: 500, cacheWrite: 80 } });
+    // Sum-preserving: the per-day split equals the session totals exactly.
+    expect(d1.toolCalls + d2.toolCalls).toBe(meta.toolCallCount);
+    expect(d1.turns + d2.turns).toBe(meta.turnCount);
+    expect(d1.tokens.input + d2.tokens.input).toBe(meta.totalUsage.input);
+    expect(d1.tokens.cacheRead + d2.tokens.cacheRead).toBe(meta.totalUsage.cacheRead);
+  });
+
   it("computes tOffsetMs relative to earliest timestamp", () => {
     // Attachment comes first in JSONL but has a later timestamp.
     const lines = [

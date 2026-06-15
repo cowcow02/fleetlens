@@ -13,7 +13,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseTranscript } from "./parser.js";
-import { worktreeName, projectRepoName } from "./analytics.js";
+import { worktreeName, projectRepoName, toLocalDay } from "./analytics.js";
 import { groupByTeam, type TeamView } from "./team.js";
 import type {
   AgentKind,
@@ -263,11 +263,16 @@ const BLANK_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 /** Aggregate token usage from raw JSONL lines. Shares a dedup set so the
  *  same message:requestId pair isn't double-counted across parent + subagent
- *  files (matches ccusage's approach). */
+ *  files (matches ccusage's approach). When `perDay` is supplied, each
+ *  message's tokens are also bucketed by the local day of its own timestamp
+ *  (falling back to `fallbackDay`) so the per-day split sums to the same total
+ *  — subagent tokens included, even when a subagent ran past midnight. */
 function aggregateUsageFromLines(
   lines: unknown[],
   seenKeys: Set<string>,
   usage: Usage,
+  perDay?: Map<string, Usage>,
+  fallbackDay?: string,
 ): void {
   for (const raw of lines) {
     if (!raw || typeof raw !== "object") continue;
@@ -283,10 +288,34 @@ function aggregateUsageFromLines(
     const u = m.usage as Record<string, unknown> | undefined;
     if (u) {
       const toNum = (v: unknown) => (typeof v === "number" ? v : 0);
-      usage.input += toNum(u.input_tokens);
-      usage.output += toNum(u.output_tokens);
-      usage.cacheRead += toNum(u.cache_read_input_tokens);
-      usage.cacheWrite += toNum(u.cache_creation_input_tokens);
+      const inp = toNum(u.input_tokens);
+      const out = toNum(u.output_tokens);
+      const cr = toNum(u.cache_read_input_tokens);
+      const cw = toNum(u.cache_creation_input_tokens);
+      usage.input += inp;
+      usage.output += out;
+      usage.cacheRead += cr;
+      usage.cacheWrite += cw;
+      if (perDay) {
+        let day: string | undefined;
+        const ts = typeof r.timestamp === "string" ? r.timestamp : undefined;
+        if (ts) {
+          const ms = Date.parse(ts);
+          if (!Number.isNaN(ms)) day = toLocalDay(ms);
+        }
+        day = day ?? fallbackDay;
+        if (day) {
+          let d = perDay.get(day);
+          if (!d) {
+            d = { ...BLANK_USAGE };
+            perDay.set(day, d);
+          }
+          d.input += inp;
+          d.output += out;
+          d.cacheRead += cr;
+          d.cacheWrite += cw;
+        }
+      }
     }
   }
 }
@@ -295,33 +324,55 @@ async function computeSessionUsageWithSubagents(
   parentLines: unknown[],
   projectDirPath: string,
   sessionId: string,
-): Promise<Usage> {
+  fallbackDay?: string,
+): Promise<{ usage: Usage; perDay: Map<string, Usage> }> {
   const usage: Usage = { ...BLANK_USAGE };
   const seenKeys = new Set<string>();
+  const perDay = new Map<string, Usage>();
 
-  aggregateUsageFromLines(parentLines, seenKeys, usage);
+  aggregateUsageFromLines(parentLines, seenKeys, usage, perDay, fallbackDay);
 
   const subagentsDir = path.join(projectDirPath, sessionId, "subagents");
   let entries: string[];
   try {
     entries = await fs.readdir(subagentsDir);
   } catch {
-    return usage;
+    return { usage, perDay };
   }
   const jsonlFiles = entries.filter((f) => f.endsWith(".jsonl"));
-  if (jsonlFiles.length === 0) return usage;
+  if (jsonlFiles.length === 0) return { usage, perDay };
 
   await Promise.all(
     jsonlFiles.map(async (f) => {
       try {
         const lines = await readJsonlFile(path.join(subagentsDir, f));
-        aggregateUsageFromLines(lines, seenKeys, usage);
+        aggregateUsageFromLines(lines, seenKeys, usage, perDay, fallbackDay);
       } catch {
         /* skip unreadable files */
       }
     }),
   );
-  return usage;
+  return { usage, perDay };
+}
+
+/** Rebuild dailyBreakdown so each day's tokens come from the subagent-inclusive
+ *  per-day map (keeping the parent-derived toolCalls/turns). Union of both day
+ *  sets: a day with only subagent activity still appears; a day with tool calls
+ *  but no assistant usage keeps its counts with zero tokens. */
+function mergeDailyTokens(
+  base: SessionMeta["dailyBreakdown"],
+  perDayTokens: Map<string, Usage>,
+): SessionMeta["dailyBreakdown"] {
+  const counts = new Map((base ?? []).map((d) => [d.day, d]));
+  const days = new Set<string>([...counts.keys(), ...perDayTokens.keys()]);
+  return [...days]
+    .sort((a, b) => a.localeCompare(b))
+    .map((day) => ({
+      day,
+      toolCalls: counts.get(day)?.toolCalls ?? 0,
+      turns: counts.get(day)?.turns ?? 0,
+      tokens: perDayTokens.get(day) ?? { ...BLANK_USAGE },
+    }));
 }
 
 type WorkflowAggregate = {
@@ -412,13 +463,22 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
     const { meta } = parseTranscript(rawLines);
 
     // Recompute usage with parent + subagent dedup so totals match ccusage.
+    // The per-day map mirrors that same (deduped) set of lines, so we can
+    // overwrite dailyBreakdown's parent-only token split with the subagent-
+    // inclusive one without breaking the invariant sum(perDay) === totalUsage.
     const sessionId = sessionIdFromFileName(f.fileName);
     const projectDirPath = path.dirname(f.fullPath);
-    meta.totalUsage = await computeSessionUsageWithSubagents(
+    const fallbackDay = meta.firstTimestamp
+      ? toLocalDay(Date.parse(meta.firstTimestamp))
+      : undefined;
+    const { usage, perDay: perDayTokens } = await computeSessionUsageWithSubagents(
       rawLines,
       projectDirPath,
       sessionId,
+      fallbackDay,
     );
+    meta.totalUsage = usage;
+    meta.dailyBreakdown = mergeDailyTokens(meta.dailyBreakdown, perDayTokens);
 
     const wf = await scanWorkflowAggregate(projectDirPath, sessionId);
 

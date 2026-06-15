@@ -215,12 +215,29 @@ export function dailyActivity(sessions: SessionMeta[]): DailyBucket[] {
   };
 
   for (const s of sessions) {
-    // Session-level one-shot totals (tool calls, turns, usage, durationMs)
-    // are attributed to the day the session started. These are intrinsic
-    // to the session as a whole — splitting them across days would be
-    // both fiddly and misleading.
+    // Tool calls, turns, and tokens are attributed to the day each event
+    // actually happened (via the parser's per-event `dailyBreakdown`) so a
+    // cross-midnight session reports real usage on every calendar day it
+    // worked, not zeros on the continuation days. The split is sum-preserving
+    // — every event is counted exactly once, on its own day. durationMs stays
+    // on the start day (a whole-session figure, not meaningfully per-day).
+    //
+    // Fallback for sources without `dailyBreakdown` (codex/gemini/antigravity)
+    // or old cached metas: attribute the whole session's totals to its start
+    // day, the prior behavior.
     const startDay = sessionDay(s);
-    if (startDay) {
+    if (s.dailyBreakdown && s.dailyBreakdown.length > 0) {
+      for (const d of s.dailyBreakdown) {
+        const bucket = touchBucket(d.day);
+        bucket.toolCalls += d.toolCalls;
+        bucket.turns += d.turns;
+        bucket.tokens.input += d.tokens.input;
+        bucket.tokens.output += d.tokens.output;
+        bucket.tokens.cacheRead += d.tokens.cacheRead;
+        bucket.tokens.cacheWrite += d.tokens.cacheWrite;
+      }
+      if (startDay) touchBucket(startDay).durationMs += s.durationMs ?? 0;
+    } else if (startDay) {
       const bucket = touchBucket(startDay);
       bucket.toolCalls += s.toolCallCount ?? 0;
       bucket.turns += s.turnCount ?? 0;
