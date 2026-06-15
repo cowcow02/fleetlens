@@ -4,10 +4,16 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.12.0] — 2026-06-15
 
 ### Added
-- **Dynamic workflow runs.** Sessions that orchestrate work with the `Workflow` tool now surface the real fan-out a single tool call hides. Each session reads its `workflows/wf_*.json` journals and shows a **Workflows panel** (expandable cards with spawned-agent count, tool calls, tokens, duration, phases, and the progress log), a **fleet stat** in the session header (`N workflows · M agents`), **orange workflow lanes** on the timeline minimap, and a spawned-agent badge on session-list cards. Live updates as new workflow journals are written.
+- **Dynamic workflow visualization.** A single `Workflow` tool call collapses a whole fan-out — 200+ spawned agents — into one opaque transcript row. Fleetlens now reads the aggregate journals Claude Code persists per run and surfaces the real fleet work:
+  - **Workflows tab** on the session page (next to Transcript / Team / Debug) with a run-count badge. Each run is a card showing status, spawned-agent count, tool calls, tokens, and duration.
+  - **Fleet stat** in the session header (`N workflows · M agents`) plus a spawned-agent badge on session-list cards, so workflow-driven sessions stand out at a glance.
+  - **Per-phase action tabs** inside each run — the phases the workflow declared (e.g. Build / Panel / Skeptic / Merge), each listing the agents that ran in that phase.
+  - **Full per-agent step log.** Clicking an agent opens a right side-sheet with its Task, the complete ordered step list (every tool call — expand any step for the full multi-line command), and the Result. Loaded on demand so even 100+ step, 200+ agent sessions stay fast; sections are collapsed by default.
+  - **Workflow lanes** on the timeline minimap (distinct from subagent lanes); click a lane to open that run in the Workflows tab.
+- **Workflow execution counts as agent time.** A run's wall-clock span is folded into the session's "agent time" and carved out of the minimap idle bands, so the stretch where the parent waits on a workflow reads as active fleet work, not dead air.
 
 ## [0.11.2] — 2026-05-27
 
