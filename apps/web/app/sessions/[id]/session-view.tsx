@@ -95,6 +95,8 @@ const FILTER_MODES: { value: FilterMode; label: string }[] = [
 
 /** Drawer width in px — reserved on the transcript's right edge when open. */
 const DRAWER_WIDTH = 460;
+/** Wider sheet for the workflow-agent step log — dense step rows need room. */
+const WF_AGENT_DRAWER_WIDTH = 600;
 
 type TabId = "transcript" | "workflows" | "team" | "debug";
 const VALID_TABS: TabId[] = ["transcript", "workflows", "team", "debug"];
@@ -157,6 +159,11 @@ export function SessionView({
   /** Workflow run to focus (auto-expand + scroll) on the Workflows tab —
    *  set when a workflow lane on the minimap is clicked. */
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  /** Workflow agent whose full step log is open in the right side-sheet. */
+  const [selectedWorkflowAgent, setSelectedWorkflowAgent] = useState<{
+    runId: string;
+    agent: WorkflowRun["agents"][number];
+  } | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set());
   /** When a timeline click sets the index we also want to scroll. Track that
@@ -172,7 +179,10 @@ export function SessionView({
       setSelectedIndex(null);
       setSelectedSubagentId(null);
     }
-    if (tab !== "workflows") setSelectedWorkflowId(null);
+    if (tab !== "workflows") {
+      setSelectedWorkflowId(null);
+      setSelectedWorkflowAgent(null);
+    }
   }, [tab]);
 
   /** Measured height of the sticky header — used both as the drawer's
@@ -976,10 +986,21 @@ export function SessionView({
         ) : tab === "workflows" && hasWorkflows ? (
           <div style={{ paddingBottom: 24 }}>
             <WorkflowsPanel
-              sessionId={session.id}
               workflows={session.workflows!}
               spawnedAgentCount={session.spawnedAgentCount ?? 0}
               focusRunId={selectedWorkflowId}
+              selectedAgentKey={
+                selectedWorkflowAgent
+                  ? `${selectedWorkflowAgent.runId}:${selectedWorkflowAgent.agent.agentId ?? selectedWorkflowAgent.agent.index}`
+                  : null
+              }
+              onOpenAgent={(runId, agent) =>
+                setSelectedWorkflowAgent((cur) =>
+                  cur && cur.runId === runId && cur.agent.index === agent.index
+                    ? null
+                    : { runId, agent },
+                )
+              }
               onJumpToParent={jumpToToolUse}
             />
           </div>
@@ -1111,6 +1132,33 @@ export function SessionView({
           </aside>
         );
       })()}
+
+      {/* Workflow-agent step log — opens as a right side-sheet so the full
+          (often 100+ step) transcript doesn't make the Workflows tab huge. */}
+      {selectedWorkflowAgent && (
+        <aside
+          style={{
+            position: "fixed",
+            top: headerH,
+            right: 0,
+            bottom: 0,
+            width: WF_AGENT_DRAWER_WIDTH,
+            maxWidth: "100vw",
+            borderLeft: "1px solid var(--af-border-subtle)",
+            background: "var(--af-surface)",
+            overflowY: "auto",
+            zIndex: 28,
+            boxShadow: "-8px 0 24px rgba(15, 23, 42, 0.1)",
+          }}
+        >
+          <WorkflowAgentDrawer
+            sessionId={session.id}
+            runId={selectedWorkflowAgent.runId}
+            agent={selectedWorkflowAgent.agent}
+            onClose={() => setSelectedWorkflowAgent(null)}
+          />
+        </aside>
+      )}
 
       {/* Ask drawer */}
       {askOpen && (
@@ -4785,16 +4833,18 @@ function SubagentDrawer({
 /* ------------------------------------------------------------------ */
 
 function WorkflowsPanel({
-  sessionId,
   workflows,
   spawnedAgentCount,
   focusRunId,
+  selectedAgentKey,
+  onOpenAgent,
   onJumpToParent,
 }: {
-  sessionId: string;
   workflows: WorkflowRun[];
   spawnedAgentCount: number;
   focusRunId?: string | null;
+  selectedAgentKey?: string | null;
+  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
   onJumpToParent: (toolUseId?: string) => void;
 }) {
   const totalTokens = workflows.reduce((n, w) => n + w.totalTokens, 0);
@@ -4849,9 +4899,10 @@ function WorkflowsPanel({
         {workflows.map((w) => (
           <WorkflowCard
             key={w.runId}
-            sessionId={sessionId}
             w={w}
             focused={focusRunId === w.runId}
+            selectedAgentKey={selectedAgentKey}
+            onOpenAgent={onOpenAgent}
             onJumpToParent={onJumpToParent}
           />
         ))}
@@ -4861,14 +4912,16 @@ function WorkflowsPanel({
 }
 
 function WorkflowCard({
-  sessionId,
   w,
   focused = false,
+  selectedAgentKey,
+  onOpenAgent,
   onJumpToParent,
 }: {
-  sessionId: string;
   w: WorkflowRun;
   focused?: boolean;
+  selectedAgentKey?: string | null;
+  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
   onJumpToParent: (toolUseId?: string) => void;
 }) {
   const [open, setOpen] = useState(focused);
@@ -5007,7 +5060,11 @@ function WorkflowCard({
           </div>
 
           {w.agents.length > 0 ? (
-            <WorkflowPhaseTabs sessionId={sessionId} w={w} />
+            <WorkflowPhaseTabs
+              w={w}
+              selectedAgentKey={selectedAgentKey}
+              onOpenAgent={onOpenAgent}
+            />
           ) : (
             w.phases.length > 0 && (
               <div>
@@ -5068,7 +5125,15 @@ function agentStateColor(state?: string): string {
 
 /** Per-phase tabs for a workflow run. Each tab lists the agents (actions)
  *  that ran in that phase so you can review what actually happened. */
-function WorkflowPhaseTabs({ sessionId, w }: { sessionId: string; w: WorkflowRun }) {
+function WorkflowPhaseTabs({
+  w,
+  selectedAgentKey,
+  onOpenAgent,
+}: {
+  w: WorkflowRun;
+  selectedAgentKey?: string | null;
+  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
+}) {
   // Build the phase list from meta.phases (ordered), bucketing agents by
   // phaseIndex. Agents whose phaseIndex isn't in meta.phases fall into an
   // appended bucket keyed by their phaseTitle so nothing is dropped.
@@ -5173,9 +5238,9 @@ function WorkflowPhaseTabs({ sessionId, w }: { sessionId: string; w: WorkflowRun
               {activeGroup.agents.map((a) => (
                 <WorkflowAgentRow
                   key={`${a.index}-${a.agentId ?? a.label}`}
-                  sessionId={sessionId}
-                  runId={w.runId}
                   a={a}
+                  selected={selectedAgentKey === `${w.runId}:${a.agentId ?? a.index}`}
+                  onOpen={() => onOpenAgent(w.runId, a)}
                 />
               ))}
             </div>
@@ -5204,229 +5269,286 @@ type WfAgentDetail = {
 };
 
 function WorkflowAgentRow({
-  sessionId,
-  runId,
   a,
+  selected,
+  onOpen,
 }: {
-  sessionId: string;
-  runId: string;
   a: WorkflowRun["agents"][number];
+  selected: boolean;
+  onOpen: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [detail, setDetail] = useState<WfAgentDetail | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
-  // Expandable if we can fetch the full transcript (agentId) or at least have a
-  // journal preview to show.
-  const expandable = !!(a.agentId || a.promptPreview || a.resultPreview);
-
-  // Lazy-load the full transcript (steps + untruncated prompt/result) the first
-  // time the row is expanded — one agent at a time, never all up front.
-  useEffect(() => {
-    if (!open || detail || loading || failed || !a.agentId) return;
-    setLoading(true);
-    const url = `/api/workflow-agent?session=${encodeURIComponent(sessionId)}&run=${encodeURIComponent(runId)}&agent=${encodeURIComponent(a.agentId)}`;
-    fetch(url)
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((d: WfAgentDetail) => setDetail(d))
-      .catch(() => setFailed(true))
-      .finally(() => setLoading(false));
-  }, [open, detail, loading, failed, a.agentId, sessionId, runId]);
-
   const dur = a.durationMs !== undefined ? formatGap(a.durationMs) : undefined;
-  const prompt = detail?.prompt ?? a.promptPreview;
-  const finalText = detail?.finalText ?? a.resultPreview;
-
   return (
-    <div
+    <button
+      onClick={onOpen}
       style={{
-        border: "1px solid var(--af-border-subtle)",
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 10px",
+        textAlign: "left",
+        cursor: "pointer",
+        border: "1px solid",
+        borderColor: selected ? "#EA580C" : "var(--af-border-subtle)",
         borderRadius: 6,
-        background: "var(--af-surface-subtle, rgba(120,115,108,0.04))",
+        background: selected
+          ? "rgba(234,88,12,0.08)"
+          : "var(--af-surface-subtle, rgba(120,115,108,0.04))",
+        color: "inherit",
+        flexWrap: "wrap",
       }}
     >
-      <button
-        onClick={() => expandable && setOpen((v) => !v)}
+      <span
+        title={a.state}
+        style={{ width: 7, height: 7, borderRadius: "50%", background: agentStateColor(a.state), flexShrink: 0 }}
+      />
+      <span
         style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "7px 10px",
-          background: "transparent",
-          border: "none",
-          cursor: expandable ? "pointer" : "default",
-          textAlign: "left",
-          color: "inherit",
-          flexWrap: "wrap",
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          fontWeight: 600,
+          color: "var(--af-text)",
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          maxWidth: 280,
         }}
+        title={a.label}
       >
-        <span
-          title={a.state}
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: "50%",
-            background: agentStateColor(a.state),
-            flexShrink: 0,
-          }}
-        />
+        {a.label}
+      </span>
+      {a.model && (
+        <span style={{ fontSize: 10, color: "var(--af-text-tertiary)", fontFamily: "var(--font-mono)" }}>
+          {shortenModel(a.model)}
+        </span>
+      )}
+      {a.lastToolSummary && (
         <span
           style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 12,
-            fontWeight: 600,
-            color: "var(--af-text)",
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            maxWidth: 320,
-          }}
-          title={a.label}
-        >
-          {a.label}
-        </span>
-        {a.model && (
-          <span style={{ fontSize: 10, color: "var(--af-text-tertiary)", fontFamily: "var(--font-mono)" }}>
-            {shortenModel(a.model)}
-          </span>
-        )}
-        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 10 }}>
-          {dur && <WfMiniStat icon={<Clock size={10} />} value={dur} />}
-          {a.tokens !== undefined && <WfMiniStat value={`${formatTokens(a.tokens)} tok`} />}
-          {a.toolCalls !== undefined && <WfMiniStat icon={<Wrench size={10} />} value={`${a.toolCalls}`} />}
-          {expandable && (
-            <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>
-              {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-            </span>
-          )}
-        </span>
-      </button>
-      {a.lastToolSummary && !open && (
-        <div
-          style={{
-            padding: "0 10px 8px 25px",
             fontSize: 11,
             color: "var(--af-text-tertiary)",
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
+            maxWidth: 240,
           }}
           title={a.lastToolSummary}
         >
           → {a.lastToolSummary}
-        </div>
+        </span>
       )}
-      {open && (
-        <div style={{ padding: "0 10px 10px 25px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {prompt && (
-            <div>
-              <AgentSectionLabel>Task{detail ? "" : a.promptPreview ? " (preview)" : ""}</AgentSectionLabel>
-              <div style={{ fontSize: 11.5, color: "var(--af-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                {prompt}
-              </div>
-            </div>
-          )}
+      <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        {dur && <WfMiniStat icon={<Clock size={10} />} value={dur} />}
+        {a.tokens !== undefined && <WfMiniStat value={`${formatTokens(a.tokens)} tok`} />}
+        {a.toolCalls !== undefined && <WfMiniStat icon={<Wrench size={10} />} value={`${a.toolCalls}`} />}
+        <span style={{ color: selected ? "#EA580C" : "var(--af-text-tertiary)", display: "inline-flex" }}>
+          <ChevronRight size={14} />
+        </span>
+      </span>
+    </button>
+  );
+}
 
-          {/* Full ordered step list — every tool the agent invoked. */}
-          {loading && (
-            <div style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
-              Loading full steps…
+/** Right side-sheet showing one workflow agent's full transcript — Task,
+ *  ordered Steps, and Result — fetched on demand. Kept out of the card so the
+ *  Workflows tab stays short even for 100+ step agents. */
+function WorkflowAgentDrawer({
+  sessionId,
+  runId,
+  agent,
+  onClose,
+}: {
+  sessionId: string;
+  runId: string;
+  agent: WorkflowRun["agents"][number];
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<WfAgentDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setDetail(null);
+    setFailed(false);
+    if (!agent.agentId) return;
+    setLoading(true);
+    const ctrl = new AbortController();
+    const url = `/api/workflow-agent?session=${encodeURIComponent(sessionId)}&run=${encodeURIComponent(runId)}&agent=${encodeURIComponent(agent.agentId)}`;
+    fetch(url, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((d: WfAgentDetail) => setDetail(d))
+      .catch((e) => {
+        if (e?.name !== "AbortError") setFailed(true);
+      })
+      .finally(() => setLoading(false));
+    return () => ctrl.abort();
+  }, [sessionId, runId, agent.agentId]);
+
+  const prompt = detail?.prompt ?? agent.promptPreview;
+  const finalText = detail?.finalText ?? agent.resultPreview;
+  const dur = detail?.durationMs ?? agent.durationMs;
+  const model = detail?.model ?? agent.model;
+  const toolCount = detail?.toolCallCount ?? agent.toolCalls;
+  const tok = detail ? detail.totalUsage.input + detail.totalUsage.output : agent.tokens;
+
+  return (
+    <div>
+      {/* Sticky title bar */}
+      <div
+        style={{
+          padding: "14px 18px",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          background: "var(--af-surface)",
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+        }}
+      >
+        <span
+          title={agent.state}
+          style={{ width: 8, height: 8, borderRadius: "50%", background: agentStateColor(agent.state), flexShrink: 0 }}
+        />
+        <span
+          style={{
+            fontSize: 13.5,
+            fontWeight: 600,
+            fontFamily: "var(--font-mono)",
+            color: "var(--af-text)",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={agent.label}
+        >
+          {agent.label}
+        </span>
+        <button
+          onClick={onClose}
+          style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--af-text-tertiary)", padding: 4 }}
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Meta strip */}
+      <div
+        style={{
+          padding: "9px 18px",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        {agent.phaseTitle && <span>phase {agent.phaseTitle}</span>}
+        {agent.state && <span>· {agent.state}</span>}
+        {model && <span>· {shortenModel(model)}</span>}
+        {dur !== undefined && <span>· {formatGap(dur)}</span>}
+        {toolCount !== undefined && <span>· {toolCount} tools</span>}
+        {tok !== undefined && <span>· {formatTokens(tok)} tok</span>}
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
+        {prompt && (
+          <div>
+            <AgentSectionLabel>Task{detail ? "" : " (preview)"}</AgentSectionLabel>
+            <div style={{ fontSize: 12, color: "var(--af-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+              {prompt}
             </div>
-          )}
-          {detail && detail.steps.length > 0 && (
-            <div>
-              <AgentSectionLabel>
-                Steps ({detail.steps.length})
-                {detail.toolCalls.length > 0 && (
-                  <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, marginLeft: 8, opacity: 0.8 }}>
-                    {detail.toolCalls.slice(0, 6).map((t) => `${shortenToolName(t.name)} ×${t.count}`).join("  ·  ")}
+          </div>
+        )}
+
+        {loading && (
+          <div style={{ fontSize: 11.5, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
+            Loading full transcript…
+          </div>
+        )}
+
+        {detail && detail.steps.length > 0 && (
+          <div>
+            <AgentSectionLabel>
+              Steps ({detail.steps.length})
+              {detail.toolCalls.length > 0 && (
+                <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0, marginLeft: 8, opacity: 0.8 }}>
+                  {detail.toolCalls.slice(0, 8).map((t) => `${shortenToolName(t.name)} ×${t.count}`).join("  ·  ")}
+                </span>
+              )}
+            </AgentSectionLabel>
+            <div style={{ border: "1px solid var(--af-border-subtle)", borderRadius: 6, background: "var(--af-surface)" }}>
+              {detail.steps.map((s) => (
+                <div
+                  key={s.index}
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: 8,
+                    padding: "4px 10px",
+                    borderTop: s.index === 1 ? "none" : "1px solid var(--af-border-subtle)",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                  }}
+                >
+                  <span style={{ color: "var(--af-text-tertiary)", minWidth: 28, textAlign: "right", flexShrink: 0 }}>
+                    {s.index}
                   </span>
-                )}
-              </AgentSectionLabel>
-              <div
-                style={{
-                  border: "1px solid var(--af-border-subtle)",
-                  borderRadius: 6,
-                  maxHeight: 320,
-                  overflowY: "auto",
-                  background: "var(--af-surface)",
-                }}
-              >
-                {detail.steps.map((s) => (
-                  <div
-                    key={s.index}
-                    style={{
-                      display: "flex",
-                      alignItems: "baseline",
-                      gap: 8,
-                      padding: "3px 10px",
-                      borderTop: s.index === 1 ? "none" : "1px solid var(--af-border-subtle)",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
-                    }}
+                  <span
+                    style={{ fontWeight: 600, color: s.isError ? "#EF4444" : "var(--af-text)", flexShrink: 0, minWidth: 104 }}
                   >
-                    <span style={{ color: "var(--af-text-tertiary)", minWidth: 26, textAlign: "right", flexShrink: 0 }}>
-                      {s.index}
-                    </span>
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        color: s.isError ? "#EF4444" : "var(--af-text)",
-                        flexShrink: 0,
-                        minWidth: 96,
-                      }}
-                    >
-                      {s.isError ? "⚠ " : ""}{shortenToolName(s.tool)}
-                    </span>
-                    <span
-                      style={{
-                        color: "var(--af-text-tertiary)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={s.preview}
-                    >
-                      {s.preview}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                    {s.isError ? "⚠ " : ""}
+                    {shortenToolName(s.tool)}
+                  </span>
+                  <span
+                    style={{ color: "var(--af-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={s.preview}
+                  >
+                    {s.preview}
+                  </span>
+                </div>
+              ))}
             </div>
-          )}
-          {failed && (
-            <div style={{ fontSize: 11, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
-              Full transcript unavailable — showing the journal summary.
-            </div>
-          )}
+          </div>
+        )}
 
-          {finalText && (
-            <div>
-              <AgentSectionLabel>Result{detail ? "" : a.resultPreview ? " (preview)" : ""}</AgentSectionLabel>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 11,
-                  color: "var(--af-text-secondary)",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  lineHeight: 1.5,
-                  background: "var(--af-surface)",
-                  border: "1px solid var(--af-border-subtle)",
-                  borderRadius: 4,
-                  padding: "6px 8px",
-                  maxHeight: 240,
-                  overflowY: "auto",
-                }}
-              >
-                {finalText}
-              </div>
+        {failed && (
+          <div style={{ fontSize: 11.5, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
+            Full transcript unavailable — showing the journal summary.
+          </div>
+        )}
+
+        {finalText && (
+          <div>
+            <AgentSectionLabel>Result{detail ? "" : " (preview)"}</AgentSectionLabel>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--af-text-secondary)",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                lineHeight: 1.5,
+                background: "var(--af-surface)",
+                border: "1px solid var(--af-border-subtle)",
+                borderRadius: 4,
+                padding: "8px 10px",
+              }}
+            >
+              {finalText}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
