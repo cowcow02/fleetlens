@@ -355,10 +355,9 @@ async function computeSessionUsageWithSubagents(
   return { usage, perDay };
 }
 
-/** Rebuild dailyBreakdown so each day's tokens come from the subagent-inclusive
- *  per-day map (keeping the parent-derived toolCalls/turns). Union of both day
- *  sets: a day with only subagent activity still appears; a day with tool calls
- *  but no assistant usage keeps its counts with zero tokens. */
+/** Overwrite dailyBreakdown's parent-only token split with the subagent-
+ *  inclusive per-day map so sum(tokens) stays === totalUsage. Unions both day
+ *  sets so a day with only subagent token activity isn't dropped. */
 function mergeDailyTokens(
   base: SessionMeta["dailyBreakdown"],
   perDayTokens: Map<string, Usage>,

@@ -492,7 +492,8 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
   for (const e of events) {
     if (e.role === "tool-call") {
       toolCallCount++;
-      { const b = dayBucket(e.timestamp); if (b) b.toolCalls++; }
+      const tcDay = dayBucket(e.timestamp);
+      if (tcDay) tcDay.toolCalls++;
       // Count lines added/removed from Edit and Write tool calls.
       const toolBlock = e.blocks.find(
         (b) => b && (b as { type?: string }).type === "tool_use",
@@ -550,7 +551,8 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
             : e.preview;
         }
         turnCount++;
-        { const b = dayBucket(e.timestamp); if (b) b.turns++; }
+        const turnDay = dayBucket(e.timestamp);
+        if (turnDay) turnDay.turns++;
         // Track the most recent "real" user message so the live widget
         // can surface "what am I working on RIGHT NOW" instead of the
         // first thing asked in a long-running session.

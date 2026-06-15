@@ -110,6 +110,25 @@ describe("dailyActivity", () => {
     expect(b2.airTimeMs).toBeGreaterThan(0);
     expect(b2.tokens.input + b2.tokens.output + b2.tokens.cacheRead + b2.tokens.cacheWrite).toBe(650);
   });
+
+  it("counts a session on a token-only day even if active segments never reached it", () => {
+    // Mirror of the original bug: a subagent ran on Jun 2 while the parent's
+    // active segments only cover Jun 1. That day must not show tokens with 0
+    // sessions.
+    const startMs = new Date(2026, 5, 1, 10, 0, 0, 0).getTime();
+    const endMs = new Date(2026, 5, 1, 11, 0, 0, 0).getTime();
+    const s = mkMeta("orchestrator", "foo", new Date(startMs).toISOString(), new Date(endMs).toISOString(), {
+      activeSegments: [{ startMs, endMs }], // Jun 1 only
+      dailyBreakdown: [
+        { day: "2026-06-01", toolCalls: 2, turns: 1, tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } },
+        { day: "2026-06-02", toolCalls: 0, turns: 0, tokens: { input: 9000, output: 4000, cacheRead: 0, cacheWrite: 0 } },
+      ],
+    });
+    const buckets = dailyActivity([s]);
+    const b2 = buckets.find((b) => b.date === "2026-06-02")!;
+    expect(b2.tokens.input).toBe(9000);
+    expect(b2.sessions).toBe(1); // ← would be 0 without the union fix
+  });
 });
 
 describe("computeParallelism", () => {
