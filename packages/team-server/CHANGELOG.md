@@ -4,6 +4,12 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.13.0] — 2026-06-18
+
+### Added
+- **Jira Cloud integration** — a third delivery source alongside GitHub and Linear. Connect in team settings → Integrations with your Jira site, account email and an Atlassian API token; pick projects and map each to groups (same "counts toward" model as repos and Linear teams). Adds a **Ticket velocity · Jira** block to group insight reports (completed tickets, cycle/lead medians, WIP, and the share shipped via AI-assisted PRs), and feeds the **Work timeline** alongside Linear — both ticket sources union into one pickup→merge view. Jira has no native "started" timestamp, so cycle time is derived from the changelog's first transition into an In-Progress status; story points read from `customfield_10016`. Synced hourly, encrypted at rest, and pruned on the same per-team retention as the other integrations.
+- **Per-member CLI version on the roster.** Each member's daemon now reports its installed Fleetlens CLI version on every push; the roster cards and the member detail header show `CLI v<x.y.z>` so you can tell at a glance who's up to date (and who needs to upgrade). Nullable expand migration (`0010`) — members on a CLI that predates this show `CLI —` until they upgrade and re-push.
+
 ## [0.12.3] — 2026-06-15
 
 ### Fixed
@@ -11,6 +17,8 @@ CLI has its own log at the repo root `CHANGELOG.md`.
 
 ### Added
 - **`unique_sessions` metric (expand migration `0009`).** Because the per-day `sessions` column is now "session-days" (a cross-midnight session counts on each day it touched), a new `unique_sessions` column carries the start-day count so roster/member-header totals, the L0–L4 maturity classifier, and the momentum/volume trends keep exact unique-session semantics. Nullable and read via `COALESCE(unique_sessions, sessions)`, so rows ingested by older CLIs fall back cleanly. Zero-downtime `ADD COLUMN` — safe to apply under the previous server revision.
+
+## [0.12.2] — 2026-06-10
 
 ### Fixed
 - **Update check could not see new releases.** The GHCR tags list is paginated at 100 tags (creation order, newest last); the checker read only the first page, so "Check for updates" froze at an old version (v0.10.0) and never offered anything newer. The checker now follows the pagination chain. **Instances running ≤ 0.12.1 carry the broken checker and need one manual redeploy to this version; self-update works again afterward.**

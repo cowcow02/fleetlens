@@ -13,7 +13,7 @@ import { formatAgentTime, formatTokens } from "../../../../../lib/format";
 import { MemberProfile } from "../../../../../components/member-profile";
 import { MemberPlanBlock } from "../../../../../components/member-plan-block";
 import { canSeeMember, loadManagedMemberIds } from "../../../../../lib/visibility";
-import { RequestBackfillButton } from "./request-backfill-button";
+import { MemberAdminMenu } from "./member-admin-menu";
 
 export default async function MemberPage({
   params,
@@ -145,33 +145,35 @@ export default async function MemberPage({
               </div>
             )}
           </div>
-          {/* Identity-side metadata: role + joined date stay here, and
-              Plan + Daemon freshness slot in directly below them so all
-              "who is this seat" facts live together — no longer split
-              between two sections. */}
-          <div
-            className="profile-meta"
-            style={{ textAlign: "right", whiteSpace: "nowrap", lineHeight: 1.5 }}
-          >
-            <div>{member.role.toUpperCase()}</div>
-            <div>
-              JOINED{" "}
-              {new Date(member.joined_at)
-                .toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "2-digit",
-                  year: "numeric",
-                })
-                .toUpperCase()}
+          {/* Identity-side metadata (role, joined, plan, daemon, CLI) with the
+              admin overflow menu pinned to the far top-right. */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <div
+              className="profile-meta"
+              style={{ textAlign: "right", whiteSpace: "nowrap", lineHeight: 1.5 }}
+            >
+              <div>{member.role.toUpperCase()}</div>
+              <div>
+                JOINED{" "}
+                {new Date(member.joined_at)
+                  .toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "2-digit",
+                    year: "numeric",
+                  })
+                  .toUpperCase()}
+              </div>
+              <div style={{ marginTop: 6 }}>
+                {tier.monthlyPriceUsd > 0
+                  ? `${tier.label} · $${tier.monthlyPriceUsd}/mo`
+                  : tier.label}
+              </div>
+              <div style={{ color: daemonColor(planSummary.lastSeenAtMs) }}>
+                DAEMON · {daemonFreshness(planSummary.lastSeenAtMs)}
+              </div>
+              <div>CLI · {member.cli_version ? `v${member.cli_version}` : "—"}</div>
             </div>
-            <div style={{ marginTop: 6 }}>
-              {tier.monthlyPriceUsd > 0
-                ? `${tier.label} · $${tier.monthlyPriceUsd}/mo`
-                : tier.label}
-            </div>
-            <div style={{ color: daemonColor(planSummary.lastSeenAtMs) }}>
-              DAEMON · {daemonFreshness(planSummary.lastSeenAtMs)}
-            </div>
+            {isAdminOrStaff && <MemberAdminMenu membershipId={id} />}
           </div>
         </div>
 
@@ -199,34 +201,14 @@ export default async function MemberPage({
         </div>
       </header>
 
-      {/* ─── 2. ADMIN ACTIONS (only for staff or team admins) ───────── */}
-      {isAdminOrStaff && (
-        <section
-          style={{
-            padding: "16px 22px",
-            background: "var(--paper)",
-            border: "1px solid var(--rule)",
-            marginBottom: 18,
-          }}
-        >
-          <div
-            className="kicker"
-            style={{ marginBottom: 10, color: "var(--mute)" }}
-          >
-            ADMIN ACTIONS
-          </div>
-          <RequestBackfillButton membershipId={id} />
-        </section>
-      )}
-
-      {/* ─── 3. PLAN MATCH (verdict + cycle trend + throttling) ─────── */}
+      {/* ─── 2. PLAN MATCH (verdict + cycle trend + throttling) ─────── */}
       <MemberPlanBlock
         summary={planSummary}
         cyclePeaks={cyclePeaks}
         currentCycle={currentCycle}
       />
 
-      {/* ─── 4. DAILY ACTIVITY (per-day shape + drill-down table) ───── */}
+      {/* ─── 3. DAILY ACTIVITY (per-day shape + drill-down table) ───── */}
       <MemberProfile rollups={chartRollups} range={range} />
     </>
   );

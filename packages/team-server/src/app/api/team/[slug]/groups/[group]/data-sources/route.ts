@@ -4,8 +4,10 @@ import {
   getIntegration,
   normalizeGithubRepos,
   normalizeLinearTeams,
+  normalizeJiraProjects,
   type GithubRepoMapping,
   type LinearTeamMapping,
+  type JiraProjectMapping,
 } from "../../../../../../../lib/integrations";
 
 // Group-scoped view of the integration mappings: which repos / Linear teams
@@ -34,9 +36,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
   if (res instanceof NextResponse) return res;
   const { ctx, group } = res;
 
-  const [github, linear] = await Promise.all([
+  const [github, linear, jira] = await Promise.all([
     getIntegration(ctx.membership.team_id, "github", ctx.pool),
     getIntegration(ctx.membership.team_id, "linear", ctx.pool),
+    getIntegration(ctx.membership.team_id, "jira", ctx.pool),
   ]);
 
   return NextResponse.json({
@@ -46,6 +49,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ slug
     linear: linear
       ? { connected: true, teams: normalizeLinearTeams(linear.config).map((t) => ({ key: t.key, ...countsToward(t.group_ids, group.id) })) }
       : { connected: false, teams: [] },
+    jira: jira
+      ? { connected: true, projects: normalizeJiraProjects(jira.config).map((p) => ({ key: p.key, ...countsToward(p.group_ids, group.id) })) }
+      : { connected: false, projects: [] },
   });
 }
 
@@ -96,6 +102,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ slug
   const body = (await req.json()) as {
     github?: { name: string; counts: boolean }[];
     linear?: { key: string; counts: boolean }[];
+    jira?: { key: string; counts: boolean }[];
   };
 
   const allGroups = await ctx.pool.query<{ id: string }>(
@@ -133,6 +140,24 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ slug
       `UPDATE team_integrations
        SET config = (config - 'team_keys') || jsonb_build_object('teams', $2::jsonb)
        WHERE team_id = $1 AND provider = 'linear'`,
+      [ctx.membership.team_id, JSON.stringify(updated)],
+    );
+  }
+
+  if (body.jira?.length) {
+    const integ = await getIntegration(ctx.membership.team_id, "jira", ctx.pool);
+    if (!integ) return NextResponse.json({ error: "Jira integration not connected" }, { status: 400 });
+    const desired = new Map(body.jira.map((p) => [p.key, p.counts]));
+    const { updated, error } = applyDesired<JiraProjectMapping>(
+      normalizeJiraProjects(integ.config), desired, (p) => p.key, group.id, allGroupIds,
+    );
+    if (error) return NextResponse.json({ error }, { status: 400 });
+    // Writing 'projects' upgrades legacy project_keys configs in place; drop
+    // the stale key so the two never disagree.
+    await ctx.pool.query(
+      `UPDATE team_integrations
+       SET config = (config - 'project_keys') || jsonb_build_object('projects', $2::jsonb)
+       WHERE team_id = $1 AND provider = 'jira'`,
       [ctx.membership.team_id, JSON.stringify(updated)],
     );
   }

@@ -173,6 +173,16 @@ export async function processIngest(
       await client.query("UPDATE memberships SET last_seen_at = now() WHERE id = $1", [membershipId]);
     }
 
+    // Track the member's installed CLI version on every push (incl. dedup
+    // replays) so the roster reflects upgrades promptly. Only when reported —
+    // never overwrite a known version with null from an older client.
+    if (payload.cliVersion) {
+      await client.query("UPDATE memberships SET cli_version = $2 WHERE id = $1", [
+        membershipId,
+        payload.cliVersion,
+      ]);
+    }
+
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");

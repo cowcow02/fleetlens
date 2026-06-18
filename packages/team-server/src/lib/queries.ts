@@ -16,6 +16,7 @@ export type RosterRow = {
   role: string;
   joined_at: string;
   last_seen_at: string | null;
+  cli_version: string | null;
   range_agent_time_ms: string;
   range_sessions: number;
   range_tool_calls: number;
@@ -31,6 +32,7 @@ export type MemberRow = {
   role: string;
   joined_at: string;
   last_seen_at: string | null;
+  cli_version: string | null;
 };
 
 export type RollupRow = {
@@ -62,7 +64,7 @@ export function rangeStartIso(days: number, now = new Date()): string {
 export async function loadRoster(teamId: string, days: number, pool: pg.Pool): Promise<RosterRow[]> {
   const res = await pool.query(`
     SELECT
-      m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at,
+      m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at, m.cli_version,
       COALESCE(SUM(r.agent_time_ms), 0)::bigint AS range_agent_time_ms,
       COALESCE(SUM(COALESCE(r.unique_sessions, r.sessions)), 0)::int AS range_sessions,
       COALESCE(SUM(r.tool_calls), 0)::int AS range_tool_calls,
@@ -101,7 +103,7 @@ export async function loadMemberRollups(
 
 export async function loadMember(membershipId: string, pool: pg.Pool): Promise<MemberRow | null> {
   const res = await pool.query(
-    `SELECT m.id, m.team_id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at
+    `SELECT m.id, m.team_id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at, m.cli_version
      FROM memberships m JOIN user_accounts u ON u.id = m.user_account_id
      WHERE m.id = $1`,
     [membershipId]
@@ -114,7 +116,7 @@ export type GroupRosterRow = RosterRow & { is_manager: boolean };
 export async function loadGroupRoster(groupId: string, days: number, pool: pg.Pool): Promise<GroupRosterRow[]> {
   const res = await pool.query<GroupRosterRow>(`
     SELECT
-      m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at,
+      m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at, m.cli_version,
       gm.is_manager,
       COALESCE(SUM(r.agent_time_ms), 0)::bigint AS range_agent_time_ms,
       COALESCE(SUM(COALESCE(r.unique_sessions, r.sessions)), 0)::int AS range_sessions,

@@ -53,6 +53,10 @@ export const memberships = pgTable(
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     planTier: text("plan_tier").notNull().default("pro-max"),
+    // Installed Fleetlens CLI version of this member's daemon, reported on each
+    // ingest. Nullable — only populated once a member upgrades to a CLI that
+    // sends it; older clients leave it null.
+    cliVersion: text("cli_version"),
   },
   (t) => ({
     roleCheck: check("memberships_role_check", sql`${t.role} IN ('admin','member')`),
@@ -484,5 +488,35 @@ export const linearIssues = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.teamId, t.identifier] }),
     teamCompleted: index("idx_linear_issues_team_completed").on(t.teamId, sql`${t.completedAt} DESC`),
+  }),
+);
+
+// Issues synced from the Jira Cloud integration, upserted on every sync. Jira
+// has no native "started" timestamp, so started_at is derived from the
+// changelog's first transition into an In-Progress (statusCategory
+// "indeterminate") status. state_type reuses linear_issues' vocabulary
+// (unstarted|started|completed|canceled) so the shared velocity/work-timeline
+// aggregation treats both ticket sources uniformly.
+export const jiraIssues = pgTable(
+  "jira_issues",
+  {
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    identifier: text("identifier").notNull(), // e.g. ENG-315
+    title: text("title").notNull(),
+    stateName: text("state_name").notNull(),
+    stateType: text("state_type").notNull(),
+    jiraProjectKey: text("jira_project_key").notNull(),
+    assignee: text("assignee"),
+    estimate: integer("estimate"),
+    url: text("url"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    canceledAt: timestamp("canceled_at", { withTimezone: true }),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.teamId, t.identifier] }),
+    teamCompleted: index("idx_jira_issues_team_completed").on(t.teamId, sql`${t.completedAt} DESC`),
   }),
 );

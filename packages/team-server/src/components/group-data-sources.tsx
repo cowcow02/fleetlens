@@ -24,7 +24,8 @@ export function GroupDataSources({
 }) {
   const [github, setGithub] = useState<SourceRow[] | null>(null);
   const [linear, setLinear] = useState<SourceRow[] | null>(null);
-  const [connected, setConnected] = useState({ github: false, linear: false });
+  const [jira, setJira] = useState<SourceRow[] | null>(null);
+  const [connected, setConnected] = useState({ github: false, linear: false, jira: false });
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,18 +40,21 @@ export function GroupDataSources({
     const res = await fetch(`/api/team/${teamSlug}/groups/${groupSlug}/data-sources`);
     if (!res.ok) return;
     const d = await res.json();
-    setConnected({ github: d.github.connected, linear: d.linear.connected });
+    setConnected({ github: d.github.connected, linear: d.linear.connected, jira: d.jira?.connected ?? false });
     setGithub(d.github.repos.map((r: { name: string; counts: boolean; via_all_groups: boolean }) => ({
       id: r.name, label: r.name, counts: r.counts, via_all_groups: r.via_all_groups,
     })));
     setLinear(d.linear.teams.map((t: { key: string; counts: boolean; via_all_groups: boolean }) => ({
       id: t.key, label: t.key, counts: t.counts, via_all_groups: t.via_all_groups,
     })));
+    setJira((d.jira?.projects ?? []).map((p: { key: string; counts: boolean; via_all_groups: boolean }) => ({
+      id: p.key, label: p.key, counts: p.counts, via_all_groups: p.via_all_groups,
+    })));
     setDirty(false);
   }
 
-  function toggle(kind: "github" | "linear", id: string) {
-    const set = kind === "github" ? setGithub : setLinear;
+  function toggle(kind: "github" | "linear" | "jira", id: string) {
+    const set = kind === "github" ? setGithub : kind === "linear" ? setLinear : setJira;
     set((prev) =>
       (prev ?? []).map((r) => (r.id === id ? { ...r, counts: !r.counts, via_all_groups: false } : r)),
     );
@@ -67,6 +71,7 @@ export function GroupDataSources({
       body: JSON.stringify({
         github: (github ?? []).map((r) => ({ name: r.id, counts: r.counts })),
         linear: (linear ?? []).map((t) => ({ key: t.id, counts: t.counts })),
+        jira: (jira ?? []).map((p) => ({ key: p.id, counts: p.counts })),
       }),
     });
     const d = await res.json().catch(() => ({}));
@@ -80,8 +85,8 @@ export function GroupDataSources({
     await refresh();
   }
 
-  if (github === null || linear === null) return null;
-  const nothingConnected = !connected.github && !connected.linear;
+  if (github === null || linear === null || jira === null) return null;
+  const nothingConnected = !connected.github && !connected.linear && !connected.jira;
 
   const body = (
     <>
@@ -90,11 +95,11 @@ export function GroupDataSources({
           No integrations connected yet.{" "}
           {isAdmin ? (
             <>
-              <a href={`/team/${teamSlug}/settings?tab=integrations`}>Connect GitHub or Linear in team settings</a> to add
+              <a href={`/team/${teamSlug}/settings?tab=integrations`}>Connect GitHub, Linear or Jira in team settings</a> to add
               merge-confirmed delivery and ticket velocity to this group&rsquo;s report.
             </>
           ) : (
-            "Ask a team admin to connect GitHub or Linear in team settings."
+            "Ask a team admin to connect GitHub, Linear or Jira in team settings."
           )}
         </p>
       ) : (
@@ -118,6 +123,18 @@ export function GroupDataSources({
                 {linear.map((t) => (
                   <CheckChip key={t.id} checked={t.counts && !t.via_all_groups} implied={t.via_all_groups} onChange={() => toggle("linear", t.id)}>
                     {t.label}
+                  </CheckChip>
+                ))}
+              </div>
+            </div>
+          )}
+          {connected.jira && (
+            <div style={{ marginBottom: 16 }}>
+              <div className="provider-head" style={{ marginBottom: 8 }}>Jira projects</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {jira.map((p) => (
+                  <CheckChip key={p.id} checked={p.counts && !p.via_all_groups} implied={p.via_all_groups} onChange={() => toggle("jira", p.id)}>
+                    {p.label}
                   </CheckChip>
                 ))}
               </div>

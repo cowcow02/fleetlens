@@ -121,6 +121,12 @@ export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
     status: "live",
     llm: false,
   },
+  "jira-velocity": {
+    description: "Ticket velocity from the Jira integration: completed tickets, cycle/lead medians, WIP, and the share shipped via AI-assisted PRs. Cycle time uses the changelog's first In-Progress transition as pickup.",
+    source: "jira_issues + github_pull_requests (hourly poll via the team's encrypted Jira API token)",
+    status: "live",
+    llm: false,
+  },
   "per-project-time-bars": {
     description:
       "Agent time per GitHub repo for the group, this week vs last (rows resolved from members' git remotes); “others” is agent time not associated with any GitHub project. Hidden when GitHub isn't connected.",
