@@ -400,6 +400,7 @@ function OutcomeCell({ row }: { row: SessionRow }) {
 }
 
 function SessionCard({ row }: { row: SessionRow }) {
+  const router = useRouter();
   const { session: s, briefSummary, outcome, latestLocalDay, enrichmentStatus } = row;
   const totalTokens =
     s.totalUsage.input + s.totalUsage.output + s.totalUsage.cacheRead + s.totalUsage.cacheWrite;
@@ -468,14 +469,37 @@ function SessionCard({ row }: { row: SessionRow }) {
           {outcome ? (
             <OutcomePill outcome={outcome} size="md" agent={s.agent} />
           ) : showPending ? (
-            <OutcomePill
-              outcome={null}
-              pending
-              sessionId={s.id}
-              localDay={latestLocalDay!}
-              size="md"
-              agent={s.agent}
-            />
+            // The card body is a <Link>, so the pending pill can't be its own
+            // <Link> (nested <a> → hydration error). Render it as a non-anchor
+            // and drive the /digest navigation from here instead.
+            <span
+              role="link"
+              tabIndex={0}
+              title={`Generate ${latestLocalDay} digest →`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                router.push(`/digest/${latestLocalDay}`);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  router.push(`/digest/${latestLocalDay}`);
+                }
+              }}
+              style={{ cursor: "pointer", display: "inline-flex" }}
+            >
+              <OutcomePill
+                outcome={null}
+                pending
+                sessionId={s.id}
+                localDay={latestLocalDay!}
+                size="md"
+                agent={s.agent}
+                noLink
+              />
+            </span>
           ) : null}
         </div>
       )}
