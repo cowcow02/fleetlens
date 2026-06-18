@@ -119,6 +119,7 @@ describe("schema parity with SCHEMA_SQL", () => {
       "last_seen_at",
       "revoked_at",
       "plan_tier",
+      "cli_version",
     ]);
     const roleCol = memberships.find((c) => c.column_name === "role")!;
     expect(roleCol.is_nullable).toBe("NO");

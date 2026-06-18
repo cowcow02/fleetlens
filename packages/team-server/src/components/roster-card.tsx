@@ -61,6 +61,18 @@ export function RosterCard({
           <div className={`roster-card-lastseen ${isActive ? "active" : ""}`} style={{ marginTop: 10 }}>
             {timeAgo(member.last_seen_at).toLowerCase()}
           </div>
+          <div
+            style={{
+              fontFamily: "JetBrains Mono, monospace",
+              fontSize: 10,
+              letterSpacing: "0.04em",
+              color: "var(--mute)",
+              marginTop: 4,
+            }}
+            title="Installed Fleetlens CLI version"
+          >
+            {member.cli_version ? `CLI v${member.cli_version}` : "CLI —"}
+          </div>
         </div>
         <span className={`roster-card-role ${member.role === "admin" ? "admin" : ""}`}>
           {member.role}

@@ -175,6 +175,9 @@ export const IngestPayload = z.object({
   usageSnapshot: UsageSnapshotSchema.optional(),
   planTier: PlanTierKeySchema.optional(),
   cyclePeaks: WireCyclePeaksSchema.optional(),
+  // Installed Fleetlens CLI version of the reporting daemon — surfaced per
+  // member in the team roster. Older clients omit it.
+  cliVersion: z.string().max(64).optional(),
   // Bulk historical snapshots from the daemon's local usage.jsonl. Idempotent
   // at the row level via the (team_id, membership_id, captured_at) unique
   // key, so this stream is processed independently of the ingestId dedup

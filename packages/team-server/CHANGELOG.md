@@ -8,6 +8,7 @@ CLI has its own log at the repo root `CHANGELOG.md`.
 
 ### Added
 - **Jira Cloud integration** — a third delivery source alongside GitHub and Linear. Connect in team settings → Integrations with your Jira site, account email and an Atlassian API token; pick projects and map each to groups (same "counts toward" model as repos and Linear teams). Adds a **Ticket velocity · Jira** block to group insight reports (completed tickets, cycle/lead medians, WIP, and the share shipped via AI-assisted PRs), and feeds the **Work timeline** alongside Linear — both ticket sources union into one pickup→merge view. Jira has no native "started" timestamp, so cycle time is derived from the changelog's first transition into an In-Progress status; story points read from `customfield_10016`. Synced hourly, encrypted at rest, and pruned on the same per-team retention as the other integrations.
+- **Per-member CLI version on the roster.** Each member's daemon now reports its installed Fleetlens CLI version on every push; the roster cards and the member detail header show `CLI v<x.y.z>` so you can tell at a glance who's up to date (and who needs to upgrade). Nullable expand migration (`0010`) — members on a CLI that predates this show `CLI —` until they upgrade and re-push.
 
 ## [0.12.3] — 2026-06-15
 

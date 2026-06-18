@@ -172,6 +172,7 @@ export default async function MemberPage({
             <div style={{ color: daemonColor(planSummary.lastSeenAtMs) }}>
               DAEMON · {daemonFreshness(planSummary.lastSeenAtMs)}
             </div>
+            <div>CLI · {member.cli_version ? `v${member.cli_version}` : "—"}</div>
           </div>
         </div>
 

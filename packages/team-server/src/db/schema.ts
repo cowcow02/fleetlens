@@ -53,6 +53,10 @@ export const memberships = pgTable(
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     planTier: text("plan_tier").notNull().default("pro-max"),
+    // Installed Fleetlens CLI version of this member's daemon, reported on each
+    // ingest. Nullable — only populated once a member upgrades to a CLI that
+    // sends it; older clients leave it null.
+    cliVersion: text("cli_version"),
   },
   (t) => ({
     roleCheck: check("memberships_role_check", sql`${t.role} IN ('admin','member')`),
