@@ -130,6 +130,9 @@ export type IngestPayload = {
   // upserts memberships.plan_tier when this is set so admins don't have to
   // hand-pick a tier the daemon already knows.
   planTier?: string;
+  // Installed Fleetlens CLI version of the pushing daemon. The server stamps
+  // memberships.cli_version from this so admins can see who's on an old client.
+  cliVersion?: string;
   // Per-cycle peak utilization, computed locally by the daemon using the
   // SAME parser logic that drives the personal /usage trend strip. Pushing
   // the computed outcome (rather than raw events) keeps a single source of
