@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useRef, useState, type CSSProperties } from 
 import {
   ArrowLeft,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Clock,
@@ -89,6 +90,16 @@ const FILTER_MODES: { value: FilterMode; label: string }[] = [
   { value: "error", label: "Errors only" },
 ];
 
+/** Render a `YYYY-MM-DD` day key as a short, locale-free label (e.g.
+ *  "Jun 16"). Formatting straight from the key — not a Date — keeps SSR and
+ *  client output identical regardless of timezone. */
+const DAY_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function formatDayKey(key: string): string {
+  const [, m, d] = key.split("-").map(Number);
+  if (!m || !d) return key;
+  return `${DAY_MONTHS[m - 1]} ${d}`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Main component                                                    */
 /* ------------------------------------------------------------------ */
@@ -169,6 +180,11 @@ export function SessionView({
   /** When a timeline click sets the index we also want to scroll. Track that
    *  intent separately so selection via row-click doesn't auto-scroll. */
   const [scrollIntent, setScrollIntent] = useState(0);
+  /** Scroll-only target (no selection) — used by day navigation so jumping to
+   *  a day scrolls the transcript there WITHOUT popping the event drawer the
+   *  way a row/minimap selection does. `n` forces the effect to re-run even
+   *  when the same index is targeted twice. */
+  const [dayScrollTarget, setDayScrollTarget] = useState<{ index: number; n: number } | null>(null);
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   // The event/subagent drawers are transcript-scoped (position: fixed, shown
@@ -288,6 +304,14 @@ export function SessionView({
     // to land the row just below the sticky header.
     el.scrollIntoView({ block: "start", behavior: "auto" });
   }, [scrollIntent, selectedIndex]);
+
+  // Scroll-only effect for day navigation — scrolls to a row without setting
+  // selectedIndex (so no drawer opens). Same scrollIntoView contract as above.
+  useEffect(() => {
+    if (!dayScrollTarget) return;
+    const el = rowRefs.current[dayScrollTarget.index];
+    if (el) el.scrollIntoView({ block: "start", behavior: "auto" });
+  }, [dayScrollTarget]);
 
   const { events, durationMs, totalUsage, model, eventCount, projectName } = session;
   const airTimeMs = session.airTimeMs ?? durationMs;
@@ -488,6 +512,58 @@ export function SessionView({
     return out;
   }, [events]);
 
+  /** Local-day buckets the session spans, in event order. Each day's
+   *  `startMs`/`endMs` are tOffsetMs bounds (offset from session start) so
+   *  they plug straight into the minimap's offset coordinate space. Keys are
+   *  derived as literal `YYYY-MM-DD` from local date parts so SSR and client
+   *  agree (no locale/Date formatting that could drift across the hydration
+   *  boundary). Long multi-day sessions use this to scope the minimap to one
+   *  day at a time instead of squashing days into a single bar. */
+  const sessionDays = useMemo(() => {
+    const byDay = new Map<string, { startMs: number; endMs: number; count: number }>();
+    for (const e of events) {
+      if (e.tOffsetMs === undefined || !e.timestamp) continue;
+      const ms = Date.parse(e.timestamp);
+      if (!Number.isFinite(ms)) continue;
+      const d = new Date(ms);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const cur = byDay.get(key);
+      if (!cur) byDay.set(key, { startMs: e.tOffsetMs, endMs: e.tOffsetMs, count: 1 });
+      else {
+        cur.startMs = Math.min(cur.startMs, e.tOffsetMs);
+        cur.endMs = Math.max(cur.endMs, e.tOffsetMs);
+        cur.count += 1;
+      }
+    }
+    return [...byDay.entries()]
+      .map(([key, v]) => ({ key, ...v }))
+      .sort((a, b) => a.startMs - b.startMs);
+  }, [events]);
+
+  // Selected timeline day. Defaults to the LAST active day so a multi-day
+  // session opens on "what happened most recently". The lazy initializer runs
+  // identically on server + client (sessionDays is deterministic), so there's
+  // no hydration mismatch; the effect re-pins it when the component is reused
+  // across /sessions/[id] navigations. "all" shows the full session.
+  const [selectedDayKey, setSelectedDayKey] = useState<string>(
+    () => (sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all"),
+  );
+  useEffect(() => {
+    setSelectedDayKey(sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.sessionId]);
+
+  const dayIndex = sessionDays.findIndex((d) => d.key === selectedDayKey);
+
+  /** Offset window for the selected day, or null when there's a single day
+   *  or "all" is chosen — null tells the minimap to render the full session
+   *  exactly as before (no regression for single-day sessions). */
+  const dayWindow = useMemo(() => {
+    if (sessionDays.length <= 1 || selectedDayKey === "all") return null;
+    const d = sessionDays.find((x) => x.key === selectedDayKey);
+    return d ? { startMs: d.startMs, endMs: d.endMs } : null;
+  }, [sessionDays, selectedDayKey]);
+
   /** Build the full presentation stream once. */
   const allRows = useMemo(() => buildPresentation(visibleEvents), [visibleEvents]);
 
@@ -566,6 +642,28 @@ export function SessionView({
     // Bump the intent counter so the useEffect always fires — even if the
     // same row is clicked twice (same selectedIndex ≠ new effect otherwise).
     setScrollIntent((n) => n + 1);
+  }
+
+  /** Switch the minimap to a given day (or "all"). On an explicit day pick we
+   *  also scroll the transcript to that day's first row so "jump to a day"
+   *  navigates the body too — but the default selection on mount does NOT
+   *  scroll (it only flows through here on user interaction). */
+  function gotoDay(key: string) {
+    setSelectedDayKey(key);
+    if (key === "all") return;
+    const d = sessionDays.find((x) => x.key === key);
+    if (!d) return;
+    const ev = events.find((e) => e.tOffsetMs !== undefined && e.tOffsetMs >= d.startMs);
+    if (!ev) return;
+    // In turns mode the day's first row may be inside a collapsed turn — expand
+    // it so the row exists in the DOM before the scroll effect runs.
+    if (filter === "turns") {
+      const turnIdx = turnByRowIndex.get(ev.index);
+      if (turnIdx !== undefined && !expandedTurns.has(turnIdx)) {
+        setExpandedTurns((prev) => new Set(prev).add(turnIdx));
+      }
+    }
+    setDayScrollTarget((prev) => ({ index: ev.index, n: (prev?.n ?? 0) + 1 }));
   }
 
   /** Scroll the transcript to the row whose assistant message issued a given
@@ -921,6 +1019,63 @@ export function SessionView({
             transition: "padding-bottom 0.2s ease",
           }}
         >
+        {/* Day navigator — only for multi-day sessions on the non-team
+            minimap. Lets you step the timeline through each local day (default
+            = the most recent) so a long-running session reads one day at a
+            time instead of squashed into one bar. */}
+        {tab !== "team" && sessionDays.length > 1 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 6,
+              fontSize: 12,
+              color: "var(--af-text-secondary)",
+            }}
+          >
+            <span style={{ color: "var(--af-text-tertiary)" }}>Timeline day</span>
+            <button
+              type="button"
+              title="Previous day"
+              aria-label="Previous day"
+              onClick={() => dayIndex > 0 && gotoDay(sessionDays[dayIndex - 1]!.key)}
+              disabled={selectedDayKey === "all" || dayIndex <= 0}
+              className="sl-day-nav-btn"
+            >
+              <ChevronLeft size={13} />
+            </button>
+            <select
+              value={selectedDayKey}
+              onChange={(e) => gotoDay(e.target.value)}
+              className="sl-compact-select"
+            >
+              {sessionDays.map((d, i) => (
+                <option key={d.key} value={d.key}>
+                  {formatDayKey(d.key)} · {d.count} event{d.count === 1 ? "" : "s"} (day {i + 1}/{sessionDays.length})
+                </option>
+              ))}
+              <option value="all">All days ({sessionDays.length})</option>
+            </select>
+            <button
+              type="button"
+              title="Next day"
+              aria-label="Next day"
+              onClick={() =>
+                dayIndex >= 0 && dayIndex < sessionDays.length - 1 && gotoDay(sessionDays[dayIndex + 1]!.key)
+              }
+              disabled={selectedDayKey === "all" || dayIndex < 0 || dayIndex >= sessionDays.length - 1}
+              className="sl-day-nav-btn"
+            >
+              <ChevronRight size={13} />
+            </button>
+            <span style={{ color: "var(--af-text-tertiary)", marginLeft: 2 }}>
+              {selectedDayKey === "all"
+                ? `showing all ${sessionDays.length} days`
+                : `day ${dayIndex + 1} of ${sessionDays.length}`}
+            </span>
+          </div>
+        )}
         {tab === "team" && team ? (
           <TeamMinimap
             data={team}
@@ -937,6 +1092,7 @@ export function SessionView({
           <Minimap
             displayRows={displayRows}
             durationMs={durationMs ?? 0}
+            dayWindow={dayWindow}
             selectedIndex={selectedIndex}
             onSelect={scrollToIndex}
             headerOffset={headerH}
@@ -1593,6 +1749,7 @@ const ROW_IMPORTANCE: Record<PresentationRowKind, number> = {
 function Minimap({
   displayRows,
   durationMs,
+  dayWindow,
   selectedIndex,
   onSelect,
   headerOffset,
@@ -1609,6 +1766,9 @@ function Minimap({
 }: {
   displayRows: DisplayRow[];
   durationMs: number;
+  /** When set, scope the timeline to this offset window (one local day).
+   *  null renders the full session. */
+  dayWindow?: { startMs: number; endMs: number } | null;
   selectedIndex: number | null;
   onSelect: (i: number) => void;
   headerOffset: number;
@@ -1743,7 +1903,39 @@ function Minimap({
     return () => observer.disconnect();
   }, [displayRows.length, headerOffset]);
 
-  const safeDur = Math.max(durationMs, 1);
+  // Offset window for the rendered timeline. `winEnd` is the absolute offset
+  // of the right edge (session/day end); `safeDur` is the window LENGTH used
+  // as the proportional-width divisor. For a single-day session (dayWindow
+  // null) these collapse to [0, durationMs] — identical to the old behavior.
+  const winStart = dayWindow?.startMs ?? 0;
+  const winEnd = dayWindow?.endMs ?? durationMs;
+  const safeDur = Math.max(winEnd - winStart, 1);
+
+  // Subagent/workflow lanes are scoped to the same window as the main
+  // timeline so a day view doesn't reserve empty lanes for runs that happened
+  // on other days. Overlap test, not containment — a run straddling the
+  // window edge still shows.
+  const winSubagents = useMemo(
+    () =>
+      (subagents ?? []).filter(
+        (s) =>
+          s.startTOffsetMs !== undefined &&
+          s.endTOffsetMs !== undefined &&
+          s.endTOffsetMs >= winStart &&
+          s.startTOffsetMs <= winEnd,
+      ),
+    [subagents, winStart, winEnd],
+  );
+  const winWorkflows = useMemo(
+    () =>
+      (workflows ?? []).filter(
+        (w) =>
+          w.startTOffsetMs !== undefined &&
+          w.startTOffsetMs <= winEnd &&
+          (w.endTOffsetMs ?? winEnd) >= winStart,
+      ),
+    [workflows, winStart, winEnd],
+  );
 
   /* Build segments from the same display-row stream the transcript
      uses. Collapsed turns become one wide segment; expanded-turn
@@ -1769,6 +1961,7 @@ function Minimap({
       if (d.kind === "turn-expanded-footer") continue;
       if (d.kind === "turn-collapsed") {
         if (d.turn.tOffsetMs === undefined) continue;
+        if (d.turn.tOffsetMs < winStart || d.turn.tOffsetMs > winEnd) continue;
         withTime.push({
           kind: "turn",
           turn: d.turn,
@@ -1778,6 +1971,7 @@ function Minimap({
       } else {
         // presentation row
         if (d.row.tOffsetMs === undefined) continue;
+        if (d.row.tOffsetMs < winStart || d.row.tOffsetMs > winEnd) continue;
         withTime.push({
           kind: "row",
           row: d.row,
@@ -1791,7 +1985,9 @@ function Minimap({
     // the start of the next idle band (or the next row, whichever comes
     // first). This stops a row's rectangle from spanning across an idle
     // gap and visually swallowing it.
-    const idleBands = (rawIdleBands ?? []).slice().sort((a, b) => a.start - b.start);
+    const idleBands = (rawIdleBands ?? [])
+      .filter((b) => b.end > winStart && b.start < winEnd)
+      .sort((a, b) => a.start - b.start);
     const nextIdleStartFrom = (t: number): number | undefined => {
       for (const b of idleBands) {
         if (b.start >= t) return b.start;
@@ -1805,12 +2001,15 @@ function Minimap({
       const start = item.start;
       const nextRowStart = next?.start;
       const nextIdleStart = nextIdleStartFrom(start + 1);
-      // Cap end to whichever comes first: next visible row, next idle band.
+      // Cap end to whichever comes first: next visible row, next idle band,
+      // or the window's right edge (so a day's last segment doesn't bleed
+      // past the scoped window into the next day).
       const cap = (raw: number) =>
         Math.min(
           raw,
           nextRowStart ?? Number.POSITIVE_INFINITY,
           nextIdleStart ?? Number.POSITIVE_INFINITY,
+          winEnd,
         );
 
       if (item.kind === "turn") {
@@ -1891,7 +2090,7 @@ function Minimap({
       }
     }
     return bucketed;
-  }, [displayRows, safeDur, rawIdleBands]);
+  }, [displayRows, safeDur, rawIdleBands, winStart, winEnd]);
 
   /* Sequential layout with a minimum displayed width per segment.
      - Raw proportional width = (seg.end - seg.start) / safeDur * WIDTH
@@ -1944,10 +2143,10 @@ function Minimap({
   // sweep — O(N×L) where L is the number of lanes (small in practice).
   // Returns a Map agentId → laneIndex plus the total lane count.
   const { laneOf, laneCount } = useMemo(() => {
-    if (!subagents || subagents.length === 0) {
+    if (winSubagents.length === 0) {
       return { laneOf: new Map<string, number>(), laneCount: 0 };
     }
-    const sorted = [...subagents].sort(
+    const sorted = [...winSubagents].sort(
       (a, b) => (a.startTOffsetMs ?? 0) - (b.startTOffsetMs ?? 0),
     );
     const laneEnds: number[] = [];
@@ -1970,7 +2169,7 @@ function Minimap({
       laneOf.set(s.agentId, assigned);
     }
     return { laneOf, laneCount: laneEnds.length };
-  }, [subagents]);
+  }, [winSubagents]);
 
   const SUB_BLOCK_TOP = MAIN_H + SUB_LANE_GAP;
   const SUB_LANES_H = laneCount > 0 ? laneCount * SUB_LANE_H : 0;
@@ -1985,7 +2184,7 @@ function Minimap({
     // matching the open-ended bar the render draws. Counting only placeable
     // runs keeps wfLaneCount in lockstep with what renders, so no empty
     // reserved band appears.
-    const placeable = (workflows ?? []).filter((w) => w.startTOffsetMs !== undefined);
+    const placeable = winWorkflows;
     if (placeable.length === 0) {
       return { wfLaneOf: new Map<string, number>(), wfLaneCount: 0 };
     }
@@ -1996,7 +2195,7 @@ function Minimap({
     const wfLaneOf = new Map<string, number>();
     for (const w of sorted) {
       const start = w.startTOffsetMs ?? 0;
-      const end = w.endTOffsetMs ?? safeDur;
+      const end = w.endTOffsetMs ?? winEnd;
       let assigned = -1;
       for (let i = 0; i < laneEnds.length; i++) {
         if (laneEnds[i]! <= start) {
@@ -2012,7 +2211,7 @@ function Minimap({
       wfLaneOf.set(w.runId, assigned);
     }
     return { wfLaneOf, wfLaneCount: laneEnds.length };
-  }, [workflows, safeDur]);
+  }, [winWorkflows, winEnd]);
 
   const SUB_BLOCK_BOTTOM = MAIN_H + (laneCount > 0 ? SUB_LANE_GAP + SUB_LANES_H : 0);
   const WF_BLOCK_TOP = SUB_BLOCK_BOTTOM + (wfLaneCount > 0 ? SUB_LANE_GAP : 0);
@@ -2153,7 +2352,7 @@ function Minimap({
             glance. Bars use the same msToX mapping as the main timeline
             so the subagent's start/end aligns vertically with whatever
             was happening in the main session at that time. */}
-        {laneCount > 0 && subagents && (
+        {laneCount > 0 && winSubagents.length > 0 && (
           <g>
             {/* Faint divider line above the subagent lane block */}
             <line
@@ -2165,7 +2364,7 @@ function Minimap({
               strokeWidth="0.6"
               strokeDasharray="2 4"
             />
-            {subagents.map((s) => {
+            {winSubagents.map((s) => {
               const lane = laneOf.get(s.agentId) ?? 0;
               if (s.startTOffsetMs === undefined || s.endTOffsetMs === undefined) return null;
               const startX = msToX(s.startTOffsetMs);
@@ -2217,7 +2416,7 @@ function Minimap({
             time axis as the main timeline, colored by status (orange tier,
             distinct from the blue/purple subagents). The agent count is the
             headline — a single Workflow tool call hides a whole fleet. */}
-        {wfLaneCount > 0 && workflows && (
+        {wfLaneCount > 0 && winWorkflows.length > 0 && (
           <g>
             <line
               x1={0}
@@ -2228,7 +2427,7 @@ function Minimap({
               strokeWidth="0.6"
               strokeDasharray="2 4"
             />
-            {workflows.map((w) => {
+            {winWorkflows.map((w) => {
               if (w.startTOffsetMs === undefined) return null;
               const lane = wfLaneOf.get(w.runId) ?? 0;
               const startX = msToX(w.startTOffsetMs);
@@ -2236,7 +2435,7 @@ function Minimap({
               // the session end so it's visible (and dashed, to read as ongoing)
               // rather than vanishing while still occupying a reserved lane.
               const inProgress = w.endTOffsetMs === undefined;
-              const endX = msToX(w.endTOffsetMs ?? safeDur);
+              const endX = msToX(w.endTOffsetMs ?? winEnd);
               const wWidth = Math.max(endX - startX, 8);
               const y = WF_BLOCK_TOP + lane * WF_LANE_H;
               const h = WF_LANE_H - 2;
@@ -2283,6 +2482,7 @@ function Minimap({
         {/* PR markers — diamond + vertical line at each `gh pr create` */}
         {prMarkers?.map((pr, i) => {
           if (pr.tOffsetMs === undefined) return null;
+          if (pr.tOffsetMs < winStart || pr.tOffsetMs > winEnd) return null;
           const x = msToX(pr.tOffsetMs);
           return (
             <g
@@ -2320,6 +2520,7 @@ function Minimap({
         })}
 
         {coldResumeMarkers?.map((cr, i) => {
+          if (cr.tOffsetMs < winStart || cr.tOffsetMs > winEnd) return null;
           const x = msToX(cr.tOffsetMs);
           return (
             <g

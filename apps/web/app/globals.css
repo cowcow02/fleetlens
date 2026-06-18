@@ -141,6 +141,29 @@ input::placeholder {
   border-radius: 6px !important;
 }
 
+/* Day-navigator step buttons on the session timeline minimap. */
+.sl-day-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--af-border-subtle);
+  border-radius: 6px;
+  background: var(--af-surface-hover);
+  color: var(--af-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.sl-day-nav-btn:hover:not(:disabled) {
+  background: var(--af-surface-elevated);
+  color: var(--af-text-primary);
+}
+.sl-day-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
