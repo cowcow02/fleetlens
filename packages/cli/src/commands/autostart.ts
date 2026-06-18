@@ -221,6 +221,11 @@ export async function autostart(args: string[]): Promise<void> {
     case "status":
       await statusAutostart();
       break;
+    case "help":
+    case "--help":
+    case "-h":
+      console.log("Usage: fleetlens autostart <install|uninstall|status>");
+      break;
     default:
       console.error(
         `Unknown autostart subcommand: ${sub}\nUsage: fleetlens autostart <install|uninstall|status>`,
