@@ -33,6 +33,7 @@ export type LiveSessionPick = {
   lastAgentPreview?: string;
   firstTimestamp?: string;
   lastTimestamp?: string;
+  lastActivityMs?: number;
   teamName?: string;
   agentName?: string;
   agent?: import("@claude-lens/parser").AgentKind;
@@ -95,9 +96,14 @@ export function LiveSessionsWidget({
   // order is stable even as agents keep emitting new messages.
   const live = sessions
     .filter((s) => {
-      if (!s.lastTimestamp) return false;
-      const ms = Date.parse(s.lastTimestamp);
-      if (Number.isNaN(ms)) return false;
+      // Nested-aware: a session with a quiet main transcript but an active
+      // background agent/workflow still counts as live via lastActivityMs.
+      const isoMs = s.lastTimestamp ? Date.parse(s.lastTimestamp) : NaN;
+      const ms = Math.max(
+        Number.isNaN(isoMs) ? 0 : isoMs,
+        s.lastActivityMs && Number.isFinite(s.lastActivityMs) ? s.lastActivityMs : 0,
+      );
+      if (ms <= 0) return false;
       return now - ms <= LIVE_WINDOW_MS;
     })
     .slice()

@@ -359,7 +359,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
                       gap: 6,
                     }}
                   >
-                    <LiveBadge mtimeIso={s.lastTimestamp} />
+                    <LiveBadge mtimeIso={s.lastTimestamp} activityMs={s.lastActivityMs} />
                     <span
                       style={{
                         overflow: "hidden",

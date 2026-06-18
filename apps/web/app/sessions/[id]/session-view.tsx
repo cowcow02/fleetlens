@@ -334,11 +334,16 @@ export function SessionView({
     [events, teammateCount],
   );
 
-  // A session is "live" if its last event was within 45 seconds.
+  // A session is "live" if its last activity was within 45 seconds — where
+  // "activity" includes nested background-agent/workflow writes, not just the
+  // main transcript's last event (lastActivityMs).
   const isSessionLive = (() => {
-    if (!session.lastTimestamp) return false;
-    const ms = Date.parse(session.lastTimestamp);
-    return !Number.isNaN(ms) && Date.now() - ms < 45_000;
+    const isoMs = session.lastTimestamp ? Date.parse(session.lastTimestamp) : NaN;
+    const ms = Math.max(
+      Number.isNaN(isoMs) ? 0 : isoMs,
+      session.lastActivityMs && Number.isFinite(session.lastActivityMs) ? session.lastActivityMs : 0,
+    );
+    return ms > 0 && Date.now() - ms < 45_000;
   })();
 
   /** Detect PR creations in this session. */
@@ -852,7 +857,7 @@ export function SessionView({
           >
             sesn_{session.id.replace(/-/g, "").slice(0, 22)}
           </h1>
-          <LiveBadge mtimeIso={session.lastTimestamp} size="md" />
+          <LiveBadge mtimeIso={session.lastTimestamp} activityMs={session.lastActivityMs} size="md" />
           <span
             style={{
               fontSize: 10.5,
@@ -865,7 +870,7 @@ export function SessionView({
               top: -1,
             }}
           >
-            {session.status === "running" ? "Running" : "Idle"}
+            {isSessionLive ? "Running" : "Idle"}
           </span>
           <InlineStatDivider />
           {model && <InlineStat icon={<Cpu size={12} />} value={model} mono />}

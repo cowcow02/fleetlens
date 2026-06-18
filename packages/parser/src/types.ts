@@ -128,6 +128,14 @@ export type SessionMeta = {
   sessionId: string;
   firstTimestamp?: string;
   lastTimestamp?: string;
+  /** Wall-clock (epoch ms) of the most recent activity for liveness, taking
+   *  nested transcripts into account: max(lastTimestamp, newest mtime across
+   *  the session's `subagents/` + `workflows/` sidecar files). Lets the LIVE
+   *  indicator fire while the main transcript sits idle but a background agent
+   *  or a Workflow run is still churning. Computed fresh at scan time (NOT in
+   *  the mtime-keyed meta cache — the main JSONL's mtime doesn't change when
+   *  only nested files do). */
+  lastActivityMs?: number;
   durationMs?: number;
   eventCount: number;
   model?: string;

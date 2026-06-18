@@ -441,7 +441,7 @@ function SessionCard({ row }: { row: SessionRow }) {
           }}
           title={s.projectName}
         >
-          <LiveBadge mtimeIso={s.lastTimestamp} />
+          <LiveBadge mtimeIso={s.lastTimestamp} activityMs={s.lastActivityMs} />
           <span
             style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
           >
