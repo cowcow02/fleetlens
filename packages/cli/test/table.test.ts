@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { renderTable, type TableRow } from "../src/table.js";
 
-// Strip ANSI so assertions read the plain text.
+// Strip ANSI so assertions read the plain text. The ESC (\x1b) in the regex is
+// intentional — it's the start of every SGR color sequence we're removing.
+// eslint-disable-next-line no-control-regex
 const plain = (s: string) => s.replace(/\x1b\[[0-9;]*m/g, "");
 
 function row(over: Partial<TableRow>): TableRow {
