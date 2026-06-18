@@ -184,8 +184,11 @@ export function SessionView({
    *  a day scrolls the transcript there WITHOUT popping the event drawer the
    *  way a row/minimap selection does. `n` forces the effect to re-run even
    *  when the same index is targeted twice. */
-  const [dayScrollTarget, setDayScrollTarget] = useState<{ index: number; n: number } | null>(null);
+  const [dayScrollTarget, setDayScrollTarget] = useState<{ index: number; key: string; n: number } | null>(null);
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  // Per-day digest cards (EntryDayStrip) are interleaved into the transcript at
+  // each day's first row, so day-nav scrolls to the card itself when present.
+  const dayStripRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // The event/subagent drawers are transcript-scoped (position: fixed, shown
   // whenever a selection exists). Clear the selection when leaving the
@@ -309,7 +312,10 @@ export function SessionView({
   // selectedIndex (so no drawer opens). Same scrollIntoView contract as above.
   useEffect(() => {
     if (!dayScrollTarget) return;
-    const el = rowRefs.current[dayScrollTarget.index];
+    // Prefer the day's digest card (it leads the day); fall back to the first
+    // row when that day has no entry.
+    const el =
+      dayStripRefs.current[dayScrollTarget.key] ?? rowRefs.current[dayScrollTarget.index];
     if (el) el.scrollIntoView({ block: "start", behavior: "auto" });
   }, [dayScrollTarget]);
 
@@ -545,6 +551,16 @@ export function SessionView({
       .sort((a, b) => a.startMs - b.startMs);
   }, [events]);
 
+  /** local_day → per-day digest card. `entry.local_day` and `sessionDays` keys
+   *  are both built from local-time getFullYear/Month/Date (see parser's
+   *  toLocalDay), so the strings match exactly and the card lands on the right
+   *  day's first transcript row. */
+  const entryByDay = useMemo(() => {
+    const m = new Map<string, Entry>();
+    for (const e of entries) m.set(e.local_day, e);
+    return m;
+  }, [entries]);
+
   // Selected timeline day. Defaults to the LAST active day so a multi-day
   // session opens on "what happened most recently". The lazy initializer runs
   // identically on server + client (sessionDays is deterministic), so there's
@@ -675,7 +691,7 @@ export function SessionView({
         setExpandedTurns((prev) => new Set(prev).add(turnIdx));
       }
     }
-    setDayScrollTarget((prev) => ({ index: ev.index, n: (prev?.n ?? 0) + 1 }));
+    setDayScrollTarget((prev) => ({ index: ev.index, key, n: (prev?.n ?? 0) + 1 }));
   }
 
   /** Scroll the transcript to the row whose assistant message issued a given
@@ -1176,11 +1192,6 @@ export function SessionView({
           <DebugList events={events} />
         ) : (
           <>
-            {entries.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-                {entries.map((e) => <EntryDayStrip key={e.local_day} entry={e} />)}
-              </div>
-            )}
             {teammateCount > 0 && (
               <div
                 style={{
@@ -1223,6 +1234,9 @@ export function SessionView({
               team={team}
               model={model}
               rawIdleBands={rawIdleBands}
+              sessionDays={sessionDays}
+              entryByDay={entryByDay}
+              dayStripRefs={dayStripRefs}
             />
           </>
         )}
@@ -3283,6 +3297,9 @@ function TranscriptList({
   team,
   model,
   rawIdleBands,
+  sessionDays,
+  entryByDay,
+  dayStripRefs,
 }: {
   displayRows: DisplayRow[];
   rowRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>;
@@ -3297,6 +3314,12 @@ function TranscriptList({
    *  row whose start matches a band's end, so Codex sessions get the same
    *  "Session idle X minutes" markers Claude has always had. */
   rawIdleBands?: { start: number; end: number; durationMs: number }[];
+  /** Day buckets (sorted by startMs) + per-day digest cards. The body drops a
+   *  card at each day's first row so per-day perception sits inline with that
+   *  day's work instead of stacked at the top. */
+  sessionDays: { key: string; startMs: number; endMs: number; count: number }[];
+  entryByDay: Map<string, Entry>;
+  dayStripRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
 }) {
   // Find the last collapsed turn index so we can mark it as in-progress
   // when the session is live.
@@ -3329,8 +3352,22 @@ function TranscriptList({
     if (d.kind === "turn-expanded-footer") return undefined;
     return d.row.tOffsetMs;
   };
+  /** Which local day a row falls in: the last day bucket whose start is at or
+   *  before the row's offset. sessionDays is pre-sorted by startMs. */
+  const dayKeyForOffset = (tOff: number | undefined): string | null => {
+    if (tOff === undefined) return null;
+    let key: string | null = null;
+    for (const dd of sessionDays) {
+      if (dd.startMs <= tOff) key = dd.key;
+      else break;
+    }
+    return key;
+  };
 
   const out: React.ReactNode[] = [];
+  // Tracks the day of the last emitted row so a day's digest card is dropped
+  // once, before that day's first non-indented row.
+  let currentDayKey: string | null = null;
   // A user row and the turn-collapsed row that follows it share a
   // tOffsetMs (turn anchors at the user message — see buildMegaRows), so
   // both would match the same between-turn band without this guard. Track
@@ -3351,6 +3388,27 @@ function TranscriptList({
       ) {
         emittedBandStarts.add(band.start);
         out.push(<IdleDivider key={`idle-before-${i}`} gapMs={band.durationMs} />);
+      }
+      // Day boundary: drop this day's digest card at its first row (after any
+      // overnight idle divider that led into the day) so per-day perception
+      // sits inline with that day's work, not stacked at the top.
+      const dk = dayKeyForOffset(rowTOffset(d));
+      if (dk && dk !== currentDayKey) {
+        currentDayKey = dk;
+        const dayEntry = entryByDay.get(dk);
+        if (dayEntry) {
+          out.push(
+            <div
+              key={`daystrip-${dk}`}
+              ref={(el) => {
+                dayStripRefs.current[dk] = el;
+              }}
+              style={{ marginBottom: 12, scrollMarginTop: stickyOffset }}
+            >
+              <EntryDayStrip entry={dayEntry} />
+            </div>,
+          );
+        }
       }
     }
 
