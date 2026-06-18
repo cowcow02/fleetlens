@@ -827,7 +827,7 @@ export function SessionView({
               className={`af-tab-btn ${tab === "transcript" ? "active" : ""}`}
               onClick={() => setTab("transcript")}
             >
-              Transcript
+              Timeline
             </button>
             {hasWorkflows && (
               <button
@@ -863,7 +863,7 @@ export function SessionView({
               className={`af-tab-btn ${tab === "debug" ? "active" : ""}`}
               onClick={() => setTab("debug")}
             >
-              Debug
+              Log
             </button>
           </div>
           <button
