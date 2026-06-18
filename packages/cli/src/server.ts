@@ -6,6 +6,8 @@ import { writePid, readPid, isProcessAlive, cleanStalePid, removePid } from "./p
 import { homedir } from "node:os";
 import { cclensHome, cclensPath } from "@claude-lens/parser/fs";
 
+declare const CLI_VERSION: string;
+
 const PID_FILE = cclensPath("pid");
 const DEFAULT_PORT = 3321;
 
@@ -17,16 +19,74 @@ function appDir(): string {
 }
 
 export type ServerStatus =
-  | { running: true; pid: number; port: number }
+  | { running: true; pid: number; port: number; version?: string }
   | { running: false };
 
 export function getServerStatus(): ServerStatus {
   cleanStalePid(PID_FILE);
   const entry = readPid(PID_FILE);
   if (entry !== null && isProcessAlive(entry.pid)) {
-    return { running: true, pid: entry.pid, port: entry.port ?? DEFAULT_PORT };
+    return { running: true, pid: entry.pid, port: entry.port ?? DEFAULT_PORT, version: entry.version };
   }
   return { running: false };
+}
+
+/**
+ * A running server is stale when its recorded version differs from this
+ * CLI's — or is unknown (started by a pre-versioned-pidfile install). Both
+ * mean the live bundle no longer matches what the user just installed.
+ */
+export function isServerStale(status: ServerStatus): boolean {
+  return status.running === true && status.version !== CLI_VERSION;
+}
+
+/**
+ * Return a healthy server matching the current CLI version. If one is
+ * already running on the right version it's reused; a stale one is stopped
+ * and relaunched on the same port. This heals the drift where the CLI and
+ * daemon get updated but the web server keeps serving an old (sometimes
+ * broken) build until manually restarted.
+ */
+export async function ensureCurrentServer(
+  opts: { port?: number } = {},
+): Promise<{ pid: number; port: number; restarted: boolean; previousVersion?: string }> {
+  const status = getServerStatus();
+  if (status.running && !isServerStale(status)) {
+    return { pid: status.pid, port: status.port, restarted: false };
+  }
+  if (!status.running) {
+    const result = await startServer({ port: opts.port });
+    return { ...result, restarted: false };
+  }
+
+  // Stale server (older/unknown version) → cycle it on the same port.
+  const previousVersion = status.version;
+  const oldPid = status.pid;
+  const port = opts.port ?? status.port;
+
+  stopServer();
+  await waitForPortFree(port, 5_000);
+  // If SIGTERM didn't free the port (slow drain / ignored signal), escalate to
+  // SIGKILL so the relaunch can't fail just because the old server lingered.
+  if (await checkPort(port)) {
+    try {
+      process.kill(oldPid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+    await waitForPortFree(port, 3_000);
+  }
+
+  try {
+    const result = await startServer({ port });
+    return { ...result, restarted: true, previousVersion };
+  } catch (err) {
+    // Relaunch failed and the old server may still be alive holding the port —
+    // re-stamp its pid so `status`/`stop` can still see and kill it instead of
+    // leaving an untracked orphan serving the stale bundle.
+    if (isProcessAlive(oldPid)) writePid(PID_FILE, oldPid, port, previousVersion);
+    throw err;
+  }
 }
 
 export async function startServer(opts: { port?: number } = {}): Promise<{ pid: number; port: number }> {
@@ -60,7 +120,7 @@ export async function startServer(opts: { port?: number } = {}): Promise<{ pid: 
 
   child.unref();
   const pid = child.pid!;
-  writePid(PID_FILE, pid, port);
+  writePid(PID_FILE, pid, port, CLI_VERSION);
 
   // Wait for server to be healthy
   await waitForHealth(`http://localhost:${port}`, 10_000);
@@ -94,6 +154,16 @@ async function checkPort(port: number): Promise<boolean> {
     });
     server.listen(port, "localhost");
   });
+}
+
+async function waitForPortFree(port: number, timeoutMs: number): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (!(await checkPort(port))) return;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  // Fall through — startServer surfaces a clear "port in use" error if the
+  // old process ignored SIGTERM and still holds the port.
 }
 
 async function waitForHealth(url: string, timeoutMs: number): Promise<void> {

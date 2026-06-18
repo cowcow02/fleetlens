@@ -8,7 +8,7 @@ import {
   type LiveEntrySummary,
 } from "@/components/live-sessions-widget";
 import { JobQueueWidget } from "@/components/job-queue-widget";
-import { listProjects, walkJsonlFiles } from "@claude-lens/parser/fs";
+import { groupByProject } from "@claude-lens/parser";
 import { listSessions } from "@/lib/data";
 import { latestUsageSnapshot } from "@/lib/usage-data";
 import { readTeamConnection } from "@/lib/team-data";
@@ -47,16 +47,24 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     );
   }
 
-  const [projects, allFiles, allSessions, entriesIndex] = await Promise.all([
-    listProjects(),
-    walkJsonlFiles(),
-    // Pull from every registered agent source. The widget filters to the
-    // 45s live window client-side, so the slice is on freshness, not count.
+  // Pull from every registered agent source. The widget filters to the
+  // 45s live window client-side, so the slice is on freshness, not count.
+  const [allSessions, entriesIndex] = await Promise.all([
     listSessions(),
     buildEntriesIndex(),
   ]);
   const recentSessions = allSessions.slice(0, 20);
   const totalSessions = allSessions.length;
+  // Sidebar project list/count must match /projects (all agent sources), not
+  // just Claude Code — otherwise the nav badge and footer disagree with the
+  // /projects page and omit Codex/Cowork/Gemini/Antigravity projects.
+  const projects = groupByProject(allSessions).map((p) => ({
+    projectDir: p.projectDir,
+    projectName: p.projectName,
+    sessionCount: p.sessions.length,
+    lastActiveMs: p.lastActiveMs,
+    worktreeCount: p.worktreeCount,
+  }));
   const currentUsage = latestUsageSnapshot();
   const teamConnection = readTeamConnection();
 

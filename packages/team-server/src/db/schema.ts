@@ -113,7 +113,10 @@ export const dailyRollups = pgTable(
     membershipId: uuid("membership_id").notNull().references(() => memberships.id, { onDelete: "cascade" }),
     day: date("day").notNull(),
     agentTimeMs: bigint("agent_time_ms", { mode: "number" }).notNull().default(0),
+    // session-days (counts a cross-midnight session on each touched day)
     sessions: integer("sessions").notNull().default(0),
+    // start-day unique count; nullable for rows pushed before the per-day split
+    uniqueSessions: integer("unique_sessions"),
     toolCalls: integer("tool_calls").notNull().default(0),
     turns: integer("turns").notNull().default(0),
     tokensInput: bigint("tokens_input", { mode: "number" }).notNull().default(0),
@@ -250,7 +253,9 @@ export const richDailyRollups = pgTable(
     membershipId: uuid("membership_id").notNull().references(() => memberships.id, { onDelete: "cascade" }),
     day: date("day").notNull(),
     agentTimeMs: bigint("agent_time_ms", { mode: "number" }).notNull().default(0),
+    // session-days; uniqueSessions is the start-day count (see daily_rollups)
     sessions: integer("sessions").notNull().default(0),
+    uniqueSessions: integer("unique_sessions"),
     prs: integer("prs").notNull().default(0),
     commits: integer("commits").notNull().default(0),
     pushes: integer("pushes").notNull().default(0),

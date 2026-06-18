@@ -9,6 +9,14 @@ CLI has its own log at the repo root `CHANGELOG.md`.
 ### Added
 - **Jira Cloud integration** — a third delivery source alongside GitHub and Linear. Connect in team settings → Integrations with your Jira site, account email and an Atlassian API token; pick projects and map each to groups (same "counts toward" model as repos and Linear teams). Adds a **Ticket velocity · Jira** block to group insight reports (completed tickets, cycle/lead medians, WIP, and the share shipped via AI-assisted PRs), and feeds the **Work timeline** alongside Linear — both ticket sources union into one pickup→merge view. Jira has no native "started" timestamp, so cycle time is derived from the changelog's first transition into an In-Progress status; story points read from `customfield_10016`. Synced hourly, encrypted at rest, and pruned on the same per-team retention as the other integrations.
 
+## [0.12.3] — 2026-06-15
+
+### Fixed
+- **Per-day breakdowns no longer show "agent time but 0 tokens / 0 sessions" on days that continue an overnight session.** A session that ran past midnight had its agent time split across calendar days but its tokens, tool calls and session count pinned to the start day, so each continuation day rendered as active-but-empty. Daily rollups now attribute tokens/tool-calls/turns to the day each event actually happened and count the session on every day it touched.
+
+### Added
+- **`unique_sessions` metric (expand migration `0009`).** Because the per-day `sessions` column is now "session-days" (a cross-midnight session counts on each day it touched), a new `unique_sessions` column carries the start-day count so roster/member-header totals, the L0–L4 maturity classifier, and the momentum/volume trends keep exact unique-session semantics. Nullable and read via `COALESCE(unique_sessions, sessions)`, so rows ingested by older CLIs fall back cleanly. Zero-downtime `ADD COLUMN` — safe to apply under the previous server revision.
+
 ## [0.12.2] — 2026-06-10
 
 ### Fixed

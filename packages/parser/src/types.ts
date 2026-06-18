@@ -187,6 +187,20 @@ export type SessionMeta = {
    *  tag a one-off chat with whatever team context happened to be active.
    *  Gate "is this session a team lead" UI on this flag. */
   isTeamLead?: boolean;
+  /** derived: number of dynamic-workflow runs dispatched via the Workflow
+   *  tool — one per `<session-uuid>/workflows/wf_*.json` journal. A single
+   *  Workflow tool call collapses a whole fan-out into one transcript row;
+   *  this surfaces that the row was actually a workflow. */
+  workflowCount?: number;
+  /** derived: total agents spawned across every workflow run (sum of each
+   *  journal's `agentCount`). The real fleet size a session orchestrated —
+   *  invisible in the parent transcript, which only logs the Workflow call. */
+  spawnedAgentCount?: number;
+  /** derived: per-local-day split of tokens/tool-calls/turns, bucketed by each
+   *  event's own timestamp so a cross-midnight session reports real usage on
+   *  each day. Invariant: sum(dailyBreakdown.tokens) === totalUsage. Absent for
+   *  sources that don't populate it (codex/gemini/antigravity) → start-day fallback. */
+  dailyBreakdown?: { day: string; toolCalls: number; turns: number; tokens: Usage }[];
 };
 
 /**
@@ -241,8 +255,98 @@ export type SubagentRun = {
   assistantMessageCount?: number;
 };
 
+/**
+ * One agent the workflow spawned, from a `workflow_agent` entry in the
+ * journal's `workflowProgress`. Each carries the phase it ran in plus the
+ * task prompt, result, and per-agent metering — enough to review what
+ * actually happened inside a run, even though the agent has no standalone
+ * transcript file.
+ */
+export type WorkflowAgentRun = {
+  /** Spawn order within the run (1-based). */
+  index: number;
+  /** Short label, e.g. "build:s-r2-silent-enrich" / "review:…" / "ci:…". */
+  label: string;
+  /** 1-based phase this agent belongs to (matches WorkflowRun.phases order). */
+  phaseIndex?: number;
+  /** Phase title as recorded on the agent entry. */
+  phaseTitle?: string;
+  /** Internal agent id from the runtime. */
+  agentId?: string;
+  /** Model the agent ran on. */
+  model?: string;
+  /** Terminal/last state: "done" | "running" | "error" | "failed" | … */
+  state?: string;
+  /** Wall-clock start (epoch ms). */
+  startedAt?: number;
+  /** Agent duration in ms. */
+  durationMs?: number;
+  /** Tokens the agent consumed. */
+  tokens?: number;
+  /** Tool calls the agent made. */
+  toolCalls?: number;
+  /** Last tool summary line (one-liner of its final action). */
+  lastToolSummary?: string;
+  /** The task prompt the agent was dispatched with (truncated). */
+  promptPreview?: string;
+  /** The agent's returned result (truncated). */
+  resultPreview?: string;
+};
+
+/**
+ * One dynamic-workflow run dispatched via the `Workflow` tool. Unlike a
+ * subagent (a single background transcript), a workflow orchestrates many
+ * internal agents and persists an aggregate journal to a sibling
+ * `<session-uuid>/workflows/wf_*.json`. We surface each journal as a
+ * first-class run so the UI can show the real fan-out (agentCount, tokens,
+ * tool calls) that the parent transcript collapses into one opaque tool call.
+ */
+export type WorkflowRun = {
+  /** Run id from the journal (`wf_…`), also the file stem. */
+  runId: string;
+  /** `meta.name` of the workflow script (journal `workflowName`). */
+  name: string;
+  /** `meta.description` / journal `summary` — the one-line intent. */
+  description?: string;
+  /** Journal status: "completed" | "running" | "failed" | "aborted" | … */
+  status: string;
+  /** Number of agents the workflow spawned across its lifetime. */
+  agentCount: number;
+  /** Total tool calls summed across every spawned agent (`totalToolCalls`). */
+  toolCallCount: number;
+  /** Total tokens summed across every spawned agent (`totalTokens`). No
+   *  input/output/cache split is recorded in the journal, so this stays
+   *  separate from the session's `totalUsage` rather than being folded in. */
+  totalTokens: number;
+  /** Wall-clock duration of the whole run, in ms. */
+  durationMs?: number;
+  /** Wall-clock start (epoch ms, journal `startTime`). */
+  startMs?: number;
+  /** Wall-clock end (startMs + durationMs). */
+  endMs?: number;
+  /** Start relative to the parent session's t=0, in ms. */
+  startTOffsetMs?: number;
+  /** End relative to the parent session's t=0, in ms. */
+  endTOffsetMs?: number;
+  /** Default model the workflow ran its agents on (`defaultModel`). */
+  model?: string;
+  /** Declared phases (`meta.phases`) — title + optional one-line detail. */
+  phases: { title: string; detail?: string }[];
+  /** Human progress log lines (▶ / ✓ task markers) emitted during the run. */
+  logs: string[];
+  /** Per-agent runs (from `workflowProgress`), grouped in the UI by phase.
+   *  Empty for older journals that predate `workflowProgress`. */
+  agents: WorkflowAgentRun[];
+  /** Parent `Workflow` tool_use id, when matchable by dispatch time. */
+  parentToolUseId?: string;
+  /** Parent assistant message uuid that issued the Workflow tool_use. */
+  parentUuid?: string;
+};
+
 export type SessionDetail = SessionMeta & {
   events: SessionEvent[];
   /** Sub-agent runs spawned during this session, sorted by start time. */
   subagents?: SubagentRun[];
+  /** Dynamic-workflow runs dispatched during this session, sorted by start. */
+  workflows?: WorkflowRun[];
 };

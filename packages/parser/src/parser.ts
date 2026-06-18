@@ -7,6 +7,7 @@
 
 import type { ContentBlock, EventRole, SessionEvent, SessionMeta, Usage } from "./types.js";
 import { isFrameworkInjectedUserInput, stripFrameworkBoilerplate } from "./user-input.js";
+import { toLocalDay } from "./analytics.js";
 
 const BLANK_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
@@ -466,9 +467,33 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
   let linesRemoved = 0;
   const filesEdited = new Set<string>();
 
+  // Per-local-day split of the one-shot totals. Each tool call / turn / token
+  // lands on the calendar day its own event happened, so a cross-midnight
+  // session attributes real usage to each day instead of dumping everything on
+  // the start day (which left continuation days showing agent-time-but-0-tokens).
+  const perDay = new Map<string, { toolCalls: number; turns: number; tokens: Usage }>();
+  const fallbackDay = startMs !== undefined ? toLocalDay(startMs) : undefined;
+  const dayBucket = (ts: string | undefined) => {
+    let day: string | undefined;
+    if (ts) {
+      const ms = Date.parse(ts);
+      if (!Number.isNaN(ms)) day = toLocalDay(ms);
+    }
+    day = day ?? fallbackDay;
+    if (!day) return undefined;
+    let b = perDay.get(day);
+    if (!b) {
+      b = { toolCalls: 0, turns: 0, tokens: { ...BLANK_USAGE } };
+      perDay.set(day, b);
+    }
+    return b;
+  };
+
   for (const e of events) {
     if (e.role === "tool-call") {
       toolCallCount++;
+      const tcDay = dayBucket(e.timestamp);
+      if (tcDay) tcDay.toolCalls++;
       // Count lines added/removed from Edit and Write tool calls.
       const toolBlock = e.blocks.find(
         (b) => b && (b as { type?: string }).type === "tool_use",
@@ -526,6 +551,8 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
             : e.preview;
         }
         turnCount++;
+        const turnDay = dayBucket(e.timestamp);
+        if (turnDay) turnDay.turns++;
         // Track the most recent "real" user message so the live widget
         // can surface "what am I working on RIGHT NOW" instead of the
         // first thing asked in a long-running session.
@@ -566,6 +593,14 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
           totalUsage.output += u.output;
           totalUsage.cacheRead += u.cacheRead;
           totalUsage.cacheWrite += u.cacheWrite;
+          const ts = typeof o.timestamp === "string" ? o.timestamp : undefined;
+          const b = dayBucket(ts);
+          if (b) {
+            b.tokens.input += u.input;
+            b.tokens.output += u.output;
+            b.tokens.cacheRead += u.cacheRead;
+            b.tokens.cacheWrite += u.cacheWrite;
+          }
         }
       }
     }
@@ -590,6 +625,9 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       lastAgentPreview,
       toolCallCount,
       turnCount,
+      dailyBreakdown: Array.from(perDay.entries())
+        .map(([day, v]) => ({ day, toolCalls: v.toolCalls, turns: v.turns, tokens: v.tokens }))
+        .sort((a, b) => a.day.localeCompare(b.day)),
       airTimeMs,
       activeSegments,
       linesAdded,

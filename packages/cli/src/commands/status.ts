@@ -1,5 +1,7 @@
-import { getServerStatus } from "../server.js";
+import { getServerStatus, isServerStale } from "../server.js";
 import { getDaemonStatusInfo } from "./daemon.js";
+
+declare const CLI_VERSION: string;
 
 /**
  * `fleetlens status` — show the live state of both the web server and
@@ -11,7 +13,13 @@ export async function status(): Promise<void> {
   const server = getServerStatus();
   if (server.running) {
     const url = `http://localhost:${server.port}`;
-    console.log(`Server:  running on ${url} (PID ${server.pid})`);
+    const ver = server.version ?? "unknown";
+    console.log(`Server:  running on ${url} (PID ${server.pid}, v${ver})`);
+    if (isServerStale(server)) {
+      console.log(
+        `  ⚠  serving stale ${ver} (CLI is ${CLI_VERSION}) — run 'fleetlens start' to restart on the current version`,
+      );
+    }
   } else {
     console.log("Server:  not running");
   }

@@ -215,12 +215,29 @@ export function dailyActivity(sessions: SessionMeta[]): DailyBucket[] {
   };
 
   for (const s of sessions) {
-    // Session-level one-shot totals (tool calls, turns, usage, durationMs)
-    // are attributed to the day the session started. These are intrinsic
-    // to the session as a whole — splitting them across days would be
-    // both fiddly and misleading.
+    // Tool calls, turns, and tokens are attributed to the day each event
+    // actually happened (via the parser's per-event `dailyBreakdown`) so a
+    // cross-midnight session reports real usage on every calendar day it
+    // worked, not zeros on the continuation days. The split is sum-preserving
+    // — every event is counted exactly once, on its own day. durationMs stays
+    // on the start day (a whole-session figure, not meaningfully per-day).
+    //
+    // Fallback for sources without `dailyBreakdown` (codex/gemini/antigravity)
+    // or old cached metas: attribute the whole session's totals to its start
+    // day, the prior behavior.
     const startDay = sessionDay(s);
-    if (startDay) {
+    if (s.dailyBreakdown && s.dailyBreakdown.length > 0) {
+      for (const d of s.dailyBreakdown) {
+        const bucket = touchBucket(d.day);
+        bucket.toolCalls += d.toolCalls;
+        bucket.turns += d.turns;
+        bucket.tokens.input += d.tokens.input;
+        bucket.tokens.output += d.tokens.output;
+        bucket.tokens.cacheRead += d.tokens.cacheRead;
+        bucket.tokens.cacheWrite += d.tokens.cacheWrite;
+      }
+      if (startDay) touchBucket(startDay).durationMs += s.durationMs ?? 0;
+    } else if (startDay) {
       const bucket = touchBucket(startDay);
       bucket.toolCalls += s.toolCallCount ?? 0;
       bucket.turns += s.turnCount ?? 0;
@@ -231,42 +248,37 @@ export function dailyActivity(sessions: SessionMeta[]): DailyBucket[] {
       bucket.durationMs += s.durationMs ?? 0;
     }
 
-    // Active time + session presence get split by day based on the
-    // session's active segments. A long-running session that spans
-    // multiple local days contributes to every day its agent was
-    // actually working — matches what the Gantt chart shows and what a
-    // human would expect looking at a calendar heatmap.
-    //
-    // Fallback for old cached metas that predate `activeSegments`:
-    // attribute the whole airTimeMs to startDay (legacy behavior).
+    // Agent time is split across every local day the active segments touched
+    // (matches the Gantt chart / calendar heatmap). Legacy fallback for metas
+    // predating `activeSegments`: attribute the whole airTimeMs to startDay.
+    const presenceDays = new Set<string>();
     const segments = s.activeSegments;
     if (segments && segments.length > 0) {
-      const touchedDays = new Set<string>();
       for (const seg of segments) {
         let cur = seg.startMs;
         while (cur < seg.endMs) {
           const day = toLocalDay(cur);
-          touchedDays.add(day);
-          // Compute the start-of-next-local-day to clip segments that
-          // cross midnight.
+          presenceDays.add(day);
+          // Start-of-next-local-day, to clip a segment that crosses midnight.
           const d = new Date(cur);
           d.setHours(24, 0, 0, 0);
           const dayEndMs = Math.min(d.getTime(), seg.endMs);
-          const bucket = touchBucket(day);
-          bucket.airTimeMs += dayEndMs - cur;
+          touchBucket(day).airTimeMs += dayEndMs - cur;
           cur = dayEndMs;
         }
       }
-      for (const day of touchedDays) {
-        const bucket = touchBucket(day);
-        bucket.sessions++;
-      }
     } else if (startDay) {
-      // Legacy fallback: attribute to start day only.
-      const bucket = touchBucket(startDay);
-      bucket.sessions++;
-      bucket.airTimeMs += s.airTimeMs ?? 0;
+      presenceDays.add(startDay);
+      touchBucket(startDay).airTimeMs += s.airTimeMs ?? 0;
     }
+
+    // A day with token/tool/turn activity counts the session too, even if the
+    // parent's active segments never reached it — e.g. a subagent that ran
+    // past midnight while the orchestrator sat idle. Without this such a day
+    // would show tokens with 0 sessions: the original bug, mirrored.
+    if (s.dailyBreakdown) for (const d of s.dailyBreakdown) presenceDays.add(d.day);
+
+    for (const day of presenceDays) touchBucket(day).sessions++;
   }
 
   // Fill gaps so the heatmap draws a continuous range.

@@ -1,4 +1,4 @@
-import { getServerStatus, startServer, openBrowser } from "../server.js";
+import { ensureCurrentServer, openBrowser } from "../server.js";
 
 export async function web(args: string[]): Promise<void> {
   // --open opts into browser launch; --no-open is silently accepted as a no-op for backward compat.
@@ -7,31 +7,24 @@ export async function web(args: string[]): Promise<void> {
   const rawPath = positional[0] ?? "";
   const path = rawPath.startsWith("/") ? rawPath : rawPath ? `/${rawPath}` : "";
 
-  const status = getServerStatus();
-
-  if (status.running) {
-    const url = `http://localhost:${status.port}${path}`;
-    if (open) {
-      console.log(`Opening ${url}`);
-      openBrowser(url);
-    } else {
-      console.log(`Dashboard ready at ${url} (re-run with --open to launch it automatically).`);
-    }
-    return;
-  }
-
-  console.log("fleetlens is not running. Starting server...");
+  // Reuse a healthy same-version server; cycle a stale one so the printed
+  // URL never points at an old, possibly broken, bundle.
+  let result;
   try {
-    const result = await startServer({});
-    const url = `http://localhost:${result.port}${path}`;
-    console.log(`fleetlens running on ${url} (PID ${result.pid})`);
-    if (open) {
-      openBrowser(url);
-    } else {
-      console.log(`Open ${url} in your browser, or re-run with --open to launch it automatically.`);
-    }
+    result = await ensureCurrentServer({});
   } catch (err) {
     console.error(`Failed to start: ${(err as Error).message}`);
     process.exit(1);
+  }
+
+  const url = `http://localhost:${result.port}${path}`;
+  if (result.restarted) {
+    console.log(`fleetlens restarted on http://localhost:${result.port} (PID ${result.pid}) — replaced stale ${result.previousVersion ?? "unknown"} server`);
+  }
+  if (open) {
+    console.log(`Opening ${url}`);
+    openBrowser(url);
+  } else {
+    console.log(`Dashboard ready at ${url} (re-run with --open to launch it automatically).`);
   }
 }

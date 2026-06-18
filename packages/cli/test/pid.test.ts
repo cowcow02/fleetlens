@@ -27,6 +27,24 @@ describe("pid", () => {
     expect(readPid(pidFile)).toEqual({ pid: 12345, port: undefined });
   });
 
+  it("writes and reads a PID file with port and version", () => {
+    const pidFile = join(dir, "pid");
+    writePid(pidFile, 12345, 3321, "0.12.2");
+    expect(readPid(pidFile)).toEqual({ pid: 12345, port: 3321, version: "0.12.2" });
+  });
+
+  it("drops version when no port is given (colon positions must stay stable)", () => {
+    const pidFile = join(dir, "pid");
+    writePid(pidFile, 12345, undefined, "0.12.2");
+    expect(readPid(pidFile)).toEqual({ pid: 12345, port: undefined, version: undefined });
+  });
+
+  it("reads a legacy pid:port file with no version (back-compat)", () => {
+    const pidFile = join(dir, "pid");
+    writePid(pidFile, 12345, 3321);
+    expect(readPid(pidFile)!.version).toBeUndefined();
+  });
+
   it("returns null for missing PID file", () => {
     expect(readPid(join(dir, "nope"))).toBeNull();
   });

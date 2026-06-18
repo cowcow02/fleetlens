@@ -136,7 +136,9 @@ describe("schema parity with SCHEMA_SQL", () => {
       "tokens_output",
       "tokens_cache_read",
       "tokens_cache_write",
+      "unique_sessions",
     ]);
+    expect(dailyRollups.find((c) => c.column_name === "unique_sessions")!.is_nullable).toBe("YES");
     expect(dailyRollups.find((c) => c.column_name === "agent_time_ms")!.data_type).toBe("bigint");
 
     const events = byTable.get("events")!;

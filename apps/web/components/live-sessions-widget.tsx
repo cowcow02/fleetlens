@@ -164,7 +164,7 @@ export function LiveSessionsWidget({
             animation: "cs-live-pulse 1.6s ease-in-out infinite",
           }}
         />
-        Live · {live.length}
+        Live · <span suppressHydrationWarning>{live.length}</span>
       </button>
 
       {/* Overflow hint — only when expanded and not all live shown. */}

@@ -36,7 +36,11 @@ export type MemberRow = {
 export type RollupRow = {
   day: string;
   agent_time_ms: string;
+  // session-days (per-day presence); use for the per-day table
   sessions: number;
+  // start-day unique count; null on rows from pre-split CLIs. Sum this (with a
+  // `sessions` fallback) for "unique sessions" totals.
+  unique_sessions: number | null;
   tool_calls: number;
   turns: number;
   tokens_input: string;
@@ -60,7 +64,7 @@ export async function loadRoster(teamId: string, days: number, pool: pg.Pool): P
     SELECT
       m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at,
       COALESCE(SUM(r.agent_time_ms), 0)::bigint AS range_agent_time_ms,
-      COALESCE(SUM(r.sessions), 0)::int AS range_sessions,
+      COALESCE(SUM(COALESCE(r.unique_sessions, r.sessions)), 0)::int AS range_sessions,
       COALESCE(SUM(r.tool_calls), 0)::int AS range_tool_calls,
       COALESCE(SUM(r.turns), 0)::int AS range_turns,
       COALESCE(SUM(r.tokens_input + r.tokens_output + r.tokens_cache_read + r.tokens_cache_write), 0)::bigint AS range_tokens
@@ -86,7 +90,7 @@ export async function loadMemberRollups(
   // cutoff, making the member chart disagree with the roster card for the
   // same range.
   const res = await pool.query(`
-    SELECT day::text, agent_time_ms, sessions, tool_calls, turns,
+    SELECT day::text, agent_time_ms, sessions, unique_sessions, tool_calls, turns,
            tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
     FROM daily_rollups
     WHERE team_id = $1 AND membership_id = $2 AND day >= $3
@@ -113,7 +117,7 @@ export async function loadGroupRoster(groupId: string, days: number, pool: pg.Po
       m.id, u.email, u.display_name, m.role, m.joined_at, m.last_seen_at,
       gm.is_manager,
       COALESCE(SUM(r.agent_time_ms), 0)::bigint AS range_agent_time_ms,
-      COALESCE(SUM(r.sessions), 0)::int AS range_sessions,
+      COALESCE(SUM(COALESCE(r.unique_sessions, r.sessions)), 0)::int AS range_sessions,
       COALESCE(SUM(r.tool_calls), 0)::int AS range_tool_calls,
       COALESCE(SUM(r.turns), 0)::int AS range_turns,
       COALESCE(SUM(r.tokens_input + r.tokens_output + r.tokens_cache_read + r.tokens_cache_write), 0)::bigint AS range_tokens

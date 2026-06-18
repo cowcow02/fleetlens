@@ -4,6 +4,41 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.12.3] — 2026-06-15
+
+### Fixed
+- **Opening a session under-counted its tokens everywhere afterward.** Viewing a session that spawned subagents returned parent-only token totals and overwrote the shared in-memory cache with them, so the dashboard, estimated cost, daily heatmap, and project rollups all dropped that session's subagent tokens until the server restarted. The detail path now applies the same subagent-inclusive recompute as the list path, so totals stay correct and consistent no matter which page you open first.
+- **`fleetlens usage --history` cost accuracy.** A single session on an unpriced model (e.g. `<synthetic>`) no longer nulls a whole day's cost — each day now sums the cost of its priced sessions and marks the figure as a lower bound (`≥`) when some sessions couldn't be priced. The Total row sums every priced day (it previously dropped them while still counting their tokens) and is likewise marked `≥` when any usage was unpriced, so Total cost and Total tokens no longer imply different scopes.
+- **`fleetlens usage --history` model labels.** A day with two minor model versions could render a duplicated/inconsistent label (e.g. `opus-4, opus-4`); model names now use one normalization for both de-duplication and display.
+- **Sidebar project count matches the Projects page.** The sidebar nav badge and footer counted Claude Code projects only, disagreeing with the all-source `/projects` page and omitting Codex / Cowork / Gemini / Antigravity projects. Both now reflect every agent source.
+- **A stale or corrupt digest file no longer 500s the dashboard.** Cached day/week/month digests are now validated on read (schema version + shape); an incompatible or damaged file is ignored and the page renders without it, honoring the "a schema bump regenerates digests" contract.
+- **A failed stale-server restart can't leave an invisible orphan.** If the replacement server can't take the port, `fleetlens start`/`web` now escalate to a force-kill and re-record the old server's pid so `status`/`stop` can still see and stop it, instead of leaving an untracked process serving the old bundle.
+- **Live-sessions count hydration.** The "Live · N" badge is time-derived and could briefly mismatch between server render and hydration; it's now marked so React doesn't warn.
+
+## [0.12.2] — 2026-06-15
+
+### Fixed
+- **A stale web server could survive an update and serve a broken dashboard.** After `fleetlens` updated itself, the CLI binary and usage daemon came up on the new version, but a web server that was already running kept serving the old build. Once npm removed the previous install directory, any dashboard route the old server hadn't already loaded into memory returned a 500 (Insights was the usual casualty). `fleetlens start` and `fleetlens web` now record the running server's version in the pid file and automatically restart it when it no longer matches the installed CLI; `fleetlens status` shows the served version and warns when it's stale.
+
+## [0.12.1] — 2026-06-15
+
+### Fixed
+- **Per-day metrics for cross-midnight sessions.** A session that ran past midnight had its agent time split across calendar days but its tokens, tool calls, turns, and session count pinned to the start day — so on the dashboard (and team rollups) the continuation days showed agent time with 0 tokens / 0 sessions. Each tool call, turn, and token is now attributed to the day its own event happened, and a session counts on every local day it worked. The split is sum-preserving (totals are unchanged) and keeps `sum(per-day tokens) === session total` even across subagents that run past midnight.
+
+### Changed
+- **Team push carries a `unique_sessions` count.** Because the per-day `sessions` figure is now "session-days" (a cross-midnight session counts on each day it touched), the daemon also pushes the start-day count so the team-server's roster/header/maturity aggregates keep exact unique-session semantics. Requires team-server ≥ 0.12.3; older servers ignore the extra field.
+
+## [0.12.0] — 2026-06-15
+
+### Added
+- **Dynamic workflow visualization.** A single `Workflow` tool call collapses a whole fan-out — 200+ spawned agents — into one opaque transcript row. Fleetlens now reads the aggregate journals Claude Code persists per run and surfaces the real fleet work:
+  - **Workflows tab** on the session page (next to Transcript / Team / Debug) with a run-count badge. Each run is a card showing status, spawned-agent count, tool calls, tokens, and duration.
+  - **Fleet stat** in the session header (`N workflows · M agents`) plus a spawned-agent badge on session-list cards, so workflow-driven sessions stand out at a glance.
+  - **Per-phase action tabs** inside each run — the phases the workflow declared (e.g. Build / Panel / Skeptic / Merge), each listing the agents that ran in that phase.
+  - **Full per-agent step log.** Clicking an agent opens a right side-sheet with its Task, the complete ordered step list (every tool call — expand any step for the full multi-line command), and the Result. Loaded on demand so even 100+ step, 200+ agent sessions stay fast; sections are collapsed by default.
+  - **Workflow lanes** on the timeline minimap (distinct from subagent lanes); click a lane to open that run in the Workflows tab.
+- **Workflow execution counts as agent time.** A run's wall-clock span is folded into the session's "agent time" and carved out of the minimap idle bands, so the stretch where the parent waits on a workflow reads as active fleet work, not dead air.
+
 ## [0.11.2] — 2026-05-27
 
 ### Changed

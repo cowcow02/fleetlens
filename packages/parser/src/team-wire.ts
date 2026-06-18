@@ -11,7 +11,12 @@
 export type DailyRollup = {
   day: string;
   agentTimeMs: number;
+  // `sessions` is session-days: a cross-midnight session counts on every local
+  // day it touched (so the per-day table shows it on both). `uniqueSessions`
+  // is the start-day count, so SUM(uniqueSessions) over a range == the real
+  // unique-session total — the figure roster/header/classifier aggregates want.
   sessions: number;
+  uniqueSessions?: number;
   toolCalls: number;
   turns: number;
   tokens: {

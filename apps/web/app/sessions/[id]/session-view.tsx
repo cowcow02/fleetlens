@@ -12,6 +12,7 @@ import {
   Cpu,
   Folder,
   GitPullRequest,
+  Workflow as WorkflowIcon,
   Wrench,
   X,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import type {
   SessionDetail,
   SessionEvent,
   SubagentRun,
+  WorkflowRun,
   PrMarker,
 } from "@claude-lens/parser";
 import type { Entry } from "@claude-lens/entries";
@@ -93,9 +95,11 @@ const FILTER_MODES: { value: FilterMode; label: string }[] = [
 
 /** Drawer width in px — reserved on the transcript's right edge when open. */
 const DRAWER_WIDTH = 460;
+/** Wider sheet for the workflow-agent step log — dense step rows need room. */
+const WF_AGENT_DRAWER_WIDTH = 600;
 
-type TabId = "transcript" | "team" | "debug";
-const VALID_TABS: TabId[] = ["transcript", "team", "debug"];
+type TabId = "transcript" | "workflows" | "team" | "debug";
+const VALID_TABS: TabId[] = ["transcript", "workflows", "team", "debug"];
 
 export function SessionView({
   session,
@@ -152,12 +156,34 @@ export function SessionView({
   const [filter, setFilter] = useState<FilterMode>("turns");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedSubagentId, setSelectedSubagentId] = useState<string | null>(null);
+  /** Workflow run to focus (auto-expand + scroll) on the Workflows tab —
+   *  set when a workflow lane on the minimap is clicked. */
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+  /** Workflow agent whose full step log is open in the right side-sheet. */
+  const [selectedWorkflowAgent, setSelectedWorkflowAgent] = useState<{
+    runId: string;
+    agent: WorkflowRun["agents"][number];
+  } | null>(null);
   const [askOpen, setAskOpen] = useState(false);
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(new Set());
   /** When a timeline click sets the index we also want to scroll. Track that
    *  intent separately so selection via row-click doesn't auto-scroll. */
   const [scrollIntent, setScrollIntent] = useState(0);
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  // The event/subagent drawers are transcript-scoped (position: fixed, shown
+  // whenever a selection exists). Clear the selection when leaving the
+  // transcript so a stale drawer doesn't overlay the Workflows/Team/Debug tabs.
+  useEffect(() => {
+    if (tab !== "transcript") {
+      setSelectedIndex(null);
+      setSelectedSubagentId(null);
+    }
+    if (tab !== "workflows") {
+      setSelectedWorkflowId(null);
+      setSelectedWorkflowAgent(null);
+    }
+  }, [tab]);
 
   /** Measured height of the sticky header — used both as the drawer's
    *  top offset (so it sits exactly below the header) and as the
@@ -265,6 +291,8 @@ export function SessionView({
 
   const { events, durationMs, totalUsage, model, eventCount, projectName } = session;
   const airTimeMs = session.airTimeMs ?? durationMs;
+  const workflowCount = session.workflows?.length ?? 0;
+  const hasWorkflows = workflowCount > 0;
 
   /** Inbound `<teammate-message>` events are cross-session team traffic
    *  wrapped in a synthetic user event. On the LEAD's transcript these are
@@ -337,13 +365,23 @@ export function SessionView({
     anchors.sort((a, b) => a.ms - b.ms);
     const sessionStartMs = anchors[0]!.ms - (events.find((e) => e.timestamp)?.tOffsetMs ?? 0);
 
-    const subagentSpans = (session.subagents ?? [])
-      .filter(
-        (s): s is SubagentRun & { startTOffsetMs: number; endTOffsetMs: number } =>
-          s.startTOffsetMs !== undefined && s.endTOffsetMs !== undefined,
-      )
-      .map((s) => ({ start: s.startTOffsetMs, end: s.endTOffsetMs }))
-      .sort((a, b) => a.start - b.start);
+    // "Busy" spans = delegated agent work that means the parent isn't idle:
+    // subagent runs AND dynamic-workflow execution. Both are carved out of the
+    // idle bands so a long Workflow run (during which the parent just waits)
+    // reads as active agent time, not dead air. A still-running workflow has
+    // no end offset yet — extend it to the last anchor.
+    const lastAnchorOff = anchors[anchors.length - 1]!.ms - sessionStartMs;
+    const busySpans = [
+      ...(session.subagents ?? [])
+        .filter((s) => s.startTOffsetMs !== undefined && s.endTOffsetMs !== undefined)
+        .map((s) => ({ start: s.startTOffsetMs as number, end: s.endTOffsetMs as number })),
+      ...(session.workflows ?? [])
+        .filter((w) => w.startTOffsetMs !== undefined)
+        .map((w) => ({
+          start: w.startTOffsetMs as number,
+          end: (w.endTOffsetMs ?? lastAnchorOff) as number,
+        })),
+    ].sort((a, b) => a.start - b.start);
 
     /** Subtract subagent spans from [start, end] in offset coordinates,
      *  returning 0+ remaining slices in time order. */
@@ -352,7 +390,7 @@ export function SessionView({
       end: number,
     ): { start: number; end: number }[] => {
       let pieces: { start: number; end: number }[] = [{ start, end }];
-      for (const span of subagentSpans) {
+      for (const span of busySpans) {
         if (span.end <= start) continue;
         if (span.start >= end) break;
         const next: { start: number; end: number }[] = [];
@@ -370,9 +408,9 @@ export function SessionView({
     };
 
     const overlapsSubagent = (start: number, end: number): boolean => {
-      for (const span of subagentSpans) {
+      for (const span of busySpans) {
         if (span.end <= start) continue;
-        // subagentSpans is sorted by start, so once span.start >= end no
+        // busySpans is sorted by start, so once span.start >= end no
         // later span can overlap [start, end] either — bail out cleanly.
         if (span.start >= end) return false;
         return true;
@@ -433,7 +471,7 @@ export function SessionView({
       }
     }
     return bands;
-  }, [events, session.subagents]);
+  }, [events, session.subagents, session.workflows]);
 
   const coldResumeMarkers = useMemo(() => {
     const seen = new Set<string>();
@@ -530,6 +568,23 @@ export function SessionView({
     setScrollIntent((n) => n + 1);
   }
 
+  /** Scroll the transcript to the row whose assistant message issued a given
+   *  tool_use id. Used by workflow cards / lanes to jump to the originating
+   *  Workflow tool call. */
+  function jumpToToolUse(toolUseId?: string) {
+    if (!toolUseId) return;
+    const ev = events.find((e) =>
+      e.blocks.some((b) => b?.type === "tool_use" && b.id === toolUseId),
+    );
+    if (ev) {
+      setSelectedSubagentId(null);
+      // The Workflow row lives in the transcript — switch there first (e.g.
+      // when jumping from the Workflows tab) so the scroll target exists.
+      if (tab !== "transcript") setTab("transcript");
+      scrollToIndex(ev.index);
+    }
+  }
+
   const totalInput = totalUsage.input + totalUsage.cacheRead + totalUsage.cacheWrite;
 
   return (
@@ -604,6 +659,28 @@ export function SessionView({
             >
               Transcript
             </button>
+            {hasWorkflows && (
+              <button
+                className={`af-tab-btn ${tab === "workflows" ? "active" : ""}`}
+                onClick={() => setTab("workflows")}
+              >
+                Workflows
+                <span
+                  style={{
+                    marginLeft: 6,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    padding: "1px 6px",
+                    borderRadius: 100,
+                    background: "rgba(234,88,12,0.16)",
+                    color: "#EA580C",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  {workflowCount}
+                </span>
+              </button>
+            )}
             {team && (
               <button
                 className={`af-tab-btn ${tab === "team" ? "active" : ""}`}
@@ -725,6 +802,15 @@ export function SessionView({
             )}
           <InlineStatDivider />
           <InlineStat value={`${eventCount} events`} />
+          {(session.workflowCount ?? 0) > 0 && (
+            <>
+              <InlineStatDivider />
+              <InlineStat
+                icon={<WorkflowIcon size={12} />}
+                value={`${session.workflowCount} workflow${session.workflowCount === 1 ? "" : "s"} · ${(session.spawnedAgentCount ?? 0).toLocaleString()} agents`}
+              />
+            </>
+          )}
           {prMarkers.length > 0 && (
             <>
               <InlineStatDivider />
@@ -855,6 +941,11 @@ export function SessionView({
             onSelect={scrollToIndex}
             headerOffset={headerH}
             subagents={session.subagents}
+            workflows={session.workflows}
+            onWorkflowClick={(runId) => {
+              setSelectedWorkflowId(runId);
+              setTab("workflows");
+            }}
             collapsed={collapsed}
             prMarkers={prMarkers}
             coldResumeMarkers={coldResumeMarkers}
@@ -892,7 +983,30 @@ export function SessionView({
             onVisibleTrackIdsChange={setTeamVisibleTrackIds}
             seekTarget={teamSeekTarget}
           />
-        ) : tab === "transcript" ? (
+        ) : tab === "workflows" && hasWorkflows ? (
+          <div style={{ paddingBottom: 24 }}>
+            <WorkflowsPanel
+              workflows={session.workflows!}
+              spawnedAgentCount={session.spawnedAgentCount ?? 0}
+              focusRunId={selectedWorkflowId}
+              selectedAgentKey={
+                selectedWorkflowAgent
+                  ? `${selectedWorkflowAgent.runId}:${selectedWorkflowAgent.agent.agentId ?? selectedWorkflowAgent.agent.index}`
+                  : null
+              }
+              onOpenAgent={(runId, agent) =>
+                setSelectedWorkflowAgent((cur) =>
+                  cur && cur.runId === runId && cur.agent.index === agent.index
+                    ? null
+                    : { runId, agent },
+                )
+              }
+              onJumpToParent={jumpToToolUse}
+            />
+          </div>
+        ) : tab === "debug" ? (
+          <DebugList events={events} />
+        ) : (
           <>
             {entries.length > 0 && (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
@@ -943,8 +1057,6 @@ export function SessionView({
               rawIdleBands={rawIdleBands}
             />
           </>
-        ) : (
-          <DebugList events={events} />
         )}
       </div>
 
@@ -1020,6 +1132,33 @@ export function SessionView({
           </aside>
         );
       })()}
+
+      {/* Workflow-agent step log — opens as a right side-sheet so the full
+          (often 100+ step) transcript doesn't make the Workflows tab huge. */}
+      {selectedWorkflowAgent && (
+        <aside
+          style={{
+            position: "fixed",
+            top: headerH,
+            right: 0,
+            bottom: 0,
+            width: WF_AGENT_DRAWER_WIDTH,
+            maxWidth: "100vw",
+            borderLeft: "1px solid var(--af-border-subtle)",
+            background: "var(--af-surface)",
+            overflowY: "auto",
+            zIndex: 28,
+            boxShadow: "-8px 0 24px rgba(15, 23, 42, 0.1)",
+          }}
+        >
+          <WorkflowAgentDrawer
+            sessionId={session.id}
+            runId={selectedWorkflowAgent.runId}
+            agent={selectedWorkflowAgent.agent}
+            onClose={() => setSelectedWorkflowAgent(null)}
+          />
+        </aside>
+      )}
 
       {/* Ask drawer */}
       {askOpen && (
@@ -1458,6 +1597,8 @@ function Minimap({
   onSelect,
   headerOffset,
   subagents,
+  workflows,
+  onWorkflowClick,
   collapsed,
   selectedSubagentId,
   onSelectSubagent,
@@ -1472,6 +1613,8 @@ function Minimap({
   onSelect: (i: number) => void;
   headerOffset: number;
   subagents?: SubagentRun[];
+  workflows?: WorkflowRun[];
+  onWorkflowClick?: (runId: string) => void;
   collapsed?: boolean;
   selectedSubagentId?: string | null;
   onSelectSubagent?: (id: string | null) => void;
@@ -1494,6 +1637,9 @@ function Minimap({
   const SUB_LANE_H = 11;
   /** Gap between the main timeline and the sub-agent lanes (when present). */
   const SUB_LANE_GAP = 6;
+  /** Per-workflow lane height — a touch taller than subagent lanes so the
+   *  workflow tier reads as distinct. */
+  const WF_LANE_H = 13;
   const BAR_TOP = 3;
   const BAR_BOT = MAIN_H - 3;
   const BAR_H = BAR_BOT - BAR_TOP;
@@ -1513,6 +1659,7 @@ function Minimap({
     turn?: TurnMegaRow;
     idleMs?: number;
     subagent?: SubagentRun;
+    workflow?: WorkflowRun;
     pr?: PrMarker;
     cold?: {
       tOffsetMs: number;
@@ -1827,7 +1974,50 @@ function Minimap({
 
   const SUB_BLOCK_TOP = MAIN_H + SUB_LANE_GAP;
   const SUB_LANES_H = laneCount > 0 ? laneCount * SUB_LANE_H : 0;
-  const TOTAL_H = MAIN_H + (laneCount > 0 ? SUB_LANE_GAP + SUB_LANES_H : 0);
+
+  // ---- Workflow lane assignment --------------------------------------
+  // Same greedy sweep as subagents. Workflow runs are mostly sequential
+  // milestones, so this usually collapses to one lane — but overlap is
+  // handled if two runs ever ran concurrently.
+  const { wfLaneOf, wfLaneCount } = useMemo(() => {
+    // Only place workflows we can actually draw (startTOffsetMs known). A
+    // running run has no end yet — it extends to the session end (safeDur),
+    // matching the open-ended bar the render draws. Counting only placeable
+    // runs keeps wfLaneCount in lockstep with what renders, so no empty
+    // reserved band appears.
+    const placeable = (workflows ?? []).filter((w) => w.startTOffsetMs !== undefined);
+    if (placeable.length === 0) {
+      return { wfLaneOf: new Map<string, number>(), wfLaneCount: 0 };
+    }
+    const sorted = [...placeable].sort(
+      (a, b) => (a.startTOffsetMs ?? 0) - (b.startTOffsetMs ?? 0),
+    );
+    const laneEnds: number[] = [];
+    const wfLaneOf = new Map<string, number>();
+    for (const w of sorted) {
+      const start = w.startTOffsetMs ?? 0;
+      const end = w.endTOffsetMs ?? safeDur;
+      let assigned = -1;
+      for (let i = 0; i < laneEnds.length; i++) {
+        if (laneEnds[i]! <= start) {
+          assigned = i;
+          break;
+        }
+      }
+      if (assigned === -1) {
+        assigned = laneEnds.length;
+        laneEnds.push(0);
+      }
+      laneEnds[assigned] = Math.max(end, start + 1);
+      wfLaneOf.set(w.runId, assigned);
+    }
+    return { wfLaneOf, wfLaneCount: laneEnds.length };
+  }, [workflows, safeDur]);
+
+  const SUB_BLOCK_BOTTOM = MAIN_H + (laneCount > 0 ? SUB_LANE_GAP + SUB_LANES_H : 0);
+  const WF_BLOCK_TOP = SUB_BLOCK_BOTTOM + (wfLaneCount > 0 ? SUB_LANE_GAP : 0);
+  const WF_LANES_H = wfLaneCount > 0 ? wfLaneCount * WF_LANE_H : 0;
+  const TOTAL_H = SUB_BLOCK_BOTTOM + (wfLaneCount > 0 ? SUB_LANE_GAP + WF_LANES_H : 0);
 
   return (
     <div
@@ -2023,6 +2213,73 @@ function Minimap({
           </g>
         )}
 
+        {/* Workflow lanes — one bar per dynamic-workflow run, on the same
+            time axis as the main timeline, colored by status (orange tier,
+            distinct from the blue/purple subagents). The agent count is the
+            headline — a single Workflow tool call hides a whole fleet. */}
+        {wfLaneCount > 0 && workflows && (
+          <g>
+            <line
+              x1={0}
+              x2={WIDTH}
+              y1={WF_BLOCK_TOP - SUB_LANE_GAP / 2}
+              y2={WF_BLOCK_TOP - SUB_LANE_GAP / 2}
+              stroke="var(--af-border-subtle)"
+              strokeWidth="0.6"
+              strokeDasharray="2 4"
+            />
+            {workflows.map((w) => {
+              if (w.startTOffsetMs === undefined) return null;
+              const lane = wfLaneOf.get(w.runId) ?? 0;
+              const startX = msToX(w.startTOffsetMs);
+              // A still-running run has no endTOffsetMs — draw it open-ended to
+              // the session end so it's visible (and dashed, to read as ongoing)
+              // rather than vanishing while still occupying a reserved lane.
+              const inProgress = w.endTOffsetMs === undefined;
+              const endX = msToX(w.endTOffsetMs ?? safeDur);
+              const wWidth = Math.max(endX - startX, 8);
+              const y = WF_BLOCK_TOP + lane * WF_LANE_H;
+              const h = WF_LANE_H - 2;
+              const fill = workflowColor(w.status);
+              // Center the agent count label inside the bar when there's room.
+              const label = `${w.agentCount}`;
+              const showLabel = wWidth > 22;
+              return (
+                <g key={w.runId} style={{ cursor: "pointer" }}>
+                  <rect
+                    x={startX}
+                    y={y}
+                    width={wWidth}
+                    height={h}
+                    fill={fill}
+                    fillOpacity={inProgress ? 0.55 : 1}
+                    stroke={inProgress ? fill : "transparent"}
+                    strokeWidth={inProgress ? 0.8 : 0}
+                    strokeDasharray={inProgress ? "2 2" : undefined}
+                    rx="2"
+                    onMouseEnter={(e) => setHover({ clientX: e.clientX, workflow: w })}
+                    onClick={() => onWorkflowClick?.(w.runId)}
+                  />
+                  {showLabel && (
+                    <text
+                      x={startX + wWidth / 2}
+                      y={y + h / 2 + 3}
+                      textAnchor="middle"
+                      fontSize="8.5"
+                      fontWeight="700"
+                      fill="#fff"
+                      pointerEvents="none"
+                      style={{ fontFamily: "var(--font-mono)" }}
+                    >
+                      {label}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         {/* PR markers — diamond + vertical line at each `gh pr create` */}
         {prMarkers?.map((pr, i) => {
           if (pr.tOffsetMs === undefined) return null;
@@ -2123,6 +2380,7 @@ function Minimap({
           turn={hover.turn}
           idleMs={hover.idleMs}
           subagent={hover.subagent}
+          workflow={hover.workflow}
           pr={hover.pr}
           cold={hover.cold}
           model={model}
@@ -2205,6 +2463,17 @@ function subagentColor(agentType: string, background?: boolean): string {
   return background ? bright : base;
 }
 
+/** Workflow signature color, modulated by run status. Deliberately a warm
+ *  orange — distinct from the blue/purple subagent palette so workflow lanes
+ *  read as a different tier on the minimap. Failed runs go red, in-flight
+ *  runs go green. */
+function workflowColor(status: string): string {
+  const s = status.toLowerCase();
+  if (s === "failed" || s === "aborted" || s === "error") return "#EF4444";
+  if (s === "running" || s === "in_progress" || s === "active") return "#10B981";
+  return "#EA580C";
+}
+
 function MinimapHoverCard({
   containerRef,
   clientX,
@@ -2212,6 +2481,7 @@ function MinimapHoverCard({
   turn,
   idleMs,
   subagent,
+  workflow,
   pr,
   cold,
   model,
@@ -2222,6 +2492,7 @@ function MinimapHoverCard({
   turn?: TurnMegaRow;
   idleMs?: number;
   subagent?: SubagentRun;
+  workflow?: WorkflowRun;
   pr?: PrMarker;
   cold?: { tOffsetMs: number; info: NonNullable<SessionEvent["coldResume"]> };
   model?: string;
@@ -2232,6 +2503,92 @@ function MinimapHoverCard({
   // Always open below the minimap. The minimap lives inside the sticky
   // header, so there's never reliable space above it for a tooltip.
   const posStyle = { top: "calc(100% + 8px)", left };
+
+  if (workflow) {
+    const w = workflow;
+    const startOff = formatOffset(w.startTOffsetMs);
+    const endOff = formatOffset(w.endTOffsetMs);
+    const dur = w.durationMs !== undefined ? formatGap(w.durationMs) : "";
+    return (
+      <div
+        style={{
+          position: "absolute",
+          ...posStyle,
+          zIndex: 100,
+          background: "#0F172A",
+          color: "#F1F5F9",
+          borderRadius: 10,
+          padding: "12px 14px",
+          fontSize: 11,
+          pointerEvents: "none",
+          boxShadow: "0 6px 24px rgba(15,23,42,0.22)",
+          maxWidth: 440,
+          minWidth: 280,
+          lineHeight: 1.45,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              padding: "2px 8px",
+              borderRadius: 4,
+              background: workflowColor(w.status),
+              color: "#fff",
+              textTransform: "uppercase",
+              letterSpacing: "0.04em",
+            }}
+          >
+            workflow · {w.status}
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              opacity: 0.7,
+              marginLeft: "auto",
+            }}
+          >
+            {startOff} → {endOff} · {dur}
+          </span>
+        </div>
+        <div style={{ fontWeight: 600, marginBottom: 4, fontFamily: "var(--font-mono)" }}>
+          {w.name}
+        </div>
+        {w.description && (
+          <div style={{ opacity: 0.8, marginBottom: 6 }}>{w.description}</div>
+        )}
+        <div
+          style={{
+            fontSize: 10,
+            opacity: 0.75,
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+            paddingTop: 6,
+            borderTop: "1px solid rgba(241,245,249,0.08)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          <span style={{ color: "#FB923C", fontWeight: 600 }}>{w.agentCount} agents</span>
+          <span>·</span>
+          <span>{w.toolCallCount.toLocaleString()} tools</span>
+          <span>·</span>
+          <span>{formatTokens(w.totalTokens)} tok</span>
+          {w.phases.length > 0 && (
+            <>
+              <span>·</span>
+              <span>{w.phases.length} phases</span>
+            </>
+          )}
+        </div>
+        <div style={{ marginTop: 6, fontSize: 10, opacity: 0.55, fontStyle: "italic" }}>
+          Click to open this run in the Workflows tab.
+        </div>
+      </div>
+    );
+  }
 
   if (subagent) {
     const startOff = formatOffset(subagent.startTOffsetMs);
@@ -4466,6 +4823,924 @@ function SubagentDrawer({
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Workflows panel                                                    */
+/*                                                                     */
+/*  A single `Workflow` tool call collapses a whole dynamic-workflow   */
+/*  fan-out into one transcript row. This panel surfaces what that row */
+/*  actually did: each run's spawned-agent count, tool calls, tokens,  */
+/*  phases, and progress log — the fleet work the transcript hides.    */
+/* ------------------------------------------------------------------ */
+
+function WorkflowsPanel({
+  workflows,
+  spawnedAgentCount,
+  focusRunId,
+  selectedAgentKey,
+  onOpenAgent,
+  onJumpToParent,
+}: {
+  workflows: WorkflowRun[];
+  spawnedAgentCount: number;
+  focusRunId?: string | null;
+  selectedAgentKey?: string | null;
+  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
+  onJumpToParent: (toolUseId?: string) => void;
+}) {
+  const totalTokens = workflows.reduce((n, w) => n + w.totalTokens, 0);
+  const totalTools = workflows.reduce((n, w) => n + w.toolCallCount, 0);
+  return (
+    <section
+      style={{
+        marginBottom: 16,
+        border: "1px solid var(--af-border-subtle)",
+        borderRadius: 10,
+        background: "var(--af-surface)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          flexWrap: "wrap",
+          padding: "10px 14px",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          background: "var(--af-surface-subtle, rgba(234,88,12,0.04))",
+        }}
+      >
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 7,
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--af-text)",
+          }}
+        >
+          <WorkflowIcon size={14} style={{ color: "#EA580C" }} />
+          Workflows
+        </span>
+        <span
+          style={{
+            fontSize: 11.5,
+            color: "var(--af-text-tertiary)",
+            fontFamily: "var(--font-mono)",
+          }}
+        >
+          {workflows.length} run{workflows.length === 1 ? "" : "s"} ·{" "}
+          {spawnedAgentCount.toLocaleString()} agents · {totalTools.toLocaleString()} tool calls ·{" "}
+          {formatTokens(totalTokens)} tok orchestrated
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {workflows.map((w) => (
+          <WorkflowCard
+            key={w.runId}
+            w={w}
+            focused={focusRunId === w.runId}
+            selectedAgentKey={selectedAgentKey}
+            onOpenAgent={onOpenAgent}
+            onJumpToParent={onJumpToParent}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WorkflowCard({
+  w,
+  focused = false,
+  selectedAgentKey,
+  onOpenAgent,
+  onJumpToParent,
+}: {
+  w: WorkflowRun;
+  focused?: boolean;
+  selectedAgentKey?: string | null;
+  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
+  onJumpToParent: (toolUseId?: string) => void;
+}) {
+  const [open, setOpen] = useState(focused);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // Focused via a minimap lane click — expand and scroll this run into view.
+  useEffect(() => {
+    if (focused) {
+      setOpen(true);
+      cardRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }
+  }, [focused]);
+  const color = workflowColor(w.status);
+  const dur = w.durationMs !== undefined ? formatGap(w.durationMs) : "—";
+  const startOff = formatOffset(w.startTOffsetMs);
+
+  return (
+    <div
+      ref={cardRef}
+      style={{
+        borderTop: "1px solid var(--af-border-subtle)",
+        background: focused ? "rgba(234,88,12,0.07)" : "transparent",
+        transition: "background 0.5s ease",
+        scrollMarginTop: 120,
+      }}
+    >
+      {/* Collapsed header — click to expand */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 14px",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          textAlign: "left",
+          color: "inherit",
+          flexWrap: "wrap",
+        }}
+      >
+        <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </span>
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--af-text)",
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={w.name}
+        >
+          {w.name}
+        </span>
+        <span
+          style={{
+            fontSize: 9.5,
+            fontWeight: 600,
+            padding: "2px 7px",
+            borderRadius: 100,
+            background: color,
+            color: "#fff",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {w.status}
+        </span>
+        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 12 }}>
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: "2px 10px",
+              borderRadius: 100,
+              background: "rgba(234,88,12,0.14)",
+              color: "#EA580C",
+              fontFamily: "var(--font-mono)",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {w.agentCount} agents
+          </span>
+          <WfMiniStat icon={<Wrench size={11} />} value={`${w.toolCallCount.toLocaleString()}`} />
+          <WfMiniStat value={`${formatTokens(w.totalTokens)} tok`} />
+          <WfMiniStat icon={<Clock size={11} />} value={dur} />
+        </span>
+      </button>
+
+      {/* Expanded detail */}
+      {open && (
+        <div style={{ padding: "0 14px 14px 38px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {w.description && (
+            <div style={{ fontSize: 12.5, color: "var(--af-text-secondary)", lineHeight: 1.5 }}>
+              {w.description}
+            </div>
+          )}
+
+          <div
+            style={{
+              display: "flex",
+              gap: 14,
+              flexWrap: "wrap",
+              fontSize: 11,
+              fontFamily: "var(--font-mono)",
+              color: "var(--af-text-tertiary)",
+            }}
+          >
+            <span>starts at {startOff}</span>
+            {w.model && <span>· {w.model}</span>}
+            <span>· runId {w.runId}</span>
+            {w.parentToolUseId && (
+              <button
+                type="button"
+                onClick={() => onJumpToParent(w.parentToolUseId)}
+                style={{
+                  marginLeft: "auto",
+                  fontSize: 11,
+                  color: "var(--af-accent)",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  fontFamily: "var(--font-mono)",
+                }}
+              >
+                Jump to Workflow call →
+              </button>
+            )}
+          </div>
+
+          {w.agents.length > 0 ? (
+            <WorkflowPhaseTabs
+              w={w}
+              selectedAgentKey={selectedAgentKey}
+              onOpenAgent={onOpenAgent}
+            />
+          ) : (
+            w.phases.length > 0 && (
+              <div>
+                <SectionLabel>Phases</SectionLabel>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {w.phases.map((p, i) => (
+                    <span
+                      key={`${p.title}-${i}`}
+                      title={p.detail}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        fontSize: 11,
+                        padding: "3px 9px",
+                        borderRadius: 4,
+                        background: "var(--af-border-subtle)",
+                        color: "var(--af-text)",
+                      }}
+                    >
+                      <b style={{ fontWeight: 600, fontFamily: "var(--font-mono)" }}>{p.title}</b>
+                      {p.detail && (
+                        <span style={{ color: "var(--af-text-tertiary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {p.detail}
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )
+          )}
+
+          {w.logs.length > 0 && <WorkflowRunLog logs={w.logs} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Compact model label: "claude-opus-4-8[1m]" → "opus-4-8", "claude-haiku-4-5-20251001" → "haiku-4-5". */
+function shortenModel(model: string): string {
+  return model
+    .replace(/^claude-/, "")
+    .replace(/\[1m\]$/, "")
+    .replace(/-\d{6,}$/, "")
+    .trim();
+}
+
+/** Status dot color for a single workflow-spawned agent. */
+function agentStateColor(state?: string): string {
+  const s = (state ?? "").toLowerCase();
+  if (s === "done" || s === "completed" || s === "success") return "#10B981";
+  if (s === "error" || s === "failed") return "#EF4444";
+  if (s === "running" || s === "active" || s === "in_progress") return "#F59E0B";
+  return "#8A8580";
+}
+
+/** Per-phase tabs for a workflow run. Each tab lists the agents (actions)
+ *  that ran in that phase so you can review what actually happened. */
+function WorkflowPhaseTabs({
+  w,
+  selectedAgentKey,
+  onOpenAgent,
+}: {
+  w: WorkflowRun;
+  selectedAgentKey?: string | null;
+  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
+}) {
+  // Build the phase list from meta.phases (ordered), bucketing agents by
+  // phaseIndex. Agents whose phaseIndex isn't in meta.phases fall into an
+  // appended bucket keyed by their phaseTitle so nothing is dropped.
+  const groups = useMemo(() => {
+    const byIndex = new Map<number, WorkflowRun["agents"]>();
+    const extras = new Map<string, WorkflowRun["agents"]>();
+    for (const a of w.agents) {
+      if (a.phaseIndex && a.phaseIndex >= 1 && a.phaseIndex <= w.phases.length) {
+        const arr = byIndex.get(a.phaseIndex) ?? [];
+        arr.push(a);
+        byIndex.set(a.phaseIndex, arr);
+      } else {
+        const key = a.phaseTitle ?? "Other";
+        const arr = extras.get(key) ?? [];
+        arr.push(a);
+        extras.set(key, arr);
+      }
+    }
+    const out = w.phases.map((p, i) => ({
+      key: `p${i + 1}`,
+      title: p.title,
+      detail: p.detail,
+      agents: byIndex.get(i + 1) ?? [],
+    }));
+    for (const [title, agents] of extras) {
+      out.push({ key: `x-${title}`, title, detail: undefined, agents });
+    }
+    return out;
+  }, [w]);
+
+  // Default to the first phase that actually has agents.
+  const firstWithAgents = groups.find((g) => g.agents.length > 0)?.key ?? groups[0]?.key ?? "";
+  const [active, setActive] = useState(firstWithAgents);
+  const activeGroup = groups.find((g) => g.key === active) ?? groups[0];
+
+  return (
+    <div>
+      <SectionLabel>Phases &amp; actions</SectionLabel>
+      {/* Phase tab strip */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+        {groups.map((g) => {
+          const isActive = g.key === active;
+          return (
+            <button
+              key={g.key}
+              onClick={() => setActive(g.key)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11.5,
+                fontWeight: isActive ? 600 : 500,
+                padding: "4px 10px",
+                borderRadius: 6,
+                border: "1px solid",
+                borderColor: isActive ? "#EA580C" : "var(--af-border-subtle)",
+                background: isActive ? "rgba(234,88,12,0.12)" : "transparent",
+                color: isActive ? "#EA580C" : "var(--af-text-secondary)",
+                cursor: "pointer",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {g.title}
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: "0px 5px",
+                  borderRadius: 100,
+                  background: isActive ? "#EA580C" : "var(--af-border-subtle)",
+                  color: isActive ? "#fff" : "var(--af-text-tertiary)",
+                }}
+              >
+                {g.agents.length}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Active phase body */}
+      {activeGroup && (
+        <div>
+          {activeGroup.detail && (
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "var(--af-text-tertiary)",
+                marginBottom: 8,
+                fontStyle: "italic",
+              }}
+            >
+              {activeGroup.detail}
+            </div>
+          )}
+          {activeGroup.agents.length === 0 ? (
+            <div style={{ fontSize: 12, color: "var(--af-text-tertiary)", padding: "8px 0" }}>
+              No agents recorded for this phase.
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {activeGroup.agents.map((a) => (
+                <WorkflowAgentRow
+                  key={`${a.index}-${a.agentId ?? a.label}`}
+                  a={a}
+                  selected={selectedAgentKey === `${w.runId}:${a.agentId ?? a.index}`}
+                  onOpen={() => onOpenAgent(w.runId, a)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One agent (action) inside a phase — collapsed shows label + metering;
+ *  expanding reveals the task prompt and the returned result. */
+/** Full transcript detail for one workflow agent — fetched on demand from
+ *  /api/workflow-agent. Mirrors the parser's WorkflowAgentDetail. */
+type WfAgentDetail = {
+  prompt?: string;
+  finalText?: string;
+  steps: { index: number; tool: string; preview: string; full?: string; isError?: boolean }[];
+  toolCalls: { name: string; count: number }[];
+  toolCallCount: number;
+  assistantMessageCount: number;
+  eventCount: number;
+  totalUsage: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  model?: string;
+  durationMs?: number;
+};
+
+function WorkflowAgentRow({
+  a,
+  selected,
+  onOpen,
+}: {
+  a: WorkflowRun["agents"][number];
+  selected: boolean;
+  onOpen: () => void;
+}) {
+  const dur = a.durationMs !== undefined ? formatGap(a.durationMs) : undefined;
+  return (
+    <button
+      onClick={onOpen}
+      style={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 10px",
+        textAlign: "left",
+        cursor: "pointer",
+        border: "1px solid",
+        borderColor: selected ? "#EA580C" : "var(--af-border-subtle)",
+        borderRadius: 6,
+        background: selected
+          ? "rgba(234,88,12,0.08)"
+          : "var(--af-surface-subtle, rgba(120,115,108,0.04))",
+        color: "inherit",
+        flexWrap: "wrap",
+      }}
+    >
+      <span
+        title={a.state}
+        style={{ width: 7, height: 7, borderRadius: "50%", background: agentStateColor(a.state), flexShrink: 0 }}
+      />
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          fontWeight: 600,
+          color: "var(--af-text)",
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          maxWidth: 280,
+        }}
+        title={a.label}
+      >
+        {a.label}
+      </span>
+      {a.model && (
+        <span style={{ fontSize: 10, color: "var(--af-text-tertiary)", fontFamily: "var(--font-mono)" }}>
+          {shortenModel(a.model)}
+        </span>
+      )}
+      {a.lastToolSummary && (
+        <span
+          style={{
+            fontSize: 11,
+            color: "var(--af-text-tertiary)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            maxWidth: 240,
+          }}
+          title={a.lastToolSummary}
+        >
+          → {a.lastToolSummary}
+        </span>
+      )}
+      <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        {dur && <WfMiniStat icon={<Clock size={10} />} value={dur} />}
+        {a.tokens !== undefined && <WfMiniStat value={`${formatTokens(a.tokens)} tok`} />}
+        {a.toolCalls !== undefined && <WfMiniStat icon={<Wrench size={10} />} value={`${a.toolCalls}`} />}
+        <span style={{ color: selected ? "#EA580C" : "var(--af-text-tertiary)", display: "inline-flex" }}>
+          <ChevronRight size={14} />
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** Right side-sheet showing one workflow agent's full transcript — Task,
+ *  ordered Steps, and Result — fetched on demand. Kept out of the card so the
+ *  Workflows tab stays short even for 100+ step agents. */
+function WorkflowAgentDrawer({
+  sessionId,
+  runId,
+  agent,
+  onClose,
+}: {
+  sessionId: string;
+  runId: string;
+  agent: WorkflowRun["agents"][number];
+  onClose: () => void;
+}) {
+  const [detail, setDetail] = useState<WfAgentDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setDetail(null);
+    setFailed(false);
+    if (!agent.agentId) return;
+    setLoading(true);
+    const ctrl = new AbortController();
+    const url = `/api/workflow-agent?session=${encodeURIComponent(sessionId)}&run=${encodeURIComponent(runId)}&agent=${encodeURIComponent(agent.agentId)}`;
+    fetch(url, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((d: WfAgentDetail) => setDetail(d))
+      .catch((e) => {
+        if (e?.name !== "AbortError") setFailed(true);
+      })
+      .finally(() => setLoading(false));
+    return () => ctrl.abort();
+  }, [sessionId, runId, agent.agentId]);
+
+  const prompt = detail?.prompt ?? agent.promptPreview;
+  const finalText = detail?.finalText ?? agent.resultPreview;
+  const dur = detail?.durationMs ?? agent.durationMs;
+  const model = detail?.model ?? agent.model;
+  const toolCount = detail?.toolCallCount ?? agent.toolCalls;
+  const tok = detail ? detail.totalUsage.input + detail.totalUsage.output : agent.tokens;
+
+  return (
+    <div>
+      {/* Sticky title bar */}
+      <div
+        style={{
+          padding: "14px 18px",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          background: "var(--af-surface)",
+          position: "sticky",
+          top: 0,
+          zIndex: 1,
+        }}
+      >
+        <span
+          title={agent.state}
+          style={{ width: 8, height: 8, borderRadius: "50%", background: agentStateColor(agent.state), flexShrink: 0 }}
+        />
+        <span
+          style={{
+            fontSize: 13.5,
+            fontWeight: 600,
+            fontFamily: "var(--font-mono)",
+            color: "var(--af-text)",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={agent.label}
+        >
+          {agent.label}
+        </span>
+        <button
+          onClick={onClose}
+          style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--af-text-tertiary)", padding: 4 }}
+          aria-label="Close"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Meta strip */}
+      <div
+        style={{
+          padding: "9px 18px",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          borderBottom: "1px solid var(--af-border-subtle)",
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        {agent.phaseTitle && <span>phase {agent.phaseTitle}</span>}
+        {agent.state && <span>· {agent.state}</span>}
+        {model && <span>· {shortenModel(model)}</span>}
+        {dur !== undefined && <span>· {formatGap(dur)}</span>}
+        {toolCount !== undefined && <span>· {toolCount} tools</span>}
+        {tok !== undefined && <span>· {formatTokens(tok)} tok</span>}
+      </div>
+
+      {/* Body — each section collapsed by default; click to expand. */}
+      <div style={{ padding: "12px 18px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+        {loading && (
+          <div style={{ fontSize: 11.5, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
+            Loading full transcript…
+          </div>
+        )}
+        {failed && (
+          <div style={{ fontSize: 11.5, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
+            Full transcript unavailable — showing the journal summary.
+          </div>
+        )}
+
+        {prompt && (
+          <DrawerCollapsible title="Task" hint={detail ? undefined : "preview"}>
+            <div style={{ fontSize: 12, color: "var(--af-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+              {prompt}
+            </div>
+          </DrawerCollapsible>
+        )}
+
+        {detail && detail.steps.length > 0 && (
+          <DrawerCollapsible
+            title="Steps"
+            count={detail.steps.length}
+            hint={detail.toolCalls.slice(0, 6).map((t) => `${shortenToolName(t.name)} ×${t.count}`).join("  ·  ")}
+          >
+            <div style={{ border: "1px solid var(--af-border-subtle)", borderRadius: 6, background: "var(--af-surface)" }}>
+              {detail.steps.map((s) => (
+                <WorkflowStepRow key={s.index} s={s} />
+              ))}
+            </div>
+          </DrawerCollapsible>
+        )}
+
+        {finalText && (
+          <DrawerCollapsible title="Result" hint={detail ? undefined : "preview"}>
+            <div
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 11,
+                color: "var(--af-text-secondary)",
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                lineHeight: 1.5,
+                background: "var(--af-surface)",
+                border: "1px solid var(--af-border-subtle)",
+                borderRadius: 4,
+                padding: "8px 10px",
+              }}
+            >
+              {finalText}
+            </div>
+          </DrawerCollapsible>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Collapsible section inside the agent sheet — default collapsed. */
+function DrawerCollapsible({
+  title,
+  count,
+  hint,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  count?: number;
+  hint?: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ border: "1px solid var(--af-border-subtle)", borderRadius: 8, overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "9px 12px",
+          background: open ? "var(--af-surface-subtle, rgba(120,115,108,0.05))" : "transparent",
+          border: "none",
+          cursor: "pointer",
+          textAlign: "left",
+          color: "inherit",
+        }}
+      >
+        <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--af-text-secondary)" }}>
+          {title}
+        </span>
+        {count !== undefined && (
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              padding: "1px 7px",
+              borderRadius: 100,
+              background: "rgba(234,88,12,0.14)",
+              color: "#EA580C",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            {count}
+          </span>
+        )}
+        {hint && (
+          <span
+            style={{
+              marginLeft: "auto",
+              fontSize: 10.5,
+              color: "var(--af-text-tertiary)",
+              fontFamily: "var(--font-mono)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: 280,
+            }}
+          >
+            {hint}
+          </span>
+        )}
+      </button>
+      {open && <div style={{ padding: "0 12px 12px" }}>{children}</div>}
+    </div>
+  );
+}
+
+/** One step row — click to reveal the full tool input (e.g. the complete
+ *  multi-line bash command) when it's longer than the one-line preview. */
+function WorkflowStepRow({ s }: { s: WfAgentDetail["steps"][number] }) {
+  const [open, setOpen] = useState(false);
+  const expandable = !!s.full;
+  return (
+    <div style={{ borderTop: s.index === 1 ? "none" : "1px solid var(--af-border-subtle)" }}>
+      <div
+        onClick={() => expandable && setOpen((v) => !v)}
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 8,
+          padding: "4px 10px",
+          fontFamily: "var(--font-mono)",
+          fontSize: 11,
+          cursor: expandable ? "pointer" : "default",
+        }}
+      >
+        <span style={{ color: "var(--af-text-tertiary)", minWidth: 28, textAlign: "right", flexShrink: 0 }}>
+          {s.index}
+        </span>
+        <span style={{ fontWeight: 600, color: s.isError ? "#EF4444" : "var(--af-text)", flexShrink: 0, minWidth: 104 }}>
+          {s.isError ? "⚠ " : ""}
+          {shortenToolName(s.tool)}
+        </span>
+        <span
+          style={{ flex: 1, color: "var(--af-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+          title={s.preview}
+        >
+          {s.preview}
+        </span>
+        {expandable && (
+          <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex", flexShrink: 0 }}>
+            {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          </span>
+        )}
+      </div>
+      {open && s.full && (
+        <pre
+          style={{
+            margin: 0,
+            padding: "6px 10px 10px 40px",
+            fontFamily: "var(--font-mono)",
+            fontSize: 11,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            color: "var(--af-text-secondary)",
+            background: "var(--af-surface-subtle, rgba(120,115,108,0.05))",
+            lineHeight: 1.5,
+          }}
+        >
+          {s.full}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/** Collapsible coarse run log (▶ / ✓ task markers) — secondary to the
+ *  per-phase agent view. */
+function WorkflowRunLog({ logs }: { logs: string[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 5,
+          fontSize: 10,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+          color: "var(--af-text-tertiary)",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+        }}
+      >
+        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        Run log ({logs.length})
+      </button>
+      {open && (
+        <div
+          style={{
+            marginTop: 6,
+            fontFamily: "var(--font-mono)",
+            fontSize: 11.5,
+            lineHeight: 1.7,
+            color: "var(--af-text-secondary)",
+            background: "var(--af-surface-subtle, rgba(120,115,108,0.05))",
+            border: "1px solid var(--af-border-subtle)",
+            borderRadius: 6,
+            padding: "8px 12px",
+            maxHeight: 240,
+            overflowY: "auto",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {logs.map((l, i) => (
+            <div key={i}>{l}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WfMiniStat({ icon, value }: { icon?: React.ReactNode; value: string }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 11.5,
+        color: "var(--af-text-secondary)",
+        fontFamily: "var(--font-mono)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {icon && <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>{icon}</span>}
+      {value}
+    </span>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        textTransform: "uppercase",
+        letterSpacing: "0.04em",
+        color: "var(--af-text-tertiary)",
+        marginBottom: 8,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function StatCell({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -4903,8 +6178,11 @@ function formatDurationHeader(ms: number): string {
   const s = Math.round(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  const rem = s % 60;
-  return `${m}m ${rem}s`;
+  if (m < 60) return `${m}m ${s % 60}s`;
+  // Roll up to hours — agent time can reach many hours once workflow
+  // execution is folded in, and "1116m" reads poorly.
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
 }
 
 function EntryDayStrip({ entry }: { entry: Entry }) {

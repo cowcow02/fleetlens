@@ -66,6 +66,8 @@ const DailyRollupSchema = z.object({
   day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   agentTimeMs: z.number().int().nonnegative(),
   sessions: z.number().int().nonnegative(),
+  // Optional for back-compat: CLIs predating the per-day split don't send it.
+  uniqueSessions: z.number().int().nonnegative().optional(),
   toolCalls: z.number().int().nonnegative(),
   turns: z.number().int().nonnegative(),
   tokens: z.object({
