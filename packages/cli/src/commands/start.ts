@@ -1,6 +1,7 @@
 import { ensureCurrentServer, openBrowser } from "../server.js";
 import { checkForUpdate } from "../updater.js";
 import { startDaemonSilent } from "./daemon.js";
+import { maybePromptAutostart } from "./autostart.js";
 
 /**
  * `fleetlens start` — launch both the dashboard web server AND the usage
@@ -50,12 +51,15 @@ export async function start(args: string[]): Promise<void> {
   }
 
   // --- Usage daemon ---
+  let daemonRunning = false;
   if (!noDaemon) {
     const daemon = startDaemonSilent();
     if (daemon.alreadyRunning) {
       console.log(`Daemon:  already running (PID ${daemon.pid})`);
+      daemonRunning = true;
     } else if (daemon.started) {
       console.log(`Daemon:  started (PID ${daemon.pid})`);
+      daemonRunning = true;
     } else {
       // Non-fatal — the dashboard still works without the daemon, you
       // just won't get live usage updates. Warn and continue.
@@ -68,4 +72,8 @@ export async function start(args: string[]): Promise<void> {
   } else {
     console.log(`\nOpen ${serverUrl} in your browser, or re-run with --open to launch it automatically.`);
   }
+
+  // Offer to keep the daemon alive across reboots (macOS, interactive TTY,
+  // not already set up, not dismissed). No-op everywhere else.
+  await maybePromptAutostart({ daemonStarted: daemonRunning });
 }

@@ -50,6 +50,11 @@ async function main() {
       await daemon(args.slice(1));
       break;
     }
+    case "autostart": {
+      const { autostart } = await import("./commands/autostart.js");
+      await autostart(args.slice(1));
+      break;
+    }
     case "team": {
       const { team } = await import("./commands/team.js");
       await team(args.slice(1));
@@ -89,6 +94,7 @@ Advanced:
   web [page] [--open]               Print dashboard URL without auto-starting daemon (pass --open to also launch browser)
   start --no-daemon                 Start only the web server (no daemon)
   daemon <start|stop|status|logs>   Manage the usage daemon by itself
+  autostart <install|uninstall|status>   Run the usage daemon at login (macOS launchd)
 
 Team:
   team join <url> <token>           Pair with a team server

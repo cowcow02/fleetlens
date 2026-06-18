@@ -276,6 +276,16 @@ describe("buildIngestPayload", () => {
     const payload = buildIngestPayload({ rollup });
     expect("usageSnapshot" in payload).toBe(false);
   });
+
+  it("stamps the installed CLI version (esbuild define; '0.0.0-test' under vitest)", () => {
+    const rollup = bucketToRollup({
+      date: "2026-04-16", sessions: 0, toolCalls: 0, turns: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      durationMs: 0, airTimeMs: 0, peakParallelism: 0,
+    });
+    const payload = buildIngestPayload({ rollup });
+    expect(payload.cliVersion).toBe("0.0.0-test");
+  });
 });
 
 describe("readLatestUsageSnapshotForWire", () => {

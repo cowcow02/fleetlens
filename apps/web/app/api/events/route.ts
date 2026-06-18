@@ -50,6 +50,11 @@ const HEARTBEAT_MS = 15_000;
 /** Per-file debounce so a burst of writes doesn't flood subscribers. */
 const DEBOUNCE_MS = 150;
 
+/** Subagent writes coalesce per PARENT session over a much longer window — a
+ *  16-agent workflow fan-out writes constantly, so this caps that to at most
+ *  one parent refresh every 2s instead of a storm. */
+const SUBAGENT_DEBOUNCE_MS = 2_000;
+
 export async function GET(request: Request) {
   const encoder = new TextEncoder();
 
@@ -87,9 +92,10 @@ export async function GET(request: Request) {
               const projectDir = parts[0]!;
               const fileName = parts[parts.length - 1]!;
               if (!fileName.endsWith(".jsonl")) return;
-              // Skip subagent child files under <session>/subagents/ —
-              // they're noise; the parent session file mtime changes
-              // whenever a subagent writes (Claude Code touches both).
+              // Subagent child files under <session>/subagents/ are routed to
+              // emitSubagent (throttled, mapped to the parent) by the dispatch
+              // below — this early-return is a safety net so they never go
+              // through the per-file fast path here.
               if (parts.includes("subagents")) return;
               const sessionId = fileName.replace(/\.jsonl$/, "");
 
@@ -148,6 +154,42 @@ export async function GET(request: Request) {
         );
       }
 
+      // Background-agent transcripts (`<session>/subagents/agent-*.jsonl`, and
+      // workflow agents at `<session>/subagents/workflows/<runId>/agent-*.jsonl`)
+      // are written while the parent session sits idle. Map them back to the
+      // parent and emit a session-updated so the LIVE indicator (now nested-
+      // aware via lastActivityMs) refreshes. Coalesced per-parent over a long
+      // window so a big fan-out can't flood subscribers.
+      function emitSubagent(fullPath: string) {
+        const rel = path.relative(DEFAULT_ROOT, fullPath);
+        const parts = rel.split(path.sep);
+        const subIdx = parts.lastIndexOf("subagents");
+        if (subIdx < 2) return;
+        const projectDir = parts[0]!;
+        const sessionId = parts[subIdx - 1]!;
+        const parentJsonl = path.join(DEFAULT_ROOT, projectDir, `${sessionId}.jsonl`);
+        const key = `sub:${parentJsonl}`;
+        const prev = pending.get(key);
+        if (prev) clearTimeout(prev);
+        pending.set(
+          key,
+          setTimeout(async () => {
+            pending.delete(key);
+            if (closed) return;
+            invalidateFile(parentJsonl);
+            // Report the child's fresh mtime — the parent .jsonl may be stale,
+            // and LiveRefresher dedups per source by a monotonic mtime.
+            let mtimeMs = Date.now();
+            try {
+              mtimeMs = (await fs.stat(fullPath)).mtimeMs;
+            } catch {
+              // child gone already — fall back to now.
+            }
+            send({ type: "session-updated", sessionId, projectDir, mtimeMs });
+          }, SUBAGENT_DEBOUNCE_MS),
+        );
+      }
+
       let watcher: ReturnType<typeof watch> | null = null;
       try {
         watcher = watch(
@@ -157,7 +199,8 @@ export async function GET(request: Request) {
             if (!filename) return;
             const fullPath = path.join(DEFAULT_ROOT, filename.toString());
             if (fullPath.endsWith(".jsonl")) {
-              emit(fullPath);
+              if (fullPath.includes(`${path.sep}subagents${path.sep}`)) emitSubagent(fullPath);
+              else emit(fullPath);
               return;
             }
             const base = path.basename(fullPath);

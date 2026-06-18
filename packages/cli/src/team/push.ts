@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+
+// esbuild `define` (build.mjs) replaces this with the package version; vitest
+// defines it as "0.0.0-test". Stamped into every ingest so the team server can
+// surface each member's installed CLI version on the roster.
+declare const CLI_VERSION: string;
+
 import {
   canonicalProjectName,
   projectRepoName,
@@ -369,6 +375,7 @@ export function buildIngestPayload(inputs: IngestPayloadInputs): IngestPayload {
   return {
     ingestId: randomUUID(),
     observedAt: new Date().toISOString(),
+    cliVersion: CLI_VERSION,
     ...(richRollup || inputs.enrichedExtras || inputs.artifactSignals
       ? { schemaVersion: RICH_ROLLUP_SCHEMA_VERSION }
       : {}),

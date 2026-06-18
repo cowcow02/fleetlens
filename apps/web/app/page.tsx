@@ -307,7 +307,7 @@ export default async function DashboardHome({
                         gap: 6,
                       }}
                     >
-                      <LiveBadge mtimeIso={s.lastTimestamp} />
+                      <LiveBadge mtimeIso={s.lastTimestamp} activityMs={s.lastActivityMs} />
                       <span
                         style={{
                           overflow: "hidden",

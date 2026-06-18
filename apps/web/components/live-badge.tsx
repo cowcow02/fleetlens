@@ -15,9 +15,14 @@ const LIVE_WINDOW_MS = 45_000;
 
 export function LiveBadge({
   mtimeIso,
+  activityMs,
   size = "sm",
 }: {
   mtimeIso?: string;
+  /** Nested-aware last-activity (epoch ms) — `SessionMeta.lastActivityMs`.
+   *  When present it wins over `mtimeIso` so a session stays LIVE while a
+   *  background agent/workflow churns and the main transcript is quiet. */
+  activityMs?: number;
   size?: "sm" | "md";
 }) {
   const [now, setNow] = useState(() => Date.now());
@@ -26,9 +31,12 @@ export function LiveBadge({
     return () => clearInterval(id);
   }, []);
 
-  if (!mtimeIso) return null;
-  const ms = Date.parse(mtimeIso);
-  if (Number.isNaN(ms) || now - ms > LIVE_WINDOW_MS) return null;
+  const isoMs = mtimeIso ? Date.parse(mtimeIso) : NaN;
+  const ms = Math.max(
+    Number.isNaN(isoMs) ? 0 : isoMs,
+    activityMs && Number.isFinite(activityMs) ? activityMs : 0,
+  );
+  if (ms <= 0 || now - ms > LIVE_WINDOW_MS) return null;
 
   const dotSize = size === "md" ? 8 : 6;
   const padV = size === "md" ? "3px 9px" : "2px 7px";

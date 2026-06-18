@@ -12,6 +12,13 @@ const ENTIRELY_INJECTED_PREFIXES = [
   "<local-command-caveat>",
   "<task-notification>",
   "Base directory for this skill:",
+  // Harness-authored lines that arrive with role:"user" but are not the
+  // human typing. The post-compact continuation is Claude Code restating the
+  // summarized conversation; the Stop-hook notice is a skill (e.g. /goal)
+  // keeping the turn alive. Neither is a real user message, so they must not
+  // render as "User" rows or count toward digest "top user instructions".
+  "This session is being continued from a previous conversation",
+  "A session-scoped Stop hook is now active",
 ] as const;
 
 export function stripFrameworkBoilerplate(rawText: string): string {

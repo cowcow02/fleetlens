@@ -448,6 +448,62 @@ async function scanWorkflowAggregate(
   return { workflowCount: parsed.filter(Boolean).length, spawnedAgentCount, spans };
 }
 
+/** Newest file mtime (epoch ms) under `dir`, recursing up to `depth` levels of
+ *  subdirectories. Returns 0 when the dir is absent (the common case — fast
+ *  ENOENT). Statting files (not dir mtimes) is deliberate: on APFS a dir's
+ *  mtime doesn't change when an existing file is appended to in place, which is
+ *  exactly what a still-running agent transcript does. */
+async function dirNewestMtimeMs(dir: string, depth: number): Promise<number> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+  const vals = await Promise.all(
+    entries.map(async (e) => {
+      const p = path.join(dir, e.name);
+      try {
+        if (e.isDirectory()) return depth > 0 ? await dirNewestMtimeMs(p, depth - 1) : 0;
+        return (await fs.stat(p)).mtimeMs;
+      } catch {
+        return 0;
+      }
+    }),
+  );
+  return vals.reduce((a, b) => Math.max(a, b), 0);
+}
+
+/** Most recent wall-clock activity (epoch ms) across a session's nested
+ *  transcripts — `workflows/wf_*.json` journals (rewritten on progress) plus
+ *  everything under `subagents/` (regular background agents at
+ *  `subagents/agent-*.jsonl` and workflow agents at
+ *  `subagents/workflows/<runId>/agent-*.jsonl`). Returns undefined when the
+ *  session has no sidecar activity. Bounded depth keeps the cost to a couple
+ *  of stats for the overwhelming majority of sessions (no sidecar dirs). */
+async function newestNestedActivityMs(
+  projectDirPath: string,
+  sessionId: string,
+): Promise<number | undefined> {
+  const base = path.join(projectDirPath, sessionId);
+  const [subM, wfM] = await Promise.all([
+    dirNewestMtimeMs(path.join(base, "subagents"), 2),
+    dirNewestMtimeMs(path.join(base, "workflows"), 0),
+  ]);
+  const newest = Math.max(subM, wfM);
+  return newest > 0 ? newest : undefined;
+}
+
+/** Fold fresh nested-activity into a meta's `lastActivityMs`. Runs OUTSIDE the
+ *  meta cache because the cache is keyed on the main JSONL's mtime, which stays
+ *  put while only nested files change — caching this would freeze liveness. */
+async function withLastActivity<T extends SessionMeta>(meta: T, f: FileRef): Promise<T> {
+  const nested = await newestNestedActivityMs(path.dirname(f.fullPath), meta.id);
+  const baseMs = meta.lastTimestamp ? Date.parse(meta.lastTimestamp) : 0;
+  const lastActivityMs = Math.max(Number.isFinite(baseMs) ? baseMs : 0, nested ?? 0);
+  return lastActivityMs > 0 ? { ...meta, lastActivityMs } : meta;
+}
+
 /** Union the parent session's active segments with workflow execution spans
  *  and recompute airTime, so a session's "agent time" reflects the wall-clock
  *  the fleet was working — not just the parent transcript's own activity (the
@@ -588,7 +644,12 @@ export async function listSessions(opts: ListOptions = {}): Promise<SessionMeta[
   if (projectDir) files = files.filter((f) => f.projectDir === projectDir);
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
   const sliced = files.slice(0, limit);
-  const metas = await Promise.all(sliced.map((f) => getCachedMeta(f)));
+  const metas = await Promise.all(
+    sliced.map(async (f) => {
+      const m = await getCachedMeta(f);
+      return m ? withLastActivity(m, f) : null;
+    }),
+  );
   return metas.filter((m): m is SessionMeta => m !== null);
 }
 
@@ -625,7 +686,7 @@ export async function getSession(
   // self-consistent (a malformed journal that scanWorkflowAggregate counted
   // but loadWorkflows dropped won't skew the header here).
   const spawnedAgentCount = workflows.reduce((n, w) => n + w.agentCount, 0);
-  return {
+  const result: SessionDetail = {
     ...detail,
     subagents,
     workflows,
@@ -633,6 +694,7 @@ export async function getSession(
       ? { workflowCount: workflows.length, spawnedAgentCount }
       : {}),
   };
+  return withLastActivity(result, hit);
 }
 
 /* ================================================================= */

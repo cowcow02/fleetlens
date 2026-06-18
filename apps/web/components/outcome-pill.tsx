@@ -34,7 +34,19 @@ type Label = "icon" | "text" | "both";
 
 type Props =
   | { outcome: DayOutcome | EntryOutcome; size?: Size; label?: Label; agent?: AgentKind; pending?: never }
-  | { outcome: null; pending: true; sessionId?: string; localDay: string; size?: Size; agent?: AgentKind };
+  | {
+      outcome: null;
+      pending: true;
+      sessionId?: string;
+      localDay: string;
+      size?: Size;
+      agent?: AgentKind;
+      // When the pill is rendered inside another anchor (e.g. a SessionCard
+      // whose whole body is a <Link>), render a plain <span> instead of a
+      // nested <Link> — nested <a> is invalid HTML and trips hydration. The
+      // host is then responsible for the click → /digest navigation.
+      noLink?: boolean;
+    };
 
 export function OutcomePill(props: Props) {
   const size = props.size ?? "md";
@@ -56,15 +68,23 @@ export function OutcomePill(props: Props) {
       textDecoration: "none",
       whiteSpace: "nowrap",
     };
+    const inner = (
+      <>
+        {props.agent && <AgentIcon agent={props.agent} size={agentIconSize} />}
+        <span aria-hidden style={{ lineHeight: 1 }}>{PENDING_STYLE.icon}</span>
+        <span>{PENDING_STYLE.label}</span>
+      </>
+    );
+    if (props.noLink) {
+      return <span style={style}>{inner}</span>;
+    }
     return (
       <Link
         href={`/digest/${props.localDay}`}
         style={style}
         title={`Generate ${props.localDay} digest →`}
       >
-        {props.agent && <AgentIcon agent={props.agent} size={agentIconSize} />}
-        <span aria-hidden style={{ lineHeight: 1 }}>{PENDING_STYLE.icon}</span>
-        <span>{PENDING_STYLE.label}</span>
+        {inner}
       </Link>
     );
   }
