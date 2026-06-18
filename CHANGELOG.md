@@ -4,6 +4,14 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.13.0] — 2026-06-18
+
+### Added
+- **Day-scoped session timeline.** A long-running session that spans several days no longer crams every day into one unreadable strip. The timeline map now opens on the session's most recent active day and gives you Prev/Next day controls (with the day's date) to step through the run one day at a time — so it's clear what happened when on multi-day, long-running sessions.
+- **LIVE now sees background agents and workflows.** A session whose main transcript has gone quiet but is still running background subagents or a workflow now correctly reads as live: liveness is computed from the newest activity across the session's nested subagent/workflow transcripts, not just the main JSONL. The live badge, the Running/Idle state, and the live-sessions widget all reflect in-flight background work, and the dashboard auto-refreshes when a background agent writes.
+- **Keep the usage daemon running across reboots (macOS).** New `fleetlens autostart <install|uninstall|status>` installs a launchd LaunchAgent that runs `fleetlens daemon start` at login, so usage polling survives a restart. `fleetlens start` offers to set this up the first time (a simple Y/n, with "don't ask again"); it's daemon-only and entirely opt-in. On non-macOS it prints how to add a login item manually.
+- **Per-member CLI version reported to Team Edition.** The daemon now stamps its installed Fleetlens CLI version into each team push, so the team roster can show who's up to date. Harmless to older servers, which ignore the field.
+
 ## [0.12.3] — 2026-06-15
 
 ### Fixed
