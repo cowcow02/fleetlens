@@ -561,20 +561,64 @@ export function SessionView({
     return m;
   }, [entries]);
 
-  // Selected timeline day. Defaults to the LAST active day so a multi-day
-  // session opens on "what happened most recently". The lazy initializer runs
+  // Selected timeline day. Defaults to the FIRST active day so the minimap
+  // matches where the transcript opens (the top), and the scroll-spy then
+  // advances it as the user reads downward. The lazy initializer runs
   // identically on server + client (sessionDays is deterministic), so there's
   // no hydration mismatch; the effect re-pins it when the component is reused
   // across /sessions/[id] navigations. "all" shows the full session.
   const [selectedDayKey, setSelectedDayKey] = useState<string>(
-    () => (sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all"),
+    () => (sessionDays.length ? sessionDays[0]!.key : "all"),
   );
   useEffect(() => {
-    setSelectedDayKey(sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all");
+    setSelectedDayKey(sessionDays.length ? sessionDays[0]!.key : "all");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
 
   const dayIndex = sessionDays.findIndex((d) => d.key === selectedDayKey);
+  // Latest selection, read by the scroll-spy without re-subscribing its
+  // listener on every day change. Also lets the spy leave an explicit "all"
+  // (full-session) view untouched while the user scrolls.
+  const selectedDayKeyRef = useRef(selectedDayKey);
+  selectedDayKeyRef.current = selectedDayKey;
+
+  // Scroll-spy: as the transcript scrolls across a day boundary, auto-advance
+  // the timeline's selected day to whichever day sits under the sticky header.
+  // Anchors on the interleaved day cards. It only mirrors the reading position
+  // (no scroll, no header pop), so the minimap + "day N/N" selector follow the
+  // user across days in both directions. Skipped while "all" is chosen.
+  useEffect(() => {
+    if (tab !== "transcript" || sessionDays.length <= 1) return;
+    const headerEl = headerRef.current;
+    const mainEl = headerEl?.closest("main") as HTMLElement | null;
+    if (!headerEl || !mainEl) return;
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      if (selectedDayKeyRef.current === "all") return;
+      const line = headerEl.getBoundingClientRect().bottom + 8;
+      let currentKey: string | null = null;
+      for (const d of sessionDays) {
+        const stripEl = dayStripRefs.current[d.key];
+        if (!stripEl) continue;
+        if (stripEl.getBoundingClientRect().top <= line) currentKey = d.key;
+        else break;
+      }
+      // Above every card (top of transcript) → we're still reading the first day.
+      if (!currentKey) currentKey = sessionDays.find((d) => dayStripRefs.current[d.key])?.key ?? null;
+      if (currentKey) setSelectedDayKey((prev) => (prev !== currentKey ? currentKey! : prev));
+    };
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(update);
+    };
+    mainEl.addEventListener("scroll", onScroll, { passive: true });
+    update(); // sync the minimap to the initial reading position (day 1 at top)
+    return () => {
+      mainEl.removeEventListener("scroll", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [tab, sessionDays]);
 
   /** Offset window for the selected day, or null when there's a single day
    *  or "all" is chosen — null tells the minimap to render the full session
