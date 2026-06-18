@@ -655,6 +655,13 @@ export function SessionView({
    *  scroll (it only flows through here on user interaction). */
   function gotoDay(key: string) {
     setSelectedDayKey(key);
+    // Paging days scrolls the transcript; that programmatic scroll (often
+    // upward to an earlier day's first row) would otherwise read as a
+    // user scroll-up and pop the sticky header open. Force it collapsed and
+    // pin so the scroll listener leaves it alone — day-nav always stays
+    // collapsed.
+    setCollapsed(true);
+    manualPinRef.current = Date.now();
     if (key === "all") return;
     const d = sessionDays.find((x) => x.key === key);
     if (!d) return;

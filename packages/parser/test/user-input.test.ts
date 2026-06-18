@@ -43,6 +43,22 @@ describe("isFrameworkInjectedUserInput", () => {
     ).toBe(true);
   });
 
+  it("flags the post-compact continuation message (not a real user turn)", () => {
+    expect(
+      isFrameworkInjectedUserInput(
+        "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:",
+      ),
+    ).toBe(true);
+  });
+
+  it("flags the session-scoped Stop hook notice", () => {
+    expect(
+      isFrameworkInjectedUserInput(
+        'A session-scoped Stop hook is now active with condition: "ship the thing".',
+      ),
+    ).toBe(true);
+  });
+
   it("does not flag ordinary prose", () => {
     expect(isFrameworkInjectedUserInput("can you fix the bug")).toBe(false);
   });
