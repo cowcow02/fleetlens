@@ -19,6 +19,7 @@ import { TeamBadge } from "@/components/team-badge";
 import { AgentBadge } from "@/components/agent-badge";
 import { DataTable, type Column } from "@/components/data-table";
 import { useViewToggle } from "@/components/view-toggle";
+import { SearchableSelect } from "@/components/searchable-select";
 import { OutcomePill, outcomePriority } from "@/components/outcome-pill";
 
 export type SessionRow = {
@@ -152,17 +153,16 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
             style={{ width: "100%", paddingLeft: 32 }}
           />
         </div>
-        <select
+        <SearchableSelect
           value={project}
-          onChange={(e) => setProject(e.target.value)}
-          style={{ maxWidth: 260 }}
-        >
-          {projects.map((p) => (
-            <option key={p} value={p}>
-              {p === "all" ? "All projects" : prettyProjectName(p)}
-            </option>
-          ))}
-        </select>
+          onChange={setProject}
+          title="Filter by project"
+          searchPlaceholder="Filter projects…"
+          options={projects.map((p) => ({
+            value: p,
+            label: p === "all" ? "All projects" : prettyProjectName(p),
+          }))}
+        />
         {agentOptions.length > 1 && (
           <select
             value={agent}
