@@ -11,10 +11,20 @@
  * - Shows "Following live" indicator when tailing
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type MutableRefObject } from "react";
 import { ArrowDown, Radio } from "lucide-react";
 
-export function TailMode({ isLive }: { isLive: boolean }) {
+export function TailMode({
+  isLive,
+  navLockRef,
+}: {
+  isLive: boolean;
+  /** SessionView stamps Date.now() here on every explicit day-jump. While the
+   *  stamp is fresh the live-follow observer bails, so a streaming event can't
+   *  yank the view back to the bottom mid-navigation. Read synchronously — a
+   *  setState couldn't disconnect the observer before its callback fires. */
+  navLockRef?: MutableRefObject<number>;
+}) {
   const [tailing, setTailing] = useState(isLive);
   const [atBottom, setAtBottom] = useState(false);
   const mainRef = useRef<HTMLElement | null>(null);
@@ -24,10 +34,15 @@ export function TailMode({ isLive }: { isLive: boolean }) {
   useEffect(() => {
     mainRef.current = document.querySelector("main");
     if (isLive && mainRef.current) {
-      // Small delay so the initial render settles before scrolling.
+      // Small delay so the initial render settles before scrolling. Use an
+      // INSTANT scroll, not smooth: a smooth animation emits a stream of scroll
+      // events, and check() reads the second one (still mid-animation, not yet
+      // at the bottom) as a user scroll-up and kills tailing — so on a heavy
+      // session the view never reaches the live tail. Instant lands in one
+      // event, which check() correctly sees as "at bottom".
       const t = setTimeout(() => {
         userScrolledRef.current = false;
-        mainRef.current?.scrollTo({ top: mainRef.current.scrollHeight, behavior: "smooth" });
+        mainRef.current?.scrollTo({ top: mainRef.current.scrollHeight, behavior: "auto" });
       }, 300);
       return () => clearTimeout(t);
     }
@@ -67,18 +82,34 @@ export function TailMode({ isLive }: { isLive: boolean }) {
     // Use a MutationObserver to detect when new content is added
     // (the RSC re-render appends new transcript rows to the DOM).
     const observer = new MutationObserver(() => {
+      // Bail while a day-jump is in flight: SessionView just scrolled the view
+      // to an earlier day, and a streaming live event must NOT yank it back to
+      // the bottom (that fight was the day-nav "flicker" on live sessions). A
+      // moment later check() sees the scroll is away from the bottom and turns
+      // tailing off for good. NOTE: do not gate on distance-from-bottom instead
+      // — on a heavy session the content streams in while we're still far from
+      // the bottom, and a distance gate would abandon the initial catch-up.
+      if (navLockRef && Date.now() - navLockRef.current < 1500) return;
       userScrolledRef.current = false; // suppress the scroll-up detection
-      main.scrollTo({ top: main.scrollHeight, behavior: "smooth" });
+      // Instant, not smooth: a smooth animation emits scroll events across many
+      // frames and check() reads a mid-animation one (still away from the bottom)
+      // as a user scroll-up, killing tailing after the first sizeable streamed
+      // append. Same reason as the immediate scroll below and the mount scroll.
+      main.scrollTo({ top: main.scrollHeight, behavior: "auto" });
     });
 
     observer.observe(main, { childList: true, subtree: true });
 
-    // Also scroll immediately when tail mode is first enabled.
+    // Also scroll immediately when tail mode is first enabled. Instant (not
+    // smooth) for the same reason as the mount scroll above — a smooth
+    // animation's scroll events trip check() into disabling tailing mid-flight.
     userScrolledRef.current = false;
-    main.scrollTo({ top: main.scrollHeight, behavior: "smooth" });
+    main.scrollTo({ top: main.scrollHeight, behavior: "auto" });
 
     return () => observer.disconnect();
-  }, [tailing]);
+    // navLockRef is a stable ref; listed to satisfy exhaustive-deps without
+    // causing re-runs.
+  }, [tailing, navLockRef]);
 
   const jumpToLatest = useCallback(() => {
     const main = mainRef.current;

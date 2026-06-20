@@ -202,9 +202,14 @@ export function SessionView({
   const [scrollIntent, setScrollIntent] = useState(0);
   /** Scroll-only target (no selection) — used by day navigation so jumping to
    *  a day scrolls the transcript there WITHOUT popping the event drawer the
-   *  way a row/minimap selection does. `n` forces the effect to re-run even
-   *  when the same index is targeted twice. */
-  const [dayScrollTarget, setDayScrollTarget] = useState<{ index: number; key: string; n: number } | null>(null);
+   *  way a row/minimap selection does. `block` aligns the strip to the top
+   *  ("start", normal day jump) or the bottom ("end", used by "go to end of the
+   *  previous day" — scrolling the current day's strip to the viewport bottom
+   *  reveals the previous day's tail above it). `n` forces the effect to re-run
+   *  even when the same target is requested twice. */
+  const [dayScrollTarget, setDayScrollTarget] = useState<
+    { index: number; key: string; block: "start" | "end"; n: number } | null
+  >(null);
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   // Per-day digest cards (EntryDayStrip) are interleaved into the transcript at
   // each day's first row, so day-nav scrolls to the card itself when present.
@@ -231,6 +236,12 @@ export function SessionView({
    *  at mount + on resize via ResizeObserver — no magic constants. */
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerH, setHeaderH] = useState(STICKY_HEADER_HEIGHT);
+  // Live mirror so the day-scroll alignment can read the current header height
+  // WITHOUT taking headerH as an effect dep — collapse flips headerH on every
+  // scroll direction change, and a dep there would re-fire the day scroll mid-
+  // free-scroll and yank the view back to the last nav target.
+  const headerHRef = useRef(headerH);
+  headerHRef.current = headerH;
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
@@ -251,6 +262,10 @@ export function SessionView({
   // When the user explicitly clicks the toggle, suppress auto-collapse
   // for a short period so the scroll listener doesn't immediately undo it.
   const manualPinRef = useRef(0);
+  // Stamped on every explicit day-jump so TailMode's live-follow observer
+  // bails for a beat — otherwise a streaming live event yanks the view back
+  // to the bottom mid-navigation. See gotoDay / jumpAcrossDay.
+  const tailNavLockRef = useRef(0);
   const toggleCollapsed = () => {
     setCollapsed((v) => !v);
     manualPinRef.current = Date.now();
@@ -332,11 +347,45 @@ export function SessionView({
   // selectedIndex (so no drawer opens). Same scrollIntoView contract as above.
   useEffect(() => {
     if (!dayScrollTarget) return;
+    const main = headerRef.current?.closest("main") as HTMLElement | null;
     // Prefer the day's digest card (it leads the day); fall back to the first
     // row when that day has no entry.
     const el =
       dayStripRefs.current[dayScrollTarget.key] ?? rowRefs.current[dayScrollTarget.index];
-    if (el) el.scrollIntoView({ block: "start", behavior: "auto" });
+    if (!el || !main) return;
+    el.scrollIntoView({ block: dayScrollTarget.block, behavior: "auto" });
+
+    // scrollIntoView aims using the content-visibility ESTIMATED heights of the
+    // rows ABOVE the target, so on a long transcript (worst at mount, when none
+    // have been laid out yet) it undershoots by 100–200px — leaving the PREVIOUS
+    // day's tall trailing turn-block still straddling the header line. The
+    // playhead observer then reads THAT block's offset and followDayToScroll
+    // reverts the day-jump. For a top-aligned jump, re-measure on the next few
+    // frames (real heights now settle progressively) and nudge the target to sit
+    // exactly at the header line so the prev block clears it. block:"end" (go to
+    // end of prev day) intentionally leaves the prev-day tail on the line, so it
+    // needs no correction.
+    if (dayScrollTarget.block !== "start") return;
+    let frames = 0;
+    let settled = 0;
+    let raf = 0;
+    const align = () => {
+      const delta = Math.round(
+        el.getBoundingClientRect().top - main.getBoundingClientRect().top - headerHRef.current,
+      );
+      if (Math.abs(delta) > 1) {
+        main.scrollTop += delta;
+        settled = 0;
+      } else {
+        settled++;
+      }
+      // Keep correcting until it holds for two consecutive frames (rows above
+      // the target settle their real content-visibility heights progressively,
+      // and on a long transcript that can take many frames). Cap as a backstop.
+      if (settled < 2 && ++frames < 20) raf = requestAnimationFrame(align);
+    };
+    raf = requestAnimationFrame(align);
+    return () => cancelAnimationFrame(raf);
   }, [dayScrollTarget]);
 
   const { events, durationMs, totalUsage, model, eventCount, projectName } = session;
@@ -581,64 +630,87 @@ export function SessionView({
     return m;
   }, [entries]);
 
-  // Selected timeline day. Defaults to the FIRST active day so the minimap
-  // matches where the transcript opens (the top), and the scroll-spy then
-  // advances it as the user reads downward. The lazy initializer runs
-  // identically on server + client (sessionDays is deterministic), so there's
-  // no hydration mismatch; the effect re-pins it when the component is reused
-  // across /sessions/[id] navigations. "all" shows the full session.
+  // Selected timeline day. Defaults to the LAST (most recent) active day so a
+  // long, multi-day transcript opens where the action is rather than at the
+  // top of an old day; the initial-jump effect below scrolls there instantly,
+  // and the day then follows the scroll position as the user reads in either
+  // direction (see followDayToScroll). The lazy initializer runs identically on
+  // server + client (sessionDays is deterministic), so there's no hydration
+  // mismatch; the effect re-pins it when the component is reused across
+  // /sessions/[id] navigations. "all" shows the full session.
+  const didInitialDayJump = useRef(false);
   const [selectedDayKey, setSelectedDayKey] = useState<string>(
-    () => (sessionDays.length ? sessionDays[0]!.key : "all"),
+    () => (sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all"),
   );
   useEffect(() => {
-    setSelectedDayKey(sessionDays.length ? sessionDays[0]!.key : "all");
+    setSelectedDayKey(sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all");
+    didInitialDayJump.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
 
   const dayIndex = sessionDays.findIndex((d) => d.key === selectedDayKey);
-  // Latest selection, read by the scroll-spy without re-subscribing its
-  // listener on every day change. Also lets the spy leave an explicit "all"
-  // (full-session) view untouched while the user scrolls.
+  // Latest sessionDays, read by the initial-jump effect so it doesn't re-run on
+  // every render. On LIVE sessions SSE router.refresh() rebuilds sessionDays each
+  // tick; reading it via ref keeps the once-per-session jump from re-firing.
+  const sessionDaysRef = useRef(sessionDays);
+  sessionDaysRef.current = sessionDays;
+  // Read by followDayToScroll (the scroll→day follower) without stale closure.
   const selectedDayKeyRef = useRef(selectedDayKey);
   selectedDayKeyRef.current = selectedDayKey;
 
-  // Scroll-spy: as the transcript scrolls across a day boundary, auto-advance
-  // the timeline's selected day to whichever day sits under the sticky header.
-  // Anchors on the interleaved day cards. It only mirrors the reading position
-  // (no scroll, no header pop), so the minimap + "day N/N" selector follow the
-  // user across days in both directions. Skipped while "all" is chosen.
+  // Initial jump: on first paint of a multi-day session, snap straight to the
+  // most recent day (the default selectedDayKey is already the last day, so the
+  // minimap matches). Routed through gotoDay rather than scrolling to the day's
+  // strip directly: in "turns" mode the most recent day can be absorbed into a
+  // turn anchored on an earlier day and so have NO inline strip — gotoDay finds
+  // the day's first event, expands its turn, and falls back to the row ref, so
+  // it lands reliably either way. Single-day sessions stay at the top. Runs once
+  // per session; the re-pin effect above clears didInitialDayJump on nav.
+  //
+  // SKIPPED for live sessions: their destination is the live tail, which
+  // TailMode scrolls to on mount. Jumping to the most-recent-day's TOP would
+  // scroll the view UP, and that programmatic scroll trips TailMode's scroll-up
+  // detector (check()) into turning live-follow off — and it would race
+  // TailMode's own mount scroll. followDayToScroll still keeps the minimap on
+  // the last day, since the tail sits there.
   useEffect(() => {
-    if (tab !== "transcript" || sessionDays.length <= 1) return;
-    const headerEl = headerRef.current;
-    const mainEl = headerEl?.closest("main") as HTMLElement | null;
-    if (!headerEl || !mainEl) return;
-    let raf = 0;
-    const update = () => {
-      raf = 0;
-      if (selectedDayKeyRef.current === "all") return;
-      const line = headerEl.getBoundingClientRect().bottom + 8;
-      let currentKey: string | null = null;
-      for (const d of sessionDays) {
-        const stripEl = dayStripRefs.current[d.key];
-        if (!stripEl) continue;
-        if (stripEl.getBoundingClientRect().top <= line) currentKey = d.key;
-        else break;
-      }
-      // Above every card (top of transcript) → we're still reading the first day.
-      if (!currentKey) currentKey = sessionDays.find((d) => dayStripRefs.current[d.key])?.key ?? null;
-      if (currentKey) setSelectedDayKey((prev) => (prev !== currentKey ? currentKey! : prev));
-    };
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(update);
-    };
-    mainEl.addEventListener("scroll", onScroll, { passive: true });
-    update(); // sync the minimap to the initial reading position (day 1 at top)
-    return () => {
-      mainEl.removeEventListener("scroll", onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
+    if (tab !== "transcript" || didInitialDayJump.current) return;
+    const days = sessionDaysRef.current;
+    if (days.length <= 1 || isSessionLive) {
+      didInitialDayJump.current = true;
+      return;
+    }
+    didInitialDayJump.current = true;
+    gotoDay(days[days.length - 1]!.key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, sessionDays]);
+
+  // The displayed day is a single function of scroll position. The Minimap
+  // reports the offset (ms) of the topmost on-screen row — the SAME signal it
+  // draws the playhead from — and we select that row's day. Display only: this
+  // never scrolls the transcript. Navigation (gotoDay / the inline day-boundary
+  // buttons) moves the scroll, and the day then follows this one signal, so
+  // there's no second writer that could revert a day-jump. (The old scroll-spy
+  // used a separate pixel heuristic that disagreed with where nav scrolled to,
+  // which is what made "next day" snap back.) The tailNavLock guard lets an
+  // explicit jump's scroll settle first, and the key-unchanged no-op keeps a
+  // LIVE session's SSE refreshes from churning the selection.
+  function followDayToScroll(ms: number | null) {
+    if (ms === null) return;
+    if (Date.now() - tailNavLockRef.current < 1500) return;
+    const days = sessionDaysRef.current;
+    if (days.length <= 1) return;
+    const cur = selectedDayKeyRef.current;
+    if (cur === "all") return; // respect an explicit "show all days" choice
+    // Days are sorted by startMs; the last one starting at/below ms is the
+    // containing day (and tolerates the overnight gap between days).
+    let hit = days[0]!;
+    for (const d of days) {
+      if (ms >= d.startMs) hit = d;
+      else break;
+    }
+    if (hit.key !== cur) setSelectedDayKey(hit.key);
+  }
 
   /** Offset window for the selected day, or null when there's a single day
    *  or "all" is chosen — null tells the minimap to render the full session
@@ -729,12 +801,13 @@ export function SessionView({
     setScrollIntent((n) => n + 1);
   }
 
-  /** Switch the minimap to a given day (or "all"). On an explicit day pick we
-   *  also scroll the transcript to that day's first row so "jump to a day"
-   *  navigates the body too — but the default selection on mount does NOT
-   *  scroll (it only flows through here on user interaction). */
+  /** Switch the minimap to a given day (or "all"). Also scrolls the transcript
+   *  to that day's first row so "jump to a day" navigates the body too. Called
+   *  on user day-picks and once on mount by the initial-jump effect (for non-live
+   *  multi-day sessions, to open on the most recent day). */
   function gotoDay(key: string) {
     setSelectedDayKey(key);
+    tailNavLockRef.current = Date.now();
     // Paging days scrolls the transcript; that programmatic scroll (often
     // upward to an earlier day's first row) would otherwise read as a
     // user scroll-up and pop the sticky header open. Force it collapsed and
@@ -755,7 +828,38 @@ export function SessionView({
         setExpandedTurns((prev) => new Set(prev).add(turnIdx));
       }
     }
-    setDayScrollTarget((prev) => ({ index: ev.index, key, n: (prev?.n ?? 0) + 1 }));
+    setDayScrollTarget((prev) => ({ index: ev.index, key, block: "start", n: (prev?.n ?? 0) + 1 }));
+  }
+
+  /** Cross-day hop used by the inline day-boundary buttons. Selecting a day can
+   *  differ from where we scroll: "go to end of previous day" selects the
+   *  previous day but scrolls the CURRENT day's strip to the viewport bottom
+   *  (block:"end"), revealing the previous day's tail above it. "go to start of
+   *  next day" selects + scrolls to that day's strip (block:"start"). */
+  function jumpAcrossDay(
+    selectKey: string,
+    scrollKey: string,
+    block: "start" | "end",
+    fallbackIndex: number,
+  ) {
+    setSelectedDayKey(selectKey);
+    setCollapsed(true);
+    manualPinRef.current = Date.now();
+    tailNavLockRef.current = Date.now();
+    // The fallback row may live inside a collapsed turn — expand it so the
+    // element exists if the strip ref is unavailable.
+    if (filter === "turns") {
+      const turnIdx = turnByRowIndex.get(fallbackIndex);
+      if (turnIdx !== undefined && !expandedTurns.has(turnIdx)) {
+        setExpandedTurns((prev) => new Set(prev).add(turnIdx));
+      }
+    }
+    setDayScrollTarget((prev) => ({
+      index: fallbackIndex,
+      key: scrollKey,
+      block,
+      n: (prev?.n ?? 0) + 1,
+    }));
   }
 
   /** Scroll the transcript to the row whose assistant message issued a given
@@ -1206,6 +1310,7 @@ export function SessionView({
               // for the same right-side real estate.
               if (id) setSelectedIndex(null);
             }}
+            onPlayheadChange={followDayToScroll}
           />
         )}
         </div>
@@ -1250,6 +1355,7 @@ export function SessionView({
                 )
               }
               onJumpToParent={jumpToToolUse}
+              onClearFocus={() => setSelectedWorkflowId(null)}
             />
           </div>
         ) : tab === "debug" ? (
@@ -1301,6 +1407,7 @@ export function SessionView({
               sessionDays={sessionDays}
               entryByDay={entryByDay}
               dayStripRefs={dayStripRefs}
+              onJumpAcrossDay={jumpAcrossDay}
             />
           </>
         )}
@@ -1431,7 +1538,7 @@ export function SessionView({
       )}
 
       {/* Tail mode FAB — auto-scroll to follow live events */}
-      <TailMode isLive={isSessionLive} />
+      <TailMode isLive={isSessionLive} navLockRef={tailNavLockRef} />
     </div>
   );
 }
@@ -1504,6 +1611,7 @@ function Minimap({
   coldResumeMarkers,
   rawIdleBands,
   model,
+  onPlayheadChange,
 }: {
   displayRows: DisplayRow[];
   durationMs: number;
@@ -1530,6 +1638,10 @@ function Minimap({
    *  surface their dead-air on the minimap. */
   rawIdleBands?: { start: number; end: number; durationMs: number }[];
   model?: string;
+  /** Fires with the offset (ms) of the topmost on-screen transcript row — the
+   *  same scroll signal that draws the playhead. SessionView uses it to make
+   *  the selected day follow scroll. */
+  onPlayheadChange?: (ms: number | null) => void;
 }) {
   const WIDTH = 1400;
   /** Main timeline height. Sub-agent lanes stack below this. */
@@ -1568,6 +1680,10 @@ function Minimap({
     };
   } | null>(null);
   const [playheadMs, setPlayheadMs] = useState<number | null>(null);
+  // Read inside the observer so the latest callback fires without re-subscribing
+  // the IntersectionObserver (its effect deps stay [displayRows.length, headerOffset]).
+  const onPlayheadChangeRef = useRef(onPlayheadChange);
+  onPlayheadChangeRef.current = onPlayheadChange;
   const containerRef = useRef<HTMLDivElement>(null);
 
   /* Playhead — track which transcript row is at the top of the viewport.
@@ -1576,60 +1692,54 @@ function Minimap({
    * on every scroll event. For a session with ~2000 rows that's thousands
    * of DOM queries per second during scroll — enough to pin a CPU core
    * and make Chrome ask to kill the tab. IntersectionObserver is event-
-   * driven: the browser only notifies us when rows cross a narrow band
-   * near the top of the viewport (the "playhead line"), so the cost
-   * scales with *changes* instead of with scroll rate × row count.
+   * driven: the browser only notifies us when rows enter or leave the region
+   * below the sticky header, so the cost scales with *changes* instead of
+   * with scroll rate × row count.
    */
   useEffect(() => {
     const main = containerRef.current?.closest("main") as HTMLElement | null;
     if (!main) return;
 
-    // A thin horizontal band just below the sticky header. A row is
-    // "at the playhead" when it enters this band from the bottom.
-    // rootMargin: top crop = headerOffset (so the band starts where the
-    // transcript actually starts), bottom crop = everything except the
-    // band, so only rows inside the band trigger callbacks.
-    const BAND_HEIGHT = 12;
-    const rootMargin = `-${headerOffset}px 0px -${Math.max(
-      0,
-      main.clientHeight - headerOffset - BAND_HEIGHT,
-    )}px 0px`;
+    // Crop the observation region by the sticky header at the top and keep the
+    // whole viewport below it. Every row visible below the header intersects
+    // this region; the topmost (smallest offsetTop) is the row sitting at the
+    // header line — the playhead. Using the full area (not a thin band) means
+    // the playhead never blanks out in the gaps between sparse rows, so the
+    // scroll→timeline highlight — and the day-follow that rides on it — stays
+    // continuous. Still event-driven: a row only fires when it enters or
+    // leaves, so cost scales with scroll distance, not row count.
+    const rootMargin = `-${headerOffset}px 0px 0px 0px`;
 
-    // Track which rows are currently inside the band. The topmost is
-    // the playhead. Using a Set keeps updates O(1).
-    const inBand = new Set<HTMLElement>();
+    // Rows currently visible below the header. The topmost is the playhead.
+    const visibleRows = new Set<HTMLElement>();
 
     const publishTopmost = () => {
-      if (inBand.size === 0) {
-        // Fall back to the row just above the band by scanning the
-        // few immediately-adjacent rows — cheap because the band is
-        // narrow.
-        setPlayheadMs(null);
-        return;
-      }
-      let topmost: HTMLElement | null = null;
-      let topmostOff = Infinity;
-      for (const el of inBand) {
-        const t = el.offsetTop;
-        if (t < topmostOff) {
-          topmostOff = t;
-          topmost = el;
+      let value: number | null = null;
+      if (visibleRows.size > 0) {
+        let topmost: HTMLElement | null = null;
+        let topmostOff = Infinity;
+        for (const el of visibleRows) {
+          const t = el.offsetTop;
+          if (t < topmostOff) {
+            topmostOff = t;
+            topmost = el;
+          }
+        }
+        if (topmost) {
+          const tOff = Number(topmost.getAttribute("data-sl-toffset"));
+          value = Number.isNaN(tOff) ? null : tOff;
         }
       }
-      if (!topmost) {
-        setPlayheadMs(null);
-        return;
-      }
-      const tOff = Number(topmost.getAttribute("data-sl-toffset"));
-      setPlayheadMs(Number.isNaN(tOff) ? null : tOff);
+      setPlayheadMs(value);
+      onPlayheadChangeRef.current?.(value);
     };
 
     const observer = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
           const el = e.target as HTMLElement;
-          if (e.isIntersecting) inBand.add(el);
-          else inBand.delete(el);
+          if (e.isIntersecting) visibleRows.add(el);
+          else visibleRows.delete(el);
         }
         publishTopmost();
       },
@@ -2278,12 +2388,17 @@ function Minimap({
                 strokeWidth="1.5"
                 strokeDasharray="4 3"
                 opacity="0.75"
+                pointerEvents="none"
               />
+              {/* Hover hit-area limited to the diamond itself — a wider/taller
+                  target used to swallow hovers+clicks meant for adjacent
+                  user-prompt markers sitting right beside the cache-rebuild
+                  point. */}
               <rect
-                x={x - 8}
-                y={0}
-                width={16}
-                height={TOTAL_H}
+                x={x - 6}
+                y={MAIN_H / 2 - 8}
+                width={12}
+                height={16}
                 fill="transparent"
               />
               <polygon
@@ -2291,6 +2406,7 @@ function Minimap({
                 fill="#D97706"
                 stroke="var(--af-surface)"
                 strokeWidth="1.5"
+                pointerEvents="none"
               />
             </g>
           );
@@ -2989,6 +3105,7 @@ function TranscriptList({
   sessionDays,
   entryByDay,
   dayStripRefs,
+  onJumpAcrossDay,
 }: {
   displayRows: DisplayRow[];
   rowRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>;
@@ -3009,6 +3126,14 @@ function TranscriptList({
   sessionDays: { key: string; startMs: number; endMs: number; count: number }[];
   entryByDay: Map<string, Entry>;
   dayStripRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  /** Hop to an adjacent day from an inline day-boundary button.
+   *  (selectKey, scrollKey, block, fallbackRowIndex). */
+  onJumpAcrossDay: (
+    selectKey: string,
+    scrollKey: string,
+    block: "start" | "end",
+    fallbackIndex: number,
+  ) => void;
 }) {
   // Find the last collapsed turn index so we can mark it as in-progress
   // when the session is live.
@@ -3041,6 +3166,10 @@ function TranscriptList({
     if (d.kind === "turn-expanded-footer") return undefined;
     return d.row.tOffsetMs;
   };
+  // A display row → its event PRIMARY index (what jumpAcrossDay's turn/row
+  // lookups are keyed by — NOT the displayRows loop position).
+  const rowPrimaryIndexOf = (d: DisplayRow): number =>
+    d.kind === "presentation" ? rowPrimaryIndex(d.row) : d.turn.firstPrimaryIndex;
   /** Which local day a row falls in: the last day bucket whose start is at or
    *  before the row's offset. sessionDays is pre-sorted by startMs. */
   const dayKeyForOffset = (tOff: number | undefined): string | null => {
@@ -3080,10 +3209,27 @@ function TranscriptList({
       }
       // Day boundary: drop this day's digest card at its first row (after any
       // overnight idle divider that led into the day) so per-day perception
-      // sits inline with that day's work, not stacked at the top.
+      // sits inline with that day's work, not stacked at the top. The boundary
+      // also gets inline jump controls so you can page across days while
+      // reading — "↓ start of next day" sits at the bottom of the day that just
+      // ended, "↑ end of previous day" at the top of the new one.
       const dk = dayKeyForOffset(rowTOffset(d));
       if (dk && dk !== currentDayKey) {
+        const endedKey = currentDayKey; // day that just ended; null on the first day
         currentDayKey = dk;
+        // Fallback scroll target for days with no digest card: the day's first
+        // row by PRIMARY index (i is the displayRows position — wrong key space).
+        const firstIdx = rowPrimaryIndexOf(d);
+        if (endedKey) {
+          out.push(
+            <DayJumpRow
+              key={`daydown-${dk}`}
+              dir="down"
+              label={formatDayKey(dk)}
+              onClick={() => onJumpAcrossDay(dk, dk, "start", firstIdx)}
+            />,
+          );
+        }
         const dayEntry = entryByDay.get(dk);
         if (dayEntry) {
           out.push(
@@ -3096,6 +3242,16 @@ function TranscriptList({
             >
               <EntryDayStrip entry={dayEntry} />
             </div>,
+          );
+        }
+        if (endedKey) {
+          out.push(
+            <DayJumpRow
+              key={`dayup-${dk}`}
+              dir="up"
+              label={formatDayKey(endedKey)}
+              onClick={() => onJumpAcrossDay(endedKey, dk, "end", firstIdx)}
+            />,
           );
         }
       }
@@ -3191,6 +3347,51 @@ function IdleDivider({ gapMs }: { gapMs: number }) {
       }}
     >
       Session idle · {formatGap(gapMs)}
+    </div>
+  );
+}
+
+/** Inline cross-day jump control rendered at each day boundary. "down" sits at
+ *  the bottom of the day that just ended and jumps to the start of the next day;
+ *  "up" sits at the top of the new day and jumps to the end of the previous one.
+ *  The day always follows the scroll position (see followDayToScroll); these are
+ *  a one-click shortcut across the long idle gap between days so you don't have
+ *  to hand-scroll the whole span. "down" (start of next day) lands that day's
+ *  first row at the header line so the day-follow agrees; "up" (end of previous
+ *  day) scrolls the new day's strip to the viewport bottom, leaving the previous
+ *  day's tail above the header line. */
+function DayJumpRow({
+  dir,
+  label,
+  onClick,
+}: {
+  dir: "up" | "down";
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", margin: "6px 0" }}>
+      <button
+        type="button"
+        onClick={onClick}
+        title={dir === "up" ? `Go to the end of ${label}` : `Go to the start of ${label}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 11,
+          fontFamily: "var(--font-mono)",
+          color: "var(--af-text-secondary)",
+          background: "var(--af-surface)",
+          border: "1px solid var(--af-border-subtle)",
+          borderRadius: 100,
+          padding: "3px 12px",
+          cursor: "pointer",
+        }}
+      >
+        {dir === "up" ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        {dir === "up" ? `End of ${label}` : `Start of ${label}`}
+      </button>
     </div>
   );
 }
@@ -4325,6 +4526,7 @@ function WorkflowsPanel({
   selectedAgentKey,
   onOpenAgent,
   onJumpToParent,
+  onClearFocus,
 }: {
   workflows: WorkflowRun[];
   spawnedAgentCount: number;
@@ -4332,6 +4534,7 @@ function WorkflowsPanel({
   selectedAgentKey?: string | null;
   onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
   onJumpToParent: (toolUseId?: string) => void;
+  onClearFocus?: () => void;
 }) {
   const totalTokens = workflows.reduce((n, w) => n + w.totalTokens, 0);
   const totalTools = workflows.reduce((n, w) => n + w.toolCallCount, 0);
@@ -4390,6 +4593,7 @@ function WorkflowsPanel({
             selectedAgentKey={selectedAgentKey}
             onOpenAgent={onOpenAgent}
             onJumpToParent={onJumpToParent}
+            onClearFocus={onClearFocus}
           />
         ))}
       </div>
@@ -4403,12 +4607,14 @@ function WorkflowCard({
   selectedAgentKey,
   onOpenAgent,
   onJumpToParent,
+  onClearFocus,
 }: {
   w: WorkflowRun;
   focused?: boolean;
   selectedAgentKey?: string | null;
   onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
   onJumpToParent: (toolUseId?: string) => void;
+  onClearFocus?: () => void;
 }) {
   const [open, setOpen] = useState(focused);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -4428,14 +4634,17 @@ function WorkflowCard({
       ref={cardRef}
       style={{
         borderTop: "1px solid var(--af-border-subtle)",
-        background: focused ? "rgba(234,88,12,0.07)" : "transparent",
-        transition: "background 0.5s ease",
         scrollMarginTop: 120,
       }}
     >
       {/* Collapsed header — click to expand */}
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v);
+          // Any toggle is the user taking over from the timeline jump — drop the
+          // focus highlight so it doesn't linger on a card they've moved past.
+          onClearFocus?.();
+        }}
         style={{
           width: "100%",
           display: "flex",
@@ -4458,7 +4667,11 @@ function WorkflowCard({
             fontFamily: "var(--font-mono)",
             fontSize: 13,
             fontWeight: 600,
-            color: "var(--af-text)",
+            color: focused ? "#EA580C" : "var(--af-text)",
+            background: focused ? "rgba(234,88,12,0.16)" : "transparent",
+            padding: "2px 8px",
+            borderRadius: 6,
+            transition: "background 0.4s ease, color 0.4s ease",
             minWidth: 0,
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -4540,7 +4753,7 @@ function WorkflowCard({
                   fontFamily: "var(--font-mono)",
                 }}
               >
-                Jump to Workflow call →
+                Jump to timeline →
               </button>
             )}
           </div>
