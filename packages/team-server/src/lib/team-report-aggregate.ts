@@ -315,7 +315,7 @@ function linearWeekVelocity(rows: LinearIssueAggRow[]): LinearWeekVelocity {
 // boundary, so KIP-3150 doesn't match). Null when not connected; connected
 // with zero mapped teams returns empty-keys stats so the widget can point the
 // admin at the mapping.
-async function linearVelocity(
+export async function linearVelocity(
   teamId: string,
   scope: InsightsScope,
   weekMonday: string,
