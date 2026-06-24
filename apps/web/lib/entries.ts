@@ -54,15 +54,6 @@ export function currentYearMonth(nowMs: number = Date.now()): string {
   return today.slice(0, 7);
 }
 
-export function lastCompletedMonth(nowMs: number = Date.now()): string {
-  const today = todayLocal(nowMs);
-  const [y, m] = today.split("-");
-  const yi = Number(y);
-  const mi = Number(m);
-  if (mi === 1) return `${yi - 1}-12`;
-  return `${yi}-${String(mi - 1).padStart(2, "0")}`;
-}
-
 /** Validates and returns the Monday for `s` if `s` is itself a Monday in YYYY-MM-DD form. */
 export function asMonday(s: string): string | null {
   if (!isValidDate(s)) return null;
