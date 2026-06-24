@@ -164,6 +164,10 @@ export function SearchableSelect({
                   } else if (e.key === "Escape") {
                     e.preventDefault();
                     close();
+                  } else if (e.key === "Tab") {
+                    // Tab moves browser focus out naturally; close the dropdown
+                    // so it doesn't linger visible until a click-away.
+                    setOpen(false);
                   }
                 }}
                 style={{ width: "100%", paddingLeft: 30, fontSize: 12 }}
