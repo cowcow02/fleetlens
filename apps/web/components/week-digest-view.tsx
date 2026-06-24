@@ -1,7 +1,7 @@
 "use client";
-import { useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { WeekDigest as WeekDigestRender } from "./week-digest";
-import { ExportPdfButton } from "./export-pdf-button";
+import { DigestActions } from "./digest-actions";
 import type { WeekDigest as WeekDigestType } from "@claude-lens/entries";
 
 type Status = "idle" | "streaming" | "done" | "error";
@@ -77,50 +77,21 @@ export function WeekDigestView({
 
   const isStreaming = status === "streaming";
   const narrativeFresh = !!digest?.headline;
-  const pdfAction = digest ? <ExportPdfButton digestKey={`week-${monday}`} /> : null;
 
-  let actions: ReactNode = null;
-  if (!narrativeFresh && aiEnabled) {
-    actions = (
-      <button
-        onClick={() => generate(false)}
-        disabled={isStreaming}
-        style={btnPrimary(isStreaming)}
-      >
-        {isStreaming ? "Generating..." : digest ? "Generate" : "Generate digest"}
-      </button>
-    );
-  } else if (aiEnabled) {
-    actions = (
-      <span style={{ fontSize: 10, color: "var(--af-text-tertiary)", display: "inline-flex", gap: 6, alignItems: "center" }}>
-        ✓ Up to date
-        <button
-          onClick={() => generate(true)}
-          disabled={isStreaming}
-          title="Re-roll the narrative for this week"
-          style={btnSecondary(isStreaming)}
-        >
-          {isStreaming ? "..." : "Re-roll"}
-        </button>
-      </span>
-    );
-  }
-  if (progress) {
-    actions = (
-      <>
-        {actions}
-        <span style={{ fontSize: 10, color: "var(--af-text-tertiary)" }}>{progress}</span>
-      </>
-    );
-  }
-  if (pdfAction) {
-    actions = (
-      <>
-        {actions}
-        {pdfAction}
-      </>
-    );
-  }
+  const actions = (
+    <DigestActions
+      digestKey={monday}
+      period="week"
+      hasDigest={!!digest}
+      narrativeFresh={narrativeFresh}
+      isStreaming={isStreaming}
+      aiEnabled={aiEnabled}
+      progress={progress}
+      onGenerate={() => generate(false)}
+      onReroll={() => generate(true)}
+      rerollTitle="Re-roll the narrative for this week"
+    />
+  );
 
   if (digest) {
     return <WeekDigestRender digest={digest} aiEnabled={aiEnabled} actions={actions} priorDigest={prior ?? null} />;
@@ -208,29 +179,3 @@ function EmptyWeekState({ monday, isStreaming, aiEnabled, progress, onGenerate }
   );
 }
 
-function btnPrimary(disabled: boolean): React.CSSProperties {
-  return {
-    padding: "4px 10px",
-    background: "var(--af-accent)",
-    color: "white",
-    border: "none",
-    borderRadius: 5,
-    cursor: disabled ? "default" : "pointer",
-    fontSize: 11,
-    fontWeight: 600,
-    opacity: disabled ? 0.6 : 1,
-  };
-}
-
-function btnSecondary(disabled: boolean): React.CSSProperties {
-  return {
-    padding: "2px 7px",
-    background: "transparent",
-    border: "1px solid var(--af-border-subtle)",
-    borderRadius: 4,
-    fontSize: 10,
-    color: "var(--af-text-secondary)",
-    cursor: disabled ? "default" : "pointer",
-    opacity: disabled ? 0.6 : 1,
-  };
-}
