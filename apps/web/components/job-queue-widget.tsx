@@ -199,7 +199,7 @@ function JobRow({ job }: { job: Job }) {
     job.status === "error"   ? "#f56565" :
                                 "#48bb78";
   const isLink = job.resultUrl && (job.status === "done" || job.status === "running");
-  const Container: any = isLink ? Link : "div";
+  const Container: React.ElementType = isLink ? Link : "div";
   const containerProps = isLink ? { href: job.resultUrl! } : {};
 
   return (
