@@ -3,8 +3,11 @@ import {
   buildSpendIndex,
   collectSnapPairRates,
   dollarsInRange,
+  eventDollars,
   groupSnapsByCycle,
+  modelFamily,
   predictAnchored,
+  PRICES,
   userSoloRate,
   type CalibrationEvent,
   type CycleSnap,
@@ -215,3 +218,45 @@ describe("predictAnchored", () => {
     expect(predictAnchored(spend, [], 12, cycleEnd, 168, t)).toBeCloseTo(2, 0);
   });
 });
+
+
+describe("modelFamily", () => {
+  it("maps case variants to canonical families", () => {
+    expect(modelFamily("claude-opus-4-7")).toBe("opus");
+    expect(modelFamily("CLAUDE-Opus-4-8")).toBe("opus");
+    expect(modelFamily("claude-sonnet-4-6")).toBe("sonnet");
+    expect(modelFamily("claude-haiku-4-5-20251001")).toBe("haiku");
+  });
+  it("returns null for non-Anthropic and sentinel values", () => {
+    expect(modelFamily("gpt-4-turbo")).toBeNull();
+    expect(modelFamily("glm-4.5")).toBeNull();
+    expect(modelFamily("<synthetic>")).toBeNull();
+    expect(modelFamily(undefined)).toBeNull();
+    expect(modelFamily(null)).toBeNull();
+    expect(modelFamily("")).toBeNull();
+  });
+});
+
+describe("eventDollars", () => {
+  it("prices a sonnet event by summing input/output/cache rates", () => {
+    const ev: CalibrationEvent = {
+      ts: "2026-04-10T00:00:00Z",
+      family: "sonnet",
+      input: 1_000_000,
+      output: 0,
+      cacheRead: 0,
+      cache_1h: 0,
+      cache_5m: 0,
+    };
+    // 1M input × $3 / 1M = $3
+    expect(eventDollars(ev)).toBeCloseTo(PRICES.sonnet.input, 6);
+  });
+  it("opus is priced 5x sonnet input", () => {
+    const inp: CalibrationEvent = { ts: "x", family: "opus", input: 1_000_000, output: 0, cacheRead: 0, cache_1h: 0, cache_5m: 0 };
+    expect(eventDollars(inp)).toBeCloseTo(PRICES.opus.input, 6);
+  });
+  it("returns 0 for empty usage", () => {
+    expect(eventDollars({ ts: "x", family: "sonnet", input: 0, output: 0, cacheRead: 0, cache_1h: 0, cache_5m: 0 })).toBe(0);
+  });
+});
+
