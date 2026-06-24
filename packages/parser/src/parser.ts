@@ -267,12 +267,19 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
   }
 
   // Session bounds: min/max across all timestamps, since JSONL isn't
-  // guaranteed to be in chronological order.
-  const timestamped = events
-    .map((e) => (e.timestamp ? Date.parse(e.timestamp) : undefined))
-    .filter((n): n is number => typeof n === "number" && !Number.isNaN(n));
-  const startMs = timestamped.length ? Math.min(...timestamped) : undefined;
-  const endMs = timestamped.length ? Math.max(...timestamped) : undefined;
+  // guaranteed to be in chronological order. Spread into Math.min/max
+  // hits the call-site argument limit (≈ 65k on V8) on large sessions
+  // and allocates a spread frame as wide as the events array — manual
+  // reduce avoids both.
+  let startMs: number | undefined;
+  let endMs: number | undefined;
+  for (const e of events) {
+    if (!e.timestamp) continue;
+    const ms = Date.parse(e.timestamp);
+    if (Number.isNaN(ms)) continue;
+    if (startMs === undefined || ms < startMs) startMs = ms;
+    if (endMs === undefined || ms > endMs) endMs = ms;
+  }
   const firstTs = startMs !== undefined ? new Date(startMs).toISOString() : undefined;
   const lastTs = endMs !== undefined ? new Date(endMs).toISOString() : undefined;
 
@@ -577,16 +584,15 @@ export function parseTranscript(rawLines: unknown[]): ParseResult {
       const m = o.message as Record<string, unknown> | undefined;
       if (m) {
         if (typeof m.model === "string" && !model) model = m.model;
-        // Dedup by message.id (primary) + optional requestId. Claude Code
-        // splits one API response across multiple JSONL lines, each
-        // carrying the same `usage` block, so summing per line would
-        // double-count tokens. message.id is the stable identifier;
-        // requestId is extra disambiguation when present.
+        // Dedup by message.id. Claude Code splits one API response across
+        // multiple JSONL lines, each carrying the same `usage` block, so
+        // summing per line would double-count tokens. Earlier this also
+        // concatenated requestId, but adjacent lines for the same message
+        // can drop requestId on resume/retry — making `msg_1:` and
+        // `msg_1:req_a` distinct keys and re-introducing the doubled count.
         const mid = typeof m.id === "string" ? m.id : undefined;
-        const rid = typeof o.requestId === "string" ? o.requestId : undefined;
-        const dedupKey = mid != null ? `${mid}:${rid ?? ""}` : undefined;
-        if (dedupKey && seenMessageIds.has(dedupKey)) continue;
-        if (dedupKey) seenMessageIds.add(dedupKey);
+        if (mid && seenMessageIds.has(mid)) continue;
+        if (mid) seenMessageIds.add(mid);
         const u = extractUsage(m.usage);
         if (u) {
           totalUsage.input += u.input;

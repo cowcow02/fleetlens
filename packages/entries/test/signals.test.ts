@@ -97,6 +97,15 @@ describe("extractUserInstructions", () => {
     const text = "please a. please b. please c. please d. please e. please f. please g.";
     expect(extractUserInstructions(text).length).toBeLessThanOrEqual(5);
   });
+  // Module-scope INSTRUCTION_RE has /g, so .exec() advances lastIndex.
+  // The 5-cap break used to leave lastIndex past end of input, zeroing
+  // matches on the next call.
+  it("recovers from a previous 5-cap call (no stale /g lastIndex)", () => {
+    extractUserInstructions(
+      "please aa aa aa. please bb bb bb. please cc cc cc. please dd dd dd. please ee ee ee. please ff ff ff.",
+    );
+    expect(extractUserInstructions("can you rename foo to bar")).toEqual(["rename foo to bar"]);
+  });
 });
 
 describe("bucketVerbosity", () => {

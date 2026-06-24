@@ -94,6 +94,53 @@ describe("parseTranscript", () => {
     expect(meta.totalUsage.cacheRead).toBe(5000);
   });
 
+  it("dedups by message.id alone, even when requestId is missing on one of the lines", () => {
+    // Regression: under the old `${mid}:${rid ?? ""}` key, a message.id
+    // shared across two lines where one has requestId and the other
+    // doesn't produced two distinct keys, double-counting tokens.
+    const usage = {
+      input_tokens: 300,
+      output_tokens: 150,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    };
+    const lines: object[] = [
+      makeUser("Hi", "2026-04-10T10:00:00.000Z"),
+      {
+        // Line A: messageId + requestId
+        type: "assistant",
+        uuid: "a-A",
+        timestamp: "2026-04-10T10:00:01.000Z",
+        sessionId: "sess-1",
+        requestId: "req-a",
+        message: {
+          id: "msg-1",
+          role: "assistant",
+          model: "claude-opus-4-6",
+          content: [{ type: "text", text: "part 1" }],
+          usage,
+        },
+      },
+      {
+        // Line B: same messageId, NO requestId — used to be a distinct dedup key
+        type: "assistant",
+        uuid: "a-B",
+        timestamp: "2026-04-10T10:00:02.000Z",
+        sessionId: "sess-1",
+        message: {
+          id: "msg-1",
+          role: "assistant",
+          model: "claude-opus-4-6",
+          content: [{ type: "text", text: "part 2" }],
+          usage,
+        },
+      },
+    ];
+    const { meta } = parseTranscript(lines);
+    expect(meta.totalUsage.input).toBe(300);
+    expect(meta.totalUsage.output).toBe(150);
+  });
+
   it("splits dailyBreakdown across local days by each event's timestamp", () => {
     // Built from local-time Date objects so the test is timezone-independent.
     const lateNight = new Date(2026, 5, 1, 23, 30, 0, 0).toISOString(); // Jun 1 23:30 local

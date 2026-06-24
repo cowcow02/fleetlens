@@ -34,45 +34,11 @@ import {
   type InsightsScope,
 } from "./insights-aggregate";
 
-// Live-data builder for the v7 VariantBuilder. Populates the framework-aligned
+// Live-data builder for the v9 VariantBuilder. Populates framework-aligned
 // Layer-2 KPI fields from `rich_daily_rollups`; every other field on the report
-// is shaped as a typed-but-empty skeleton so the v7 widget catalog still
-// type-checks. The starter set the live page passes to VariantBuilder picks
-// only widgets that read fields we actually compute here — see
-// `LIVE_STARTER_BLOCKS` below.
-
-// v7 framework-aligned starter — kept for backwards compat with old persisted
-// localStorage selections.
-export const LIVE_STARTER_BLOCKS = [
-  "team-pulse-wow",
-  "long-autonomous-texture",
-  "per-project-time-bars",
-  "skill-usage-wow-bars",
-  "delegation-depth",
-  "harness-engineering",
-];
-
-// v8 clean-starter — Q2-2026 Adoption Framework alignment. Grouped by the
-// three framework pillars (slide 2): Usage / Getting Better / Impact.
-// Drop harness-engineering from the starter (mostly-zero tiles) — it stays in
-// the catalog for power users.
-export const LIVE_STARTER_BLOCKS_V8 = [
-  // Header context — adoption rate (slide 5 KPI #1)
-  "live-active-rate",
-  // Pillar 2: are they getting better with it? — qualitative portraits
-  // (v9). Replaces the threshold-based maturity bar; portrait reasoning
-  // is observable-action-driven, not count-driven.
-  "live-member-portraits",
-  // Pillar 1: are people using it?
-  "team-pulse-wow",
-  // Pillar 3: is it changing how we ship? — PR throughput stands in until
-  // DORA/Source-B integration lands.
-  "live-prs-shipped",
-  "per-project-time-bars",
-  // Pillar 2: usage-pattern context (style signals, never grade)
-  "skill-usage-wow-bars",
-  "long-autonomous-texture",
-];
+// is shaped as a typed-but-empty skeleton so the widget catalog still
+// type-checks and unselected catalog widgets render inert. The starter block
+// set is hard-coded on the live page.
 
 type WeekAggregates = {
   agentMs: number;
@@ -383,7 +349,7 @@ async function linearVelocity(
               EXISTS (
                 SELECT 1 FROM github_pull_requests p
                 WHERE p.team_id = i.team_id AND p.ai_assisted
-                  AND p.title ~* (i.identifier || '\\M')
+                  AND p.title ~* ('\\m' || i.identifier || '\\M')
               ) AS ai_linked
        FROM linear_issues i
        WHERE i.team_id = $1 AND i.linear_team_key = ANY($5::text[])
@@ -447,7 +413,7 @@ async function jiraVelocity(
               EXISTS (
                 SELECT 1 FROM github_pull_requests p
                 WHERE p.team_id = i.team_id AND p.ai_assisted
-                  AND p.title ~* (i.identifier || '\\M')
+                  AND p.title ~* ('\\m' || i.identifier || '\\M')
               ) AS ai_linked
        FROM jira_issues i
        WHERE i.team_id = $1 AND i.jira_project_key = ANY($5::text[])
@@ -614,7 +580,7 @@ async function workTimeline(
               SUM(p.additions + p.deletions) AS lines_changed
        FROM github_pull_requests p
        WHERE p.team_id = t.team_id AND p.repo = ANY($5::text[])
-         AND p.state = 'merged' AND p.title ~* (t.identifier || '\\M')
+         AND p.state = 'merged' AND p.title ~* ('\\m' || t.identifier || '\\M')
      ) pr ON true`,
     params,
   );
@@ -991,9 +957,9 @@ export type TeamReportContext = {
 };
 
 /** Build a real-data TeamInsightReport from rich_daily_rollups. Fills only the
- *  fields LIVE_STARTER_BLOCKS consume; everything else stays as a zero/empty
- *  skeleton so the type stays satisfied and unselected catalog widgets render
- *  inert without crashing. */
+ *  fields the hard-coded live starter set consumes; everything else stays a
+ *  zero/empty skeleton so the type stays satisfied and unselected catalog
+ *  widgets render inert without crashing. */
 export async function buildTeamInsightReport(
   teamId: string,
   scope: InsightsScope,
