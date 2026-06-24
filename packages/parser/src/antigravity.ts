@@ -137,13 +137,30 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
 
   const pendingToolCalls: Array<{ id: string; name: string }> = [];
 
-  const parsedObjects: any[] = [];
+  // Erased-at-runtime shapes for fields we touch on antigravity JSONL records.
+  // We cast through these so unknown-typed parses still satisfy tsc without rewriting
+  // any truthy / `||` / `if` checks — preserving the existing skip-on-shape-mismatch behavior.
+  type RawToolCall = { name: string; args?: unknown };
+  type RawEvent = {
+    step_index?: number | string;
+    created_at?: string;
+    timestamp?: string;
+    type?: string;
+    source?: string;
+    status?: string;
+    content?: unknown;
+    thinking?: unknown;
+    error?: unknown;
+    tool_calls?: unknown[];
+  };
+
+  const parsedObjects: unknown[] = [];
   const indexMap = new Map<number, number>();
   for (const line of raw.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
-      const obj = JSON.parse(trimmed);
+      const obj = JSON.parse(trimmed) as RawEvent;
       const stepIdx = obj.step_index;
       if (typeof stepIdx === "number") {
         if (indexMap.has(stepIdx)) {
@@ -160,7 +177,8 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
     }
   }
 
-  for (const eventObj of parsedObjects) {
+  for (const rawObj of parsedObjects) {
+    const eventObj = rawObj as RawEvent;
     const ts = eventObj.created_at || eventObj.timestamp;
 
     if (eventObj.type === "USER_INPUT") {
@@ -183,7 +201,7 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
         }
       }
 
-      let text = eventObj.content || "";
+      let text = (eventObj.content as string) || "";
       const requestMatch = text.match(/<USER_REQUEST>([\s\S]*?)<\/USER_REQUEST>/);
       if (requestMatch) {
         text = requestMatch[1].trim();
@@ -209,8 +227,8 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
     }
 
     if (eventObj.type === "PLANNER_RESPONSE") {
-      const thinking = eventObj.thinking;
-      const content = eventObj.content;
+      const thinking = eventObj.thinking as string;
+      const content = eventObj.content as string;
 
       if (thinking) {
         pushEvent({
@@ -243,7 +261,7 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
 
       const toolCalls = eventObj.tool_calls || [];
       for (let cIdx = 0; cIdx < toolCalls.length; cIdx++) {
-        const tc = toolCalls[cIdx];
+        const tc = toolCalls[cIdx] as RawToolCall;
         toolCallCount += 1;
         const toolUseId = `tool-${eventObj.step_index}-${cIdx}`;
         const argsStr = tc.args ? JSON.stringify(tc.args) : "";
@@ -256,7 +274,7 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
           role: "tool-call",
           rawType: "antigravity/tool_call",
           preview: `${tc.name}(${truncate(argsStr, 80)})`,
-          blocks: [{ type: "tool_use", id: toolUseId, name: tc.name, input: tc.args || {} }],
+          blocks: [{ type: "tool_use", id: toolUseId, name: tc.name, input: (tc.args as Record<string, unknown>) || {} }],
           toolName: tc.name,
           toolUseId,
           model,
@@ -298,7 +316,7 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
       continue;
     }
 
-    const text = eventObj.content || eventObj.error || "";
+    const text = ((eventObj.content as string) || (eventObj.error as string) || "");
     pushEvent({
       index: idx++,
       timestamp: ts,
