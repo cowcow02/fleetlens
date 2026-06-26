@@ -444,17 +444,26 @@ export function SessionView({
    *      between-turn idle because no agent activity occurred between.)
    *
    *  Side effect: the leading warm-up gap before the first agent response
-   *  drops out unless it crosses MIN_GAP_MS — which the first 6s in a
+   *  drops out unless it crosses the idle threshold — which the first 6s in a
    *  typical Codex session does not. */
   const rawIdleBands = useMemo(() => {
     // Anchor on ANY timestamped event so agent-thinking, meta, and other
     // intra-turn signals prove the parent is doing work. Only what we
     // need to distinguish is "user" (turn boundary) vs everything else.
     const isUserRole = (role: string) => role === "user";
-    // 30s threshold: keeps ordinary tool latency (Read big file, slow Bash,
-    // model thinking between anchors) out of the idle stripes while still
-    // catching anything that reads as a real pause.
-    const MIN_GAP_MS = 30_000;
+    // Two thresholds, because an in-turn pause and a between-turn pause mean
+    // different things. MID-TURN the agent is actively working — a long Bash,
+    // a build, model thinking between tool calls — so a 30s–2min gap is NOT
+    // idle; only a genuine multi-minute stall is. We match the parser's
+    // active-segment gap (3 min) there. BETWEEN turns the user has actually
+    // stepped away, so a lower bar is right. The old single 30s threshold drew
+    // every tool-call pause as a "Session idle" sliver, shredding a long turn
+    // into dozens of fragments and clipping the turn's minimap block at the
+    // first sliver (so the block stopped short of a workflow that ran inside it).
+    const IN_TURN_IDLE_MS = 180_000;
+    const BETWEEN_TURN_IDLE_MS = 120_000;
+    // Floor used to merge bands separated only by a brief blip below.
+    const MERGE_GAP_MS = 60_000;
     const anchors: { ms: number; role: string }[] = [];
     for (const e of events) {
       if (!e.timestamp) continue;
@@ -532,7 +541,7 @@ export function SessionView({
     // "Awaiting first response" — true after a user message, false once an
     // agent or tool-call anchor proves the model started replying.
     // Thinking and meta events don't clear it, so a user→thinking→agent
-    // sequence where thinking→agent crosses MIN_GAP_MS still reads as
+    // sequence where thinking→agent crosses the idle threshold still reads as
     // response latency rather than idle.
     let awaitingFirstResponse = false;
     if (anchors[0]) {
@@ -549,20 +558,19 @@ export function SessionView({
       if (isUserRole(curRole)) awaitingFirstResponse = true;
       else if (curRole === "agent" || curRole === "tool-call") awaitingFirstResponse = false;
 
-      if (rawGap <= MIN_GAP_MS) continue;
+      const betweenTurn = isUserRole(curRole);
+      if (rawGap <= (betweenTurn ? BETWEEN_TURN_IDLE_MS : IN_TURN_IDLE_MS)) continue;
       if (skipAsLatency) continue;
 
       const gStart = anchors[i - 1]!.ms - sessionStartMs;
       const gEnd = anchors[i]!.ms - sessionStartMs;
-      const betweenTurn = isUserRole(curRole);
 
       if (!betweenTurn) {
         // In-turn gap: the parent is mid-turn. If any subagent run overlaps,
         // the parent is waiting on delegated work — not idle. Drop the
         // whole gap rather than carving out startup/teardown slivers that
         // would clutter the minimap with thin stripes. Gaps with no
-        // subagent overlap (long Bash runs, model thinking between tool
-        // calls) still emit as a single band.
+        // subagent overlap (a genuine multi-minute stall) emit as one band.
         if (overlapsSubagent(gStart, gEnd)) continue;
         bands.push({ start: gStart, end: gEnd, durationMs: gEnd - gStart });
         continue;
@@ -573,12 +581,28 @@ export function SessionView({
       // Each surviving slice becomes its own band.
       for (const slice of carveOutSubagents(gStart, gEnd)) {
         const dur = slice.end - slice.start;
-        if (dur > MIN_GAP_MS) {
+        if (dur > BETWEEN_TURN_IDLE_MS) {
           bands.push({ start: slice.start, end: slice.end, durationMs: dur });
         }
       }
     }
-    return bands;
+
+    // Fuse bands separated only by a brief blip (a lone event between two idle
+    // stretches), so the user reads one continuous idle region instead of two
+    // adjacent hatched bars — the agent-pause vs user-away split is conceptual,
+    // not something worth rendering as separate segments.
+    bands.sort((a, b) => a.start - b.start);
+    const merged: Band[] = [];
+    for (const b of bands) {
+      const last = merged[merged.length - 1];
+      if (last && b.start - last.end <= MERGE_GAP_MS) {
+        last.end = b.end;
+        last.durationMs = last.end - last.start;
+      } else {
+        merged.push({ ...b });
+      }
+    }
+    return merged;
   }, [events, session.subagents, session.workflows]);
 
   const coldResumeMarkers = useMemo(() => {
