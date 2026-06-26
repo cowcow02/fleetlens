@@ -182,7 +182,19 @@ export async function runTeamSync(
     let pushed = 0;
     let queued = 0;
     let failedDay: string | undefined;
-    let lastPushedDay: string | undefined;
+    // The most recent day we RESOLVED — pushed successfully OR deliberately
+    // skipped as validation-poison. lastSyncedDay never rewinds before it, so
+    // a skipped poison day is not re-pushed on the next tick.
+    let lastResolvedDay: string | undefined;
+
+    // A 4xx validation error (400/422) is unrecoverable: the same payload
+    // will fail identically forever, so we advance PAST the day instead of
+    // wedging the loop re-pushing it every ~5 min. Auth (401/403) and
+    // rate-limit (429) are NOT day-specific and ARE recoverable, so they fall
+    // through to the transient path (queue + retry, no advance). With the
+    // server's partial-success ingestion a data-block error now returns 200,
+    // so this is a guard against a future hard-4xx, not the common path.
+    const isValidationPoison = (status: number): boolean => status === 400 || status === 422;
 
     const privateProjects = new Set(config.privateProjects ?? []);
     const enrichmentOptIn = !!config.enrichmentOptIn;
@@ -227,6 +239,17 @@ export async function runTeamSync(
       });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
+        if (isValidationPoison(result.status)) {
+          // Unrecoverable: skip past this day so the loop makes progress.
+          // Don't queue (it would fail identically forever); don't set
+          // failedDay (later days should still push). Log so the skip is
+          // never silent data loss.
+          const errLine = `team push: ${rollup.day} rejected (HTTP ${result.status}); skipping past unrecoverable day`;
+          log("warn", errLine);
+          writeLastPushFailure(payload, errLine);
+          lastResolvedDay = rollup.day;
+          continue;
+        }
         const errLine = `team push failed on ${rollup.day} (${result.status})`;
         log("warn", `${errLine}; queueing`);
         writeLastPushFailure(payload, errLine);
@@ -238,11 +261,11 @@ export async function runTeamSync(
       writeLastPushSuccess(payload);
       collectCommands(result.body?.commands);
       pushed++;
-      lastPushedDay = rollup.day;
+      lastResolvedDay = rollup.day;
     }
 
     if (failedDay) {
-      if (lastPushedDay) persistConfig({ lastSyncedDay: lastPushedDay });
+      if (lastResolvedDay) persistConfig({ lastSyncedDay: lastResolvedDay });
     } else {
       persistConfig({ lastSyncedDay: today });
     }

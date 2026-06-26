@@ -233,6 +233,78 @@ describe("runTeamSync", () => {
     );
   });
 
+  it("advances past a validation-poisoned (4xx) day without queueing it", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([
+      makeSession("2026-04-14"),
+      makeSession("2026-04-15"),
+    ]);
+
+    const { dequeuePayloads, enqueuePayload } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([]);
+
+    // First day 400 (unrecoverable validation error), second day 200.
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: "Validation failed" }),
+      } as Response)
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({}),
+      } as Response);
+
+    const logs: Array<[string, string]> = [];
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync((level, msg) => logs.push([level, msg]));
+
+    // The poisoned day was skipped and the later day still pushed — the loop
+    // made progress instead of wedging on the bad day.
+    expect(result.pushed).toBe(1);
+    expect(result.failedDay).toBeUndefined();
+    // A validation-poisoned day is never queued (it would fail forever).
+    expect(enqueuePayload).not.toHaveBeenCalled();
+    // lastSyncedDay advances to today, past the poisoned day.
+    const { toLocalDay } = await import("@claude-lens/parser");
+    expect(writeTeamConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ lastSyncedDay: toLocalDay(Date.now()) }),
+    );
+    // The skip is logged, never silent.
+    expect(logs.some(([, m]) => m.includes("skipping past"))).toBe(true);
+  });
+
+  it("does NOT advance past a 5xx day — queues for retry instead", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    const { enqueuePayload } = await import("../../src/team/queue.js");
+
+    // Transient server error — must be retried, not skipped past.
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({}),
+    } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync();
+
+    expect(result.failedDay).toBe("2026-04-14");
+    expect(enqueuePayload).toHaveBeenCalledOnce();
+    // lastSyncedDay is NOT advanced — the day will be retried next tick.
+    expect(writeTeamConfig).not.toHaveBeenCalledWith(
+      expect.objectContaining({ lastSyncedDay: expect.anything() }),
+    );
+  });
+
   it("drains queue after successful push", async () => {
     const { readTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
