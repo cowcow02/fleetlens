@@ -288,12 +288,31 @@ export function Minimap({
       }
     }
 
+    // A collapsed turn is one block spanning its whole duration; the idle
+    // *inside* it (model thinking, a long tool call, a workflow the turn is
+    // waiting on) is part of that turn, not separate dead air. Without this,
+    // a turn with several internal gaps renders as a turn stub followed by a
+    // run of back-to-back hatched idle bars — there's no activity segment
+    // between them because the turn is a single item — and the turn block is
+    // clipped at the first gap instead of spanning across a workflow that ran
+    // inside it. Suppress any idle band that begins within a collapsed turn so
+    // the turn owns its internal time; between-turn idle (which begins at/after
+    // a turn's end) is untouched.
+    const turnSpans = withTime.flatMap((w) =>
+      w.kind === "turn"
+        ? [{ start: w.start, end: w.start + (w.turn.durationMs ?? 0) }]
+        : [],
+    );
+    const startsInsideTurn = (t: number) =>
+      turnSpans.some((s) => t >= s.start && t < s.end);
+
     // Build a sorted copy of idle bands so we can clip row/turn ends to
     // the start of the next idle band (or the next row, whichever comes
     // first). This stops a row's rectangle from spanning across an idle
     // gap and visually swallowing it.
     const idleBands = (rawIdleBands ?? [])
       .filter((b) => b.end > winStart && b.start < winEnd)
+      .filter((b) => !startsInsideTurn(b.start))
       .sort((a, b) => a.start - b.start);
     const nextIdleStartFrom = (t: number): number | undefined => {
       for (const b of idleBands) {
@@ -353,6 +372,24 @@ export function Minimap({
     }
     out.sort((a, b) => a.start - b.start);
 
+    // Fuse consecutive idle segments. Two idle bands with no activity segment
+    // between them should read as ONE idle block — e.g. a between-turn gap that
+    // rawIdleBands split in two because a lone meta/summary anchor sits in the
+    // middle (the part before it classifies as in-turn, the part after as
+    // between-turn). Safe to do here (post-window, post-sort): only segments
+    // genuinely adjacent in render order collapse, so a real row between two
+    // idle bands still keeps them apart.
+    const fused: MinimapSeg[] = [];
+    for (const seg of out) {
+      const prev = fused[fused.length - 1];
+      if (prev && prev.kind === "idle" && seg.kind === "idle") {
+        prev.end = Math.max(prev.end, seg.end);
+        prev.durationMs = (prev.durationMs ?? 0) + (seg.durationMs ?? 0);
+      } else {
+        fused.push(seg.kind === "idle" ? { ...seg } : seg);
+      }
+    }
+
     // Cap the number of rendered segments. Each <rect> carries two
     // event handlers (onMouseEnter + onClick), so 2000 raw-events in
     // "All events" mode becomes 4000 DOM event listeners — enough to
@@ -361,13 +398,13 @@ export function Minimap({
     // click-to-navigate behavior (clicks map to the first row inside
     // the bucket, which is the right anchor for "jump here" UX).
     const MAX_SEGMENTS = 600;
-    if (out.length <= MAX_SEGMENTS) return out;
+    if (fused.length <= MAX_SEGMENTS) return fused;
 
-    const step = Math.ceil(out.length / MAX_SEGMENTS);
+    const step = Math.ceil(fused.length / MAX_SEGMENTS);
     const bucketed: MinimapSeg[] = [];
-    for (let i = 0; i < out.length; i += step) {
-      const first = out[i]!;
-      const last = out[Math.min(i + step - 1, out.length - 1)]!;
+    for (let i = 0; i < fused.length; i += step) {
+      const first = fused[i]!;
+      const last = fused[Math.min(i + step - 1, fused.length - 1)]!;
       // Merge bucket: keep the first seg's kind + primaryIndex (so clicks
       // jump to the first item of the bucket), but extend the end range
       // to cover the whole bucket's time span.

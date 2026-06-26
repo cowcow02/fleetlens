@@ -462,8 +462,6 @@ export function SessionView({
     // first sliver (so the block stopped short of a workflow that ran inside it).
     const IN_TURN_IDLE_MS = 180_000;
     const BETWEEN_TURN_IDLE_MS = 120_000;
-    // Floor used to merge bands separated only by a brief blip below.
-    const MERGE_GAP_MS = 60_000;
     const anchors: { ms: number; role: string }[] = [];
     for (const e of events) {
       if (!e.timestamp) continue;
@@ -587,22 +585,8 @@ export function SessionView({
       }
     }
 
-    // Fuse bands separated only by a brief blip (a lone event between two idle
-    // stretches), so the user reads one continuous idle region instead of two
-    // adjacent hatched bars — the agent-pause vs user-away split is conceptual,
-    // not something worth rendering as separate segments.
     bands.sort((a, b) => a.start - b.start);
-    const merged: Band[] = [];
-    for (const b of bands) {
-      const last = merged[merged.length - 1];
-      if (last && b.start - last.end <= MERGE_GAP_MS) {
-        last.end = b.end;
-        last.durationMs = last.end - last.start;
-      } else {
-        merged.push({ ...b });
-      }
-    }
-    return merged;
+    return bands;
   }, [events, session.subagents, session.workflows]);
 
   const coldResumeMarkers = useMemo(() => {
