@@ -368,9 +368,16 @@ function WorkflowPhaseTabs({
     return out;
   }, [w]);
 
-  // Default to the first phase that actually has agents.
+  // The first phase that actually has agents. For a live workflow this only
+  // resolves AFTER agents stream in, so it's recomputed every render.
   const firstWithAgents = groups.find((g) => g.agents.length > 0)?.key ?? groups[0]?.key ?? "";
-  const [active, setActive] = useState(firstWithAgents);
+  // Bug fix: the active tab used to be seeded once via useState(firstWithAgents),
+  // so when a live run's phases populated after first mount the selection stayed
+  // stuck on the initial (often empty) default. We now track only an explicit
+  // user pick; until then the active tab derives from firstWithAgents and follows
+  // it reactively. Once the user clicks a tab, `picked` pins the choice.
+  const [picked, setPicked] = useState<string | null>(null);
+  const active = picked ?? firstWithAgents;
   const activeGroup = groups.find((g) => g.key === active) ?? groups[0];
 
   return (
@@ -383,7 +390,7 @@ function WorkflowPhaseTabs({
           return (
             <button
               key={g.key}
-              onClick={() => setActive(g.key)}
+              onClick={() => setPicked(g.key)}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -555,6 +562,13 @@ function WorkflowAgentRow({
   );
 }
 
+// Bug fix: the parent unmounts this drawer when the agent is deselected, so its
+// fetched detail used to be lost on close — reopening the same agent refetched
+// from scratch and flashed empty. This module-level cache outlives the component
+// so a reopen paints the cached detail synchronously. (Stale-while-revalidate: we
+// still refetch in the background so a live agent's transcript stays fresh.)
+const wfAgentDetailCache = new Map<string, WfAgentDetail>();
+
 /** Right side-sheet showing one workflow agent's full transcript — Task,
  *  ordered Steps, and Result — fetched on demand. Kept out of the card so the
  *  Workflows tab stays short even for 100+ step agents. */
@@ -569,22 +583,42 @@ export function WorkflowAgentDrawer({
   agent: WorkflowRun["agents"][number];
   onClose: () => void;
 }) {
-  const [detail, setDetail] = useState<WfAgentDetail | null>(null);
+  // Seed from the cache on mount so a close+reopen of the same agent paints
+  // instantly instead of flashing empty while the refetch runs.
+  const [detail, setDetail] = useState<WfAgentDetail | null>(() =>
+    agent.agentId
+      ? wfAgentDetailCache.get(`${sessionId}:${runId}:${agent.agentId}`) ?? null
+      : null,
+  );
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    setDetail(null);
     setFailed(false);
-    if (!agent.agentId) return;
-    setLoading(true);
+    if (!agent.agentId) {
+      setDetail(null);
+      return;
+    }
+    const key = `${sessionId}:${runId}:${agent.agentId}`;
+    const cached = wfAgentDetailCache.get(key);
+    // Stale-while-revalidate: show the cached detail immediately (no empty flash),
+    // and only surface the loading state on a true cache miss.
+    if (cached) setDetail(cached);
+    else {
+      setDetail(null);
+      setLoading(true);
+    }
     const ctrl = new AbortController();
     const url = `/api/workflow-agent?session=${encodeURIComponent(sessionId)}&run=${encodeURIComponent(runId)}&agent=${encodeURIComponent(agent.agentId)}`;
     fetch(url, { signal: ctrl.signal })
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((d: WfAgentDetail) => setDetail(d))
+      .then((d: WfAgentDetail) => {
+        wfAgentDetailCache.set(key, d);
+        setDetail(d);
+      })
       .catch((e) => {
-        if (e?.name !== "AbortError") setFailed(true);
+        // Don't blank out a shown cached detail if only the revalidation failed.
+        if (e?.name !== "AbortError" && !cached) setFailed(true);
       })
       .finally(() => setLoading(false));
     return () => ctrl.abort();
