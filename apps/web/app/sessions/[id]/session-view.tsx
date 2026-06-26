@@ -464,7 +464,14 @@ export function SessionView({
     }
     if (anchors.length < 2) return [];
     anchors.sort((a, b) => a.ms - b.ms);
-    const sessionStartMs = anchors[0]!.ms - (events.find((e) => e.timestamp)?.tOffsetMs ?? 0);
+    // anchors[0].ms (sorted ascending) is the global-min timestamp — exactly the
+    // origin the parser measures tOffsetMs from (tOffsetMs = ms - min(all ts)), so
+    // band offsets (anchor.ms - sessionStartMs) land in the SAME space as the day
+    // window. The old `- firstInFile.tOffsetMs` term subtracted a DIFFERENT event's
+    // offset when the JSONL starts out of chronological order, skewing every band
+    // by their gap and leaking the between-day idle past the minimap's strict
+    // day-window edge filter (a ~40h "Session idle" band dominating the day view).
+    const sessionStartMs = anchors[0]!.ms;
 
     // "Busy" spans = delegated agent work that means the parent isn't idle:
     // subagent runs AND dynamic-workflow execution. Both are carved out of the
