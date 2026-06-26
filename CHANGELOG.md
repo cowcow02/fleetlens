@@ -4,6 +4,35 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.13.1] — 2026-06-26
+
+A quality-and-correctness release rolled up from a full code audit, plus the timeline scroll-follow polish from PR #73. No new surface — every change either fixes a bug, removes dead weight, or makes the codebase easier to work in. Safe upgrade from 0.13.0.
+
+### Fixed
+- **Day-scoped timeline now actually follows scroll across days, without flicker.** The minimap's selected day used to revert to the previous day when you scrolled into a new one on a long session, because the day-jump's `scrollIntoView` undershot tall preceding turn-blocks and the scroll-spy then read that block's offset as "still on the old day." The follower now reads from the same playhead signal the minimap already uses, the day-jump self-corrects against the live header height across a few frames so the next day's strip lands exactly at the header line, and live sessions skip the mount day-jump entirely so tail-follow can land on the latest tail without being yanked back. Live-follow scrolls are now instant (not smooth) so they don't self-cancel mid-animation. (PR #73)
+- **Inline cross-day jump shortcuts.** New "↓ Start of \<day\>" and "↑ End of \<day\>" buttons sit at each day boundary in the transcript, so reading across a long idle gap is one click — not a hand-scroll across thousands of pixels. (PR #73)
+- **Searchable project filter on the sessions list.** The `<select>` project picker is replaced with a filterable combobox: type to filter, arrow keys + Enter/Escape to navigate, Tab to close. Painful with dozens of project folders before; now a few keystrokes. (PR #73)
+- **Six correctness bugs surfaced by a full audit:**
+  - `INSTRUCTION_RE` in `extractUserInstructions` leaked `lastIndex` across calls. Once a turn hit the 5-cap break, later entries got truncated or empty `user_instructions` until the module re-loaded. Fixed; regression test added.
+  - Linear/Jira ticket-ref matching was anchored only at the end of the identifier, so `\m` matched `XKIP-315` against `KIP-315` — inflating AI-linked PR share and joining unrelated PRs into work-timeline cycle stats. Both `\m` and `\M` now anchor both sides.
+  - **Usage dedup re-introduced 2–3× token inflation** on transcripts where two JSONL lines for the same `message.id` differed in whether they carried `requestId` (`msg_1:` vs `msg_1:req_a` keyed as distinct messages). Dedup now keys on `mid` alone — the comment already called it the stable identifier. Regression test added.
+  - `loadUsageByDay`'s early break assumed strictly chronological JSONL; out-of-order timestamps from sleep-resume clock skew or backfill silently terminated the scan and dropped later in-range snapshots. Switched to a continue.
+  - `enrichmentStatusBySession` depended on filesystem iteration order — a session whose newest day was pending could surface as enriched (or vice versa). Now reads from the most-recent entry after explicitly sorting by `local_day` desc.
+  - `runDaemonUpdateCheck` could leave `updateCheckInFlight=true` forever if a registry fetch hung past its 3-second timeout, blocking all future update checks behind the 5-second watchdog tick. The in-flight return path now advances `nextUpdateCheckAtMs` properly.
+
+### Changed
+- **Five dead exports removed** surfaced by the audit (zero callers anywhere, verified by ripgrep): `predictUtilization` + `dollarsInWindow` from `parser/src/calibration.ts`; `parseDateArg` from `cli/src/args.ts`; `lastCompletedMonth` from `apps/web/lib/entries.ts`; `coworkSessionLocalDay` + its `parser/src/fs.ts` re-export.
+- **Type-safety + perf cleanups** to load-bearing primitives surfaced by the audit (no behavior change, but the code is now easier to refactor without surprises).
+- **Internal: six large files split for maintainability.** Pure code moves — every chunk landed with `tsc --noEmit` clean and the parser's `entries --all --json` output byte-identical to master.
+  - `apps/web/app/sessions/[id]/session-view.tsx` 6,612 → 5,208 LOC, with 11 colocated modules extracted under `session-view/`.
+  - `apps/web/app/parallelism/gantt-chart.tsx` 1,774 → 888 LOC, with `gantt-chart-utils.ts`, `concurrency-info-modal.tsx`, `burst-detail-modal.tsx` extracted.
+  - `apps/web/app/sessions/[id]/team-tab/team-minimap.tsx` 682 → 427 LOC, with `minimap-shared.ts`, `minimap-idle-band.tsx`, `minimap-hover-card.tsx` extracted.
+  - `packages/team-server/src/lib/team-report-aggregate.ts` 1,713 → 1,559 LOC, with `ticket-velocity.ts` extracted.
+  - `apps/web/app/api/digest/{day,week,month}/[…]/route.ts` thinned to ~30 LOC each via a shared `digest-route-helpers.ts`.
+  - `apps/web/components/{week,month}-digest-view.tsx` deduplicated through a shared `digest-actions.tsx`.
+- **Parser `antigravity.ts` tightened** from `any[]` to `unknown[]` with a local `RawEvent` / `RawToolCall` record cast (16 implicit-any property accesses eliminated). Verified byte-identical `SessionEvent` dump on a fixture exercising every parser branch.
+- **+83 unit tests** backfilling load-bearing primitives that had no coverage: `formatTokens`, `formatGap`, `formatDuration`, `prettyProjectName`, `formatUsage`, `mondayFor`, plus the parser/team-server regression tests for the dedup and word-boundary fixes above. Total: 1,275 → 1,358.
+
 ## [0.13.0] — 2026-06-18
 
 ### Added
