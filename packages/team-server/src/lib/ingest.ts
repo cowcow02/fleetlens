@@ -244,10 +244,13 @@ export async function processIngest(
           working_shapes = EXCLUDED.working_shapes,
           skills_loaded = EXCLUDED.skills_loaded,
           subagents_dispatched = EXCLUDED.subagents_dispatched,
-          -- Preserve previously-pushed enriched extras on opt-out: re-pushing
-          -- without enrichedExtras leaves the columns alone instead of
-          -- nulling them. Member opt-out should be done by the team-server
-          -- admin tool, not silently by every metric push.
+          -- Preserve previously-pushed enriched extras when a push carries no
+          -- enrichment: re-pushing leaves the columns alone instead of nulling
+          -- them. Critical because enrichment is async -- a day's first push
+          -- (before claude -p finishes, or with AI off) carries EMPTY mixes,
+          -- and a later push must not clobber the real mix once it lands. The
+          -- empty-mix to NULL guard is below (Object.keys length), so EXCLUDED is
+          -- NULL for an empty mix and COALESCE keeps the stored value.
           outcome_mix = COALESCE(EXCLUDED.outcome_mix, rich_daily_rollups.outcome_mix),
           helpfulness_mix = COALESCE(EXCLUDED.helpfulness_mix, rich_daily_rollups.helpfulness_mix),
           goal_mix = COALESCE(EXCLUDED.goal_mix, rich_daily_rollups.goal_mix),
@@ -266,9 +269,9 @@ export async function processIngest(
         r.toolErrors, r.brainstormWarmupSessions, r.planModeUsed,
         JSON.stringify(r.projects), JSON.stringify(r.workingShapes),
         JSON.stringify(r.skillsLoaded), JSON.stringify(r.subagentsDispatched),
-        ex?.outcomeMix ? JSON.stringify(ex.outcomeMix) : null,
-        ex?.helpfulnessMix ? JSON.stringify(ex.helpfulnessMix) : null,
-        ex?.goalMix ? JSON.stringify(ex.goalMix) : null,
+        ex?.outcomeMix && Object.keys(ex.outcomeMix).length ? JSON.stringify(ex.outcomeMix) : null,
+        ex?.helpfulnessMix && Object.keys(ex.helpfulnessMix).length ? JSON.stringify(ex.helpfulnessMix) : null,
+        ex?.goalMix && Object.keys(ex.goalMix).length ? JSON.stringify(ex.goalMix) : null,
         r.tokens.input, r.tokens.output, r.tokens.cacheRead, r.tokens.cacheWrite,
         r.uniqueSessions ?? null,
       ]);

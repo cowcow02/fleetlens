@@ -561,6 +561,48 @@ describe("processIngest", () => {
     );
     expect(rows[0].outcome_mix).toEqual({ shipped: 5 });
   });
+
+  // The real client (buildEnrichedExtras) ALWAYS sends an enrichedExtras object;
+  // when no entry is enrichment-done it sends EMPTY {} mixes, never `undefined`.
+  // Enrichment is async, so a day's first push routinely carries empty mixes and
+  // a later push lands the real ones — the empty push must not clobber stored
+  // enriched data. (Regression: empty {} is truthy, so it used to serialize to
+  // '{}' and defeat the COALESCE-preserve.)
+  it("preserves prior enriched mixes when a later push carries EMPTY mixes (enrichment-lag / AI-off)", async () => {
+    const day = "2026-05-14";
+    const richRollup = {
+      day,
+      agentTimeMs: 0, sessions: 0, toolCalls: 0, turns: 0,
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      projects: [], workingShapes: [], concurrencyPeak: 0, parallelMinutes: 0,
+      longAutonomous: { count: 0, totalMin: 0, maxSingleMin: 0 },
+      toolErrors: 0, skillsLoaded: [], subagentsDispatched: [],
+      brainstormWarmupSessions: 0, planModeUsed: 0, prs: 0, commits: 0, pushes: 0,
+    };
+    await processIngest(
+      makePayload({
+        ingestId: `enriched-real-${Date.now()}`, schemaVersion: 2, richRollup,
+        enrichedExtras: { outcomeMix: { shipped: 5 }, helpfulnessMix: { essential: 2 }, goalMix: { build: 60 } },
+      }),
+      membershipId, teamId, pool,
+    );
+    // Re-push WITH empty mixes — exactly what the client sends before enrichment
+    // finishes (or with AI off). Must NOT overwrite the stored real mixes.
+    await processIngest(
+      makePayload({
+        ingestId: `enriched-empty-${Date.now()}`, schemaVersion: 2, richRollup,
+        enrichedExtras: { outcomeMix: {}, helpfulnessMix: {}, goalMix: {} },
+      }),
+      membershipId, teamId, pool,
+    );
+    const { rows } = await pool.query(
+      "SELECT outcome_mix, helpfulness_mix, goal_mix FROM rich_daily_rollups WHERE day=$1 AND membership_id=$2",
+      [day, membershipId],
+    );
+    expect(rows[0].outcome_mix).toEqual({ shipped: 5 });
+    expect(rows[0].helpfulness_mix).toEqual({ essential: 2 });
+    expect(rows[0].goal_mix).toEqual({ build: 60 });
+  });
 });
 
 describe("processUsageHistory", () => {
