@@ -115,20 +115,109 @@ describe("processIngest", () => {
     cleanup();
   });
 
-  it("throws ZodError for invalid payload (bad day format)", async () => {
-    const bad = {
-      ingestId: "bad-ingest",
-      observedAt: new Date().toISOString(),
-      dailyRollup: {
-        day: "not-a-date",
-        agentTimeMs: 0,
-        sessions: 0,
-        toolCalls: 0,
-        turns: 0,
-        tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  // Partial-success ingestion (§2 resilience): a single malformed DATA block
+  // is skipped — not fatal — so a poison field can't 400 a whole push and
+  // starve the other table. Previously this same bad-day payload threw a
+  // ZodError; the contract is now 200-with-partial.
+  it("skips a data block with a bad field instead of throwing (partial success)", async () => {
+    const result = await processIngest(
+      {
+        ingestId: `partial-badday-${Math.random().toString(36).slice(2)}`,
+        observedAt: new Date().toISOString(),
+        dailyRollup: {
+          day: "not-a-date",
+          agentTimeMs: 0,
+          sessions: 0,
+          toolCalls: 0,
+          turns: 0,
+          tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
       },
-    };
-    await expect(processIngest(bad, membershipId, teamId, pool)).rejects.toThrow();
+      membershipId,
+      teamId,
+      pool,
+    );
+    expect(result.accepted).toBe(true);
+    expect(result.blocks?.skipped.dailyRollup).toContain("day");
+    expect(result.blocks?.accepted).not.toContain("dailyRollup");
+  });
+
+  // The ENVELOPE stays strict — a bad ingestId/observedAt is a genuine
+  // protocol error and must still 400 (ZodError) rather than partial-succeed.
+  it("still throws on a malformed envelope (bad observedAt)", async () => {
+    await expect(
+      processIngest(
+        { ingestId: "bad-env", observedAt: "not-a-date" },
+        membershipId,
+        teamId,
+        pool,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("ingests valid blocks while skipping one invalid block (200-with-partial)", async () => {
+    const day = "2026-07-01";
+    const result = await processIngest(
+      makePayload({
+        ingestId: `partial-mixed-${Math.random().toString(36).slice(2)}`,
+        dailyRollup: {
+          day,
+          agentTimeMs: 1234,
+          sessions: 2,
+          toolCalls: 3,
+          turns: 1,
+          tokens: { input: 10, output: 5, cacheRead: 1, cacheWrite: 0 },
+        },
+        // Invalid cyclePeaks: endsAt isn't a datetime → the whole cyclePeaks
+        // block is skipped, but dailyRollup must still land.
+        cyclePeaks: {
+          fiveHour: [{ endsAt: "nope", peakPct: 5, source: "real", current: false }],
+          sevenDay: [],
+        },
+      }),
+      membershipId,
+      teamId,
+      pool,
+    );
+    expect(result.accepted).toBe(true);
+    expect(result.blocks?.accepted).toContain("dailyRollup");
+    expect(result.blocks?.skipped.cyclePeaks).toBeTruthy();
+
+    const row = await pool.query(
+      "SELECT sessions FROM daily_rollups WHERE team_id=$1 AND membership_id=$2 AND day=$3",
+      [teamId, membershipId, day],
+    );
+    expect(row.rows[0].sessions).toBe(2);
+  });
+
+  // §1b — peakPct legitimately exceeds 200 on overage/predicted peaks; the
+  // old `.max(200)` rejected real payloads and (since cyclePeaks rides the
+  // daily push) 400'd the whole thing.
+  it("accepts cyclePeaks with peakPct over 200 (overage utilization)", async () => {
+    const result = await processIngest(
+      makePayload({
+        ingestId: `overage-${Math.random().toString(36).slice(2)}`,
+        cyclePeaks: {
+          fiveHour: [
+            { endsAt: "2026-07-02T05:00:00+00:00", peakPct: 247.5, source: "predicted", current: true },
+          ],
+          sevenDay: [],
+        },
+      }),
+      membershipId,
+      teamId,
+      pool,
+    );
+    expect(result.accepted).toBe(true);
+    expect(result.blocks?.accepted).toContain("cyclePeaks");
+    expect(result.blocks?.skipped.cyclePeaks).toBeUndefined();
+
+    const { rows } = await pool.query(
+      `SELECT peak_pct FROM membership_cycle_peaks
+       WHERE team_id=$1 AND membership_id=$2 AND "window"='5h'`,
+      [teamId, membershipId],
+    );
+    expect(rows.some((r) => Math.abs(Number(r.peak_pct) - 247.5) < 0.01)).toBe(true);
   });
 
   it("accepts payloads without a dailyRollup (idle-day live-only push)", async () => {

@@ -1,19 +1,45 @@
 import pg from "pg";
+import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
 import { getPool } from "../db/pool";
-import { IngestPayload, UsageHistoryPayload, type UsageSnapshot } from "./zod-schemas";
+import {
+  IngestPayload,
+  IngestEnvelope,
+  UsageHistoryPayload,
+  DailyRollupSchema,
+  RichDailyRollupSchema,
+  EnrichedDailyExtrasSchema,
+  DayArtifactSignalsSchema,
+  UsageSnapshotSchema,
+  PlanTierKeySchema,
+  WireCyclePeaksSchema,
+  CommandResultsSchema,
+  type UsageSnapshot,
+} from "./zod-schemas";
 import { refreshMembershipWeeklyUtilization } from "./scheduler";
 import { broadcastEvent } from "./sse";
 import { processCommandResults, fetchPendingCommands, type PendingCommand } from "./member-commands";
 
 export type SnapshotHistoryResult = { received: number; inserted: number; skipped: number };
+// Per-block validation outcome surfaced to the daemon. `accepted` lists the
+// data blocks that were present AND passed validation (and were therefore
+// applied, modulo the ingestId dedup gate); `skipped` maps a rejected block
+// name to the failing field path + reason. This is the 200-with-partial
+// contract: a single bad block is dropped, not fatal to the whole push.
+export type IngestBlocksResult = { accepted: string[]; skipped: Record<string, string> };
 export type IngestResult = {
   accepted: true;
   deduplicated?: boolean;
   nextSyncAfter?: string;
   snapshotHistory?: SnapshotHistoryResult;
+  blocks?: IngestBlocksResult;
   commands?: PendingCommand[];
 };
+
+type ParsedIngest = z.infer<typeof IngestPayload>;
+
+// Keep snapshotHistory transactions bounded — mirrors the old schema cap.
+const SNAPSHOT_HISTORY_MAX = 1000;
 
 export async function processIngest(
   raw: unknown,
@@ -22,7 +48,95 @@ export async function processIngest(
   pool?: pg.Pool
 ): Promise<IngestResult> {
   const p = pool || getPool();
-  const payload = IngestPayload.parse(raw);
+
+  // Envelope is strict (throws ZodError → 400). Data blocks are validated
+  // independently below so one malformed block is skipped, not fatal.
+  const env = IngestEnvelope.parse(raw);
+  const rawObj = raw as Record<string, unknown>;
+
+  const acceptedBlocks: string[] = [];
+  const skippedBlocks: Record<string, string> = {};
+  // safeParse one DATA block. Present + valid → recorded accepted, value
+  // returned for ingest. Present + invalid → skipped with the failing field
+  // path logged (field-agnostic: we never need to know which field is bad).
+  // Absent → undefined, untouched. Validation happens BEFORE the DB
+  // transaction opens, so a skipped block can never roll back an accepted one.
+  const tryBlock = <S extends z.ZodTypeAny>(name: string, schema: S): z.infer<S> | undefined => {
+    const value = rawObj[name];
+    if (value === undefined) return undefined;
+    const res = schema.safeParse(value);
+    if (res.success) {
+      acceptedBlocks.push(name);
+      return res.data;
+    }
+    const issue = res.error.issues[0];
+    const path = issue && issue.path.length ? `${name}.${issue.path.join(".")}` : name;
+    const reason = `${path}: ${issue?.message ?? "invalid"}`;
+    skippedBlocks[name] = reason;
+    console.warn(`[ingest] skipped block "${name}": ${reason}`);
+    return undefined;
+  };
+
+  // snapshotHistory gets row-level resilience rather than block-level: the
+  // backfill push carries ONLY this block, so dropping the whole array on a
+  // single corrupt row would be the all-or-nothing failure we're killing.
+  // Keep every valid snapshot, skip individual bad rows. `rawSnapshotCount`
+  // preserves the daemon's `received` contract even when the field is junk.
+  let rawSnapshotCount = 0;
+  let snapshotHistory: UsageSnapshot[] | undefined;
+  if (rawObj.snapshotHistory !== undefined) {
+    const arr = rawObj.snapshotHistory;
+    if (Array.isArray(arr)) {
+      rawSnapshotCount = arr.length;
+      const valid: UsageSnapshot[] = [];
+      let firstBad: string | undefined;
+      for (let i = 0; i < arr.length; i++) {
+        const res = UsageSnapshotSchema.safeParse(arr[i]);
+        if (res.success) valid.push(res.data);
+        else if (!firstBad) {
+          const issue = res.error.issues[0];
+          firstBad = `snapshotHistory[${i}]${issue?.path.length ? "." + issue.path.join(".") : ""}: ${issue?.message ?? "invalid"}`;
+        }
+      }
+      if (valid.length > SNAPSHOT_HISTORY_MAX) {
+        skippedBlocks.snapshotHistory = `snapshotHistory: exceeds ${SNAPSHOT_HISTORY_MAX}-row cap`;
+        console.warn(`[ingest] skipped block "snapshotHistory": ${skippedBlocks.snapshotHistory}`);
+      } else {
+        if (valid.length > 0) {
+          snapshotHistory = valid;
+          acceptedBlocks.push("snapshotHistory");
+        }
+        if (firstBad) {
+          skippedBlocks.snapshotHistory = `${firstBad} (${arr.length - valid.length}/${arr.length} rows dropped)`;
+          console.warn(`[ingest] partial snapshotHistory: ${skippedBlocks.snapshotHistory}`);
+        }
+      }
+    } else {
+      skippedBlocks.snapshotHistory = "snapshotHistory: expected array";
+      console.warn(`[ingest] skipped block "snapshotHistory": ${skippedBlocks.snapshotHistory}`);
+    }
+  }
+
+  const commandResults = tryBlock("commandResults", CommandResultsSchema);
+
+  // Reconstructed payload of only the envelope + valid blocks. The downstream
+  // insert logic keeps its `if (payload.x)` guards unchanged — a skipped
+  // block is simply absent here.
+  const payload: ParsedIngest = {
+    ingestId: env.ingestId,
+    observedAt: env.observedAt,
+    schemaVersion: env.schemaVersion,
+    cliVersion: env.cliVersion,
+    dailyRollup: tryBlock("dailyRollup", DailyRollupSchema),
+    richRollup: tryBlock("richRollup", RichDailyRollupSchema),
+    enrichedExtras: tryBlock("enrichedExtras", EnrichedDailyExtrasSchema),
+    artifactSignals: tryBlock("artifactSignals", DayArtifactSignalsSchema),
+    usageSnapshot: tryBlock("usageSnapshot", UsageSnapshotSchema),
+    planTier: tryBlock("planTier", PlanTierKeySchema),
+    cyclePeaks: tryBlock("cyclePeaks", WireCyclePeaksSchema),
+    snapshotHistory,
+    commandResults,
+  };
 
   let dedupHit!: boolean;
   let historyInserted = 0;
@@ -218,14 +332,18 @@ export async function processIngest(
   if (!dedupHit || historyInserted > 0) {
     result.nextSyncAfter = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   }
-  if (payload.snapshotHistory?.length) {
-    const received = payload.snapshotHistory.length;
+  // Report a snapshotHistory result whenever the block was sent (valid or
+  // not) so the daemon's backfill loop sees its inserted/skipped contract and
+  // never trips the "older image" guard. `received` is the raw sent count;
+  // `skipped` folds in both validation-dropped rows and captured_at dups.
+  if (rawSnapshotCount > 0 || skippedBlocks.snapshotHistory) {
     result.snapshotHistory = {
-      received,
+      received: rawSnapshotCount,
       inserted: historyInserted,
-      skipped: received - historyInserted,
+      skipped: rawSnapshotCount - historyInserted,
     };
   }
+  result.blocks = { accepted: acceptedBlocks, skipped: skippedBlocks };
   if (commands.length > 0) result.commands = commands;
   return result;
 }
