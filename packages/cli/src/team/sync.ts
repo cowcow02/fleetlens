@@ -196,8 +196,6 @@ export async function runTeamSync(
     // so this is a guard against a future hard-4xx, not the common path.
     const isValidationPoison = (status: number): boolean => status === 400 || status === 422;
 
-    const privateProjects = new Set(config.privateProjects ?? []);
-    const enrichmentOptIn = !!config.enrichmentOptIn;
     const resolveRepo = createRepoResolver();
 
     const { probeArtifactSignals } = await import("../perception/file-probe.js");
@@ -205,13 +203,7 @@ export async function runTeamSync(
       const rollup = rollups[i]!;
       const isLatest = i === rollups.length - 1;
       const daySessions = sessions.filter((s) => sessionTouchesDay(s, rollup.day));
-      const richBlocks = buildRichBlocksForDay(
-        rollup.day,
-        daySessions,
-        privateProjects,
-        enrichmentOptIn,
-        resolveRepo,
-      );
+      const richBlocks = buildRichBlocksForDay(rollup.day, daySessions, resolveRepo);
       // File-system probe: detect skill/sub-agent/slash-command authoring +
       // CLAUDE.md edits attributable to this member on `rollup.day`. Local
       // only — output is counts + opaque path hashes. Failures are silent so

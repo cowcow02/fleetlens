@@ -157,8 +157,8 @@ export function sessionTouchesDay(s: SessionMeta, day: string): boolean {
 
 // Compute per-day rich rollup blocks from raw sessions + cached Entries.
 // Sessions provide the parallelism-burst math; Entries provide the Entry-
-// derived counts, working_shape, skills, subagents. `privateProjects`
-// filters project labels out of the projects[] breakdown.
+// derived counts, working_shape, skills, subagents. Every project the member
+// worked on is included — there is no per-project gating.
 //
 // `daySessions` should include every session whose active segments touch
 // `day`, not just sessions that started on it — cross-midnight sessions
@@ -168,7 +168,6 @@ export function buildRichRollupBlocks(
   day: string,
   daySessions: SessionMeta[],
   entries: Entry[],
-  privateProjects: ReadonlySet<string>,
   resolveRepo?: (dir: string) => string | null,
 ): Omit<RichDailyRollup, keyof DailyRollup> {
   const bounds = dayBoundsMs(day);
@@ -202,7 +201,6 @@ export function buildRichRollupBlocks(
   };
   const sessionRepo = new Map<string, string>();
   for (const e of entries) {
-    if (privateProjects.has(projectRepoName(e.project)) || privateProjects.has(e.project)) continue;
     const r = repoForEntry(e);
     if (r) sessionRepo.set(e.session_id, r);
   }
@@ -215,10 +213,6 @@ export function buildRichRollupBlocks(
     // absolute paths and same-repo-different-harness rows fold together.
     const canonical = canonicalProjectName(s.projectName);
     const name = projectRepoName(s.projectName);
-    // Privacy opt-out: the consent UI writes the repo-name identity that
-    // groupByProject now surfaces, so match on that — and still honor any
-    // legacy full-canonical-path entry. Either match excludes the project.
-    if (privateProjects.has(name) || privateProjects.has(canonical)) continue;
     const repo = resolveRepo?.(canonical) ?? sessionRepo.get(s.id);
     const key = repo ?? name;
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
@@ -245,9 +239,6 @@ export function buildRichRollupBlocks(
   let longTotalMin = 0;
   let longMaxSingleMin = 0;
   for (const e of entries) {
-    // Same dual-key privacy check as the projects loop (repo name + legacy
-    // full path) — e.project is the entry's full canonical path.
-    if (privateProjects.has(projectRepoName(e.project)) || privateProjects.has(e.project)) continue;
     const shape = e.signals?.working_shape ?? null;
     if (shape) {
       const cur = workingShapes.get(shape) ?? { sessions: 0, agentTimeMs: 0 };
@@ -343,19 +334,18 @@ export function buildEnrichedExtras(entries: Entry[]): EnrichedDailyExtras {
 
 // Convenience: produce both V2 blocks for a single day. Returns undefined
 // when there are no Entries cached for the day (the day was active but the
-// perception sweep hasn't built Entries yet — push V1 only).
+// perception sweep hasn't built Entries yet — push V1 only). LLM-enriched
+// extras always ride along (no member-side opt-out).
 export function buildRichBlocksForDay(
   day: string,
   daySessions: SessionMeta[],
-  privateProjects: ReadonlySet<string>,
-  enrichmentOptIn: boolean,
   resolveRepo?: (dir: string) => string | null,
-): { rich: Omit<RichDailyRollup, keyof DailyRollup>; enriched?: EnrichedDailyExtras } | undefined {
+): { rich: Omit<RichDailyRollup, keyof DailyRollup>; enriched: EnrichedDailyExtras } | undefined {
   const entries = listEntriesForDay(day);
   if (entries.length === 0) return undefined;
-  const rich = buildRichRollupBlocks(day, daySessions, entries, privateProjects, resolveRepo);
-  const enriched = enrichmentOptIn ? buildEnrichedExtras(entries) : undefined;
-  return enriched ? { rich, enriched } : { rich };
+  const rich = buildRichRollupBlocks(day, daySessions, entries, resolveRepo);
+  const enriched = buildEnrichedExtras(entries);
+  return { rich, enriched };
 }
 
 export type IngestPayloadInputs = {

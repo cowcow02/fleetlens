@@ -1,19 +1,13 @@
 /**
- * Team-sync consent page.
+ * Team-sync status page.
  *
- * Shows the user which team their daemon is paired with, what data flows
- * over the wire on the next push, and lets them toggle the two opt-outs
- * the bridge respects: per-project privacy and LLM-enriched extras.
- *
- * The page works against the same on-disk team-config.json the daemon
- * reads, so a change here propagates to the next `fleetlens team push`.
+ * Shows which team this machine's daemon is paired with and what data flows
+ * over the wire on the next push. There is exactly one sync behavior: all
+ * active projects and all LLM-enriched fields are shared — there is no
+ * member-side gating. The page reads the same on-disk team-config.json the
+ * daemon reads.
  */
-import Link from "next/link";
-import { groupByProject, type SessionMeta } from "@claude-lens/parser";
-import { listSessions } from "@/lib/data";
 import { readTeamConfig, toTeamConfigView } from "@/lib/team-config";
-import { TeamSyncForm } from "./team-sync-form";
-import { prettyProjectName } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -36,27 +30,8 @@ function lastSyncedSnapshotLabel(iso: string | undefined): string {
   return new Date(ms).toLocaleString();
 }
 
-function recentDaysFilter<T extends SessionMeta>(sessions: T[], days: number): T[] {
-  const cutoff = Date.now() - days * 86_400_000;
-  return sessions.filter((s) => {
-    if (!s.firstTimestamp) return false;
-    const ms = Date.parse(s.firstTimestamp);
-    return !Number.isNaN(ms) && ms >= cutoff;
-  });
-}
-
-export default async function TeamPage() {
+export default function TeamPage() {
   const config = readTeamConfig();
-  const allSessions = await listSessions();
-  const recent = recentDaysFilter(allSessions, 30);
-  const projects = groupByProject(recent)
-    .map((p) => ({
-      name: p.projectName,
-      pretty: prettyProjectName(p.projectName),
-      sessions: p.sessions.length,
-      worktreeCount: p.worktreeCount,
-    }))
-    .sort((a, b) => b.sessions - a.sessions);
 
   if (!config) {
     return (
@@ -81,16 +56,13 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
   }
 
   const view = toTeamConfigView(config);
-  const privateProjects = new Set(config.privateProjects ?? []);
-  const enrichmentOptIn = !!config.enrichmentOptIn;
-  const sharedCount = projects.filter((p) => !privateProjects.has(p.name)).length;
 
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-8">
       <header>
         <h1 className="text-2xl font-semibold">Team sync</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Manage what your daemon shares with your team server.
+          What your daemon shares with your team server.
         </p>
       </header>
 
@@ -119,56 +91,32 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
         </dl>
       </section>
 
-      <section className="border rounded-lg p-5 space-y-4">
-        <div>
-          <h2 className="text-lg font-medium">What gets shared</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            Toggles below take effect on the daemon&rsquo;s next push (usually
-            within 5 minutes). See{" "}
-            <Link
-              href="https://github.com/cowcow02/fleetlens"
-              className="underline"
-            >
-              the bridge design spec
-            </Link>{" "}
-            for the full data inventory.
-          </p>
-        </div>
-
-        <TeamSyncForm
-          initial={{ enrichmentOptIn, privateProjects: Array.from(privateProjects) }}
-          projects={projects}
-        />
-      </section>
-
       <section className="border rounded-lg p-5 space-y-3">
-        <h2 className="text-lg font-medium">Next push will carry</h2>
+        <h2 className="text-lg font-medium">What gets shared</h2>
+        <p className="text-sm text-gray-500">
+          Every push shares the same data across all your active projects.
+          There is no per-project or per-field opt-out.
+        </p>
         <ul className="text-sm space-y-2">
           <li>
             <strong>Daily rollup</strong> — agent time, session count, tool
-            calls, turns, token totals. Always shared.
+            calls, turns, token totals.
           </li>
           <li>
-            <strong>Rich rollup</strong> (Entry-derived counts) for{" "}
-            <strong>{sharedCount}</strong> of {projects.length} active projects:
-            working-shape distribution, top skills, subagents dispatched,
-            long-autonomous turns, plan-mode usage, brainstorm warmups, tool
-            errors, PRs/commits/pushes. Project labels only; never raw
-            prompts or agent output.
+            <strong>Rich rollup</strong> (Entry-derived counts) for all active
+            projects: working-shape distribution, top skills, subagents
+            dispatched, long-autonomous turns, plan-mode usage, brainstorm
+            warmups, tool errors, PRs/commits/pushes. Project labels only;
+            never raw prompts or agent output.
           </li>
           <li>
             <strong>Plan utilization snapshot</strong> — current 5h + 7d
-            utilization windows, per Anthropic&rsquo;s rate-limit API. Always
-            shared when fresh.
+            utilization windows, per Anthropic&rsquo;s rate-limit API.
           </li>
           <li>
-            <strong>Enriched extras</strong> (outcome / helpfulness / goal
-            minute mix):{" "}
-            {enrichmentOptIn ? (
-              <span className="text-green-700 dark:text-green-400">opted in</span>
-            ) : (
-              <span className="text-gray-500">disabled</span>
-            )}
+            <strong>Enriched extras</strong> — outcome / helpfulness / goal
+            minute mix, derived locally by your AI-features pipeline (no new
+            model calls ride along with the push).
           </li>
         </ul>
         <p className="text-xs text-gray-500 pt-2">

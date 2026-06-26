@@ -67,8 +67,8 @@ export const RICH_ROLLUP_SCHEMA_VERSION = 2 as const;
 
 // Layer A — per-day deterministic Entry-derived counts and breakdowns.
 // Always safe to share (counts + labels only; never first_user / final_agent
-// text). Project labels are filtered through `privateProjects` before being
-// included. See docs/superpowers/specs/2026-05-16-personal-to-team-bridge-design.md.
+// text). Every project the member worked on is included — there is no
+// per-project gating. See docs/superpowers/specs/2026-05-16-personal-to-team-bridge-design.md.
 export type RichDailyRollup = DailyRollup & {
   // githubRepos: owner/name identities observed in git-push / gh-pr tool
   // OUTPUT for this project's sessions — lets the server canonicalize the
@@ -90,7 +90,7 @@ export type RichDailyRollup = DailyRollup & {
 };
 
 // Layer B — LLM-derived per-day fields. Already cached locally; pushing them
-// does not trigger fresh LLM work. Gated on `enrichmentOptIn` in TeamConfig.
+// does not trigger fresh LLM work. Always shared (no member-side opt-out).
 export type EnrichedDailyExtras = {
   outcomeMix: Partial<Record<"shipped" | "partial" | "exploratory" | "blocked" | "trivial", number>>;
   helpfulnessMix: Partial<Record<"essential" | "helpful" | "neutral" | "unhelpful", number>>;
