@@ -651,11 +651,23 @@ export function SessionView({
   // mismatch; the effect re-pins it when the component is reused across
   // /sessions/[id] navigations. "all" shows the full session.
   const didInitialDayJump = useRef(false);
+  // A `?day=YYYY-MM-DD` query param (set by links from the Day / Concurrency
+  // views) pins the opening day to that day instead of the most recent one.
+  // Validated against the session's real day buckets and ignored if it doesn't
+  // match. Read in effects (not the lazy initializer) so SSR and the first
+  // client render agree — the param-driven selection happens client-side.
+  const wantedDayFromUrl = (days: typeof sessionDays): string | null => {
+    if (typeof window === "undefined") return null;
+    const w = new URLSearchParams(window.location.search).get("day");
+    return w && days.some((d) => d.key === w) ? w : null;
+  };
+  const lastOrAll = (days: typeof sessionDays) =>
+    days.length ? days[days.length - 1]!.key : "all";
   const [selectedDayKey, setSelectedDayKey] = useState<string>(
-    () => (sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all"),
+    () => lastOrAll(sessionDays),
   );
   useEffect(() => {
-    setSelectedDayKey(sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all");
+    setSelectedDayKey(wantedDayFromUrl(sessionDays) ?? lastOrAll(sessionDays));
     didInitialDayJump.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -671,8 +683,10 @@ export function SessionView({
   selectedDayKeyRef.current = selectedDayKey;
 
   // Initial jump: on first paint of a multi-day session, snap straight to the
-  // most recent day (the default selectedDayKey is already the last day, so the
-  // minimap matches). Routed through gotoDay rather than scrolling to the day's
+  // requested day (?day=) or, by default, the most recent one (the lazy
+  // selectedDayKey is the last day; the re-pin effect above re-points it to the
+  // requested day client-side, so the minimap matches). Routed through gotoDay
+  // rather than scrolling to the day's
   // strip directly: in "turns" mode the most recent day can be absorbed into a
   // turn anchored on an earlier day and so have NO inline strip — gotoDay finds
   // the day's first event, expands its turn, and falls back to the row ref, so
@@ -688,12 +702,21 @@ export function SessionView({
   useEffect(() => {
     if (tab !== "transcript" || didInitialDayJump.current) return;
     const days = sessionDaysRef.current;
-    if (days.length <= 1 || isSessionLive) {
+    if (days.length <= 1) {
+      didInitialDayJump.current = true;
+      return;
+    }
+    const wanted = wantedDayFromUrl(days);
+    // Live tail: let TailMode land on the live tail unless an explicit EARLIER
+    // day was requested (?day=). A request for the live/last day needs no jump
+    // — the tail is already in it — and jumping would fight TailMode's mount
+    // scroll and flip live-follow off.
+    if (isSessionLive && (!wanted || wanted === days[days.length - 1]!.key)) {
       didInitialDayJump.current = true;
       return;
     }
     didInitialDayJump.current = true;
-    gotoDay(days[days.length - 1]!.key);
+    gotoDay(wanted ?? days[days.length - 1]!.key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, sessionDays]);
 

@@ -44,6 +44,13 @@ export function GanttChart({
   bursts?: ParallelismBurst[];
   sessionEntries?: Record<string, SessionEntrySummary>;
 }) {
+  // The gantt is scoped to one local day; carry that day on session links so a
+  // multi-day session opens pinned to THIS day instead of its most-recent one.
+  // Same `YYYY-MM-DD` (local parts) key the session view builds its day buckets
+  // from, so it matches exactly.
+  const ganttDay = new Date(gantt.dayStartMs);
+  const dayParam = `${ganttDay.getFullYear()}-${String(ganttDay.getMonth() + 1).padStart(2, "0")}-${String(ganttDay.getDate()).padStart(2, "0")}`;
+
   const [hover, setHover] = useState<{
     session: GanttSession;
     x: number;
@@ -614,7 +621,7 @@ export function GanttChart({
                     <AgentIcon agent={session.agent} size={11} />
 
                     <Link
-                      href={`/sessions/${session.id}`}
+                      href={`/sessions/${session.id}?day=${dayParam}`}
                       style={{
                         fontSize: 10.5,
                         color: "var(--af-text)",
