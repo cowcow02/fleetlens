@@ -15,16 +15,13 @@ import {
   GitPullRequest,
   Workflow as WorkflowIcon,
   Wrench,
-  X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   SessionDetail,
   SessionEvent,
-  SubagentRun,
   WorkflowRun,
-  PrMarker,
 } from "@claude-lens/parser";
 import type { Entry } from "@claude-lens/entries";
 import { OutcomePill } from "@/components/outcome-pill";

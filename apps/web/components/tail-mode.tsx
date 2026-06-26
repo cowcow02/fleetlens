@@ -50,7 +50,9 @@ export function TailMode({
       }, 300);
       return () => clearTimeout(t);
     }
-  }, [isLive]);
+    // navLockRef is a stable ref; listed to satisfy exhaustive-deps without
+    // causing re-runs (mirrors the observer effect below).
+  }, [isLive, navLockRef]);
 
   // Track whether we're at the bottom.
   useEffect(() => {

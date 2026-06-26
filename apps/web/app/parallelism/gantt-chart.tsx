@@ -46,10 +46,10 @@ export function GanttChart({
 }) {
   // The gantt is scoped to one local day; carry that day on session links so a
   // multi-day session opens pinned to THIS day instead of its most-recent one.
-  // Same `YYYY-MM-DD` (local parts) key the session view builds its day buckets
-  // from, so it matches exactly.
-  const ganttDay = new Date(gantt.dayStartMs);
-  const dayParam = `${ganttDay.getFullYear()}-${String(ganttDay.getMonth() + 1).padStart(2, "0")}-${String(ganttDay.getDate()).padStart(2, "0")}`;
+  // gantt.date is already that zero-padded `YYYY-MM-DD` local-day key (the same
+  // one the session view buckets on), so use it directly rather than round-
+  // tripping dayStartMs back through a timezone-sensitive Date.
+  const dayParam = gantt.date;
 
   const [hover, setHover] = useState<{
     session: GanttSession;
