@@ -853,17 +853,40 @@ export function SessionView({
     if (key === "all") return;
     const d = sessionDays.find((x) => x.key === key);
     if (!d) return;
-    const ev = events.find((e) => e.tOffsetMs !== undefined && e.tOffsetMs >= d.startMs);
-    if (!ev) return;
-    // In turns mode the day's first row may be inside a collapsed turn — expand
-    // it so the row exists in the DOM before the scroll effect runs.
+    // Target the day's first PRESENTATION ROW, not its first raw event. A day can
+    // open on a meta/system/sidechain event that has no row, whose index then
+    // lands in neither turnByRowIndex nor rowRefs — so the jump silently no-ops
+    // (the bug where a multi-day session opened stuck at the very top). A row's
+    // primary index is the coordinate both that map and the scroll refs use.
+    let firstRow = allRows.find(
+      (r) => r.tOffsetMs !== undefined && r.tOffsetMs >= d.startMs,
+    );
+    // A day can consist entirely of background-agent / workflow events, which
+    // render in the Workflows tab — not the transcript — so NO presentation row
+    // falls inside it (sessionDays is built from all events, allRows only from
+    // the visible transcript). Fall back to the last rendered row so the jump
+    // lands on the closest content instead of silently no-oping (the bug where
+    // the view stayed pinned at the very top).
+    if (!firstRow) {
+      for (let i = allRows.length - 1; i >= 0; i--) {
+        if (allRows[i]!.tOffsetMs !== undefined) {
+          firstRow = allRows[i];
+          break;
+        }
+      }
+    }
+    if (!firstRow) return;
+    const targetIndex = rowPrimaryIndex(firstRow);
+    // In turns mode that row may be inside a collapsed turn (often one anchored
+    // on the PREVIOUS day) — expand it so the row exists in the DOM before the
+    // scroll effect runs.
     if (filter === "turns") {
-      const turnIdx = turnByRowIndex.get(ev.index);
+      const turnIdx = turnByRowIndex.get(targetIndex);
       if (turnIdx !== undefined && !expandedTurns.has(turnIdx)) {
         setExpandedTurns((prev) => new Set(prev).add(turnIdx));
       }
     }
-    setDayScrollTarget((prev) => ({ index: ev.index, key, block: "start", n: (prev?.n ?? 0) + 1 }));
+    setDayScrollTarget((prev) => ({ index: targetIndex, key, block: "start", n: (prev?.n ?? 0) + 1 }));
   }
 
   /** Cross-day hop used by the inline day-boundary buttons. Selecting a day can
