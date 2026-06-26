@@ -3,10 +3,13 @@ import {
   daysBetween,
   dailyActivity,
   computeParallelism,
+  computeBurstsFromSessions,
+  summarizeBursts,
   detectParallelRuns,
   highLevelMetrics,
   groupByProject,
   sessionAirTimeMs,
+  sessionDay,
   canonicalProjectName,
   worktreeName,
   projectRepoName,
@@ -403,3 +406,89 @@ describe("groupByProject — Conductor workspaces", () => {
     expect(groups[0]!.sessions).toHaveLength(3);
   });
 });
+
+
+describe("sessionDay", () => {
+  it("returns the local day for firstTimestamp", () => {
+    const m = mkMeta("a", "foo", "2026-04-10T15:00:00Z", "2026-04-10T16:00:00Z");
+    expect(sessionDay(m)).toMatch(/^2026-04-1[01]$/); // depending on TZ
+  });
+  it("returns undefined when firstTimestamp is missing", () => {
+    const m = mkMeta("a", "foo", "x", "x");
+    m.firstTimestamp = undefined;
+    expect(sessionDay(m)).toBeUndefined();
+  });
+  it("returns undefined when firstTimestamp parses to NaN", () => {
+    const m = mkMeta("a", "foo", "x", "x");
+    m.firstTimestamp = "not-a-date";
+    expect(sessionDay(m)).toBeUndefined();
+  });
+});
+
+describe("computeBurstsFromSessions (collapse rules)", () => {
+  const MIN = 60_000;
+  const seg = (startMs: number, durationMs: number) => ({
+    startMs,
+    endMs: startMs + durationMs,
+  });
+  const burst = (id: string, project: string, segs: { startMs: number; endMs: number }[]): SessionMeta =>
+    mkMeta(id, project, "2026-04-10T00:00:00Z", "2026-04-10T01:00:00Z", {
+      activeSegments: segs,
+    });
+
+  it("drops overlap shorter than the minDuration floor (default 1 min)", () => {
+    // a + b overlap for only 30s — drop.
+    const a = burst("a", "foo", [seg(1_000_000, 5 * MIN)]);
+    const b = burst("b", "foo", [seg(1_000_000 + 5 * MIN - 30_000, 5 * MIN)]);
+    const bursts = computeBurstsFromSessions([a, b]);
+    expect(bursts.length).toBe(0);
+  });
+
+  it("keeps overlap at or above 1 min, single burst", () => {
+    const a = burst("a", "foo", [seg(1_000_000, 5 * MIN)]);
+    const b = burst("b", "foo", [seg(1_000_000 + 3 * MIN, 5 * MIN)]);
+    const bursts = computeBurstsFromSessions([a, b]);
+    expect(bursts.length).toBe(1);
+    expect(bursts[0]!.peak).toBe(2);
+  });
+
+  it("merges two overlaps within 10 min into one burst", () => {
+    // Two clear overlaps separated by 5 min — should fuse.
+    const a = burst("a", "foo", [seg(1_000_000, 4 * MIN)]);
+    const b = burst("b", "foo", [seg(1_000_000 + 1 * MIN, 4 * MIN)]);
+    const c = burst("c", "foo", [seg(1_000_000 + 10 * MIN, 4 * MIN)]);
+    const d = burst("d", "foo", [seg(1_000_000 + 11 * MIN, 4 * MIN)]);
+    const bursts = computeBurstsFromSessions([a, b, c, d]);
+    expect(bursts.length).toBe(1);
+    expect(bursts[0]!.sessionIds.sort()).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("splits two overlaps farther than 10 min apart into two bursts", () => {
+    const a = burst("a", "foo", [seg(1_000_000, 4 * MIN)]);
+    const b = burst("b", "foo", [seg(1_000_000 + 1 * MIN, 4 * MIN)]);
+    const c = burst("c", "foo", [seg(1_000_000 + 20 * MIN, 4 * MIN)]);
+    const d = burst("d", "foo", [seg(1_000_000 + 21 * MIN, 4 * MIN)]);
+    const bursts = computeBurstsFromSessions([a, b, c, d]);
+    expect(bursts.length).toBe(2);
+  });
+
+  it("marks crossProject=true when burst spans more than one project", () => {
+    const a = burst("a", "foo", [seg(1_000_000, 5 * MIN)]);
+    const b = burst("b", "bar", [seg(1_000_000 + 1 * MIN, 5 * MIN)]);
+    const bursts = computeBurstsFromSessions([a, b]);
+    expect(bursts.length).toBe(1);
+    expect(bursts[0]!.crossProject).toBe(true);
+  });
+
+  it("summarizeBursts rolls peakConcurrent, total parallel ms, and cross-project count", () => {
+    const a = burst("a", "foo", [seg(1_000_000, 5 * MIN)]);
+    const b = burst("b", "bar", [seg(1_000_000 + 1 * MIN, 5 * MIN)]);
+    const c = burst("c", "baz", [seg(1_000_000 + 2 * MIN, 3 * MIN)]);
+    const bursts = computeBurstsFromSessions([a, b, c]);
+    const sum = summarizeBursts(bursts);
+    expect(sum.peakConcurrent).toBeGreaterThanOrEqual(2);
+    expect(sum.totalParallelMs).toBeGreaterThan(0);
+    expect(sum.crossProjectBurstCount).toBeGreaterThanOrEqual(1);
+  });
+});
+

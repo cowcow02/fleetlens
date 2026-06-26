@@ -74,28 +74,6 @@ export function eventDollars(ev: CalibrationEvent): number {
   ) / 1_000_000;
 }
 
-// Sum of $ for events in [startMs, endMs). Events MUST be pre-sorted by
-// ts so we can break early once past endMs.
-export function dollarsInWindow(events: CalibrationEvent[], startMs: number, endMs: number): number {
-  let total = 0;
-  for (const ev of events) {
-    const t = Date.parse(ev.ts);
-    if (t < startMs) continue;
-    if (t >= endMs) break;
-    total += eventDollars(ev);
-  }
-  return total;
-}
-
-export function predictUtilization(
-  events: CalibrationEvent[],
-  startMs: number,
-  endMs: number,
-  ratePerPct: number,
-): number {
-  if (ratePerPct <= 0) return 0;
-  return dollarsInWindow(events, startMs, endMs) / ratePerPct;
-}
 
 // ──────────────────────────────────────────────────────────────────
 //          Snapshot-anchored utilization predictor

@@ -1,152 +1,58 @@
 import {
   runDayDigestPipeline, readSettings, getTodayDigestFromCache,
 } from "@claude-lens/entries/node";
-import type { PipelineEvent } from "@claude-lens/entries/node";
 import { readDayDigest } from "@claude-lens/entries/fs";
-import { InflightCoalescer } from "@/lib/inflight-coalesce";
 import { isValidDate, todayLocal } from "@/lib/entries";
-import { registerJob, updateJob, completeJob, failJob } from "@/lib/jobs";
+import {
+  handleDigestGet, handleDigestPost, jsonResponse, jsonResponseBare,
+} from "../../_shared/digest-route-helpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ date: string }> };
 
-// Keyed by `${date}|${force ? 1 : 0}` — force=1 requests never coalesce
-// with force=0 (different key), matching spec §S2.
-const coalescer = new InflightCoalescer<string, void>();
-
-function updateJobFromEvent(jobId: string, ev: PipelineEvent): void {
-  if (ev.type === "status") {
-    updateJob(jobId, { progress: { phase: ev.phase, text: ev.text } });
-  } else if (ev.type === "entry") {
-    updateJob(jobId, {
-      progress: { phase: "enrich", index: ev.index, total: ev.total },
-    });
-  } else if (ev.type === "progress") {
-    updateJob(jobId, {
-      progress: { phase: ev.phase, bytes: ev.bytes },
-    });
-  }
-}
-
 export async function GET(_req: Request, ctx: Params) {
   const { date } = await ctx.params;
-  if (!isValidDate(date)) {
-    return new Response(JSON.stringify({ error: "invalid date" }), {
-      status: 400, headers: { "content-type": "application/json" },
-    });
-  }
-  if (date > todayLocal()) {
-    return new Response(JSON.stringify({ error: "future date" }), {
-      status: 400, headers: { "content-type": "application/json" },
-    });
-  }
-
-  if (date === todayLocal()) {
-    const cached = getTodayDigestFromCache(date, Date.now());
-    if (cached) {
-      return new Response(JSON.stringify(cached), {
-        status: 200, headers: { "content-type": "application/json" },
-      });
-    }
-    return new Response(JSON.stringify({ pending: true, today: true }), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
-  }
-
-  const cached = readDayDigest(date);
-  if (cached) {
-    return new Response(JSON.stringify(cached), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
-  }
-  return new Response(JSON.stringify({ pending: true }), {
-    status: 200, headers: { "content-type": "application/json" },
+  const valid = isValidDate(date);
+  const isFuture = valid && date > todayLocal();
+  return handleDigestGet({
+    key: valid ? date : null,
+    invalidResponse: jsonResponse({ error: "invalid date" }, 400),
+    isFuture,
+    futureResponse: jsonResponse({ error: "future date" }, 400),
+    isCurrent: valid && date === todayLocal(),
+    readCurrentCache: () => getTodayDigestFromCache(date, Date.now()),
+    readPersisted: () => readDayDigest(date),
+    pendingCurrentPayload: { pending: true, today: true },
+    currentFallsBackToPersisted: false,
   });
 }
 
 export async function POST(req: Request, ctx: Params) {
   const { date } = await ctx.params;
-  if (!isValidDate(date)) {
-    return new Response(JSON.stringify({ error: "invalid date" }), { status: 400 });
-  }
-  if (date > todayLocal()) {
-    return new Response(JSON.stringify({ error: "future date" }), { status: 400 });
-  }
-
+  const valid = isValidDate(date);
+  const isFuture = valid && date > todayLocal();
   const url = new URL(req.url);
   const force = url.searchParams.get("force") === "1";
-  const key = `day|${date}|${force ? 1 : 0}`;
-
-  const encoder = new TextEncoder();
   const settings = readSettings();
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let closed = false;
-      function send(event: PipelineEvent) {
-        if (closed) return;
-        try {
-          controller.enqueue(
-            encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`),
-          );
-        } catch {
-          closed = true;
-        }
-      }
-      function finish() {
-        if (!closed) {
-          try { controller.close(); } catch { /* already */ }
-          closed = true;
-        }
-      }
-
-      const alreadyInflight = coalescer.inflight(key);
-      let jobId: string | null = null;
-
-      try {
-        await coalescer.run(key, async () => {
-          if (alreadyInflight) return;
-          jobId = registerJob({
-            kind: "digest.day",
-            label: `Day digest · ${date}`,
-            target: date,
-            caller: "user",
-          });
-          updateJob(jobId, { status: "running" });
-          for await (const ev of runDayDigestPipeline(date, {
-            settings: settings.ai_features,
-            force,
-            todayLocalDay: todayLocal(),
-          })) {
-            send(ev);
-            if (jobId) updateJobFromEvent(jobId, ev);
-          }
-          if (jobId) completeJob(jobId, `/day/${date}`);
-        });
-
-        if (alreadyInflight) {
-          const d = readDayDigest(date) ?? getTodayDigestFromCache(date, Date.now());
-          if (d) send({ type: "digest", digest: d });
-          send({ type: "status", phase: "persist", text: "coalesced with in-flight request" });
-        }
-      } catch (err) {
-        send({ type: "error", message: (err as Error).message });
-        if (jobId) failJob(jobId, (err as Error).message);
-      } finally {
-        try { controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`)); } catch { /* ignore */ }
-        finish();
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
+  return handleDigestPost({
+    key: valid ? date : null,
+    invalidResponse: jsonResponseBare({ error: "invalid date" }, 400),
+    isFuture,
+    futureResponse: jsonResponseBare({ error: "future date" }, 400),
+    coalesceScope: "day",
+    force,
+    jobKind: "digest.day",
+    jobLabel: `Day digest · ${date}`,
+    resultUrl: `/day/${date}`,
+    runPipeline: () => runDayDigestPipeline(date, {
+      settings: settings.ai_features,
+      force,
+      todayLocalDay: todayLocal(),
+    }),
+    readDigestForCoalescedRequest: () =>
+      readDayDigest(date) ?? getTodayDigestFromCache(date, Date.now()),
   });
 }

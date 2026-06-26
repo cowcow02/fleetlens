@@ -135,7 +135,6 @@ export {
   DEFAULT_COWORK_ROOT,
   listCoworkSessions,
   getCoworkSession,
-  coworkSessionLocalDay,
 } from "./cowork.js";
 export type {
   ListCoworkOptions,
@@ -369,7 +368,10 @@ export async function loadUsageByDay(
       const ms = Date.parse(snap.captured_at);
       if (Number.isNaN(ms)) continue;
       if (ms < startMs) continue;
-      if (ms > endMs) break;
+      // continue (not break): the daemon can append out-of-order timestamps
+      // after resume-from-sleep or a backfill, so an early break would drop
+      // later in-range snapshots that follow a single past-window outlier.
+      if (ms > endMs) continue;
       const key = toLocalDay(ms);
       const util = snap.five_hour?.utilization ?? 0;
       const cur = byDay.get(key) ?? 0;

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { readSettings, readWeekDigest, interactiveLockFresh } from "@claude-lens/entries/node";
-import { lastCompletedWeekMonday, currentWeekMonday, listEntriesForDay } from "@/lib/entries";
+import { listEntryKeys } from "@claude-lens/entries/fs";
+import { parseEntryKey } from "@claude-lens/entries";
+import { lastCompletedWeekMonday, currentWeekMonday } from "@/lib/entries";
 import { WeekDigestView } from "@/components/week-digest-view";
 import { InsightsTopBar } from "@/components/insights-top-bar";
 
@@ -24,9 +26,21 @@ function weekDates(monday: string): string[] {
   return out;
 }
 
-function hasAnyEntries(monday: string): boolean {
+// Build once from the entries dir, then test the 7 weekdays against it.
+// Earlier this called listEntriesForDay per day per render, which opened
+// and parsed every matching entry file 14× before deciding the week is empty.
+function presentDays(): Set<string> {
+  const out = new Set<string>();
+  for (const key of listEntryKeys()) {
+    const parsed = parseEntryKey(key);
+    if (parsed) out.add(parsed.local_day);
+  }
+  return out;
+}
+
+function hasAnyEntries(monday: string, present: Set<string>): boolean {
   for (const d of weekDates(monday)) {
-    if (listEntriesForDay(d).length > 0) return true;
+    if (present.has(d)) return true;
   }
   return false;
 }
@@ -45,7 +59,8 @@ export default async function InsightsPage() {
   const lastWeek = lastCompletedWeekMonday();
   const cached = readWeekDigest(lastWeek);
   const prior = readWeekDigest(priorMonday(lastWeek));
-  const hasData = !!cached || hasAnyEntries(lastWeek);
+  const present = presentDays();
+  const hasData = !!cached || hasAnyEntries(lastWeek, present);
 
   // Auto-fire when AI is on and the digest isn't already cached. The interactive
   // pipeline lock (heartbeat-refreshed) suppresses concurrent fires from the
@@ -58,7 +73,7 @@ export default async function InsightsPage() {
   const prevMonday = priorMonday(lastWeek);
   const currentMonday = currentWeekMonday();
   const nextMonday = currentMonday > lastWeek ? currentMonday : null;
-  const nextHasData = nextMonday ? hasAnyEntries(nextMonday) : false;
+  const nextHasData = nextMonday ? hasAnyEntries(nextMonday, present) : false;
 
   return (
     <div style={{ paddingBottom: 64 }}>

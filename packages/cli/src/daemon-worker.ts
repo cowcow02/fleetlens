@@ -131,7 +131,13 @@ async function runDaemonUpdateCheck(): Promise<void> {
     nextUpdateCheckAtMs = Date.now() + AUTO_UPDATE_INTERVAL_MS;
     return;
   }
-  if (updateCheckInFlight) return;
+  if (updateCheckInFlight) {
+    // Without this, the tick at 5 s cadence re-enters every loop while the
+    // previous check is still in flight, and if it's ever stuck the daemon
+    // spins until process restart.
+    nextUpdateCheckAtMs = Date.now() + AUTO_UPDATE_INTERVAL_MS;
+    return;
+  }
   updateCheckInFlight = true;
 
   const checkedAt = new Date().toISOString();

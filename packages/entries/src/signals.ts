@@ -60,6 +60,11 @@ const INSTRUCTION_RE = /\b(?:can you|please|let's|let us|i need|could you|would 
 
 export function extractUserInstructions(text: string): string[] {
   if (!text) return [];
+  // /g + .exec() means INSTRUCTION_RE.lastIndex persists across calls. The
+  // out.length >= 5 break below can leave it past end-of-string, which makes
+  // the next call's match start mid-input — silently truncating or zeroing
+  // user_instructions for entries that follow a 5+ match turn.
+  INSTRUCTION_RE.lastIndex = 0;
   const out: string[] = [];
   const seen = new Set<string>();
   let m: RegExpExecArray | null;

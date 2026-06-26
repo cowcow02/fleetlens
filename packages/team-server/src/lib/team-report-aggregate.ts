@@ -5,9 +5,6 @@ import type {
   GithubDeliveryStats,
   GithubWeekDelivery,
   HarnessBreakdown,
-  JiraVelocityStats,
-  LinearVelocityStats,
-  LinearWeekVelocity,
   LiveExtras,
   MaturityEvidence,
   MaturityLevel,
@@ -33,46 +30,25 @@ import {
   workingShapeDistribution,
   type InsightsScope,
 } from "./insights-aggregate";
+import {
+  jiraVelocity,
+  linearVelocity,
+  linearWeekVelocity,
+  type IntegrationConfigRow,
+  type LinearIssueAggRow,
+} from "./ticket-velocity";
 
-// Live-data builder for the v7 VariantBuilder. Populates the framework-aligned
+// Re-exports preserve the existing public surface (linearVelocity is the only
+// external consumer today; the others are kept exposed so future callers can
+// find them in either module without churn).
+export { jiraVelocity, linearVelocity, linearWeekVelocity };
+export type { IntegrationConfigRow, LinearIssueAggRow };
+
+// Live-data builder for the v9 VariantBuilder. Populates framework-aligned
 // Layer-2 KPI fields from `rich_daily_rollups`; every other field on the report
-// is shaped as a typed-but-empty skeleton so the v7 widget catalog still
-// type-checks. The starter set the live page passes to VariantBuilder picks
-// only widgets that read fields we actually compute here — see
-// `LIVE_STARTER_BLOCKS` below.
-
-// v7 framework-aligned starter — kept for backwards compat with old persisted
-// localStorage selections.
-export const LIVE_STARTER_BLOCKS = [
-  "team-pulse-wow",
-  "long-autonomous-texture",
-  "per-project-time-bars",
-  "skill-usage-wow-bars",
-  "delegation-depth",
-  "harness-engineering",
-];
-
-// v8 clean-starter — Q2-2026 Adoption Framework alignment. Grouped by the
-// three framework pillars (slide 2): Usage / Getting Better / Impact.
-// Drop harness-engineering from the starter (mostly-zero tiles) — it stays in
-// the catalog for power users.
-export const LIVE_STARTER_BLOCKS_V8 = [
-  // Header context — adoption rate (slide 5 KPI #1)
-  "live-active-rate",
-  // Pillar 2: are they getting better with it? — qualitative portraits
-  // (v9). Replaces the threshold-based maturity bar; portrait reasoning
-  // is observable-action-driven, not count-driven.
-  "live-member-portraits",
-  // Pillar 1: are people using it?
-  "team-pulse-wow",
-  // Pillar 3: is it changing how we ship? — PR throughput stands in until
-  // DORA/Source-B integration lands.
-  "live-prs-shipped",
-  "per-project-time-bars",
-  // Pillar 2: usage-pattern context (style signals, never grade)
-  "skill-usage-wow-bars",
-  "long-autonomous-texture",
-];
+// is shaped as a typed-but-empty skeleton so the widget catalog still
+// type-checks and unselected catalog widgets render inert. The starter block
+// set is hard-coded on the live page.
 
 type WeekAggregates = {
   agentMs: number;
@@ -258,17 +234,6 @@ export async function scopedSourceNames(
   };
 }
 
-// One row of team_integrations, fetched once per report build and passed into
-// every block that needs a provider config — they used to each re-query it.
-type IntegrationConfigRow = {
-  provider: string;
-  config: {
-    login?: string; repos?: unknown; teams?: unknown; team_keys?: unknown; sync_days?: number;
-    projects?: unknown; project_keys?: unknown;
-  };
-  last_sync_at: string | null;
-};
-
 async function loadIntegrationConfigs(
   teamId: string,
   pool: pg.Pool,
@@ -314,159 +279,6 @@ function githubWeekDelivery(rows: GithubPrRow[]): GithubWeekDelivery {
     median_cycle_hours_other: medianHours(cycleMs(other)),
     median_review_wait_hours_ai: medianHours(reviewMs(ai)),
     median_review_wait_hours_other: medianHours(reviewMs(other)),
-  };
-}
-
-type LinearIssueAggRow = {
-  created_at: string;
-  started_at: string | null;
-  completed_at: string;
-  ai_linked: boolean;
-};
-
-function linearWeekVelocity(rows: LinearIssueAggRow[]): LinearWeekVelocity {
-  const aiLinked = rows.filter((r) => r.ai_linked).length;
-  const cycleMs = rows
-    .filter((r) => r.started_at)
-    .map((r) => new Date(r.completed_at).getTime() - new Date(r.started_at!).getTime())
-    .filter((ms) => ms >= 0);
-  const leadMs = rows
-    .map((r) => new Date(r.completed_at).getTime() - new Date(r.created_at).getTime())
-    .filter((ms) => ms >= 0);
-  return {
-    completed: rows.length,
-    ai_linked: aiLinked,
-    ai_linked_share_pct: rows.length === 0 ? 0 : Math.round((aiLinked / rows.length) * 100),
-    median_cycle_hours: medianHours(cycleMs),
-    median_lead_hours: medianHours(leadMs),
-  };
-}
-
-// Ticket velocity from the Linear integration. Linear teams are group-mapped
-// like repos (empty group_ids = all groups); group-scoped reports only see
-// their mapped teams' issues. AI linkage joins a completed ticket to any
-// AI-assisted synced PR whose title carries the ticket ref ("KIP-315" + word
-// boundary, so KIP-3150 doesn't match). Null when not connected; connected
-// with zero mapped teams returns empty-keys stats so the widget can point the
-// admin at the mapping.
-async function linearVelocity(
-  teamId: string,
-  scope: InsightsScope,
-  weekMonday: string,
-  pool: pg.Pool,
-  integ: IntegrationConfigRow | undefined,
-): Promise<LinearVelocityStats | null> {
-  if (!integ) return null;
-
-  const allTeams = normalizeLinearTeams(integ.config);
-  const scoped =
-    scope.kind === "group"
-      ? allTeams.filter((t) => t.group_ids.length === 0 || t.group_ids.includes(scope.groupId))
-      : allTeams;
-  const teamKeys = scoped.map((t) => t.key);
-  if (teamKeys.length === 0) {
-    return {
-      team_keys: [],
-      last_sync_at: integ.last_sync_at,
-      wip_now: 0,
-      week: linearWeekVelocity([]),
-      prev_week: linearWeekVelocity([]),
-    };
-  }
-
-  const prevMonday = previousIsoMonday(weekMonday);
-  const winEnd = weekEndExclusive(weekMonday);
-  const [issues, wip] = await Promise.all([
-    pool.query<LinearIssueAggRow & { in_current_week: boolean }>(
-      `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
-              (i.completed_at >= $3::date) AS in_current_week,
-              EXISTS (
-                SELECT 1 FROM github_pull_requests p
-                WHERE p.team_id = i.team_id AND p.ai_assisted
-                  AND p.title ~* (i.identifier || '\\M')
-              ) AS ai_linked
-       FROM linear_issues i
-       WHERE i.team_id = $1 AND i.linear_team_key = ANY($5::text[])
-         AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
-      [teamId, prevMonday, weekMonday, winEnd, teamKeys],
-    ),
-    pool.query<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM linear_issues
-       WHERE team_id = $1 AND linear_team_key = ANY($2::text[]) AND state_type = 'started'`,
-      [teamId, teamKeys],
-    ),
-  ]);
-
-  return {
-    team_keys: teamKeys,
-    last_sync_at: integ.last_sync_at,
-    wip_now: wip.rows[0].n,
-    week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
-    prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),
-  };
-}
-
-// Ticket velocity from the Jira integration — the Jira mirror of
-// linearVelocity. Jira projects are group-mapped like Linear teams (empty
-// group_ids = all groups). Reuses linearWeekVelocity since jira_issues carries
-// the same normalized buckets (state_type) and timestamps; cycle time uses the
-// changelog-derived started_at. Null when not connected; connected with zero
-// mapped projects returns empty-keys stats so the widget can point the admin
-// at the mapping.
-async function jiraVelocity(
-  teamId: string,
-  scope: InsightsScope,
-  weekMonday: string,
-  pool: pg.Pool,
-  integ: IntegrationConfigRow | undefined,
-): Promise<JiraVelocityStats | null> {
-  if (!integ) return null;
-
-  const allProjects = normalizeJiraProjects(integ.config);
-  const scoped =
-    scope.kind === "group"
-      ? allProjects.filter((p) => p.group_ids.length === 0 || p.group_ids.includes(scope.groupId))
-      : allProjects;
-  const projectKeys = scoped.map((p) => p.key);
-  if (projectKeys.length === 0) {
-    return {
-      project_keys: [],
-      last_sync_at: integ.last_sync_at,
-      wip_now: 0,
-      week: linearWeekVelocity([]),
-      prev_week: linearWeekVelocity([]),
-    };
-  }
-
-  const prevMonday = previousIsoMonday(weekMonday);
-  const winEnd = weekEndExclusive(weekMonday);
-  const [issues, wip] = await Promise.all([
-    pool.query<LinearIssueAggRow & { in_current_week: boolean }>(
-      `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
-              (i.completed_at >= $3::date) AS in_current_week,
-              EXISTS (
-                SELECT 1 FROM github_pull_requests p
-                WHERE p.team_id = i.team_id AND p.ai_assisted
-                  AND p.title ~* (i.identifier || '\\M')
-              ) AS ai_linked
-       FROM jira_issues i
-       WHERE i.team_id = $1 AND i.jira_project_key = ANY($5::text[])
-         AND i.completed_at >= $2::date AND i.completed_at < $4::date`,
-      [teamId, prevMonday, weekMonday, winEnd, projectKeys],
-    ),
-    pool.query<{ n: number }>(
-      `SELECT COUNT(*)::int AS n FROM jira_issues
-       WHERE team_id = $1 AND jira_project_key = ANY($2::text[]) AND state_type = 'started'`,
-      [teamId, projectKeys],
-    ),
-  ]);
-
-  return {
-    project_keys: projectKeys,
-    last_sync_at: integ.last_sync_at,
-    wip_now: wip.rows[0].n,
-    week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
-    prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),
   };
 }
 
@@ -614,7 +426,7 @@ async function workTimeline(
               SUM(p.additions + p.deletions) AS lines_changed
        FROM github_pull_requests p
        WHERE p.team_id = t.team_id AND p.repo = ANY($5::text[])
-         AND p.state = 'merged' AND p.title ~* (t.identifier || '\\M')
+         AND p.state = 'merged' AND p.title ~* ('\\m' || t.identifier || '\\M')
      ) pr ON true`,
     params,
   );
@@ -991,9 +803,9 @@ export type TeamReportContext = {
 };
 
 /** Build a real-data TeamInsightReport from rich_daily_rollups. Fills only the
- *  fields LIVE_STARTER_BLOCKS consume; everything else stays as a zero/empty
- *  skeleton so the type stays satisfied and unselected catalog widgets render
- *  inert without crashing. */
+ *  fields the hard-coded live starter set consumes; everything else stays a
+ *  zero/empty skeleton so the type stays satisfied and unselected catalog
+ *  widgets render inert without crashing. */
 export async function buildTeamInsightReport(
   teamId: string,
   scope: InsightsScope,

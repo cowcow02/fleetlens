@@ -20,7 +20,6 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
-  ContentBlock,
   SessionDetail,
   SessionEvent,
   SubagentRun,
@@ -33,13 +32,44 @@ import {
   buildPresentation,
   buildMegaRows,
   detectPrMarkers,
-  rowPrimaryIndex as rowPrimaryIndexFromLib,
   type MegaRow,
   type PresentationRow,
   type PresentationRowKind,
   type TurnMegaRow,
   type TurnSummary,
 } from "@claude-lens/parser";
+import {
+  rowPrimaryIndex,
+  type DisplayRow,
+  type MinimapSeg,
+} from "./session-view/types";
+import { subagentColor, workflowColor } from "./session-view/colors";
+import {
+  formatDayKey,
+  flattenMegaRows,
+  allRowsAsRawRows,
+  formatDurationHeader,
+} from "./session-view/helpers";
+import { EntryDayStrip } from "./session-view/entry-day-strip";
+import { DebugList } from "./session-view/debug-list";
+import { Tooltip, TooltipRow } from "./session-view/tooltip";
+import { TokenChip, TurnTokenChip } from "./session-view/token-stats";
+import {
+  InlineStat,
+  InlineStatDivider,
+  EntrypointBadge,
+  InlineTokenStat,
+  useAnchoredTooltip,
+  AnchoredTooltip,
+} from "./session-view/header-stats";
+import { Drawer } from "./session-view/drawer";
+import {
+  WfMiniStat,
+  SectionLabel,
+  StatCell,
+  TokenLine,
+} from "./session-view/workflows-shared";
+import { SubagentDrawer } from "./session-view/subagent-drawer";
 import { estimateCost, formatCost, formatGap, formatOffset, formatRelative, formatTokens, shortId } from "@/lib/format";
 import { LiveBadge } from "@/components/live-badge";
 import { AskButton, AskDrawer } from "@/components/ask";
@@ -89,16 +119,6 @@ const FILTER_MODES: { value: FilterMode; label: string }[] = [
   { value: "tool-group", label: "Tool only" },
   { value: "error", label: "Errors only" },
 ];
-
-/** Render a `YYYY-MM-DD` day key as a short, locale-free label (e.g.
- *  "Jun 16"). Formatting straight from the key — not a Date — keeps SSR and
- *  client output identical regardless of timezone. */
-const DAY_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-function formatDayKey(key: string): string {
-  const [, m, d] = key.split("-").map(Number);
-  if (!m || !d) return key;
-  return `${DAY_MONTHS[m - 1]} ${d}`;
-}
 
 /* ------------------------------------------------------------------ */
 /*  Main component                                                    */
@@ -182,9 +202,14 @@ export function SessionView({
   const [scrollIntent, setScrollIntent] = useState(0);
   /** Scroll-only target (no selection) — used by day navigation so jumping to
    *  a day scrolls the transcript there WITHOUT popping the event drawer the
-   *  way a row/minimap selection does. `n` forces the effect to re-run even
-   *  when the same index is targeted twice. */
-  const [dayScrollTarget, setDayScrollTarget] = useState<{ index: number; key: string; n: number } | null>(null);
+   *  way a row/minimap selection does. `block` aligns the strip to the top
+   *  ("start", normal day jump) or the bottom ("end", used by "go to end of the
+   *  previous day" — scrolling the current day's strip to the viewport bottom
+   *  reveals the previous day's tail above it). `n` forces the effect to re-run
+   *  even when the same target is requested twice. */
+  const [dayScrollTarget, setDayScrollTarget] = useState<
+    { index: number; key: string; block: "start" | "end"; n: number } | null
+  >(null);
   const rowRefs = useRef<Record<number, HTMLDivElement | null>>({});
   // Per-day digest cards (EntryDayStrip) are interleaved into the transcript at
   // each day's first row, so day-nav scrolls to the card itself when present.
@@ -211,6 +236,12 @@ export function SessionView({
    *  at mount + on resize via ResizeObserver — no magic constants. */
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerH, setHeaderH] = useState(STICKY_HEADER_HEIGHT);
+  // Live mirror so the day-scroll alignment can read the current header height
+  // WITHOUT taking headerH as an effect dep — collapse flips headerH on every
+  // scroll direction change, and a dep there would re-fire the day scroll mid-
+  // free-scroll and yank the view back to the last nav target.
+  const headerHRef = useRef(headerH);
+  headerHRef.current = headerH;
   useEffect(() => {
     const el = headerRef.current;
     if (!el) return;
@@ -231,6 +262,10 @@ export function SessionView({
   // When the user explicitly clicks the toggle, suppress auto-collapse
   // for a short period so the scroll listener doesn't immediately undo it.
   const manualPinRef = useRef(0);
+  // Stamped on every explicit day-jump so TailMode's live-follow observer
+  // bails for a beat — otherwise a streaming live event yanks the view back
+  // to the bottom mid-navigation. See gotoDay / jumpAcrossDay.
+  const tailNavLockRef = useRef(0);
   const toggleCollapsed = () => {
     setCollapsed((v) => !v);
     manualPinRef.current = Date.now();
@@ -312,11 +347,45 @@ export function SessionView({
   // selectedIndex (so no drawer opens). Same scrollIntoView contract as above.
   useEffect(() => {
     if (!dayScrollTarget) return;
+    const main = headerRef.current?.closest("main") as HTMLElement | null;
     // Prefer the day's digest card (it leads the day); fall back to the first
     // row when that day has no entry.
     const el =
       dayStripRefs.current[dayScrollTarget.key] ?? rowRefs.current[dayScrollTarget.index];
-    if (el) el.scrollIntoView({ block: "start", behavior: "auto" });
+    if (!el || !main) return;
+    el.scrollIntoView({ block: dayScrollTarget.block, behavior: "auto" });
+
+    // scrollIntoView aims using the content-visibility ESTIMATED heights of the
+    // rows ABOVE the target, so on a long transcript (worst at mount, when none
+    // have been laid out yet) it undershoots by 100–200px — leaving the PREVIOUS
+    // day's tall trailing turn-block still straddling the header line. The
+    // playhead observer then reads THAT block's offset and followDayToScroll
+    // reverts the day-jump. For a top-aligned jump, re-measure on the next few
+    // frames (real heights now settle progressively) and nudge the target to sit
+    // exactly at the header line so the prev block clears it. block:"end" (go to
+    // end of prev day) intentionally leaves the prev-day tail on the line, so it
+    // needs no correction.
+    if (dayScrollTarget.block !== "start") return;
+    let frames = 0;
+    let settled = 0;
+    let raf = 0;
+    const align = () => {
+      const delta = Math.round(
+        el.getBoundingClientRect().top - main.getBoundingClientRect().top - headerHRef.current,
+      );
+      if (Math.abs(delta) > 1) {
+        main.scrollTop += delta;
+        settled = 0;
+      } else {
+        settled++;
+      }
+      // Keep correcting until it holds for two consecutive frames (rows above
+      // the target settle their real content-visibility heights progressively,
+      // and on a long transcript that can take many frames). Cap as a backstop.
+      if (settled < 2 && ++frames < 20) raf = requestAnimationFrame(align);
+    };
+    raf = requestAnimationFrame(align);
+    return () => cancelAnimationFrame(raf);
   }, [dayScrollTarget]);
 
   const { events, durationMs, totalUsage, model, eventCount, projectName } = session;
@@ -561,64 +630,87 @@ export function SessionView({
     return m;
   }, [entries]);
 
-  // Selected timeline day. Defaults to the FIRST active day so the minimap
-  // matches where the transcript opens (the top), and the scroll-spy then
-  // advances it as the user reads downward. The lazy initializer runs
-  // identically on server + client (sessionDays is deterministic), so there's
-  // no hydration mismatch; the effect re-pins it when the component is reused
-  // across /sessions/[id] navigations. "all" shows the full session.
+  // Selected timeline day. Defaults to the LAST (most recent) active day so a
+  // long, multi-day transcript opens where the action is rather than at the
+  // top of an old day; the initial-jump effect below scrolls there instantly,
+  // and the day then follows the scroll position as the user reads in either
+  // direction (see followDayToScroll). The lazy initializer runs identically on
+  // server + client (sessionDays is deterministic), so there's no hydration
+  // mismatch; the effect re-pins it when the component is reused across
+  // /sessions/[id] navigations. "all" shows the full session.
+  const didInitialDayJump = useRef(false);
   const [selectedDayKey, setSelectedDayKey] = useState<string>(
-    () => (sessionDays.length ? sessionDays[0]!.key : "all"),
+    () => (sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all"),
   );
   useEffect(() => {
-    setSelectedDayKey(sessionDays.length ? sessionDays[0]!.key : "all");
+    setSelectedDayKey(sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all");
+    didInitialDayJump.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
 
   const dayIndex = sessionDays.findIndex((d) => d.key === selectedDayKey);
-  // Latest selection, read by the scroll-spy without re-subscribing its
-  // listener on every day change. Also lets the spy leave an explicit "all"
-  // (full-session) view untouched while the user scrolls.
+  // Latest sessionDays, read by the initial-jump effect so it doesn't re-run on
+  // every render. On LIVE sessions SSE router.refresh() rebuilds sessionDays each
+  // tick; reading it via ref keeps the once-per-session jump from re-firing.
+  const sessionDaysRef = useRef(sessionDays);
+  sessionDaysRef.current = sessionDays;
+  // Read by followDayToScroll (the scroll→day follower) without stale closure.
   const selectedDayKeyRef = useRef(selectedDayKey);
   selectedDayKeyRef.current = selectedDayKey;
 
-  // Scroll-spy: as the transcript scrolls across a day boundary, auto-advance
-  // the timeline's selected day to whichever day sits under the sticky header.
-  // Anchors on the interleaved day cards. It only mirrors the reading position
-  // (no scroll, no header pop), so the minimap + "day N/N" selector follow the
-  // user across days in both directions. Skipped while "all" is chosen.
+  // Initial jump: on first paint of a multi-day session, snap straight to the
+  // most recent day (the default selectedDayKey is already the last day, so the
+  // minimap matches). Routed through gotoDay rather than scrolling to the day's
+  // strip directly: in "turns" mode the most recent day can be absorbed into a
+  // turn anchored on an earlier day and so have NO inline strip — gotoDay finds
+  // the day's first event, expands its turn, and falls back to the row ref, so
+  // it lands reliably either way. Single-day sessions stay at the top. Runs once
+  // per session; the re-pin effect above clears didInitialDayJump on nav.
+  //
+  // SKIPPED for live sessions: their destination is the live tail, which
+  // TailMode scrolls to on mount. Jumping to the most-recent-day's TOP would
+  // scroll the view UP, and that programmatic scroll trips TailMode's scroll-up
+  // detector (check()) into turning live-follow off — and it would race
+  // TailMode's own mount scroll. followDayToScroll still keeps the minimap on
+  // the last day, since the tail sits there.
   useEffect(() => {
-    if (tab !== "transcript" || sessionDays.length <= 1) return;
-    const headerEl = headerRef.current;
-    const mainEl = headerEl?.closest("main") as HTMLElement | null;
-    if (!headerEl || !mainEl) return;
-    let raf = 0;
-    const update = () => {
-      raf = 0;
-      if (selectedDayKeyRef.current === "all") return;
-      const line = headerEl.getBoundingClientRect().bottom + 8;
-      let currentKey: string | null = null;
-      for (const d of sessionDays) {
-        const stripEl = dayStripRefs.current[d.key];
-        if (!stripEl) continue;
-        if (stripEl.getBoundingClientRect().top <= line) currentKey = d.key;
-        else break;
-      }
-      // Above every card (top of transcript) → we're still reading the first day.
-      if (!currentKey) currentKey = sessionDays.find((d) => dayStripRefs.current[d.key])?.key ?? null;
-      if (currentKey) setSelectedDayKey((prev) => (prev !== currentKey ? currentKey! : prev));
-    };
-    const onScroll = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(update);
-    };
-    mainEl.addEventListener("scroll", onScroll, { passive: true });
-    update(); // sync the minimap to the initial reading position (day 1 at top)
-    return () => {
-      mainEl.removeEventListener("scroll", onScroll);
-      if (raf) cancelAnimationFrame(raf);
-    };
+    if (tab !== "transcript" || didInitialDayJump.current) return;
+    const days = sessionDaysRef.current;
+    if (days.length <= 1 || isSessionLive) {
+      didInitialDayJump.current = true;
+      return;
+    }
+    didInitialDayJump.current = true;
+    gotoDay(days[days.length - 1]!.key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, sessionDays]);
+
+  // The displayed day is a single function of scroll position. The Minimap
+  // reports the offset (ms) of the topmost on-screen row — the SAME signal it
+  // draws the playhead from — and we select that row's day. Display only: this
+  // never scrolls the transcript. Navigation (gotoDay / the inline day-boundary
+  // buttons) moves the scroll, and the day then follows this one signal, so
+  // there's no second writer that could revert a day-jump. (The old scroll-spy
+  // used a separate pixel heuristic that disagreed with where nav scrolled to,
+  // which is what made "next day" snap back.) The tailNavLock guard lets an
+  // explicit jump's scroll settle first, and the key-unchanged no-op keeps a
+  // LIVE session's SSE refreshes from churning the selection.
+  function followDayToScroll(ms: number | null) {
+    if (ms === null) return;
+    if (Date.now() - tailNavLockRef.current < 1500) return;
+    const days = sessionDaysRef.current;
+    if (days.length <= 1) return;
+    const cur = selectedDayKeyRef.current;
+    if (cur === "all") return; // respect an explicit "show all days" choice
+    // Days are sorted by startMs; the last one starting at/below ms is the
+    // containing day (and tolerates the overnight gap between days).
+    let hit = days[0]!;
+    for (const d of days) {
+      if (ms >= d.startMs) hit = d;
+      else break;
+    }
+    if (hit.key !== cur) setSelectedDayKey(hit.key);
+  }
 
   /** Offset window for the selected day, or null when there's a single day
    *  or "all" is chosen — null tells the minimap to render the full session
@@ -709,12 +801,13 @@ export function SessionView({
     setScrollIntent((n) => n + 1);
   }
 
-  /** Switch the minimap to a given day (or "all"). On an explicit day pick we
-   *  also scroll the transcript to that day's first row so "jump to a day"
-   *  navigates the body too — but the default selection on mount does NOT
-   *  scroll (it only flows through here on user interaction). */
+  /** Switch the minimap to a given day (or "all"). Also scrolls the transcript
+   *  to that day's first row so "jump to a day" navigates the body too. Called
+   *  on user day-picks and once on mount by the initial-jump effect (for non-live
+   *  multi-day sessions, to open on the most recent day). */
   function gotoDay(key: string) {
     setSelectedDayKey(key);
+    tailNavLockRef.current = Date.now();
     // Paging days scrolls the transcript; that programmatic scroll (often
     // upward to an earlier day's first row) would otherwise read as a
     // user scroll-up and pop the sticky header open. Force it collapsed and
@@ -735,7 +828,38 @@ export function SessionView({
         setExpandedTurns((prev) => new Set(prev).add(turnIdx));
       }
     }
-    setDayScrollTarget((prev) => ({ index: ev.index, key, n: (prev?.n ?? 0) + 1 }));
+    setDayScrollTarget((prev) => ({ index: ev.index, key, block: "start", n: (prev?.n ?? 0) + 1 }));
+  }
+
+  /** Cross-day hop used by the inline day-boundary buttons. Selecting a day can
+   *  differ from where we scroll: "go to end of previous day" selects the
+   *  previous day but scrolls the CURRENT day's strip to the viewport bottom
+   *  (block:"end"), revealing the previous day's tail above it. "go to start of
+   *  next day" selects + scrolls to that day's strip (block:"start"). */
+  function jumpAcrossDay(
+    selectKey: string,
+    scrollKey: string,
+    block: "start" | "end",
+    fallbackIndex: number,
+  ) {
+    setSelectedDayKey(selectKey);
+    setCollapsed(true);
+    manualPinRef.current = Date.now();
+    tailNavLockRef.current = Date.now();
+    // The fallback row may live inside a collapsed turn — expand it so the
+    // element exists if the strip ref is unavailable.
+    if (filter === "turns") {
+      const turnIdx = turnByRowIndex.get(fallbackIndex);
+      if (turnIdx !== undefined && !expandedTurns.has(turnIdx)) {
+        setExpandedTurns((prev) => new Set(prev).add(turnIdx));
+      }
+    }
+    setDayScrollTarget((prev) => ({
+      index: fallbackIndex,
+      key: scrollKey,
+      block,
+      n: (prev?.n ?? 0) + 1,
+    }));
   }
 
   /** Scroll the transcript to the row whose assistant message issued a given
@@ -1186,6 +1310,7 @@ export function SessionView({
               // for the same right-side real estate.
               if (id) setSelectedIndex(null);
             }}
+            onPlayheadChange={followDayToScroll}
           />
         )}
         </div>
@@ -1230,6 +1355,7 @@ export function SessionView({
                 )
               }
               onJumpToParent={jumpToToolUse}
+              onClearFocus={() => setSelectedWorkflowId(null)}
             />
           </div>
         ) : tab === "debug" ? (
@@ -1281,6 +1407,7 @@ export function SessionView({
               sessionDays={sessionDays}
               entryByDay={entryByDay}
               dayStripRefs={dayStripRefs}
+              onJumpAcrossDay={jumpAcrossDay}
             />
           </>
         )}
@@ -1411,7 +1538,7 @@ export function SessionView({
       )}
 
       {/* Tail mode FAB — auto-scroll to follow live events */}
-      <TailMode isLive={isSessionLive} />
+      <TailMode isLive={isSessionLive} navLockRef={tailNavLockRef} />
     </div>
   );
 }
@@ -1420,353 +1547,19 @@ export function SessionView({
 /*  Row helpers                                                       */
 /* ------------------------------------------------------------------ */
 
-const rowPrimaryIndex = rowPrimaryIndexFromLib;
-
-/* ------------------------------------------------------------------ */
-/*  DisplayRow: one line in the transcript list                      */
-/*                                                                     */
-/*  Flat list item type — either a presentation row (user, agent,    */
-/*  tool-group, error, ...), a collapsed turn summary, or an         */
-/*  expanded-turn header with its inner rows following.              */
-/* ------------------------------------------------------------------ */
-
-type DisplayRow =
-  | { kind: "presentation"; row: PresentationRow; indented?: boolean }
-  | { kind: "turn-collapsed"; turn: TurnMegaRow }
-  | { kind: "turn-expanded-header"; turn: TurnMegaRow }
-  | { kind: "turn-expanded-footer"; turn: TurnMegaRow };
-
-function flattenMegaRows(megaRows: MegaRow[], expanded: Set<number>): DisplayRow[] {
-  const out: DisplayRow[] = [];
-  for (const m of megaRows) {
-    if (m.kind === "turn") {
-      if (expanded.has(m.firstPrimaryIndex)) {
-        out.push({ kind: "turn-expanded-header", turn: m });
-        for (const r of m.rows) {
-          out.push({ kind: "presentation", row: r, indented: true });
-        }
-        out.push({ kind: "turn-expanded-footer", turn: m });
-      } else {
-        out.push({ kind: "turn-collapsed", turn: m });
-      }
-    } else {
-      out.push({ kind: "presentation", row: m });
-    }
-  }
-  return out;
-}
-
-/** Fallback for "All events" filter mode — wraps each raw event in a
- *  synthetic PresentationRow so the transcript component can render
- *  everything (attachments, meta, thinking, tool_result) without
- *  going through the meaningful-transformation logic. */
-function allRowsAsRawRows(events: SessionEvent[]): PresentationRow[] {
-  const out: PresentationRow[] = [];
-  for (const e of events) {
-    // Coerce every raw event to the closest presentation kind.
-    let kind: PresentationRowKind;
-    switch (e.role) {
-      case "user":
-        kind = "user";
-        break;
-      case "agent":
-      case "agent-thinking":
-        kind = "agent";
-        break;
-      case "tool-call":
-      case "tool-result":
-        kind = "tool-group";
-        break;
-      case "system":
-      case "meta":
-        kind = "model";
-        break;
-    }
-    if (kind === "tool-group") {
-      out.push({
-        kind: "tool-group",
-        toolNames: [{ name: e.toolName ?? e.rawType, count: 1 }],
-        count: 1,
-        events: [e],
-        tOffsetMs: e.tOffsetMs,
-        gapMs: e.gapMs,
-      });
-    } else if (kind === "agent") {
-      out.push({
-        kind: "agent",
-        event: e,
-        groupedEvents: [e],
-        tOffsetMs: e.tOffsetMs,
-        gapMs: e.gapMs,
-      });
-    } else if (kind === "user") {
-      out.push({
-        kind: "user",
-        event: e,
-        tOffsetMs: e.tOffsetMs,
-        gapMs: e.gapMs,
-      });
-    } else {
-      out.push({
-        kind: "model",
-        event: e,
-        tOffsetMs: e.tOffsetMs,
-        gapMs: e.gapMs,
-      });
-    }
-  }
-  return out;
-}
+// rowPrimaryIndex, DisplayRow, flattenMegaRows, allRowsAsRawRows moved to ./session-view/{types,helpers}.ts
 
 /* ------------------------------------------------------------------ */
 /*  Header stats + token stat w/ tooltip                              */
 /* ------------------------------------------------------------------ */
 
-/** Compact inline header stat — icon + value, separated by dots.
- *  Used in the single-line session header, modeled on Claude's Sessions page. */
-function InlineStat({
-  icon,
-  value,
-  mono,
-  truncate,
-}: {
-  icon?: React.ReactNode;
-  value: string;
-  mono?: boolean;
-  truncate?: boolean;
-}) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 5,
-        fontSize: 12,
-        color: "var(--af-text-secondary)",
-        maxWidth: truncate ? 260 : undefined,
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {icon && (
-        <span
-          style={{
-            display: "inline-flex",
-            color: "var(--af-text-tertiary)",
-          }}
-        >
-          {icon}
-        </span>
-      )}
-      <span
-        style={{
-          fontFamily: mono ? "var(--font-mono)" : "inherit",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {value}
-      </span>
-    </span>
-  );
-}
-
-function InlineStatDivider() {
-  return (
-    <span
-      style={{
-        color: "var(--af-text-tertiary)",
-        fontSize: 11,
-        opacity: 0.6,
-      }}
-    >
-      ·
-    </span>
-  );
-}
-
-function EntrypointBadge({ entrypoint }: { entrypoint: string }) {
-  // cli + claude-desktop are human-driven; sdk-* are programmatic.
-  const isSdk = entrypoint.startsWith("sdk-");
-  const tone = isSdk
-    ? { bg: "rgba(245, 158, 11, 0.16)", fg: "#b45309" }
-    : { bg: "rgba(16, 185, 129, 0.16)", fg: "#047857" };
-  return (
-    <span
-      title={`entrypoint: ${entrypoint}`}
-      style={{
-        fontSize: 10.5,
-        padding: "2px 7px",
-        borderRadius: 4,
-        background: tone.bg,
-        color: tone.fg,
-        fontWeight: 600,
-        fontFamily: "var(--font-mono)",
-        letterSpacing: 0.2,
-      }}
-    >
-      {entrypoint}
-    </span>
-  );
-}
-
-function InlineTokenStat({ usage }: { usage: SessionEvent["usage"] }) {
-  const { ref, anchor, open, close } = useAnchoredTooltip();
-  const u = usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-  const totalIn = u.input + u.cacheRead + u.cacheWrite;
-  const pctRead = totalIn > 0 ? Math.round((u.cacheRead / totalIn) * 100) : 0;
-  const cached = u.cacheRead + u.cacheWrite;
-
-  return (
-    <span
-      ref={ref}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        fontSize: 12,
-        color: "var(--af-text-secondary)",
-        cursor: "default",
-        fontFamily: "var(--font-mono)",
-      }}
-      onMouseEnter={open}
-      onMouseLeave={close}
-    >
-      <span>
-        {formatTokens(u.input)}
-        <span style={{ color: "var(--af-text-tertiary)", margin: "0 3px" }}>in</span>
-        {formatTokens(u.output)}
-        <span style={{ color: "var(--af-text-tertiary)", marginLeft: 3 }}>out</span>
-      </span>
-      {cached > 0 && (
-        <span
-          style={{
-            fontSize: 10.5,
-            color: "var(--af-text-tertiary)",
-            paddingLeft: 6,
-            borderLeft: "1px solid var(--af-border-subtle)",
-          }}
-        >
-          +{formatTokens(cached)} cached
-        </span>
-      )}
-      {anchor && (
-        <AnchoredTooltip anchor={anchor} width={280}>
-          <TooltipRow label="Input (fresh)" value={u.input.toLocaleString()} />
-          <TooltipRow label="Output" value={u.output.toLocaleString()} />
-          <TooltipRow label="Cache read" value={`${u.cacheRead.toLocaleString()} (${pctRead}%)`} />
-          <TooltipRow label="Cache write" value={u.cacheWrite.toLocaleString()} />
-          <div
-            style={{
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: "1px solid rgba(241,245,249,0.12)",
-              opacity: 0.65,
-              fontSize: 10,
-              whiteSpace: "normal",
-              lineHeight: 1.4,
-            }}
-          >
-            Cache reads are cumulative across all API requests and billed at ~10% of regular input.
-          </div>
-        </AnchoredTooltip>
-      )}
-    </span>
-  );
-}
-
-// Used for tooltips that live inside an overflow:hidden ancestor (like the
-// session-header row). getBoundingClientRect + position:fixed lets the
-// tooltip escape the clipping context instead of being cropped.
-function useAnchoredTooltip() {
-  const ref = useRef<HTMLSpanElement>(null);
-  const [anchor, setAnchor] = useState<{ top: number; left: number } | null>(null);
-  const open = () => {
-    if (!ref.current) return;
-    const r = ref.current.getBoundingClientRect();
-    setAnchor({ top: r.bottom + 6, left: r.left });
-  };
-  const close = () => setAnchor(null);
-  return { ref, anchor, open, close };
-}
-
-function AnchoredTooltip({
-  anchor,
-  width,
-  children,
-}: {
-  anchor: { top: number; left: number };
-  width: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: anchor.top,
-        left: anchor.left,
-        zIndex: 1000,
-        background: "#1A1A1A",
-        color: "#F5F1EC",
-        padding: "8px 12px",
-        borderRadius: 6,
-        fontSize: 11,
-        fontFamily: "var(--font-mono)",
-        lineHeight: 1.5,
-        pointerEvents: "none",
-        boxShadow: "0 4px 16px rgba(15,23,42,0.24)",
-        width,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
+// InlineStat, InlineStatDivider, EntrypointBadge, InlineTokenStat, useAnchoredTooltip, AnchoredTooltip moved to ./session-view/header-stats.tsx
 
 /* ------------------------------------------------------------------ */
 /*  Generic Tooltip                                                    */
 /* ------------------------------------------------------------------ */
 
-function Tooltip({ children, style }: { children: React.ReactNode; style?: CSSProperties }) {
-  return (
-    <div
-      style={{
-        position: "absolute",
-        zIndex: 100,
-        background: "#1A1A1A",
-        color: "#F5F1EC",
-        borderRadius: 8,
-        padding: "10px 12px",
-        fontSize: 11,
-        fontFamily: "var(--font-mono)",
-        lineHeight: 1.5,
-        boxShadow: "0 4px 20px rgba(0,0,0,0.18)",
-        pointerEvents: "none",
-        whiteSpace: "nowrap",
-        ...style,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function TooltipRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 12,
-      }}
-    >
-      <span style={{ opacity: 0.7 }}>{label}</span>
-      <span>{value}</span>
-    </div>
-  );
-}
+// Tooltip, TooltipRow moved to ./session-view/tooltip.tsx
 
 /* ------------------------------------------------------------------ */
 /*  Mini-map                                                           */
@@ -1787,22 +1580,7 @@ function TooltipRow({ label, value }: { label: string; value: string }) {
 /*  - Rich hover card (role pill + preview) instead of bare SVG title. */
 /* ------------------------------------------------------------------ */
 
-type MinimapSeg =
-  | {
-      kind: "row";
-      row: PresentationRow;
-      primaryIndex: number;
-      start: number;
-      end: number;
-    }
-  | {
-      kind: "turn";
-      turn: TurnMegaRow;
-      primaryIndex: number;
-      start: number;
-      end: number;
-    }
-  | { kind: "idle"; start: number; end: number; durationMs: number };
+// MinimapSeg moved to ./session-view/types.ts
 
 /** All rows render at full bar height — distinction comes from color/pattern
  *  alone, matching Claude Managed Agents' unified-height timeline. */
@@ -1833,6 +1611,7 @@ function Minimap({
   coldResumeMarkers,
   rawIdleBands,
   model,
+  onPlayheadChange,
 }: {
   displayRows: DisplayRow[];
   durationMs: number;
@@ -1859,6 +1638,10 @@ function Minimap({
    *  surface their dead-air on the minimap. */
   rawIdleBands?: { start: number; end: number; durationMs: number }[];
   model?: string;
+  /** Fires with the offset (ms) of the topmost on-screen transcript row — the
+   *  same scroll signal that draws the playhead. SessionView uses it to make
+   *  the selected day follow scroll. */
+  onPlayheadChange?: (ms: number | null) => void;
 }) {
   const WIDTH = 1400;
   /** Main timeline height. Sub-agent lanes stack below this. */
@@ -1897,6 +1680,10 @@ function Minimap({
     };
   } | null>(null);
   const [playheadMs, setPlayheadMs] = useState<number | null>(null);
+  // Read inside the observer so the latest callback fires without re-subscribing
+  // the IntersectionObserver (its effect deps stay [displayRows.length, headerOffset]).
+  const onPlayheadChangeRef = useRef(onPlayheadChange);
+  onPlayheadChangeRef.current = onPlayheadChange;
   const containerRef = useRef<HTMLDivElement>(null);
 
   /* Playhead — track which transcript row is at the top of the viewport.
@@ -1905,60 +1692,54 @@ function Minimap({
    * on every scroll event. For a session with ~2000 rows that's thousands
    * of DOM queries per second during scroll — enough to pin a CPU core
    * and make Chrome ask to kill the tab. IntersectionObserver is event-
-   * driven: the browser only notifies us when rows cross a narrow band
-   * near the top of the viewport (the "playhead line"), so the cost
-   * scales with *changes* instead of with scroll rate × row count.
+   * driven: the browser only notifies us when rows enter or leave the region
+   * below the sticky header, so the cost scales with *changes* instead of
+   * with scroll rate × row count.
    */
   useEffect(() => {
     const main = containerRef.current?.closest("main") as HTMLElement | null;
     if (!main) return;
 
-    // A thin horizontal band just below the sticky header. A row is
-    // "at the playhead" when it enters this band from the bottom.
-    // rootMargin: top crop = headerOffset (so the band starts where the
-    // transcript actually starts), bottom crop = everything except the
-    // band, so only rows inside the band trigger callbacks.
-    const BAND_HEIGHT = 12;
-    const rootMargin = `-${headerOffset}px 0px -${Math.max(
-      0,
-      main.clientHeight - headerOffset - BAND_HEIGHT,
-    )}px 0px`;
+    // Crop the observation region by the sticky header at the top and keep the
+    // whole viewport below it. Every row visible below the header intersects
+    // this region; the topmost (smallest offsetTop) is the row sitting at the
+    // header line — the playhead. Using the full area (not a thin band) means
+    // the playhead never blanks out in the gaps between sparse rows, so the
+    // scroll→timeline highlight — and the day-follow that rides on it — stays
+    // continuous. Still event-driven: a row only fires when it enters or
+    // leaves, so cost scales with scroll distance, not row count.
+    const rootMargin = `-${headerOffset}px 0px 0px 0px`;
 
-    // Track which rows are currently inside the band. The topmost is
-    // the playhead. Using a Set keeps updates O(1).
-    const inBand = new Set<HTMLElement>();
+    // Rows currently visible below the header. The topmost is the playhead.
+    const visibleRows = new Set<HTMLElement>();
 
     const publishTopmost = () => {
-      if (inBand.size === 0) {
-        // Fall back to the row just above the band by scanning the
-        // few immediately-adjacent rows — cheap because the band is
-        // narrow.
-        setPlayheadMs(null);
-        return;
-      }
-      let topmost: HTMLElement | null = null;
-      let topmostOff = Infinity;
-      for (const el of inBand) {
-        const t = el.offsetTop;
-        if (t < topmostOff) {
-          topmostOff = t;
-          topmost = el;
+      let value: number | null = null;
+      if (visibleRows.size > 0) {
+        let topmost: HTMLElement | null = null;
+        let topmostOff = Infinity;
+        for (const el of visibleRows) {
+          const t = el.offsetTop;
+          if (t < topmostOff) {
+            topmostOff = t;
+            topmost = el;
+          }
+        }
+        if (topmost) {
+          const tOff = Number(topmost.getAttribute("data-sl-toffset"));
+          value = Number.isNaN(tOff) ? null : tOff;
         }
       }
-      if (!topmost) {
-        setPlayheadMs(null);
-        return;
-      }
-      const tOff = Number(topmost.getAttribute("data-sl-toffset"));
-      setPlayheadMs(Number.isNaN(tOff) ? null : tOff);
+      setPlayheadMs(value);
+      onPlayheadChangeRef.current?.(value);
     };
 
     const observer = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
           const el = e.target as HTMLElement;
-          if (e.isIntersecting) inBand.add(el);
-          else inBand.delete(el);
+          if (e.isIntersecting) visibleRows.add(el);
+          else visibleRows.delete(el);
         }
         publishTopmost();
       },
@@ -2607,12 +2388,17 @@ function Minimap({
                 strokeWidth="1.5"
                 strokeDasharray="4 3"
                 opacity="0.75"
+                pointerEvents="none"
               />
+              {/* Hover hit-area limited to the diamond itself — a wider/taller
+                  target used to swallow hovers+clicks meant for adjacent
+                  user-prompt markers sitting right beside the cache-rebuild
+                  point. */}
               <rect
-                x={x - 8}
-                y={0}
-                width={16}
-                height={TOTAL_H}
+                x={x - 6}
+                y={MAIN_H / 2 - 8}
+                width={12}
+                height={16}
                 fill="transparent"
               />
               <polygon
@@ -2620,6 +2406,7 @@ function Minimap({
                 fill="#D97706"
                 stroke="var(--af-surface)"
                 strokeWidth="1.5"
+                pointerEvents="none"
               />
             </g>
           );
@@ -2717,33 +2504,7 @@ function Minimap({
   );
 }
 
-/** Color a sub-agent bar by its type. Background runs use a brighter
- *  variant of their color so true parallelism is visually distinct from
- *  blocking subagent calls (where the parent waits and there's no
- *  meaningful overlap with main session work). */
-function subagentColor(agentType: string, background?: boolean): string {
-  const palette: Record<string, [string, string]> = {
-    "general-purpose": ["#5C84C3", "#7BA3DC"],
-    Explore: ["#A855F7", "#C57BFF"],
-    Plan: ["#F59E0B", "#FFBD3D"],
-    "code-reviewer": ["#34D399", "#5EE5B0"],
-    "playwright-qa-verifier": ["#22D3EE", "#67E8F9"],
-    "claude-code-guide": ["#EC4899", "#F472B6"],
-  };
-  const [base, bright] = palette[agentType] ?? ["#8A8580", "#A8A19A"];
-  return background ? bright : base;
-}
-
-/** Workflow signature color, modulated by run status. Deliberately a warm
- *  orange — distinct from the blue/purple subagent palette so workflow lanes
- *  read as a different tier on the minimap. Failed runs go red, in-flight
- *  runs go green. */
-function workflowColor(status: string): string {
-  const s = status.toLowerCase();
-  if (s === "failed" || s === "aborted" || s === "error") return "#EF4444";
-  if (s === "running" || s === "in_progress" || s === "active") return "#10B981";
-  return "#EA580C";
-}
+// subagentColor, workflowColor moved to ./session-view/colors.ts
 
 function MinimapHoverCard({
   containerRef,
@@ -3344,6 +3105,7 @@ function TranscriptList({
   sessionDays,
   entryByDay,
   dayStripRefs,
+  onJumpAcrossDay,
 }: {
   displayRows: DisplayRow[];
   rowRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>;
@@ -3364,6 +3126,14 @@ function TranscriptList({
   sessionDays: { key: string; startMs: number; endMs: number; count: number }[];
   entryByDay: Map<string, Entry>;
   dayStripRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  /** Hop to an adjacent day from an inline day-boundary button.
+   *  (selectKey, scrollKey, block, fallbackRowIndex). */
+  onJumpAcrossDay: (
+    selectKey: string,
+    scrollKey: string,
+    block: "start" | "end",
+    fallbackIndex: number,
+  ) => void;
 }) {
   // Find the last collapsed turn index so we can mark it as in-progress
   // when the session is live.
@@ -3396,6 +3166,10 @@ function TranscriptList({
     if (d.kind === "turn-expanded-footer") return undefined;
     return d.row.tOffsetMs;
   };
+  // A display row → its event PRIMARY index (what jumpAcrossDay's turn/row
+  // lookups are keyed by — NOT the displayRows loop position).
+  const rowPrimaryIndexOf = (d: DisplayRow): number =>
+    d.kind === "presentation" ? rowPrimaryIndex(d.row) : d.turn.firstPrimaryIndex;
   /** Which local day a row falls in: the last day bucket whose start is at or
    *  before the row's offset. sessionDays is pre-sorted by startMs. */
   const dayKeyForOffset = (tOff: number | undefined): string | null => {
@@ -3435,10 +3209,27 @@ function TranscriptList({
       }
       // Day boundary: drop this day's digest card at its first row (after any
       // overnight idle divider that led into the day) so per-day perception
-      // sits inline with that day's work, not stacked at the top.
+      // sits inline with that day's work, not stacked at the top. The boundary
+      // also gets inline jump controls so you can page across days while
+      // reading — "↓ start of next day" sits at the bottom of the day that just
+      // ended, "↑ end of previous day" at the top of the new one.
       const dk = dayKeyForOffset(rowTOffset(d));
       if (dk && dk !== currentDayKey) {
+        const endedKey = currentDayKey; // day that just ended; null on the first day
         currentDayKey = dk;
+        // Fallback scroll target for days with no digest card: the day's first
+        // row by PRIMARY index (i is the displayRows position — wrong key space).
+        const firstIdx = rowPrimaryIndexOf(d);
+        if (endedKey) {
+          out.push(
+            <DayJumpRow
+              key={`daydown-${dk}`}
+              dir="down"
+              label={formatDayKey(dk)}
+              onClick={() => onJumpAcrossDay(dk, dk, "start", firstIdx)}
+            />,
+          );
+        }
         const dayEntry = entryByDay.get(dk);
         if (dayEntry) {
           out.push(
@@ -3451,6 +3242,16 @@ function TranscriptList({
             >
               <EntryDayStrip entry={dayEntry} />
             </div>,
+          );
+        }
+        if (endedKey) {
+          out.push(
+            <DayJumpRow
+              key={`dayup-${dk}`}
+              dir="up"
+              label={formatDayKey(endedKey)}
+              onClick={() => onJumpAcrossDay(endedKey, dk, "end", firstIdx)}
+            />,
           );
         }
       }
@@ -3546,6 +3347,51 @@ function IdleDivider({ gapMs }: { gapMs: number }) {
       }}
     >
       Session idle · {formatGap(gapMs)}
+    </div>
+  );
+}
+
+/** Inline cross-day jump control rendered at each day boundary. "down" sits at
+ *  the bottom of the day that just ended and jumps to the start of the next day;
+ *  "up" sits at the top of the new day and jumps to the end of the previous one.
+ *  The day always follows the scroll position (see followDayToScroll); these are
+ *  a one-click shortcut across the long idle gap between days so you don't have
+ *  to hand-scroll the whole span. "down" (start of next day) lands that day's
+ *  first row at the header line so the day-follow agrees; "up" (end of previous
+ *  day) scrolls the new day's strip to the viewport bottom, leaving the previous
+ *  day's tail above the header line. */
+function DayJumpRow({
+  dir,
+  label,
+  onClick,
+}: {
+  dir: "up" | "down";
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <div style={{ display: "flex", justifyContent: "center", margin: "6px 0" }}>
+      <button
+        type="button"
+        onClick={onClick}
+        title={dir === "up" ? `Go to the end of ${label}` : `Go to the start of ${label}`}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 11,
+          fontFamily: "var(--font-mono)",
+          color: "var(--af-text-secondary)",
+          background: "var(--af-surface)",
+          border: "1px solid var(--af-border-subtle)",
+          borderRadius: 100,
+          padding: "3px 12px",
+          cursor: "pointer",
+        }}
+      >
+        {dir === "up" ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+        {dir === "up" ? `End of ${label}` : `Start of ${label}`}
+      </button>
     </div>
   );
 }
@@ -4643,170 +4489,13 @@ function ToolGroupLabel({
   );
 }
 
-function TokenChip({ usage }: { usage: NonNullable<SessionEvent["usage"]> }) {
-  const [hover, setHover] = useState(false);
-  const totalIn = usage.input + usage.cacheRead + usage.cacheWrite;
-  const pctRead = totalIn > 0 ? Math.round((usage.cacheRead / totalIn) * 100) : 0;
-  return (
-    <span
-      style={{
-        position: "relative",
-        fontFamily: "var(--font-mono)",
-        fontSize: 11,
-        color: "var(--af-text-secondary)",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        whiteSpace: "nowrap",
-      }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      <span style={{ opacity: 0.6 }}>▤</span>
-      {formatTokens(totalIn)} / {formatTokens(usage.output)}
-      {hover && (
-        <Tooltip style={{ right: 0, top: "calc(100% + 6px)", minWidth: 180 }}>
-          <TooltipRow label="Input" value={usage.input.toLocaleString()} />
-          <TooltipRow
-            label="Cache read"
-            value={`${usage.cacheRead.toLocaleString()} (${pctRead}%)`}
-          />
-          <TooltipRow label="Cache write" value={usage.cacheWrite.toLocaleString()} />
-          <TooltipRow label="Output" value={usage.output.toLocaleString()} />
-        </Tooltip>
-      )}
-    </span>
-  );
-}
-
-/** Like TokenChip but for per-turn aggregates. Primary display is
- *  fresh input / output (not the cache-inflated sum), consistent with
- *  the session header. Tooltip shows the full breakdown plus a footnote
- *  reminding that cache reads are cumulative. */
-function TurnTokenChip({
-  usage,
-}: {
-  usage: { input: number; output: number; cacheRead: number; cacheWrite: number };
-}) {
-  const [hover, setHover] = useState(false);
-  const totalIn = usage.input + usage.cacheRead + usage.cacheWrite;
-  const pctRead = totalIn > 0 ? Math.round((usage.cacheRead / totalIn) * 100) : 0;
-  return (
-    <span
-      style={{
-        position: "relative",
-        fontFamily: "var(--font-mono)",
-        fontSize: 11,
-        color: "var(--af-text-tertiary)",
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        whiteSpace: "nowrap",
-        cursor: "default",
-      }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      <span style={{ opacity: 0.6 }}>▤</span>
-      {formatTokens(usage.input)} / {formatTokens(usage.output)}
-      {hover && (
-        <Tooltip style={{ right: 0, top: "calc(100% + 6px)", minWidth: 220 }}>
-          <TooltipRow label="Input (fresh)" value={usage.input.toLocaleString()} />
-          <TooltipRow label="Output" value={usage.output.toLocaleString()} />
-          <TooltipRow
-            label="Cache read"
-            value={`${usage.cacheRead.toLocaleString()} (${pctRead}%)`}
-          />
-          <TooltipRow label="Cache write" value={usage.cacheWrite.toLocaleString()} />
-          <div
-            style={{
-              marginTop: 6,
-              paddingTop: 6,
-              borderTop: "1px solid rgba(241,245,249,0.12)",
-              opacity: 0.65,
-              fontSize: 10,
-              whiteSpace: "normal",
-              lineHeight: 1.4,
-            }}
-          >
-            Cumulative across all requests in this turn.
-          </div>
-        </Tooltip>
-      )}
-    </span>
-  );
-}
+// TokenChip, TurnTokenChip moved to ./session-view/token-stats.tsx
 
 /* ------------------------------------------------------------------ */
 /*  Debug list                                                         */
 /* ------------------------------------------------------------------ */
 
-function DebugList({ events }: { events: SessionEvent[] }) {
-  // Rebuild a JSON view from the structured fields on the event. The
-  // original `raw` field is stripped server-side before serialization
-  // (see app/sessions/[id]/page.tsx) because including the full JSONL
-  // line per event doubles the RSC payload on large sessions. All the
-  // useful data is already on the structured event; this view surfaces
-  // it in the same shape you'd get from the raw JSONL.
-  const shapeForDebug = (e: SessionEvent) => ({
-    type: e.rawType,
-    index: e.index,
-    uuid: e.uuid,
-    parentUuid: e.parentUuid,
-    timestamp: e.timestamp,
-    role: e.role,
-    messageId: e.messageId,
-    stopReason: e.stopReason,
-    model: e.model,
-    requestId: e.requestId,
-    toolName: e.toolName,
-    toolUseId: e.toolUseId,
-    attachmentType: e.attachmentType,
-    usage: e.usage,
-    blocks: e.blocks,
-  });
-
-  return (
-    <div style={{ padding: "8px 0" }}>
-      {events.map((e) => (
-        <details
-          key={e.index}
-          style={{
-            borderBottom: "1px solid var(--af-border-subtle)",
-            padding: "8px 12px",
-          }}
-        >
-          <summary
-            style={{
-              cursor: "pointer",
-              fontFamily: "var(--font-mono)",
-              fontSize: 12,
-              color: "var(--af-text-secondary)",
-            }}
-          >
-            #{e.index} · {e.rawType}
-            {e.attachmentType ? `/${e.attachmentType}` : ""} · {e.timestamp ?? "(no ts)"}
-          </summary>
-          <pre
-            style={{
-              marginTop: 8,
-              padding: 12,
-              background: "var(--background)",
-              border: "1px solid var(--af-border-subtle)",
-              borderRadius: 6,
-              fontSize: 11,
-              overflow: "auto",
-              maxHeight: 400,
-              color: "var(--af-text-secondary)",
-            }}
-          >
-            {JSON.stringify(shapeForDebug(e), null, 2)}
-          </pre>
-        </details>
-      ))}
-    </div>
-  );
-}
+// DebugList moved to ./session-view/debug-list.tsx
 
 /* ------------------------------------------------------------------ */
 /*  SubagentDrawer                                                    */
@@ -4819,324 +4508,7 @@ function DebugList({ events }: { events: SessionEvent[] }) {
 /*  this subagent off.                                                */
 /* ------------------------------------------------------------------ */
 
-function SubagentDrawer({
-  subagent,
-  onClose,
-  onJumpToParent,
-}: {
-  subagent: SubagentRun;
-  onClose: () => void;
-  onJumpToParent: () => void;
-}) {
-  const s = subagent;
-  const fill = subagentColor(s.agentType, s.runInBackground);
-  const startOff = formatOffset(s.startTOffsetMs);
-  const endOff = formatOffset(s.endTOffsetMs);
-  const dur = s.durationMs !== undefined ? formatGap(s.durationMs) : "—";
-  const totalIn = s.totalUsage.input + s.totalUsage.cacheRead + s.totalUsage.cacheWrite;
-  const pctRead = totalIn > 0 ? Math.round((s.totalUsage.cacheRead / totalIn) * 100) : 0;
-
-  return (
-    <div>
-      {/* Sticky title bar */}
-      <div
-        style={{
-          padding: "14px 20px",
-          borderBottom: "1px solid var(--af-border-subtle)",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          background: "var(--af-surface)",
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-          flexWrap: "wrap",
-        }}
-      >
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            padding: "3px 10px",
-            borderRadius: 4,
-            background: fill,
-            color: "#fff",
-          }}
-        >
-          {s.agentType}
-        </span>
-        {s.runInBackground && (
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 600,
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: "var(--af-warning-subtle)",
-              color: "var(--af-warning)",
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
-            }}
-          >
-            background
-          </span>
-        )}
-        <span
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: "var(--af-text)",
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={s.description}
-        >
-          {s.description}
-        </span>
-        <button
-          onClick={onClose}
-          style={{
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--af-text-tertiary)",
-            padding: 4,
-            borderRadius: 4,
-          }}
-          aria-label="Close"
-        >
-          <X size={16} />
-        </button>
-      </div>
-
-      {/* Meta strip */}
-      <div
-        style={{
-          padding: "10px 20px",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--af-text-tertiary)",
-          borderBottom: "1px solid var(--af-border-subtle)",
-          display: "grid",
-          gridTemplateColumns: "auto 1fr",
-          columnGap: 10,
-          rowGap: 3,
-        }}
-      >
-        <span style={{ opacity: 0.7 }}>range</span>
-        <span style={{ color: "var(--af-text-secondary)" }}>
-          {startOff} → {endOff}
-        </span>
-        <span style={{ opacity: 0.7 }}>duration</span>
-        <span style={{ color: "var(--af-text-secondary)" }}>{dur}</span>
-        {s.model && (
-          <>
-            <span style={{ opacity: 0.7 }}>model</span>
-            <span style={{ color: "var(--af-text-secondary)" }}>{s.model}</span>
-          </>
-        )}
-        {s.parentToolUseId && (
-          <>
-            <span style={{ opacity: 0.7 }}>parent</span>
-            <span style={{ color: "var(--af-text-secondary)" }}>
-              {s.parentToolUseId.slice(0, 24)}…
-            </span>
-          </>
-        )}
-      </div>
-
-      {/* Activity stats */}
-      <div
-        style={{
-          padding: "14px 20px",
-          borderBottom: "1px solid var(--af-border-subtle)",
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
-          gap: 10,
-        }}
-      >
-        <StatCell label="Events" value={String(s.eventCount)} />
-        <StatCell label="Messages" value={String(s.assistantMessageCount ?? 0)} />
-        <StatCell label="Tool calls" value={String(s.toolCallCount ?? 0)} />
-      </div>
-
-      {/* Token breakdown */}
-      <div
-        style={{
-          padding: "12px 20px",
-          borderBottom: "1px solid var(--af-border-subtle)",
-          fontSize: 11,
-          fontFamily: "var(--font-mono)",
-          color: "var(--af-text-secondary)",
-          display: "flex",
-          flexDirection: "column",
-          gap: 3,
-        }}
-      >
-        <TokenLine label="Input (fresh)" value={s.totalUsage.input} />
-        <TokenLine label="Output" value={s.totalUsage.output} />
-        <TokenLine
-          label="Cache read"
-          value={s.totalUsage.cacheRead}
-          suffix={` (${pctRead}%)`}
-        />
-        <TokenLine label="Cache write" value={s.totalUsage.cacheWrite} />
-      </div>
-
-      {/* Tool breakdown */}
-      {s.toolCalls && s.toolCalls.length > 0 && (
-        <div
-          style={{
-            padding: "14px 20px",
-            borderBottom: "1px solid var(--af-border-subtle)",
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
-              color: "var(--af-text-tertiary)",
-              marginBottom: 8,
-            }}
-          >
-            Tools used
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {s.toolCalls.map((t) => (
-              <span
-                key={t.name}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: 11,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  background: "var(--af-border-subtle)",
-                  color: "var(--af-text)",
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                <b style={{ fontWeight: 600 }}>{shortenToolName(t.name)}</b>
-                <span style={{ color: "var(--af-text-tertiary)" }}>×{t.count}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Parent prompt (what the parent asked the subagent to do) */}
-      {s.prompt && (
-        <div
-          style={{
-            padding: "14px 20px",
-            borderBottom: "1px solid var(--af-border-subtle)",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 8,
-            }}
-          >
-            <div
-              style={{
-                fontSize: 10,
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-                color: "var(--af-text-tertiary)",
-              }}
-            >
-              Prompt
-            </div>
-            {s.parentToolUseId && (
-              <button
-                type="button"
-                onClick={onJumpToParent}
-                style={{
-                  fontSize: 10,
-                  color: "var(--af-accent)",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                }}
-              >
-                Jump to parent →
-              </button>
-            )}
-          </div>
-          <div className="sl-prose" style={{ fontSize: 12.5 }}>
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: (props) => (
-                  <a
-                    {...props}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color: "var(--af-accent)",
-                      textDecoration: "underline",
-                    }}
-                  />
-                ),
-              }}
-            >
-              {s.prompt}
-            </ReactMarkdown>
-          </div>
-        </div>
-      )}
-
-      {/* Final text */}
-      {s.finalText && (
-        <div style={{ padding: "14px 20px" }}>
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
-              color: "var(--af-text-tertiary)",
-              marginBottom: 8,
-            }}
-          >
-            Final result
-          </div>
-          <div className="sl-prose" style={{ fontSize: 13 }}>
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: (props) => (
-                  <a
-                    {...props}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      color: "var(--af-accent)",
-                      textDecoration: "underline",
-                    }}
-                  />
-                ),
-              }}
-            >
-              {s.finalText}
-            </ReactMarkdown>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// SubagentDrawer moved to ./session-view/subagent-drawer.tsx
 
 /* ------------------------------------------------------------------ */
 /*  Workflows panel                                                    */
@@ -5154,6 +4526,7 @@ function WorkflowsPanel({
   selectedAgentKey,
   onOpenAgent,
   onJumpToParent,
+  onClearFocus,
 }: {
   workflows: WorkflowRun[];
   spawnedAgentCount: number;
@@ -5161,6 +4534,7 @@ function WorkflowsPanel({
   selectedAgentKey?: string | null;
   onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
   onJumpToParent: (toolUseId?: string) => void;
+  onClearFocus?: () => void;
 }) {
   const totalTokens = workflows.reduce((n, w) => n + w.totalTokens, 0);
   const totalTools = workflows.reduce((n, w) => n + w.toolCallCount, 0);
@@ -5219,6 +4593,7 @@ function WorkflowsPanel({
             selectedAgentKey={selectedAgentKey}
             onOpenAgent={onOpenAgent}
             onJumpToParent={onJumpToParent}
+            onClearFocus={onClearFocus}
           />
         ))}
       </div>
@@ -5232,12 +4607,14 @@ function WorkflowCard({
   selectedAgentKey,
   onOpenAgent,
   onJumpToParent,
+  onClearFocus,
 }: {
   w: WorkflowRun;
   focused?: boolean;
   selectedAgentKey?: string | null;
   onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
   onJumpToParent: (toolUseId?: string) => void;
+  onClearFocus?: () => void;
 }) {
   const [open, setOpen] = useState(focused);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -5257,14 +4634,17 @@ function WorkflowCard({
       ref={cardRef}
       style={{
         borderTop: "1px solid var(--af-border-subtle)",
-        background: focused ? "rgba(234,88,12,0.07)" : "transparent",
-        transition: "background 0.5s ease",
         scrollMarginTop: 120,
       }}
     >
       {/* Collapsed header — click to expand */}
       <button
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => {
+          setOpen((v) => !v);
+          // Any toggle is the user taking over from the timeline jump — drop the
+          // focus highlight so it doesn't linger on a card they've moved past.
+          onClearFocus?.();
+        }}
         style={{
           width: "100%",
           display: "flex",
@@ -5287,7 +4667,11 @@ function WorkflowCard({
             fontFamily: "var(--font-mono)",
             fontSize: 13,
             fontWeight: 600,
-            color: "var(--af-text)",
+            color: focused ? "#EA580C" : "var(--af-text)",
+            background: focused ? "rgba(234,88,12,0.16)" : "transparent",
+            padding: "2px 8px",
+            borderRadius: 6,
+            transition: "background 0.4s ease, color 0.4s ease",
             minWidth: 0,
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -5369,7 +4753,7 @@ function WorkflowCard({
                   fontFamily: "var(--font-mono)",
                 }}
               >
-                Jump to Workflow call →
+                Jump to timeline →
               </button>
             )}
           </div>
@@ -6020,593 +5404,18 @@ function WorkflowRunLog({ logs }: { logs: string[] }) {
   );
 }
 
-function WfMiniStat({ icon, value }: { icon?: React.ReactNode; value: string }) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        fontSize: 11.5,
-        color: "var(--af-text-secondary)",
-        fontFamily: "var(--font-mono)",
-        whiteSpace: "nowrap",
-      }}
-    >
-      {icon && <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>{icon}</span>}
-      {value}
-    </span>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      style={{
-        fontSize: 10,
-        fontWeight: 600,
-        textTransform: "uppercase",
-        letterSpacing: "0.04em",
-        color: "var(--af-text-tertiary)",
-        marginBottom: 8,
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-function StatCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div
-        style={{
-          fontSize: 9,
-          color: "var(--af-text-tertiary)",
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-          fontWeight: 600,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontSize: 18,
-          fontWeight: 700,
-          fontFamily: "var(--font-mono)",
-          color: "var(--af-text)",
-          marginTop: 2,
-        }}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function TokenLine({
-  label,
-  value,
-  suffix,
-}: {
-  label: string;
-  value: number;
-  suffix?: string;
-}) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-      <span style={{ opacity: 0.7 }}>{label}</span>
-      <span>
-        {value.toLocaleString()}
-        {suffix && <span style={{ opacity: 0.65 }}>{suffix}</span>}
-      </span>
-    </div>
-  );
-}
+// WfMiniStat, SectionLabel, StatCell, TokenLine moved to ./session-view/workflows-shared.tsx
 
 /* ------------------------------------------------------------------ */
 /*  Drawer                                                             */
 /* ------------------------------------------------------------------ */
 
-function Drawer({
-  event,
-  row,
-  onClose,
-}: {
-  event: SessionEvent;
-  row: PresentationRow | null;
-  onClose: () => void;
-}) {
-  const [showDev, setShowDev] = useState(false);
-  const kind: PresentationRowKind = row?.kind ?? "agent";
-  const theme = ROLE_THEMES[kind];
-  const title = drawerTitle(row, event);
-  const hasUsage = !!event.usage && (event.usage.input > 0 || event.usage.output > 0);
-
-  return (
-    <div>
-      {/* Sticky title bar */}
-      <div
-        style={{
-          padding: "14px 20px",
-          borderBottom: "1px solid var(--af-border-subtle)",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          background: "var(--af-surface)",
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            padding: "3px 10px",
-            borderRadius: 4,
-            background: theme.bg,
-            color: theme.fg,
-          }}
-        >
-          {theme.label}
-        </span>
-        <span
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: "var(--af-text)",
-          }}
-        >
-          {title}
-        </span>
-        <button
-          onClick={onClose}
-          style={{
-            marginLeft: "auto",
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            color: "var(--af-text-tertiary)",
-            padding: 4,
-            borderRadius: 4,
-          }}
-        >
-          <X size={16} />
-        </button>
-      </div>
-
-      {/* Meta line — compact */}
-      <div
-        style={{
-          padding: "8px 20px",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--af-text-tertiary)",
-          display: "flex",
-          gap: 10,
-          alignItems: "center",
-          flexWrap: "wrap",
-          borderBottom: "1px solid var(--af-border-subtle)",
-        }}
-      >
-        <span>{formatOffset(event.tOffsetMs)}</span>
-        {event.gapMs !== undefined && event.gapMs > 0 && <span>· {formatGap(event.gapMs)}</span>}
-        {hasUsage && event.usage && (
-          <span style={{ color: "var(--af-text-secondary)" }}>
-            · {formatTokens(event.usage.input + event.usage.cacheRead + event.usage.cacheWrite)}/
-            {formatTokens(event.usage.output)} tokens
-          </span>
-        )}
-        <button
-          onClick={() => setShowDev((s) => !s)}
-          style={{
-            marginLeft: "auto",
-            background: "transparent",
-            border: "none",
-            fontSize: 10,
-            color: "var(--af-text-tertiary)",
-            cursor: "pointer",
-            padding: 0,
-            fontFamily: "inherit",
-            textDecoration: "underline",
-            textUnderlineOffset: 2,
-          }}
-        >
-          {showDev ? "hide details" : "details"}
-        </button>
-      </div>
-
-      {/* Developer panel — collapsed by default */}
-      {showDev && (
-        <div
-          style={{
-            padding: "10px 20px 14px",
-            borderBottom: "1px solid var(--af-border-subtle)",
-            fontSize: 11,
-            color: "var(--af-text-secondary)",
-            fontFamily: "var(--font-mono)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-          }}
-        >
-          {event.model && <div>model: {event.model}</div>}
-          {event.requestId && <div>request: {event.requestId}</div>}
-          {event.messageId && <div>message: {event.messageId}</div>}
-          {event.stopReason && <div>stop_reason: {event.stopReason}</div>}
-          {event.usage && (
-            <>
-              <div style={{ marginTop: 6, opacity: 0.7 }}>tokens</div>
-              <div> input: {event.usage.input.toLocaleString()}</div>
-              <div> output: {event.usage.output.toLocaleString()}</div>
-              <div> cache read: {event.usage.cacheRead.toLocaleString()}</div>
-              <div>
-                {"  "}cache write: {event.usage.cacheWrite.toLocaleString()}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Content */}
-      <div style={{ padding: "18px 22px" }}>
-        <DrawerContent event={event} row={row} />
-      </div>
-    </div>
-  );
-}
-
-function drawerTitle(row: PresentationRow | null, event: SessionEvent): string {
-  if (row) {
-    switch (row.kind) {
-      case "user":
-        return "Message";
-      case "agent":
-        return "Message";
-      case "tool-group":
-        return `Tool use · ${formatToolSummary(row.toolNames)}`;
-      case "interrupt":
-        return "Interrupted";
-      case "model":
-        return "Model (zero-usage)";
-      case "error":
-        return "API error";
-      case "task-notification":
-        return `Background task · ${row.status}`;
-    }
-  }
-  return event.rawType;
-}
-
-function DrawerContent({ event, row }: { event: SessionEvent; row: PresentationRow | null }) {
-  // User rows can override their blocks (e.g. slash commands get a cleaned
-  // "/implement AGE-8" block instead of the raw XML).
-  if (row?.kind === "user" && row.displayBlocks) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {row.displayBlocks.map((b, i) => (
-          <BlockView key={i} block={b} />
-        ))}
-      </div>
-    );
-  }
-
-  // Task notifications: parsed fields in a clean key-value layout,
-  // not the raw <task-notification> XML blob.
-  if (row?.kind === "task-notification") {
-    const statusColor =
-      row.status === "success"
-        ? "var(--af-success)"
-        : row.status === "failed"
-          ? "var(--af-danger)"
-          : "var(--af-text-secondary)";
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              padding: "3px 10px",
-              borderRadius: 4,
-              background:
-                row.status === "success"
-                  ? "var(--af-success-subtle)"
-                  : row.status === "failed"
-                    ? "var(--af-danger-subtle)"
-                    : "var(--af-border-subtle)",
-              color: statusColor,
-              textTransform: "uppercase",
-              letterSpacing: "0.03em",
-            }}
-          >
-            {row.status}
-          </span>
-        </div>
-        <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--af-text)" }}>{row.summary}</div>
-        {(row.taskId || row.toolUseId || row.outputFile) && (
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--af-text-secondary)",
-              fontFamily: "var(--font-mono)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-              paddingTop: 10,
-              borderTop: "1px solid var(--af-border-subtle)",
-            }}
-          >
-            {row.taskId && <div>task id: {row.taskId}</div>}
-            {row.toolUseId && <div>tool use: {row.toolUseId.slice(0, 24)}…</div>}
-            {row.outputFile && (
-              <div style={{ wordBreak: "break-all" }}>output: {row.outputFile}</div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Tool group: list all individual tool calls with their inputs
-  if (row?.kind === "tool-group" && row.count > 1) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {row.events.map((e, i) => (
-          <div key={e.index}>
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--af-text-tertiary)",
-                marginBottom: 4,
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              #{i + 1} · {formatOffset(e.tOffsetMs)} · {e.toolUseId?.slice(0, 14)}…
-            </div>
-            {e.blocks.map((b, bi) => (
-              <BlockView key={bi} block={b} />
-            ))}
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  // Agent row: include thinking blocks from the same message.id if present
-  if (row?.kind === "agent" && row.groupedEvents.length > 1) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {row.groupedEvents.flatMap((e, i) =>
-          e.blocks.map((b, bi) => <BlockView key={`${i}-${bi}`} block={b} />),
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {event.blocks.map((b, i) => (
-        <BlockView key={i} block={b} />
-      ))}
-    </div>
-  );
-}
-function BlockView({ block }: { block: ContentBlock }) {
-  if (block.type === "text") {
-    return (
-      <div className="sl-prose">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{
-            a: (props) => (
-              <a
-                {...props}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  color: "var(--af-accent)",
-                  textDecoration: "underline",
-                  textUnderlineOffset: 2,
-                }}
-              />
-            ),
-          }}
-        >
-          {block.text}
-        </ReactMarkdown>
-      </div>
-    );
-  }
-  if (block.type === "thinking") {
-    return (
-      <details>
-        <summary
-          style={{
-            cursor: "pointer",
-            fontSize: 11,
-            color: "var(--af-text-tertiary)",
-            marginBottom: 6,
-          }}
-        >
-          Thinking · {block.thinking.length} chars
-        </summary>
-        <div
-          style={{
-            fontSize: 12,
-            lineHeight: 1.6,
-            color: "var(--af-text-secondary)",
-            whiteSpace: "pre-wrap",
-            fontStyle: "italic",
-            borderLeft: "3px solid var(--af-border-subtle)",
-            paddingLeft: 12,
-            marginTop: 6,
-          }}
-        >
-          {block.thinking}
-        </div>
-      </details>
-    );
-  }
-  if (block.type === "tool_use") {
-    return <ToolUseCard name={block.name} input={block.input} />;
-  }
-  if (block.type === "tool_result") {
-    const text =
-      typeof block.content === "string" ? block.content : JSON.stringify(block.content, null, 2);
-    return (
-      <pre
-        style={{
-          fontSize: 12,
-          padding: 12,
-          background: "var(--background)",
-          border: "1px solid var(--af-border-subtle)",
-          borderRadius: 6,
-          overflow: "auto",
-          whiteSpace: "pre-wrap",
-          color: "var(--af-text)",
-          fontFamily: "var(--font-mono)",
-          maxHeight: 500,
-        }}
-      >
-        {text}
-      </pre>
-    );
-  }
-  return null;
-}
+// DrawerContent, BlockView moved to ./session-view/drawer.tsx
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-function formatDurationHeader(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = Math.round(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  // Roll up to hours — agent time can reach many hours once workflow
-  // execution is folded in, and "1116m" reads poorly.
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
+// formatDurationHeader moved to ./session-view/helpers.ts
 
-function EntryDayStrip({ entry }: { entry: Entry }) {
-  const fmtDate = new Date(`${entry.local_day}T12:00:00`).toLocaleDateString("en-US", {
-    weekday: "short", month: "short", day: "numeric",
-  });
-  const durMin = Math.round(entry.numbers.active_min);
-  const enr = entry.enrichment;
-  const isPending = enr.status === "pending" || enr.status === "error";
-  const isTrivial = enr.status === "skipped_trivial";
-
-  return (
-    <div
-      style={{
-        border: "1px solid var(--af-border-subtle)",
-        borderRadius: 10,
-        padding: "12px 16px",
-        background: "var(--af-surface)",
-        fontSize: 13,
-        lineHeight: 1.5,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <span
-          style={{
-            fontSize: 12,
-            color: "var(--af-text-tertiary)",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          📅 {fmtDate}
-        </span>
-        {isTrivial ? (
-          <OutcomePill outcome="trivial" size="md" agent={entry.agent} />
-        ) : isPending ? (
-          <OutcomePill
-            outcome={null}
-            pending
-            sessionId={entry.session_id}
-            localDay={entry.local_day}
-            size="md"
-            agent={entry.agent}
-          />
-        ) : enr.outcome ? (
-          <OutcomePill outcome={enr.outcome} size="md" agent={entry.agent} />
-        ) : null}
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            color: "var(--af-text-tertiary)",
-            marginLeft: "auto",
-          }}
-        >
-          {durMin}m active
-        </span>
-      </div>
-
-      {isTrivial && (
-        <div style={{ fontSize: 12, color: "var(--af-text-tertiary)", fontStyle: "italic", marginTop: 8 }}>
-          Warmup — no enrichment generated.
-        </div>
-      )}
-
-      {isPending && (
-        <div style={{ fontSize: 12, color: "var(--af-text-secondary)", marginTop: 8 }}>
-          Click the pending pill to generate this day's digest →
-        </div>
-      )}
-
-      {enr.status === "done" && (
-        <>
-          {enr.brief_summary && (
-            <p style={{ margin: "10px 0 0", color: "var(--af-text)" }}>{enr.brief_summary}</p>
-          )}
-          {(enr.friction_detail || enr.user_instructions.length > 0) && (
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-              {enr.friction_detail && (
-                <div style={{ fontSize: 12, color: "var(--af-text-secondary)" }}>
-                  <span style={{ color: "#ed8936" }}>⚠ </span>
-                  {enr.friction_detail}
-                </div>
-              )}
-              {enr.user_instructions.length > 0 && (
-                <details style={{ fontSize: 12, color: "var(--af-text-secondary)" }}>
-                  <summary style={{ cursor: "pointer", color: "var(--af-text-tertiary)" }}>
-                    Top user instructions ({enr.user_instructions.length})
-                  </summary>
-                  <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-                    {enr.user_instructions.slice(0, 5).map((u, i) => (
-                      <li key={i} style={{ marginBottom: 2 }}>{u}</li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </div>
-          )}
-          <div style={{ marginTop: 10, fontSize: 11 }}>
-            <Link
-              href={`/digest/${entry.local_day}`}
-              style={{ color: "var(--af-accent)", textDecoration: "none" }}
-            >
-              Open day digest →
-            </Link>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
+// EntryDayStrip moved to ./session-view/entry-day-strip.tsx

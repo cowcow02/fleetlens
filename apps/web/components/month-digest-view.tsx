@@ -1,7 +1,7 @@
 "use client";
-import { useState, useCallback, type ReactNode } from "react";
+import { useState, useCallback } from "react";
 import { MonthDigest as MonthDigestRender } from "./month-digest";
-import { ExportPdfButton } from "./export-pdf-button";
+import { DigestActions } from "./digest-actions";
 import type { MonthDigest as MonthDigestType } from "@claude-lens/entries";
 
 type Status = "idle" | "streaming" | "done" | "error";
@@ -67,75 +67,30 @@ export function MonthDigestView({
 
   const isStreaming = status === "streaming";
   const narrativeFresh = !!digest?.headline;
-  const pdfAction = digest ? <ExportPdfButton digestKey={`month-${yearMonth}`} /> : null;
 
-  let actions: ReactNode = null;
-  if (!narrativeFresh && aiEnabled) {
-    actions = (
-      <button
-        onClick={() => generate(false)}
-        disabled={isStreaming}
-        style={{
-          padding: "4px 10px",
-          background: "var(--af-accent)",
-          color: "white",
-          border: "none",
-          borderRadius: 5,
-          cursor: isStreaming ? "default" : "pointer",
-          fontSize: 11,
-          fontWeight: 600,
-          opacity: isStreaming ? 0.6 : 1,
-        }}
-      >
-        {isStreaming ? "Generating..." : digest ? "Generate" : "Generate digest"}
-      </button>
-    );
-  } else if (aiEnabled) {
-    actions = (
-      <span style={{ fontSize: 10, color: "var(--af-text-tertiary)", display: "inline-flex", gap: 6, alignItems: "center" }}>
-        ✓ Up to date
-        <button
-          onClick={() => generate(true)}
-          disabled={isStreaming}
-          style={{
-            padding: "2px 7px",
-            background: "transparent",
-            border: "1px solid var(--af-border-subtle)",
-            borderRadius: 4,
-            fontSize: 10,
-            color: "var(--af-text-secondary)",
-            cursor: isStreaming ? "default" : "pointer",
-            opacity: isStreaming ? 0.6 : 1,
-          }}
-        >
-          {isStreaming ? "..." : "Re-roll"}
-        </button>
-      </span>
-    );
-  }
-  if (progress) {
-    actions = (
-      <>
-        {actions}
-        <span style={{ fontSize: 10, color: "var(--af-text-tertiary)" }}>{progress}</span>
-      </>
-    );
-  }
-  if (pdfAction) {
-    actions = (
-      <>
-        {actions}
-        {pdfAction}
-      </>
-    );
-  }
+  const actions = (
+    <DigestActions
+      digestKey={yearMonth}
+      period="month"
+      hasDigest={!!digest}
+      narrativeFresh={narrativeFresh}
+      isStreaming={isStreaming}
+      aiEnabled={aiEnabled}
+      progress={progress}
+      onGenerate={() => generate(false)}
+      onReroll={() => generate(true)}
+    />
+  );
 
   if (digest) {
     return <MonthDigestRender digest={digest} aiEnabled={aiEnabled} actions={actions} />;
   }
+  // Hide the action bar when DigestActions would render nothing (no AI, no progress,
+  // no digest → no PDF). Otherwise the empty wrapper leaves visible padding.
+  const hasActionContent = aiEnabled || !!progress;
   return (
     <>
-      {actions && (
+      {hasActionContent && (
         <div style={{ display: "flex", gap: 10, padding: "14px 40px 0", alignItems: "center", flexWrap: "wrap" }}>
           {actions}
         </div>

@@ -382,21 +382,29 @@ export function detectParallelRuns(sessions: SessionMeta[], minActive = 2): Para
   const points = computeParallelism(sessions);
   const runs: ParallelRun[] = [];
   let cur: ParallelRun | null = null;
+  // Set keeps dedup O(1) while cur.sessions is open; without it, .includes
+  // on a list that only grows is O(n²) over long bursts spanning many ids.
+  let curIds: Set<string> | null = null;
   for (const p of points) {
     if (p.active >= minActive) {
       if (!cur) {
-        cur = { startMs: p.atMs, endMs: p.atMs, peak: p.active, sessions: [...p.sessions] };
+        curIds = new Set(p.sessions);
+        cur = { startMs: p.atMs, endMs: p.atMs, peak: p.active, sessions: Array.from(curIds) };
       } else {
         cur.endMs = p.atMs;
         if (p.active > cur.peak) cur.peak = p.active;
         for (const sid of p.sessions) {
-          if (!cur.sessions.includes(sid)) cur.sessions.push(sid);
+          if (!curIds!.has(sid)) {
+            curIds!.add(sid);
+            cur.sessions.push(sid);
+          }
         }
       }
     } else if (cur) {
       cur.endMs = p.atMs;
       runs.push(cur);
       cur = null;
+      curIds = null;
     }
   }
   if (cur) runs.push(cur);

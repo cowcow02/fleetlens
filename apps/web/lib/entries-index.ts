@@ -82,17 +82,16 @@ export async function buildEntriesIndex(): Promise<EntriesIndex> {
     const repo = projectRepoName(e.project);
     const plist = byProject.get(repo);
     if (plist) plist.push(e); else byProject.set(repo, [e]);
-
-    // Most recent enrichment status wins for the session-level summary
-    const cur = enrichmentStatusBySession.get(e.session_id);
-    if (!cur || cur === "pending" || cur === "error") {
-      enrichmentStatusBySession.set(e.session_id, e.enrichment.status);
-    }
   }
 
-  // Sort each session's entries by local_day asc
-  for (const list of bySession.values()) {
+  // Sort each session's entries by local_day asc; the latest day's
+  // enrichment status is the session's status. Reading after the sort
+  // avoids the prior order-dependent bug where readdir order decided
+  // whether a session showed 'enriched' (older day) or 'pending'
+  // (today, still queued).
+  for (const [sid, list] of bySession) {
     list.sort((a, b) => a.local_day.localeCompare(b.local_day));
+    enrichmentStatusBySession.set(sid, list[list.length - 1]!.enrichment.status);
   }
 
   const sessionOutcome = new Map<string, DayOutcome | null>();

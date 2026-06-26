@@ -302,9 +302,3 @@ export async function getCoworkSession(
   detailCache.set(file.auditPath, { detail, key });
   return detail;
 }
-
-export function coworkSessionLocalDay(meta: SessionMeta): string | undefined {
-  if (!meta.firstTimestamp) return undefined;
-  const ms = Date.parse(meta.firstTimestamp);
-  return Number.isFinite(ms) ? toLocalDay(ms) : undefined;
-}
