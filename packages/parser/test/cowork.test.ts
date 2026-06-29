@@ -16,6 +16,8 @@ const CLI_SESSION = "ca90acc3-950e-4f4d-b785-e1af14cce3f9";
 type FixtureOpts = {
   withSpace?: boolean;
   userSelectedFolders?: string[];
+  /** Override the default audit.jsonl lines (for replay-dedup coverage). */
+  auditLines?: unknown[];
 };
 
 async function makeFixture(opts: FixtureOpts = {}): Promise<string> {
@@ -58,7 +60,7 @@ async function makeFixture(opts: FixtureOpts = {}): Promise<string> {
   const sessionDir = path.join(workspaceDir, SESSION_ID);
   await fs.mkdir(sessionDir, { recursive: true });
 
-  const auditLines = [
+  const auditLines = opts.auditLines ?? [
     {
       type: "user",
       uuid: "u-1",
@@ -252,5 +254,43 @@ describe("cowork parser", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "cowork-empty-"));
     const list = await listCoworkSessions({ root });
     expect(list).toEqual([]);
+  });
+
+  it("collapses cowork's duplicated user lines (raw input + isReplay copy share a uuid)", async () => {
+    // Desktop logs the user message twice under one uuid: the raw input (no
+    // timestamp) and the isReplay copy fed to the agent (with a timestamp).
+    const dup = (extra: Record<string, unknown>) => ({
+      type: "user",
+      uuid: "u-dup",
+      message: { role: "user", content: "from this project name, what do I want?" },
+      ...extra,
+    });
+    const root = await makeFixture({
+      auditLines: [
+        dup({ session_id: CLI_SESSION, client_platform: "desktop_app" }), // raw input, no timestamp
+        { type: "system", subtype: "init", timestamp: "2026-05-01T07:05:01.000Z" },
+        dup({ session_id: "inner-replay", timestamp: "2026-05-01T07:05:02.000Z", isReplay: true }),
+        {
+          type: "assistant",
+          uuid: "a-1",
+          timestamp: "2026-05-01T07:05:03.000Z",
+          requestId: "r-1",
+          message: {
+            id: "msg-1",
+            role: "assistant",
+            model: "claude-opus-4-7",
+            content: [{ type: "text", text: "Here is my guess." }],
+            usage: { input_tokens: 100, output_tokens: 10 },
+          },
+        },
+      ],
+    });
+    const detail = await getCoworkSession(SESSION_ID, { root });
+    expect(detail).not.toBeNull();
+    const userEvents = detail!.events.filter((e) => e.role === "user");
+    expect(userEvents).toHaveLength(1);
+    // The kept copy is the timestamped one, so the turn lands on the timeline.
+    expect(userEvents[0]!.preview).toBe("from this project name, what do I want?");
+    expect(userEvents[0]!.timestamp).toBe("2026-05-01T07:05:02.000Z");
   });
 });
