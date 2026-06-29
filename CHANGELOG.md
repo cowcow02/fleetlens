@@ -4,6 +4,22 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.13.2] — 2026-06-29
+
+Timeline and session-view polish, plus the second half of the session-view modularization. Mostly day-scope refinements — jumping into a session now lands on the right day, and the minimap and idle dividers read far more cleanly on long multi-day runs. Safe upgrade from 0.13.1.
+
+### Added
+- **Click a session, land on the day you were looking at.** Opening a session from the Day view or a Concurrency gantt now pins it to *that* day instead of the session's most-recent day — and actually scrolls the transcript there. Previously the day selector moved but the transcript stayed at the very top, a latent bug that also affected the plain last-day jump. Days that are entirely background-agent work — which live in the Workflows tab, not the transcript — fall back to the nearest rendered content instead of getting stuck at the top.
+- **Idle gaps that cross a day now show when work resumed.** A "Session idle · 1d" divider told you how long but not when; for a gap that picks back up on a later day it now reads "Session resumed Jun 18, 11:02 AM". Sub-day gaps keep their duration, since the pause length is the useful signal there.
+
+### Fixed
+- **The minimap no longer shreds a long run into idle slivers.** A collapsed turn now owns its internal idle (model thinking, long tool calls, a workflow it's waiting on) instead of fragmenting into a stutter of hatched bars; consecutive idle bands fuse into one; the gap between two days no longer leaks across the day-window edge as a giant block; and a day no longer opens on the overnight gap leading into it (which could be 60–70% of the whole bar) — the day's actual activity now fills the timeline.
+- **Cleaner day boundaries.** When a resume divider already names the new day, the redundant "Start of \<day\>" jump marker below it is dropped — the boundary is just the resume band plus an "End of \<prev day\>" back-nav, instead of three stacked elements restating the same date.
+- **Two workflow-panel bugs.** WorkflowPhaseTabs now reactively falls back to the first phase with agents until you pick one (and resets per run); WorkflowAgentDrawer paints synchronously from its detail cache on reopen, and a failed revalidation no longer blanks an already-shown detail.
+
+### Changed
+- **Internal: session-view.tsx modularization, part two.** The session-scoped Minimap (~1,580 LOC) and the WorkflowsPanel cluster (~940 LOC) were extracted into colocated `session-view/` modules. Pure code moves — `tsc --noEmit` clean throughout. Plus small review-surfaced cleanups: three dead imports removed, the gantt day-param simplified to the already-canonical date string, and a tail-mode effect dependency corrected.
+
 ## [0.13.1] — 2026-06-26
 
 A quality-and-correctness release rolled up from a full code audit, plus the timeline scroll-follow polish from PR #73. No new surface — every change either fixes a bug, removes dead weight, or makes the codebase easier to work in. Safe upgrade from 0.13.0.
