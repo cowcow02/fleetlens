@@ -55,6 +55,23 @@ export function formatGap(ms: number): string {
   return remH ? `${d}d ${remH}h` : `${d}d`;
 }
 
+const CLOCK_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/** Local "Jun 23, 9:30 AM" for an ISO timestamp. Fleetlens is local-only, so the
+ *  server (CLI) and the browser share a timezone — local Date parts are
+ *  hydration-stable here, unlike in a hosted app. */
+export function formatResumeStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const ampm = d.getHours() >= 12 ? "PM" : "AM";
+  const h12 = d.getHours() % 12 || 12;
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${CLOCK_MONTHS[d.getMonth()]} ${d.getDate()}, ${h12}:${min} ${ampm}`;
+}
+
 export function formatDuration(ms?: number): string {
   if (ms === undefined) return "—";
   if (ms < 1000) return `${ms}ms`;

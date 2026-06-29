@@ -41,12 +41,18 @@ export function TailMode({
       // session the view never reaches the live tail. Instant lands in one
       // event, which check() correctly sees as "at bottom".
       const t = setTimeout(() => {
+        // An explicit day-jump (gotoDay, e.g. opening a live session via
+        // ?day=<earlier day>) stamps navLockRef and scrolls to that past day —
+        // don't yank the view back to the live tail on top of it.
+        if (navLockRef && Date.now() - navLockRef.current < 1500) return;
         userScrolledRef.current = false;
         mainRef.current?.scrollTo({ top: mainRef.current.scrollHeight, behavior: "auto" });
       }, 300);
       return () => clearTimeout(t);
     }
-  }, [isLive]);
+    // navLockRef is a stable ref; listed to satisfy exhaustive-deps without
+    // causing re-runs (mirrors the observer effect below).
+  }, [isLive, navLockRef]);
 
   // Track whether we're at the bottom.
   useEffect(() => {

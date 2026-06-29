@@ -15,16 +15,13 @@ import {
   GitPullRequest,
   Workflow as WorkflowIcon,
   Wrench,
-  X,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type {
   SessionDetail,
   SessionEvent,
-  SubagentRun,
   WorkflowRun,
-  PrMarker,
 } from "@claude-lens/parser";
 import type { Entry } from "@claude-lens/entries";
 import { OutcomePill } from "@/components/outcome-pill";
@@ -41,9 +38,8 @@ import {
 import {
   rowPrimaryIndex,
   type DisplayRow,
-  type MinimapSeg,
 } from "./session-view/types";
-import { subagentColor, workflowColor } from "./session-view/colors";
+import { Minimap } from "./session-view/minimap";
 import {
   formatDayKey,
   flattenMegaRows,
@@ -64,13 +60,11 @@ import {
 } from "./session-view/header-stats";
 import { Drawer } from "./session-view/drawer";
 import {
-  WfMiniStat,
-  SectionLabel,
-  StatCell,
-  TokenLine,
-} from "./session-view/workflows-shared";
+  WorkflowsPanel,
+  WorkflowAgentDrawer,
+} from "./session-view/workflows-panel";
 import { SubagentDrawer } from "./session-view/subagent-drawer";
-import { estimateCost, formatCost, formatGap, formatOffset, formatRelative, formatTokens, shortId } from "@/lib/format";
+import { estimateCost, formatCost, formatGap, formatOffset, formatRelative, formatResumeStamp, formatTokens, shortId } from "@/lib/format";
 import { LiveBadge } from "@/components/live-badge";
 import { AskButton, AskDrawer } from "@/components/ask";
 import { TailMode } from "@/components/tail-mode";
@@ -447,17 +441,24 @@ export function SessionView({
    *      between-turn idle because no agent activity occurred between.)
    *
    *  Side effect: the leading warm-up gap before the first agent response
-   *  drops out unless it crosses MIN_GAP_MS — which the first 6s in a
+   *  drops out unless it crosses the idle threshold — which the first 6s in a
    *  typical Codex session does not. */
   const rawIdleBands = useMemo(() => {
     // Anchor on ANY timestamped event so agent-thinking, meta, and other
     // intra-turn signals prove the parent is doing work. Only what we
     // need to distinguish is "user" (turn boundary) vs everything else.
     const isUserRole = (role: string) => role === "user";
-    // 30s threshold: keeps ordinary tool latency (Read big file, slow Bash,
-    // model thinking between anchors) out of the idle stripes while still
-    // catching anything that reads as a real pause.
-    const MIN_GAP_MS = 30_000;
+    // Two thresholds, because an in-turn pause and a between-turn pause mean
+    // different things. MID-TURN the agent is actively working — a long Bash,
+    // a build, model thinking between tool calls — so a 30s–2min gap is NOT
+    // idle; only a genuine multi-minute stall is. We match the parser's
+    // active-segment gap (3 min) there. BETWEEN turns the user has actually
+    // stepped away, so a lower bar is right. The old single 30s threshold drew
+    // every tool-call pause as a "Session idle" sliver, shredding a long turn
+    // into dozens of fragments and clipping the turn's minimap block at the
+    // first sliver (so the block stopped short of a workflow that ran inside it).
+    const IN_TURN_IDLE_MS = 180_000;
+    const BETWEEN_TURN_IDLE_MS = 120_000;
     const anchors: { ms: number; role: string }[] = [];
     for (const e of events) {
       if (!e.timestamp) continue;
@@ -467,7 +468,14 @@ export function SessionView({
     }
     if (anchors.length < 2) return [];
     anchors.sort((a, b) => a.ms - b.ms);
-    const sessionStartMs = anchors[0]!.ms - (events.find((e) => e.timestamp)?.tOffsetMs ?? 0);
+    // anchors[0].ms (sorted ascending) is the global-min timestamp — exactly the
+    // origin the parser measures tOffsetMs from (tOffsetMs = ms - min(all ts)), so
+    // band offsets (anchor.ms - sessionStartMs) land in the SAME space as the day
+    // window. The old `- firstInFile.tOffsetMs` term subtracted a DIFFERENT event's
+    // offset when the JSONL starts out of chronological order, skewing every band
+    // by their gap and leaking the between-day idle past the minimap's strict
+    // day-window edge filter (a ~40h "Session idle" band dominating the day view).
+    const sessionStartMs = anchors[0]!.ms;
 
     // "Busy" spans = delegated agent work that means the parent isn't idle:
     // subagent runs AND dynamic-workflow execution. Both are carved out of the
@@ -528,7 +536,7 @@ export function SessionView({
     // "Awaiting first response" — true after a user message, false once an
     // agent or tool-call anchor proves the model started replying.
     // Thinking and meta events don't clear it, so a user→thinking→agent
-    // sequence where thinking→agent crosses MIN_GAP_MS still reads as
+    // sequence where thinking→agent crosses the idle threshold still reads as
     // response latency rather than idle.
     let awaitingFirstResponse = false;
     if (anchors[0]) {
@@ -545,20 +553,19 @@ export function SessionView({
       if (isUserRole(curRole)) awaitingFirstResponse = true;
       else if (curRole === "agent" || curRole === "tool-call") awaitingFirstResponse = false;
 
-      if (rawGap <= MIN_GAP_MS) continue;
+      const betweenTurn = isUserRole(curRole);
+      if (rawGap <= (betweenTurn ? BETWEEN_TURN_IDLE_MS : IN_TURN_IDLE_MS)) continue;
       if (skipAsLatency) continue;
 
       const gStart = anchors[i - 1]!.ms - sessionStartMs;
       const gEnd = anchors[i]!.ms - sessionStartMs;
-      const betweenTurn = isUserRole(curRole);
 
       if (!betweenTurn) {
         // In-turn gap: the parent is mid-turn. If any subagent run overlaps,
         // the parent is waiting on delegated work — not idle. Drop the
         // whole gap rather than carving out startup/teardown slivers that
         // would clutter the minimap with thin stripes. Gaps with no
-        // subagent overlap (long Bash runs, model thinking between tool
-        // calls) still emit as a single band.
+        // subagent overlap (a genuine multi-minute stall) emit as one band.
         if (overlapsSubagent(gStart, gEnd)) continue;
         bands.push({ start: gStart, end: gEnd, durationMs: gEnd - gStart });
         continue;
@@ -569,11 +576,13 @@ export function SessionView({
       // Each surviving slice becomes its own band.
       for (const slice of carveOutSubagents(gStart, gEnd)) {
         const dur = slice.end - slice.start;
-        if (dur > MIN_GAP_MS) {
+        if (dur > BETWEEN_TURN_IDLE_MS) {
           bands.push({ start: slice.start, end: slice.end, durationMs: dur });
         }
       }
     }
+
+    bands.sort((a, b) => a.start - b.start);
     return bands;
   }, [events, session.subagents, session.workflows]);
 
@@ -639,11 +648,23 @@ export function SessionView({
   // mismatch; the effect re-pins it when the component is reused across
   // /sessions/[id] navigations. "all" shows the full session.
   const didInitialDayJump = useRef(false);
+  // A `?day=YYYY-MM-DD` query param (set by links from the Day / Concurrency
+  // views) pins the opening day to that day instead of the most recent one.
+  // Validated against the session's real day buckets and ignored if it doesn't
+  // match. Read in effects (not the lazy initializer) so SSR and the first
+  // client render agree — the param-driven selection happens client-side.
+  const wantedDayFromUrl = (days: typeof sessionDays): string | null => {
+    if (typeof window === "undefined") return null;
+    const w = new URLSearchParams(window.location.search).get("day");
+    return w && days.some((d) => d.key === w) ? w : null;
+  };
+  const lastOrAll = (days: typeof sessionDays) =>
+    days.length ? days[days.length - 1]!.key : "all";
   const [selectedDayKey, setSelectedDayKey] = useState<string>(
-    () => (sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all"),
+    () => lastOrAll(sessionDays),
   );
   useEffect(() => {
-    setSelectedDayKey(sessionDays.length ? sessionDays[sessionDays.length - 1]!.key : "all");
+    setSelectedDayKey(wantedDayFromUrl(sessionDays) ?? lastOrAll(sessionDays));
     didInitialDayJump.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.sessionId]);
@@ -659,8 +680,10 @@ export function SessionView({
   selectedDayKeyRef.current = selectedDayKey;
 
   // Initial jump: on first paint of a multi-day session, snap straight to the
-  // most recent day (the default selectedDayKey is already the last day, so the
-  // minimap matches). Routed through gotoDay rather than scrolling to the day's
+  // requested day (?day=) or, by default, the most recent one (the lazy
+  // selectedDayKey is the last day; the re-pin effect above re-points it to the
+  // requested day client-side, so the minimap matches). Routed through gotoDay
+  // rather than scrolling to the day's
   // strip directly: in "turns" mode the most recent day can be absorbed into a
   // turn anchored on an earlier day and so have NO inline strip — gotoDay finds
   // the day's first event, expands its turn, and falls back to the row ref, so
@@ -676,12 +699,21 @@ export function SessionView({
   useEffect(() => {
     if (tab !== "transcript" || didInitialDayJump.current) return;
     const days = sessionDaysRef.current;
-    if (days.length <= 1 || isSessionLive) {
+    if (days.length <= 1) {
+      didInitialDayJump.current = true;
+      return;
+    }
+    const wanted = wantedDayFromUrl(days);
+    // Live tail: let TailMode land on the live tail unless an explicit EARLIER
+    // day was requested (?day=). A request for the live/last day needs no jump
+    // — the tail is already in it — and jumping would fight TailMode's mount
+    // scroll and flip live-follow off.
+    if (isSessionLive && (!wanted || wanted === days[days.length - 1]!.key)) {
       didInitialDayJump.current = true;
       return;
     }
     didInitialDayJump.current = true;
-    gotoDay(days[days.length - 1]!.key);
+    gotoDay(wanted ?? days[days.length - 1]!.key);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, sessionDays]);
 
@@ -818,17 +850,40 @@ export function SessionView({
     if (key === "all") return;
     const d = sessionDays.find((x) => x.key === key);
     if (!d) return;
-    const ev = events.find((e) => e.tOffsetMs !== undefined && e.tOffsetMs >= d.startMs);
-    if (!ev) return;
-    // In turns mode the day's first row may be inside a collapsed turn — expand
-    // it so the row exists in the DOM before the scroll effect runs.
+    // Target the day's first PRESENTATION ROW, not its first raw event. A day can
+    // open on a meta/system/sidechain event that has no row, whose index then
+    // lands in neither turnByRowIndex nor rowRefs — so the jump silently no-ops
+    // (the bug where a multi-day session opened stuck at the very top). A row's
+    // primary index is the coordinate both that map and the scroll refs use.
+    let firstRow = allRows.find(
+      (r) => r.tOffsetMs !== undefined && r.tOffsetMs >= d.startMs,
+    );
+    // A day can consist entirely of background-agent / workflow events, which
+    // render in the Workflows tab — not the transcript — so NO presentation row
+    // falls inside it (sessionDays is built from all events, allRows only from
+    // the visible transcript). Fall back to the last rendered row so the jump
+    // lands on the closest content instead of silently no-oping (the bug where
+    // the view stayed pinned at the very top).
+    if (!firstRow) {
+      for (let i = allRows.length - 1; i >= 0; i--) {
+        if (allRows[i]!.tOffsetMs !== undefined) {
+          firstRow = allRows[i];
+          break;
+        }
+      }
+    }
+    if (!firstRow) return;
+    const targetIndex = rowPrimaryIndex(firstRow);
+    // In turns mode that row may be inside a collapsed turn (often one anchored
+    // on the PREVIOUS day) — expand it so the row exists in the DOM before the
+    // scroll effect runs.
     if (filter === "turns") {
-      const turnIdx = turnByRowIndex.get(ev.index);
+      const turnIdx = turnByRowIndex.get(targetIndex);
       if (turnIdx !== undefined && !expandedTurns.has(turnIdx)) {
         setExpandedTurns((prev) => new Set(prev).add(turnIdx));
       }
     }
-    setDayScrollTarget((prev) => ({ index: ev.index, key, block: "start", n: (prev?.n ?? 0) + 1 }));
+    setDayScrollTarget((prev) => ({ index: targetIndex, key, block: "start", n: (prev?.n ?? 0) + 1 }));
   }
 
   /** Cross-day hop used by the inline day-boundary buttons. Selecting a day can
@@ -1298,7 +1353,6 @@ export function SessionView({
               setSelectedWorkflowId(runId);
               setTab("workflows");
             }}
-            collapsed={collapsed}
             prMarkers={prMarkers}
             coldResumeMarkers={coldResumeMarkers}
             rawIdleBands={rawIdleBands}
@@ -1565,1527 +1619,9 @@ export function SessionView({
 /*  Mini-map                                                           */
 /* ------------------------------------------------------------------ */
 
-/* ------------------------------------------------------------------ */
-/*  Mini-map                                                           */
-/*                                                                     */
-/*  Design:                                                            */
-/*  - Renders ONE segment per presentation row (not per raw event)     */
-/*    so density matches what the user sees in the transcript.         */
-/*  - Variable heights by importance: User/Agent/Error/Interrupt       */
-/*    full height; Tool/Model reduced; idle = full w/ stripes.         */
-/*  - Minimum block width 5px so single events never disappear.        */
-/*  - Scroll playhead: thin vertical line tracks the current transcript*/
-/*    scroll position inside the <main> container.                     */
-/*  - Time axis ticks below the bar, auto-scaled by total duration.    */
-/*  - Rich hover card (role pill + preview) instead of bare SVG title. */
-/* ------------------------------------------------------------------ */
-
+// ROW_IMPORTANCE, Minimap, MinimapHoverCard moved to ./session-view/minimap.tsx
 // MinimapSeg moved to ./session-view/types.ts
-
-/** All rows render at full bar height — distinction comes from color/pattern
- *  alone, matching Claude Managed Agents' unified-height timeline. */
-const ROW_IMPORTANCE: Record<PresentationRowKind, number> = {
-  user: 1.0,
-  agent: 1.0,
-  interrupt: 1.0,
-  error: 1.0,
-  "tool-group": 1.0,
-  model: 1.0,
-  "task-notification": 1.0,
-};
-
-function Minimap({
-  displayRows,
-  durationMs,
-  dayWindow,
-  selectedIndex,
-  onSelect,
-  headerOffset,
-  subagents,
-  workflows,
-  onWorkflowClick,
-  collapsed,
-  selectedSubagentId,
-  onSelectSubagent,
-  prMarkers,
-  coldResumeMarkers,
-  rawIdleBands,
-  model,
-  onPlayheadChange,
-}: {
-  displayRows: DisplayRow[];
-  durationMs: number;
-  /** When set, scope the timeline to this offset window (one local day).
-   *  null renders the full session. */
-  dayWindow?: { startMs: number; endMs: number } | null;
-  selectedIndex: number | null;
-  onSelect: (i: number) => void;
-  headerOffset: number;
-  subagents?: SubagentRun[];
-  workflows?: WorkflowRun[];
-  onWorkflowClick?: (runId: string) => void;
-  collapsed?: boolean;
-  selectedSubagentId?: string | null;
-  onSelectSubagent?: (id: string | null) => void;
-  prMarkers?: PrMarker[];
-  coldResumeMarkers?: {
-    tOffsetMs: number;
-    info: NonNullable<SessionEvent["coldResume"]>;
-  }[];
-  /** Idle bands derived directly from raw event timestamps. Used in place
-   *  of the legacy "gap before user row" heuristic so Codex sessions
-   *  (which spend most of their time in agent reasoning, not user input)
-   *  surface their dead-air on the minimap. */
-  rawIdleBands?: { start: number; end: number; durationMs: number }[];
-  model?: string;
-  /** Fires with the offset (ms) of the topmost on-screen transcript row — the
-   *  same scroll signal that draws the playhead. SessionView uses it to make
-   *  the selected day follow scroll. */
-  onPlayheadChange?: (ms: number | null) => void;
-}) {
-  const WIDTH = 1400;
-  /** Main timeline height. Sub-agent lanes stack below this. */
-  const MAIN_H = 28;
-  /** Per-subagent lane height including the inner gap. */
-  const SUB_LANE_H = 11;
-  /** Gap between the main timeline and the sub-agent lanes (when present). */
-  const SUB_LANE_GAP = 6;
-  /** Per-workflow lane height — a touch taller than subagent lanes so the
-   *  workflow tier reads as distinct. */
-  const WF_LANE_H = 13;
-  const BAR_TOP = 3;
-  const BAR_BOT = MAIN_H - 3;
-  const BAR_H = BAR_BOT - BAR_TOP;
-  /** Gap subtracted from each segment's width so blocks never touch. */
-  const GAP = 3;
-  const MIN_BLOCK = 6;
-  /** Minimum displayed segment width in SVG units. Every segment gets at
-   *  least this much space regardless of time duration, so tool-group
-   *  blocks inside a 24-minute session are still visible + clickable. */
-  const MIN_DISPLAY_WIDTH = 12;
-  /** Error/interrupt rendered as thin vertical bars capped at this width. */
-  const THIN_BAR_MAX = 5;
-
-  const [hover, setHover] = useState<{
-    clientX: number;
-    row?: PresentationRow;
-    turn?: TurnMegaRow;
-    idleMs?: number;
-    subagent?: SubagentRun;
-    workflow?: WorkflowRun;
-    pr?: PrMarker;
-    cold?: {
-      tOffsetMs: number;
-      info: NonNullable<SessionEvent["coldResume"]>;
-    };
-  } | null>(null);
-  const [playheadMs, setPlayheadMs] = useState<number | null>(null);
-  // Read inside the observer so the latest callback fires without re-subscribing
-  // the IntersectionObserver (its effect deps stay [displayRows.length, headerOffset]).
-  const onPlayheadChangeRef = useRef(onPlayheadChange);
-  onPlayheadChangeRef.current = onPlayheadChange;
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  /* Playhead — track which transcript row is at the top of the viewport.
-   *
-   * The old implementation ran `querySelectorAll("[data-sl-row-index]")`
-   * on every scroll event. For a session with ~2000 rows that's thousands
-   * of DOM queries per second during scroll — enough to pin a CPU core
-   * and make Chrome ask to kill the tab. IntersectionObserver is event-
-   * driven: the browser only notifies us when rows enter or leave the region
-   * below the sticky header, so the cost scales with *changes* instead of
-   * with scroll rate × row count.
-   */
-  useEffect(() => {
-    const main = containerRef.current?.closest("main") as HTMLElement | null;
-    if (!main) return;
-
-    // Crop the observation region by the sticky header at the top and keep the
-    // whole viewport below it. Every row visible below the header intersects
-    // this region; the topmost (smallest offsetTop) is the row sitting at the
-    // header line — the playhead. Using the full area (not a thin band) means
-    // the playhead never blanks out in the gaps between sparse rows, so the
-    // scroll→timeline highlight — and the day-follow that rides on it — stays
-    // continuous. Still event-driven: a row only fires when it enters or
-    // leaves, so cost scales with scroll distance, not row count.
-    const rootMargin = `-${headerOffset}px 0px 0px 0px`;
-
-    // Rows currently visible below the header. The topmost is the playhead.
-    const visibleRows = new Set<HTMLElement>();
-
-    const publishTopmost = () => {
-      let value: number | null = null;
-      if (visibleRows.size > 0) {
-        let topmost: HTMLElement | null = null;
-        let topmostOff = Infinity;
-        for (const el of visibleRows) {
-          const t = el.offsetTop;
-          if (t < topmostOff) {
-            topmostOff = t;
-            topmost = el;
-          }
-        }
-        if (topmost) {
-          const tOff = Number(topmost.getAttribute("data-sl-toffset"));
-          value = Number.isNaN(tOff) ? null : tOff;
-        }
-      }
-      setPlayheadMs(value);
-      onPlayheadChangeRef.current?.(value);
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          const el = e.target as HTMLElement;
-          if (e.isIntersecting) visibleRows.add(el);
-          else visibleRows.delete(el);
-        }
-        publishTopmost();
-      },
-      { root: main, rootMargin, threshold: 0 },
-    );
-
-    // Observe all current rows. Re-observes whenever the row count
-    // changes (i.e. filter switch, turn expand/collapse).
-    const rows = main.querySelectorAll<HTMLDivElement>("[data-sl-row-index]");
-    for (const r of rows) observer.observe(r);
-
-    return () => observer.disconnect();
-  }, [displayRows.length, headerOffset]);
-
-  // Offset window for the rendered timeline. `winEnd` is the absolute offset
-  // of the right edge (session/day end); `safeDur` is the window LENGTH used
-  // as the proportional-width divisor. For a single-day session (dayWindow
-  // null) these collapse to [0, durationMs] — identical to the old behavior.
-  const winStart = dayWindow?.startMs ?? 0;
-  const winEnd = dayWindow?.endMs ?? durationMs;
-  const safeDur = Math.max(winEnd - winStart, 1);
-
-  // Subagent/workflow lanes are scoped to the same window as the main
-  // timeline so a day view doesn't reserve empty lanes for runs that happened
-  // on other days. Overlap test, not containment — a run straddling the
-  // window edge still shows.
-  const winSubagents = useMemo(
-    () =>
-      (subagents ?? []).filter(
-        (s) =>
-          s.startTOffsetMs !== undefined &&
-          s.endTOffsetMs !== undefined &&
-          s.endTOffsetMs >= winStart &&
-          s.startTOffsetMs <= winEnd,
-      ),
-    [subagents, winStart, winEnd],
-  );
-  const winWorkflows = useMemo(
-    () =>
-      (workflows ?? []).filter(
-        (w) =>
-          w.startTOffsetMs !== undefined &&
-          w.startTOffsetMs <= winEnd &&
-          (w.endTOffsetMs ?? winEnd) >= winStart,
-      ),
-    [workflows, winStart, winEnd],
-  );
-
-  /* Build segments from the same display-row stream the transcript
-     uses. Collapsed turns become one wide segment; expanded-turn
-     headers are skipped; presentation rows (whether standalone or
-     indented children of an expanded turn) become atomic segments. */
-  const segs: MinimapSeg[] = useMemo(() => {
-    const out: MinimapSeg[] = [];
-
-    // Flatten to (item, start) pairs with the expanded-turn headers removed
-    // and collapsed turns preserved as single-item entries.
-    type WithTime =
-      | { kind: "row"; row: PresentationRow; start: number; gapMs: number }
-      | {
-          kind: "turn";
-          turn: TurnMegaRow;
-          start: number;
-          gapMs: number;
-        };
-
-    const withTime: WithTime[] = [];
-    for (const d of displayRows) {
-      if (d.kind === "turn-expanded-header") continue;
-      if (d.kind === "turn-expanded-footer") continue;
-      if (d.kind === "turn-collapsed") {
-        if (d.turn.tOffsetMs === undefined) continue;
-        if (d.turn.tOffsetMs < winStart || d.turn.tOffsetMs > winEnd) continue;
-        withTime.push({
-          kind: "turn",
-          turn: d.turn,
-          start: d.turn.tOffsetMs,
-          gapMs: d.turn.rows[0]?.gapMs ?? 0,
-        });
-      } else {
-        // presentation row
-        if (d.row.tOffsetMs === undefined) continue;
-        if (d.row.tOffsetMs < winStart || d.row.tOffsetMs > winEnd) continue;
-        withTime.push({
-          kind: "row",
-          row: d.row,
-          start: d.row.tOffsetMs,
-          gapMs: d.row.gapMs ?? 0,
-        });
-      }
-    }
-
-    // Build a sorted copy of idle bands so we can clip row/turn ends to
-    // the start of the next idle band (or the next row, whichever comes
-    // first). This stops a row's rectangle from spanning across an idle
-    // gap and visually swallowing it.
-    const idleBands = (rawIdleBands ?? [])
-      .filter((b) => b.end > winStart && b.start < winEnd)
-      .sort((a, b) => a.start - b.start);
-    const nextIdleStartFrom = (t: number): number | undefined => {
-      for (const b of idleBands) {
-        if (b.start >= t) return b.start;
-      }
-      return undefined;
-    };
-
-    for (let i = 0; i < withTime.length; i++) {
-      const item = withTime[i];
-      const next = withTime[i + 1];
-      const start = item.start;
-      const nextRowStart = next?.start;
-      const nextIdleStart = nextIdleStartFrom(start + 1);
-      // Cap end to whichever comes first: next visible row, next idle band,
-      // or the window's right edge (so a day's last segment doesn't bleed
-      // past the scoped window into the next day).
-      const cap = (raw: number) =>
-        Math.min(
-          raw,
-          nextRowStart ?? Number.POSITIVE_INFINITY,
-          nextIdleStart ?? Number.POSITIVE_INFINITY,
-          winEnd,
-        );
-
-      if (item.kind === "turn") {
-        const turnEnd = start + (item.turn.durationMs ?? 0);
-        out.push({
-          kind: "turn",
-          turn: item.turn,
-          primaryIndex: item.turn.firstPrimaryIndex,
-          start,
-          end: Math.max(cap(turnEnd), start + 1),
-        });
-      } else {
-        const end = cap(nextRowStart ?? start + 800);
-        out.push({
-          kind: "row",
-          row: item.row,
-          primaryIndex: rowPrimaryIndex(item.row),
-          start,
-          end: Math.max(end, start + 1),
-        });
-      }
-    }
-
-    // Idle bands are computed from raw event timestamps (5s threshold) up
-    // in the parent — append them and let the sort below interleave by
-    // start time so they slot between rows correctly.
-    for (const band of idleBands) {
-      out.push({
-        kind: "idle",
-        start: band.start,
-        end: band.end,
-        durationMs: band.durationMs,
-      });
-    }
-    out.sort((a, b) => a.start - b.start);
-
-    // Cap the number of rendered segments. Each <rect> carries two
-    // event handlers (onMouseEnter + onClick), so 2000 raw-events in
-    // "All events" mode becomes 4000 DOM event listeners — enough to
-    // stall Chrome during paint. Sampling to MAX contiguous buckets
-    // loses per-item hover precision but keeps the overall shape and
-    // click-to-navigate behavior (clicks map to the first row inside
-    // the bucket, which is the right anchor for "jump here" UX).
-    const MAX_SEGMENTS = 600;
-    if (out.length <= MAX_SEGMENTS) return out;
-
-    const step = Math.ceil(out.length / MAX_SEGMENTS);
-    const bucketed: MinimapSeg[] = [];
-    for (let i = 0; i < out.length; i += step) {
-      const first = out[i]!;
-      const last = out[Math.min(i + step - 1, out.length - 1)]!;
-      // Merge bucket: keep the first seg's kind + primaryIndex (so clicks
-      // jump to the first item of the bucket), but extend the end range
-      // to cover the whole bucket's time span.
-      if (first.kind === "idle") {
-        bucketed.push({
-          kind: "idle",
-          start: first.start,
-          end: last.end,
-          durationMs: last.end - first.start,
-        });
-      } else if (first.kind === "turn") {
-        bucketed.push({
-          kind: "turn",
-          turn: first.turn,
-          primaryIndex: first.primaryIndex,
-          start: first.start,
-          end: last.end,
-        });
-      } else {
-        bucketed.push({
-          kind: "row",
-          row: first.row,
-          primaryIndex: first.primaryIndex,
-          start: first.start,
-          end: last.end,
-        });
-      }
-    }
-    return bucketed;
-  }, [displayRows, safeDur, rawIdleBands, winStart, winEnd]);
-
-  /* Sequential layout with a minimum displayed width per segment.
-     - Raw proportional width = (seg.end - seg.start) / safeDur * WIDTH
-     - Enforced width = max(raw, MIN_DISPLAY_WIDTH)
-     - x positions are cumulative (not time-proportional), so tiny events
-       stay visible next to a 24-minute turn.
-     - If the cumulative width exceeds WIDTH, proportionally shrink so it
-       all fits. Time ordering is preserved; exact time-to-pixel mapping
-       is sacrificed. */
-  const positions: { x: number; w: number }[] = useMemo(() => {
-    if (segs.length === 0) return [];
-    const raws = segs.map((s) => ((s.end - s.start) / safeDur) * WIDTH);
-    const enforced = raws.map((w) => Math.max(w, MIN_DISPLAY_WIDTH));
-    const total = enforced.reduce((a, b) => a + b, 0);
-    const scale = WIDTH / total;
-    const out: { x: number; w: number }[] = [];
-    let cursor = 0;
-    for (const w of enforced) {
-      const scaled = w * scale;
-      out.push({ x: cursor, w: scaled });
-      cursor += scaled;
-    }
-    return out;
-  }, [segs, safeDur]);
-
-  /** Map a time offset (ms) to an x coordinate in the relaxed layout.
-   *  Walks segments sequentially and interpolates within whichever one
-   *  contains the target ms. Used for the playhead indicator. */
-  const msToX = (ms: number): number => {
-    if (segs.length === 0) return 0;
-    if (ms <= segs[0].start) return positions[0]?.x ?? 0;
-    for (let i = 0; i < segs.length; i++) {
-      const s = segs[i];
-      const p = positions[i];
-      if (!p) continue;
-      if (ms < s.start) return p.x;
-      if (ms <= s.end) {
-        const segDur = s.end - s.start;
-        const frac = segDur > 0 ? (ms - s.start) / segDur : 0;
-        return p.x + frac * p.w;
-      }
-    }
-    const last = positions[positions.length - 1];
-    return last ? last.x + last.w : WIDTH;
-  };
-
-  // ---- Sub-agent lane assignment -------------------------------------
-  // Place each subagent in the lowest lane index where it doesn't
-  // collide with the most recent bar in that lane. Greedy left→right
-  // sweep — O(N×L) where L is the number of lanes (small in practice).
-  // Returns a Map agentId → laneIndex plus the total lane count.
-  const { laneOf, laneCount } = useMemo(() => {
-    if (winSubagents.length === 0) {
-      return { laneOf: new Map<string, number>(), laneCount: 0 };
-    }
-    const sorted = [...winSubagents].sort(
-      (a, b) => (a.startTOffsetMs ?? 0) - (b.startTOffsetMs ?? 0),
-    );
-    const laneEnds: number[] = [];
-    const laneOf = new Map<string, number>();
-    for (const s of sorted) {
-      const start = s.startTOffsetMs ?? 0;
-      const end = s.endTOffsetMs ?? start + 1;
-      let assigned = -1;
-      for (let i = 0; i < laneEnds.length; i++) {
-        if (laneEnds[i]! <= start) {
-          assigned = i;
-          break;
-        }
-      }
-      if (assigned === -1) {
-        assigned = laneEnds.length;
-        laneEnds.push(0);
-      }
-      laneEnds[assigned] = end;
-      laneOf.set(s.agentId, assigned);
-    }
-    return { laneOf, laneCount: laneEnds.length };
-  }, [winSubagents]);
-
-  const SUB_BLOCK_TOP = MAIN_H + SUB_LANE_GAP;
-  const SUB_LANES_H = laneCount > 0 ? laneCount * SUB_LANE_H : 0;
-
-  // ---- Workflow lane assignment --------------------------------------
-  // Same greedy sweep as subagents. Workflow runs are mostly sequential
-  // milestones, so this usually collapses to one lane — but overlap is
-  // handled if two runs ever ran concurrently.
-  const { wfLaneOf, wfLaneCount } = useMemo(() => {
-    // Only place workflows we can actually draw (startTOffsetMs known). A
-    // running run has no end yet — it extends to the session end (safeDur),
-    // matching the open-ended bar the render draws. Counting only placeable
-    // runs keeps wfLaneCount in lockstep with what renders, so no empty
-    // reserved band appears.
-    const placeable = winWorkflows;
-    if (placeable.length === 0) {
-      return { wfLaneOf: new Map<string, number>(), wfLaneCount: 0 };
-    }
-    const sorted = [...placeable].sort(
-      (a, b) => (a.startTOffsetMs ?? 0) - (b.startTOffsetMs ?? 0),
-    );
-    const laneEnds: number[] = [];
-    const wfLaneOf = new Map<string, number>();
-    for (const w of sorted) {
-      const start = w.startTOffsetMs ?? 0;
-      const end = w.endTOffsetMs ?? winEnd;
-      let assigned = -1;
-      for (let i = 0; i < laneEnds.length; i++) {
-        if (laneEnds[i]! <= start) {
-          assigned = i;
-          break;
-        }
-      }
-      if (assigned === -1) {
-        assigned = laneEnds.length;
-        laneEnds.push(0);
-      }
-      laneEnds[assigned] = Math.max(end, start + 1);
-      wfLaneOf.set(w.runId, assigned);
-    }
-    return { wfLaneOf, wfLaneCount: laneEnds.length };
-  }, [winWorkflows, winEnd]);
-
-  const SUB_BLOCK_BOTTOM = MAIN_H + (laneCount > 0 ? SUB_LANE_GAP + SUB_LANES_H : 0);
-  const WF_BLOCK_TOP = SUB_BLOCK_BOTTOM + (wfLaneCount > 0 ? SUB_LANE_GAP : 0);
-  const WF_LANES_H = wfLaneCount > 0 ? wfLaneCount * WF_LANE_H : 0;
-  const TOTAL_H = SUB_BLOCK_BOTTOM + (wfLaneCount > 0 ? SUB_LANE_GAP + WF_LANES_H : 0);
-
-  return (
-    <div
-      ref={containerRef}
-      style={{
-        padding: "8px 10px",
-        position: "relative",
-        background: "var(--af-surface)",
-        border: "1px solid var(--af-border-subtle)",
-        borderRadius: 8,
-        marginTop: 2,
-      }}
-      onMouseLeave={() => setHover(null)}
-    >
-      <svg
-        viewBox={`0 0 ${WIDTH} ${TOTAL_H}`}
-        preserveAspectRatio="none"
-        style={{
-          width: "100%",
-          height: TOTAL_H,
-          display: "block",
-          overflow: "visible",
-        }}
-      >
-        <defs>
-          <pattern
-            id="stripes"
-            patternUnits="userSpaceOnUse"
-            width="6"
-            height="6"
-            patternTransform="rotate(45)"
-          >
-            <rect width="6" height="6" fill="rgba(120, 115, 108, 0.04)" />
-            <line x1="0" y1="0" x2="0" y2="6" stroke="rgba(120, 115, 108, 0.28)" strokeWidth="2" />
-          </pattern>
-        </defs>
-
-        {/* Segments — x/w come from the relaxed sequential layout, NOT
-            from raw time proportions. See the positions memo above. */}
-        {segs.map((seg, i) => {
-          const pos = positions[i];
-          if (!pos) return null;
-          const xRaw = pos.x;
-          const wRaw = pos.w;
-
-          if (seg.kind === "idle") {
-            // Idle block: fill its span minus a gap on each side, with a
-            // subtle border so the diagonal stripes read as a distinct block.
-            const w = Math.max(wRaw - GAP, MIN_BLOCK);
-            return (
-              <rect
-                key={`idle-${i}`}
-                x={xRaw + GAP / 2}
-                y={BAR_TOP + 1}
-                width={w}
-                height={BAR_H - 2}
-                fill="url(#stripes)"
-                stroke="rgba(120, 115, 108, 0.35)"
-                strokeWidth="0.6"
-                rx="3"
-                onMouseEnter={(e) =>
-                  setHover({
-                    clientX: e.clientX,
-                    idleMs: seg.durationMs,
-                  })
-                }
-              />
-            );
-          }
-
-          // Resolve the theme + selection state. Turn segments use the
-          // "agent" theme (a turn is the agent's work wrapped as one unit).
-          const rowKind: PresentationRowKind = seg.kind === "turn" ? "agent" : seg.row.kind;
-          const theme = ROLE_THEMES[rowKind];
-          const importance = ROW_IMPORTANCE[rowKind];
-          const h = BAR_H * importance;
-          const y = BAR_TOP + (BAR_H - h) / 2;
-          const isSelected = selectedIndex === seg.primaryIndex;
-
-          // Error/interrupt: render as a THIN vertical bar regardless of
-          // actual span. Consecutive errors become a visible comb of
-          // narrow strokes separated by gaps, matching Claude's UI.
-          const isThin =
-            seg.kind === "row" && (seg.row.kind === "error" || seg.row.kind === "interrupt");
-          let w: number;
-          let x: number;
-          if (isThin) {
-            w = Math.min(Math.max(wRaw - GAP, 2), THIN_BAR_MAX);
-            x = xRaw + Math.max((wRaw - w) / 2, GAP / 2);
-          } else {
-            w = Math.max(wRaw - GAP, MIN_BLOCK);
-            x = xRaw + GAP / 2;
-          }
-
-          const ringPad = 2.5;
-          const onHover = (e: React.MouseEvent) =>
-            seg.kind === "turn"
-              ? setHover({ clientX: e.clientX, turn: seg.turn })
-              : setHover({ clientX: e.clientX, row: seg.row });
-          return (
-            <g key={`seg-${seg.primaryIndex}-${i}`}>
-              <rect
-                x={x}
-                y={y}
-                width={w}
-                height={h}
-                fill={theme.mini}
-                rx="3"
-                style={{ cursor: "pointer" }}
-                onClick={() => onSelect(seg.primaryIndex)}
-                onMouseEnter={onHover}
-              />
-              {isSelected && (
-                <rect
-                  x={x - ringPad}
-                  y={y - ringPad}
-                  width={w + ringPad * 2}
-                  height={h + ringPad * 2}
-                  fill="none"
-                  stroke="#5C84C3"
-                  strokeWidth="2"
-                  rx="5"
-                  pointerEvents="none"
-                />
-              )}
-            </g>
-          );
-        })}
-
-        {/* Sub-agent lanes — one row per lane, colored by agentType.
-            Background-mode runs are highlighted with a brighter fill +
-            extra dashed outline so you can spot true parallelism at a
-            glance. Bars use the same msToX mapping as the main timeline
-            so the subagent's start/end aligns vertically with whatever
-            was happening in the main session at that time. */}
-        {laneCount > 0 && winSubagents.length > 0 && (
-          <g>
-            {/* Faint divider line above the subagent lane block */}
-            <line
-              x1={0}
-              x2={WIDTH}
-              y1={MAIN_H + SUB_LANE_GAP / 2}
-              y2={MAIN_H + SUB_LANE_GAP / 2}
-              stroke="var(--af-border-subtle)"
-              strokeWidth="0.6"
-              strokeDasharray="2 4"
-            />
-            {winSubagents.map((s) => {
-              const lane = laneOf.get(s.agentId) ?? 0;
-              if (s.startTOffsetMs === undefined || s.endTOffsetMs === undefined) return null;
-              const startX = msToX(s.startTOffsetMs);
-              const endX = msToX(s.endTOffsetMs);
-              // Minimum 8px so a 78-second subagent in a 16-hour session is
-              // still wide enough to read + hit-test. Long subagents render
-              // at their actual proportional width.
-              const w = Math.max(endX - startX, 8);
-              const y = SUB_BLOCK_TOP + lane * SUB_LANE_H;
-              const h = SUB_LANE_H - 2;
-              const fill = subagentColor(s.agentType, s.runInBackground);
-              const isSelected = selectedSubagentId === s.agentId;
-              return (
-                <g key={s.agentId}>
-                  <rect
-                    x={startX}
-                    y={y}
-                    width={w}
-                    height={h}
-                    fill={fill}
-                    stroke={s.runInBackground ? "#fff" : "transparent"}
-                    strokeWidth={s.runInBackground ? 0.5 : 0}
-                    strokeDasharray={s.runInBackground ? "1.5 1.5" : undefined}
-                    rx="2"
-                    style={{ cursor: "pointer" }}
-                    onMouseEnter={(e) => setHover({ clientX: e.clientX, subagent: s })}
-                    onClick={() => onSelectSubagent?.(isSelected ? null : s.agentId)}
-                  />
-                  {isSelected && (
-                    <rect
-                      x={startX - 2}
-                      y={y - 2}
-                      width={w + 4}
-                      height={h + 4}
-                      fill="none"
-                      stroke="var(--af-accent)"
-                      strokeWidth="1.5"
-                      rx="4"
-                      pointerEvents="none"
-                    />
-                  )}
-                </g>
-              );
-            })}
-          </g>
-        )}
-
-        {/* Workflow lanes — one bar per dynamic-workflow run, on the same
-            time axis as the main timeline, colored by status (orange tier,
-            distinct from the blue/purple subagents). The agent count is the
-            headline — a single Workflow tool call hides a whole fleet. */}
-        {wfLaneCount > 0 && winWorkflows.length > 0 && (
-          <g>
-            <line
-              x1={0}
-              x2={WIDTH}
-              y1={WF_BLOCK_TOP - SUB_LANE_GAP / 2}
-              y2={WF_BLOCK_TOP - SUB_LANE_GAP / 2}
-              stroke="var(--af-border-subtle)"
-              strokeWidth="0.6"
-              strokeDasharray="2 4"
-            />
-            {winWorkflows.map((w) => {
-              if (w.startTOffsetMs === undefined) return null;
-              const lane = wfLaneOf.get(w.runId) ?? 0;
-              const startX = msToX(w.startTOffsetMs);
-              // A still-running run has no endTOffsetMs — draw it open-ended to
-              // the session end so it's visible (and dashed, to read as ongoing)
-              // rather than vanishing while still occupying a reserved lane.
-              const inProgress = w.endTOffsetMs === undefined;
-              const endX = msToX(w.endTOffsetMs ?? winEnd);
-              const wWidth = Math.max(endX - startX, 8);
-              const y = WF_BLOCK_TOP + lane * WF_LANE_H;
-              const h = WF_LANE_H - 2;
-              const fill = workflowColor(w.status);
-              // Center the agent count label inside the bar when there's room.
-              const label = `${w.agentCount}`;
-              const showLabel = wWidth > 22;
-              return (
-                <g key={w.runId} style={{ cursor: "pointer" }}>
-                  <rect
-                    x={startX}
-                    y={y}
-                    width={wWidth}
-                    height={h}
-                    fill={fill}
-                    fillOpacity={inProgress ? 0.55 : 1}
-                    stroke={inProgress ? fill : "transparent"}
-                    strokeWidth={inProgress ? 0.8 : 0}
-                    strokeDasharray={inProgress ? "2 2" : undefined}
-                    rx="2"
-                    onMouseEnter={(e) => setHover({ clientX: e.clientX, workflow: w })}
-                    onClick={() => onWorkflowClick?.(w.runId)}
-                  />
-                  {showLabel && (
-                    <text
-                      x={startX + wWidth / 2}
-                      y={y + h / 2 + 3}
-                      textAnchor="middle"
-                      fontSize="8.5"
-                      fontWeight="700"
-                      fill="#fff"
-                      pointerEvents="none"
-                      style={{ fontFamily: "var(--font-mono)" }}
-                    >
-                      {label}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-          </g>
-        )}
-
-        {/* PR markers — diamond + vertical line at each `gh pr create` */}
-        {prMarkers?.map((pr, i) => {
-          if (pr.tOffsetMs === undefined) return null;
-          if (pr.tOffsetMs < winStart || pr.tOffsetMs > winEnd) return null;
-          const x = msToX(pr.tOffsetMs);
-          return (
-            <g
-              key={`pr-${i}`}
-              style={{ cursor: "pointer" }}
-              onMouseEnter={(e) => setHover({ clientX: e.clientX, pr })}
-            >
-              <line
-                x1={x}
-                x2={x}
-                y1={0}
-                y2={TOTAL_H}
-                stroke="#8b5cf6"
-                strokeWidth="1.5"
-                strokeDasharray="4 3"
-                opacity="0.7"
-              />
-              {/* Invisible wider hit area for easier hovering */}
-              <rect
-                x={x - 8}
-                y={0}
-                width={16}
-                height={TOTAL_H}
-                fill="transparent"
-              />
-              {/* Diamond marker at mid-height */}
-              <polygon
-                points={`${x},${MAIN_H / 2 - 5} ${x + 5},${MAIN_H / 2} ${x},${MAIN_H / 2 + 5} ${x - 5},${MAIN_H / 2}`}
-                fill="#8b5cf6"
-                stroke="var(--af-surface)"
-                strokeWidth="1.5"
-              />
-            </g>
-          );
-        })}
-
-        {coldResumeMarkers?.map((cr, i) => {
-          if (cr.tOffsetMs < winStart || cr.tOffsetMs > winEnd) return null;
-          const x = msToX(cr.tOffsetMs);
-          return (
-            <g
-              key={`cold-${i}`}
-              style={{ cursor: "pointer" }}
-              onMouseEnter={(e) => setHover({ clientX: e.clientX, cold: cr })}
-            >
-              <line
-                x1={x}
-                x2={x}
-                y1={0}
-                y2={TOTAL_H}
-                stroke="#D97706"
-                strokeWidth="1.5"
-                strokeDasharray="4 3"
-                opacity="0.75"
-                pointerEvents="none"
-              />
-              {/* Hover hit-area limited to the diamond itself — a wider/taller
-                  target used to swallow hovers+clicks meant for adjacent
-                  user-prompt markers sitting right beside the cache-rebuild
-                  point. */}
-              <rect
-                x={x - 6}
-                y={MAIN_H / 2 - 8}
-                width={12}
-                height={16}
-                fill="transparent"
-              />
-              <polygon
-                points={`${x},${MAIN_H / 2 - 5} ${x + 5},${MAIN_H / 2} ${x},${MAIN_H / 2 + 5} ${x - 5},${MAIN_H / 2}`}
-                fill="#D97706"
-                stroke="var(--af-surface)"
-                strokeWidth="1.5"
-                pointerEvents="none"
-              />
-            </g>
-          );
-        })}
-
-        {/* Playhead — positioned against the relaxed layout, not raw time.
-            Spans the full SVG height (main + subagent lanes) so you can see
-            which subagents were running at the current scroll position. */}
-        {playheadMs !== null && (
-          <line
-            x1={msToX(playheadMs)}
-            x2={msToX(playheadMs)}
-            y1={0}
-            y2={TOTAL_H}
-            stroke="#0F172A"
-            strokeWidth="1.25"
-            strokeDasharray="2 2"
-            opacity="0.65"
-          />
-        )}
-      </svg>
-
-      {/* Hover card */}
-      {hover && (
-        <MinimapHoverCard
-          containerRef={containerRef}
-          clientX={hover.clientX}
-          row={hover.row}
-          turn={hover.turn}
-          idleMs={hover.idleMs}
-          subagent={hover.subagent}
-          workflow={hover.workflow}
-          pr={hover.pr}
-          cold={hover.cold}
-          model={model}
-        />
-      )}
-
-      {/* Sub-agent legend strip — only when there are subagent lanes. */}
-      {laneCount > 0 && subagents && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            marginTop: 6,
-            fontSize: 10,
-            color: "var(--af-text-tertiary)",
-          }}
-        >
-          <span style={{ fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
-            Sub-agents
-          </span>
-          <span>·</span>
-          <span>
-            {subagents.length} run{subagents.length === 1 ? "" : "s"}
-          </span>
-          <span style={{ marginLeft: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {Array.from(new Set(subagents.map((s) => s.agentType))).map((type) => (
-              <span
-                key={type}
-                style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-              >
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 8,
-                    height: 8,
-                    borderRadius: 2,
-                    background: subagentColor(type, false),
-                  }}
-                />
-                {type}
-              </span>
-            ))}
-            {subagents.some((s) => s.runInBackground) && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 8,
-                    height: 8,
-                    borderRadius: 2,
-                    background: "transparent",
-                    border: "1px dashed var(--af-text-secondary)",
-                  }}
-                />
-                background
-              </span>
-            )}
-          </span>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // subagentColor, workflowColor moved to ./session-view/colors.ts
-
-function MinimapHoverCard({
-  containerRef,
-  clientX,
-  row,
-  turn,
-  idleMs,
-  subagent,
-  workflow,
-  pr,
-  cold,
-  model,
-}: {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  clientX: number;
-  row?: PresentationRow;
-  turn?: TurnMegaRow;
-  idleMs?: number;
-  subagent?: SubagentRun;
-  workflow?: WorkflowRun;
-  pr?: PrMarker;
-  cold?: { tOffsetMs: number; info: NonNullable<SessionEvent["coldResume"]> };
-  model?: string;
-}) {
-  const rect = containerRef.current?.getBoundingClientRect();
-  const localX = rect ? clientX - rect.left : 0;
-  const left = Math.min(Math.max(localX - 140, 8), (rect?.width ?? 1400) - 300);
-  // Always open below the minimap. The minimap lives inside the sticky
-  // header, so there's never reliable space above it for a tooltip.
-  const posStyle = { top: "calc(100% + 8px)", left };
-
-  if (workflow) {
-    const w = workflow;
-    const startOff = formatOffset(w.startTOffsetMs);
-    const endOff = formatOffset(w.endTOffsetMs);
-    const dur = w.durationMs !== undefined ? formatGap(w.durationMs) : "";
-    return (
-      <div
-        style={{
-          position: "absolute",
-          ...posStyle,
-          zIndex: 100,
-          background: "#0F172A",
-          color: "#F1F5F9",
-          borderRadius: 10,
-          padding: "12px 14px",
-          fontSize: 11,
-          pointerEvents: "none",
-          boxShadow: "0 6px 24px rgba(15,23,42,0.22)",
-          maxWidth: 440,
-          minWidth: 280,
-          lineHeight: 1.45,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: workflowColor(w.status),
-              color: "#fff",
-              textTransform: "uppercase",
-              letterSpacing: "0.04em",
-            }}
-          >
-            workflow · {w.status}
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              opacity: 0.7,
-              marginLeft: "auto",
-            }}
-          >
-            {startOff} → {endOff} · {dur}
-          </span>
-        </div>
-        <div style={{ fontWeight: 600, marginBottom: 4, fontFamily: "var(--font-mono)" }}>
-          {w.name}
-        </div>
-        {w.description && (
-          <div style={{ opacity: 0.8, marginBottom: 6 }}>{w.description}</div>
-        )}
-        <div
-          style={{
-            fontSize: 10,
-            opacity: 0.75,
-            display: "flex",
-            gap: 8,
-            flexWrap: "wrap",
-            paddingTop: 6,
-            borderTop: "1px solid rgba(241,245,249,0.08)",
-            fontFamily: "var(--font-mono)",
-          }}
-        >
-          <span style={{ color: "#FB923C", fontWeight: 600 }}>{w.agentCount} agents</span>
-          <span>·</span>
-          <span>{w.toolCallCount.toLocaleString()} tools</span>
-          <span>·</span>
-          <span>{formatTokens(w.totalTokens)} tok</span>
-          {w.phases.length > 0 && (
-            <>
-              <span>·</span>
-              <span>{w.phases.length} phases</span>
-            </>
-          )}
-        </div>
-        <div style={{ marginTop: 6, fontSize: 10, opacity: 0.55, fontStyle: "italic" }}>
-          Click to open this run in the Workflows tab.
-        </div>
-      </div>
-    );
-  }
-
-  if (subagent) {
-    const startOff = formatOffset(subagent.startTOffsetMs);
-    const endOff = formatOffset(subagent.endTOffsetMs);
-    const dur = subagent.durationMs !== undefined ? formatGap(subagent.durationMs) : "";
-    const totalIn =
-      subagent.totalUsage.input + subagent.totalUsage.cacheRead + subagent.totalUsage.cacheWrite;
-    return (
-      <div
-        style={{
-          position: "absolute",
-          ...posStyle,
-          zIndex: 100,
-          background: "#0F172A",
-          color: "#F1F5F9",
-          borderRadius: 10,
-          padding: "12px 14px",
-          fontSize: 11,
-          pointerEvents: "none",
-          boxShadow: "0 6px 24px rgba(15,23,42,0.22)",
-          maxWidth: 440,
-          minWidth: 280,
-          lineHeight: 1.45,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 8,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: subagentColor(subagent.agentType, subagent.runInBackground),
-              color: "#fff",
-            }}
-          >
-            {subagent.agentType}
-          </span>
-          {subagent.runInBackground && (
-            <span
-              style={{
-                fontSize: 9,
-                fontWeight: 600,
-                padding: "1px 6px",
-                borderRadius: 3,
-                background: "rgba(251, 191, 36, 0.18)",
-                color: "#FBBF24",
-                textTransform: "uppercase",
-                letterSpacing: "0.04em",
-              }}
-            >
-              background
-            </span>
-          )}
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              opacity: 0.7,
-              marginLeft: "auto",
-            }}
-          >
-            {startOff} → {endOff} · {dur}
-          </span>
-        </div>
-        <div style={{ fontWeight: 500, marginBottom: 6 }}>{subagent.description}</div>
-        <div
-          style={{
-            fontSize: 10,
-            opacity: 0.65,
-            display: "flex",
-            gap: 8,
-            paddingTop: 6,
-            borderTop: "1px solid rgba(241,245,249,0.08)",
-          }}
-        >
-          <span>{subagent.eventCount} events</span>
-          <span>·</span>
-          <span style={{ fontFamily: "var(--font-mono)" }}>
-            {formatTokens(totalIn)}/{formatTokens(subagent.totalUsage.output)} tok
-          </span>
-        </div>
-        {subagent.finalPreview && (
-          <div
-            style={{
-              marginTop: 6,
-              opacity: 0.78,
-              fontStyle: "italic",
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-            }}
-          >
-            → {subagent.finalPreview}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (cold) {
-    const { trigger, gapMs, writeTokens, compact } = cold.info;
-    const isCompact = trigger === "compact";
-    const estUsd = estimateCost(
-      { input: 0, output: 0, cacheRead: 0, cacheWrite: writeTokens },
-      model,
-    );
-    let label: string;
-    if (!isCompact) label = "⚡ CACHE REBUILD";
-    else if (compact?.trigger === "auto") label = "⚡ AUTO-COMPACT";
-    else label = "⚡ /COMPACT";
-    const detailLine = isCompact
-      ? `${formatTokens(writeTokens)} rewritten · pre-compact ${formatTokens(compact?.preTokens ?? 0)}`
-      : `${formatTokens(writeTokens)} rewritten · idle ${formatGap(gapMs)}`;
-    const hint = isCompact
-      ? "Conversation was summarized; prefix had to be rewritten into a fresh cache."
-      : "Prompt cache expired during idle; resuming within 5 min keeps it warm.";
-    return (
-      <div
-        style={{
-          position: "absolute",
-          ...posStyle,
-          zIndex: 100,
-          background: "#0F172A",
-          color: "#F1F5F9",
-          borderRadius: 10,
-          padding: "10px 14px",
-          fontSize: 11,
-          pointerEvents: "none",
-          boxShadow: "0 6px 24px rgba(15,23,42,0.22)",
-          maxWidth: 340,
-          minWidth: 220,
-          lineHeight: 1.45,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: "#D97706",
-              color: "#fff",
-            }}
-          >
-            {label}
-          </span>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, opacity: 0.7 }}>
-            at {formatOffset(cold.tOffsetMs)}
-          </span>
-        </div>
-        <div style={{ fontWeight: 500, fontFamily: "var(--font-mono)" }}>
-          {detailLine}
-          {estUsd >= 0.005 && ` · est. ${formatCost(estUsd)}`}
-        </div>
-        <div
-          style={{
-            marginTop: 4,
-            fontSize: 10,
-            opacity: 0.65,
-            fontStyle: "italic",
-            whiteSpace: "normal",
-          }}
-        >
-          {hint}
-        </div>
-      </div>
-    );
-  }
-
-  if (pr) {
-    const label = pr.title
-      ? `PR${pr.prNumber ? ` #${pr.prNumber}` : ""}: ${pr.title}`
-      : pr.prNumber
-        ? `PR #${pr.prNumber}`
-        : "PR created";
-    return (
-      <div
-        style={{
-          position: "absolute",
-          ...posStyle,
-          zIndex: 100,
-          background: "#0F172A",
-          color: "#F1F5F9",
-          borderRadius: 10,
-          padding: "10px 14px",
-          fontSize: 11,
-          pointerEvents: "none",
-          boxShadow: "0 6px 24px rgba(15,23,42,0.22)",
-          maxWidth: 360,
-          minWidth: 200,
-          lineHeight: 1.45,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: "#8b5cf6",
-              color: "#fff",
-            }}
-          >
-            PR
-          </span>
-          {pr.tOffsetMs !== undefined && (
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, opacity: 0.7 }}>
-              at {formatOffset(pr.tOffsetMs)}
-            </span>
-          )}
-        </div>
-        <div style={{ fontWeight: 500 }}>{label}</div>
-      </div>
-    );
-  }
-
-  if (idleMs !== undefined) {
-    return (
-      <div
-        style={{
-          position: "absolute",
-          ...posStyle,
-          zIndex: 100,
-          background: "#0F172A",
-          color: "#F1F5F9",
-          borderRadius: 10,
-          padding: "8px 12px",
-          fontSize: 11,
-          pointerEvents: "none",
-          boxShadow: "0 6px 24px rgba(15,23,42,0.22)",
-        }}
-      >
-        <div style={{ fontWeight: 600, marginBottom: 2 }}>Session idle</div>
-        <div style={{ opacity: 0.78, fontFamily: "var(--font-mono)" }}>{formatGap(idleMs)}</div>
-      </div>
-    );
-  }
-
-  if (turn) {
-    const theme = ROLE_THEMES.agent;
-    const s = turn.summary;
-    const dur = turn.durationMs !== undefined ? formatGap(turn.durationMs) : "";
-    const startOff = formatOffset(turn.tOffsetMs);
-    const endOff =
-      turn.tOffsetMs !== undefined && turn.durationMs !== undefined
-        ? formatOffset(turn.tOffsetMs + turn.durationMs)
-        : undefined;
-    const hasFirstLast =
-      s.firstAgentPreview && s.finalAgentPreview && s.firstAgentPreview !== s.finalAgentPreview;
-    // Top tools aggregated summary line (up to 3 entries)
-    const topTools = s.toolNames
-      .slice(0, 3)
-      .map((t) =>
-        t.count > 1 ? `${shortenToolName(t.name)} ×${t.count}` : shortenToolName(t.name),
-      )
-      .join(" · ");
-
-    return (
-      <div
-        style={{
-          position: "absolute",
-          ...posStyle,
-          zIndex: 100,
-          background: "#0F172A",
-          color: "#F1F5F9",
-          borderRadius: 10,
-          padding: "12px 14px",
-          fontSize: 11,
-          pointerEvents: "none",
-          boxShadow: "0 6px 24px rgba(15,23,42,0.22)",
-          maxWidth: 440,
-          minWidth: 280,
-          lineHeight: 1.45,
-        }}
-      >
-        {/* Header: Turn pill + start→end range */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 8,
-          }}
-        >
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 600,
-              padding: "2px 8px",
-              borderRadius: 4,
-              background: theme.mini,
-              color: "#fff",
-            }}
-          >
-            Turn
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: 10,
-              opacity: 0.7,
-            }}
-          >
-            {endOff ? `${startOff} → ${endOff}` : startOff}
-          </span>
-          {dur && (
-            <span
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 10,
-                opacity: 0.55,
-              }}
-            >
-              · {dur}
-            </span>
-          )}
-        </div>
-
-        {/* First agent message */}
-        {s.firstAgentPreview && (
-          <div
-            style={{
-              opacity: 0.95,
-              fontWeight: 500,
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-              marginBottom: 6,
-            }}
-          >
-            {s.firstAgentPreview}
-          </div>
-        )}
-
-        {/* Middle: stats + top tools */}
-        <div
-          style={{
-            fontSize: 10,
-            opacity: 0.65,
-            marginBottom: hasFirstLast ? 6 : 0,
-            borderTop: s.firstAgentPreview ? "1px solid rgba(241,245,249,0.08)" : undefined,
-            paddingTop: s.firstAgentPreview ? 6 : 0,
-          }}
-        >
-          {s.agentMessages} msg · {s.toolCalls} tools
-          {s.errors > 0 ? ` · ${s.errors} err` : ""}
-          {topTools && (
-            <>
-              <span style={{ opacity: 0.5, margin: "0 4px" }}>·</span>
-              <span style={{ fontFamily: "var(--font-mono)" }}>{topTools}</span>
-              {s.toolNames.length > 3 && (
-                <span style={{ opacity: 0.65 }}> +{s.toolNames.length - 3}</span>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Last agent message */}
-        {hasFirstLast && s.finalAgentPreview && (
-          <div
-            style={{
-              opacity: 0.92,
-              display: "flex",
-              gap: 6,
-              alignItems: "flex-start",
-              borderTop: "1px solid rgba(241,245,249,0.08)",
-              paddingTop: 6,
-            }}
-          >
-            <span style={{ opacity: 0.5 }}>→</span>
-            <span
-              style={{
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              }}
-            >
-              {s.finalAgentPreview}
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (!row) return null;
-
-  const theme = ROLE_THEMES[row.kind];
-  const preview = rowPreview(row);
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        ...posStyle,
-        zIndex: 100,
-        background: "#0F172A",
-        color: "#F1F5F9",
-        borderRadius: 10,
-        padding: "10px 14px",
-        fontSize: 11,
-        pointerEvents: "none",
-        boxShadow: "0 6px 24px rgba(15,23,42,0.22)",
-        maxWidth: 360,
-        minWidth: 220,
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 6,
-        }}
-      >
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 600,
-            padding: "2px 8px",
-            borderRadius: 4,
-            background: theme.mini,
-            color: "#fff",
-          }}
-        >
-          {theme.label}
-        </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 10,
-            opacity: 0.65,
-          }}
-        >
-          {formatOffset(row.tOffsetMs)}
-        </span>
-      </div>
-      <div
-        style={{
-          lineHeight: 1.45,
-          opacity: 0.92,
-          display: "-webkit-box",
-          WebkitLineClamp: 3,
-          WebkitBoxOrient: "vertical",
-          overflow: "hidden",
-        }}
-      >
-        {preview}
-      </div>
-    </div>
-  );
-}
 
 /* ------------------------------------------------------------------ */
 /*  Transcript list + rows                                            */
@@ -3166,6 +1702,18 @@ function TranscriptList({
     if (d.kind === "turn-expanded-footer") return undefined;
     return d.row.tOffsetMs;
   };
+  /** Absolute ISO timestamp of a row's primary event — used to date-stamp an
+   *  idle gap that resumes on a later day. */
+  const rowTimestamp = (d: DisplayRow): string | undefined => {
+    const r =
+      d.kind === "presentation"
+        ? d.row
+        : d.kind === "turn-collapsed" || d.kind === "turn-expanded-header"
+          ? d.turn.rows[0]
+          : undefined;
+    if (!r) return undefined;
+    return r.kind === "tool-group" ? r.events[0]?.timestamp : r.event?.timestamp;
+  };
   // A display row → its event PRIMARY index (what jumpAcrossDay's turn/row
   // lookups are keyed by — NOT the displayRows loop position).
   const rowPrimaryIndexOf = (d: DisplayRow): number =>
@@ -3199,13 +1747,33 @@ function TranscriptList({
     const indented = d.kind === "presentation" ? d.indented : false;
     if (!indented) {
       const band = idleBandBeforeOffset(rowTOffset(d));
+      // Set when this boundary's idle divider already states the new day + time,
+      // so the "Start of <new day>" marker below can be dropped as a redundant
+      // restatement.
+      let resumeStamped = false;
       if (
         band !== null &&
         band.durationMs > IDLE_THRESHOLD_MS &&
         !emittedBandStarts.has(band.start)
       ) {
         emittedBandStarts.add(band.start);
-        out.push(<IdleDivider key={`idle-before-${i}`} gapMs={band.durationMs} />);
+        // When the gap resumes on a LATER day, "1d" is vaguer than the actual
+        // resume moment — show that instead. Same day-key trigger as the day
+        // boundary marker emitted just below, so the two agree. Sub-day gaps
+        // keep the duration (the pause length is the useful signal there).
+        const resumeDayKey = dayKeyForOffset(rowTOffset(d));
+        const resumeTs =
+          currentDayKey !== null && resumeDayKey !== null && resumeDayKey !== currentDayKey
+            ? rowTimestamp(d)
+            : undefined;
+        resumeStamped = resumeTs !== undefined;
+        out.push(
+          <IdleDivider
+            key={`idle-before-${i}`}
+            gapMs={band.durationMs}
+            resumeStamp={resumeTs ? formatResumeStamp(resumeTs) : undefined}
+          />,
+        );
       }
       // Day boundary: drop this day's digest card at its first row (after any
       // overnight idle divider that led into the day) so per-day perception
@@ -3220,7 +1788,11 @@ function TranscriptList({
         // Fallback scroll target for days with no digest card: the day's first
         // row by PRIMARY index (i is the displayRows position — wrong key space).
         const firstIdx = rowPrimaryIndexOf(d);
-        if (endedKey) {
+        // Skip the "Start of <new day>" marker when the resume divider above
+        // already names this day + time — it would just restate it. With no
+        // resume divider (continuous or sub-threshold crossing) the marker is
+        // the only thing labeling the boundary, so it stays.
+        if (endedKey && !resumeStamped) {
           out.push(
             <DayJumpRow
               key={`daydown-${dk}`}
@@ -3330,7 +1902,7 @@ function TranscriptList({
   return <div>{out}</div>;
 }
 
-function IdleDivider({ gapMs }: { gapMs: number }) {
+function IdleDivider({ gapMs, resumeStamp }: { gapMs: number; resumeStamp?: string }) {
   return (
     <div
       style={{
@@ -3346,7 +1918,7 @@ function IdleDivider({ gapMs }: { gapMs: number }) {
         letterSpacing: "0.02em",
       }}
     >
-      Session idle · {formatGap(gapMs)}
+      {resumeStamp ? `Session resumed ${resumeStamp}` : `Session idle · ${formatGap(gapMs)}`}
     </div>
   );
 }
@@ -4512,897 +3084,11 @@ function ToolGroupLabel({
 
 /* ------------------------------------------------------------------ */
 /*  Workflows panel                                                    */
-/*                                                                     */
-/*  A single `Workflow` tool call collapses a whole dynamic-workflow   */
-/*  fan-out into one transcript row. This panel surfaces what that row */
-/*  actually did: each run's spawned-agent count, tool calls, tokens,  */
-/*  phases, and progress log — the fleet work the transcript hides.    */
 /* ------------------------------------------------------------------ */
 
-function WorkflowsPanel({
-  workflows,
-  spawnedAgentCount,
-  focusRunId,
-  selectedAgentKey,
-  onOpenAgent,
-  onJumpToParent,
-  onClearFocus,
-}: {
-  workflows: WorkflowRun[];
-  spawnedAgentCount: number;
-  focusRunId?: string | null;
-  selectedAgentKey?: string | null;
-  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
-  onJumpToParent: (toolUseId?: string) => void;
-  onClearFocus?: () => void;
-}) {
-  const totalTokens = workflows.reduce((n, w) => n + w.totalTokens, 0);
-  const totalTools = workflows.reduce((n, w) => n + w.toolCallCount, 0);
-  return (
-    <section
-      style={{
-        marginBottom: 16,
-        border: "1px solid var(--af-border-subtle)",
-        borderRadius: 10,
-        background: "var(--af-surface)",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          flexWrap: "wrap",
-          padding: "10px 14px",
-          borderBottom: "1px solid var(--af-border-subtle)",
-          background: "var(--af-surface-subtle, rgba(234,88,12,0.04))",
-        }}
-      >
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 7,
-            fontSize: 13,
-            fontWeight: 600,
-            color: "var(--af-text)",
-          }}
-        >
-          <WorkflowIcon size={14} style={{ color: "#EA580C" }} />
-          Workflows
-        </span>
-        <span
-          style={{
-            fontSize: 11.5,
-            color: "var(--af-text-tertiary)",
-            fontFamily: "var(--font-mono)",
-          }}
-        >
-          {workflows.length} run{workflows.length === 1 ? "" : "s"} ·{" "}
-          {spawnedAgentCount.toLocaleString()} agents · {totalTools.toLocaleString()} tool calls ·{" "}
-          {formatTokens(totalTokens)} tok orchestrated
-        </span>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {workflows.map((w) => (
-          <WorkflowCard
-            key={w.runId}
-            w={w}
-            focused={focusRunId === w.runId}
-            selectedAgentKey={selectedAgentKey}
-            onOpenAgent={onOpenAgent}
-            onJumpToParent={onJumpToParent}
-            onClearFocus={onClearFocus}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function WorkflowCard({
-  w,
-  focused = false,
-  selectedAgentKey,
-  onOpenAgent,
-  onJumpToParent,
-  onClearFocus,
-}: {
-  w: WorkflowRun;
-  focused?: boolean;
-  selectedAgentKey?: string | null;
-  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
-  onJumpToParent: (toolUseId?: string) => void;
-  onClearFocus?: () => void;
-}) {
-  const [open, setOpen] = useState(focused);
-  const cardRef = useRef<HTMLDivElement>(null);
-  // Focused via a minimap lane click — expand and scroll this run into view.
-  useEffect(() => {
-    if (focused) {
-      setOpen(true);
-      cardRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
-    }
-  }, [focused]);
-  const color = workflowColor(w.status);
-  const dur = w.durationMs !== undefined ? formatGap(w.durationMs) : "—";
-  const startOff = formatOffset(w.startTOffsetMs);
-
-  return (
-    <div
-      ref={cardRef}
-      style={{
-        borderTop: "1px solid var(--af-border-subtle)",
-        scrollMarginTop: 120,
-      }}
-    >
-      {/* Collapsed header — click to expand */}
-      <button
-        onClick={() => {
-          setOpen((v) => !v);
-          // Any toggle is the user taking over from the timeline jump — drop the
-          // focus highlight so it doesn't linger on a card they've moved past.
-          onClearFocus?.();
-        }}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 14px",
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-          textAlign: "left",
-          color: "inherit",
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>
-          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono)",
-            fontSize: 13,
-            fontWeight: 600,
-            color: focused ? "#EA580C" : "var(--af-text)",
-            background: focused ? "rgba(234,88,12,0.16)" : "transparent",
-            padding: "2px 8px",
-            borderRadius: 6,
-            transition: "background 0.4s ease, color 0.4s ease",
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={w.name}
-        >
-          {w.name}
-        </span>
-        <span
-          style={{
-            fontSize: 9.5,
-            fontWeight: 600,
-            padding: "2px 7px",
-            borderRadius: 100,
-            background: color,
-            color: "#fff",
-            textTransform: "uppercase",
-            letterSpacing: "0.04em",
-          }}
-        >
-          {w.status}
-        </span>
-        <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 12 }}>
-          <span
-            style={{
-              fontSize: 12,
-              fontWeight: 700,
-              padding: "2px 10px",
-              borderRadius: 100,
-              background: "rgba(234,88,12,0.14)",
-              color: "#EA580C",
-              fontFamily: "var(--font-mono)",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {w.agentCount} agents
-          </span>
-          <WfMiniStat icon={<Wrench size={11} />} value={`${w.toolCallCount.toLocaleString()}`} />
-          <WfMiniStat value={`${formatTokens(w.totalTokens)} tok`} />
-          <WfMiniStat icon={<Clock size={11} />} value={dur} />
-        </span>
-      </button>
-
-      {/* Expanded detail */}
-      {open && (
-        <div style={{ padding: "0 14px 14px 38px", display: "flex", flexDirection: "column", gap: 12 }}>
-          {w.description && (
-            <div style={{ fontSize: 12.5, color: "var(--af-text-secondary)", lineHeight: 1.5 }}>
-              {w.description}
-            </div>
-          )}
-
-          <div
-            style={{
-              display: "flex",
-              gap: 14,
-              flexWrap: "wrap",
-              fontSize: 11,
-              fontFamily: "var(--font-mono)",
-              color: "var(--af-text-tertiary)",
-            }}
-          >
-            <span>starts at {startOff}</span>
-            {w.model && <span>· {w.model}</span>}
-            <span>· runId {w.runId}</span>
-            {w.parentToolUseId && (
-              <button
-                type="button"
-                onClick={() => onJumpToParent(w.parentToolUseId)}
-                style={{
-                  marginLeft: "auto",
-                  fontSize: 11,
-                  color: "var(--af-accent)",
-                  background: "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  padding: 0,
-                  fontFamily: "var(--font-mono)",
-                }}
-              >
-                Jump to timeline →
-              </button>
-            )}
-          </div>
-
-          {w.agents.length > 0 ? (
-            <WorkflowPhaseTabs
-              w={w}
-              selectedAgentKey={selectedAgentKey}
-              onOpenAgent={onOpenAgent}
-            />
-          ) : (
-            w.phases.length > 0 && (
-              <div>
-                <SectionLabel>Phases</SectionLabel>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {w.phases.map((p, i) => (
-                    <span
-                      key={`${p.title}-${i}`}
-                      title={p.detail}
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 5,
-                        fontSize: 11,
-                        padding: "3px 9px",
-                        borderRadius: 4,
-                        background: "var(--af-border-subtle)",
-                        color: "var(--af-text)",
-                      }}
-                    >
-                      <b style={{ fontWeight: 600, fontFamily: "var(--font-mono)" }}>{p.title}</b>
-                      {p.detail && (
-                        <span style={{ color: "var(--af-text-tertiary)", maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {p.detail}
-                        </span>
-                      )}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )
-          )}
-
-          {w.logs.length > 0 && <WorkflowRunLog logs={w.logs} />}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Compact model label: "claude-opus-4-8[1m]" → "opus-4-8", "claude-haiku-4-5-20251001" → "haiku-4-5". */
-function shortenModel(model: string): string {
-  return model
-    .replace(/^claude-/, "")
-    .replace(/\[1m\]$/, "")
-    .replace(/-\d{6,}$/, "")
-    .trim();
-}
-
-/** Status dot color for a single workflow-spawned agent. */
-function agentStateColor(state?: string): string {
-  const s = (state ?? "").toLowerCase();
-  if (s === "done" || s === "completed" || s === "success") return "#10B981";
-  if (s === "error" || s === "failed") return "#EF4444";
-  if (s === "running" || s === "active" || s === "in_progress") return "#F59E0B";
-  return "#8A8580";
-}
-
-/** Per-phase tabs for a workflow run. Each tab lists the agents (actions)
- *  that ran in that phase so you can review what actually happened. */
-function WorkflowPhaseTabs({
-  w,
-  selectedAgentKey,
-  onOpenAgent,
-}: {
-  w: WorkflowRun;
-  selectedAgentKey?: string | null;
-  onOpenAgent: (runId: string, agent: WorkflowRun["agents"][number]) => void;
-}) {
-  // Build the phase list from meta.phases (ordered), bucketing agents by
-  // phaseIndex. Agents whose phaseIndex isn't in meta.phases fall into an
-  // appended bucket keyed by their phaseTitle so nothing is dropped.
-  const groups = useMemo(() => {
-    const byIndex = new Map<number, WorkflowRun["agents"]>();
-    const extras = new Map<string, WorkflowRun["agents"]>();
-    for (const a of w.agents) {
-      if (a.phaseIndex && a.phaseIndex >= 1 && a.phaseIndex <= w.phases.length) {
-        const arr = byIndex.get(a.phaseIndex) ?? [];
-        arr.push(a);
-        byIndex.set(a.phaseIndex, arr);
-      } else {
-        const key = a.phaseTitle ?? "Other";
-        const arr = extras.get(key) ?? [];
-        arr.push(a);
-        extras.set(key, arr);
-      }
-    }
-    const out = w.phases.map((p, i) => ({
-      key: `p${i + 1}`,
-      title: p.title,
-      detail: p.detail,
-      agents: byIndex.get(i + 1) ?? [],
-    }));
-    for (const [title, agents] of extras) {
-      out.push({ key: `x-${title}`, title, detail: undefined, agents });
-    }
-    return out;
-  }, [w]);
-
-  // Default to the first phase that actually has agents.
-  const firstWithAgents = groups.find((g) => g.agents.length > 0)?.key ?? groups[0]?.key ?? "";
-  const [active, setActive] = useState(firstWithAgents);
-  const activeGroup = groups.find((g) => g.key === active) ?? groups[0];
-
-  return (
-    <div>
-      <SectionLabel>Phases &amp; actions</SectionLabel>
-      {/* Phase tab strip */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
-        {groups.map((g) => {
-          const isActive = g.key === active;
-          return (
-            <button
-              key={g.key}
-              onClick={() => setActive(g.key)}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 11.5,
-                fontWeight: isActive ? 600 : 500,
-                padding: "4px 10px",
-                borderRadius: 6,
-                border: "1px solid",
-                borderColor: isActive ? "#EA580C" : "var(--af-border-subtle)",
-                background: isActive ? "rgba(234,88,12,0.12)" : "transparent",
-                color: isActive ? "#EA580C" : "var(--af-text-secondary)",
-                cursor: "pointer",
-                fontFamily: "var(--font-mono)",
-              }}
-            >
-              {g.title}
-              <span
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  padding: "0px 5px",
-                  borderRadius: 100,
-                  background: isActive ? "#EA580C" : "var(--af-border-subtle)",
-                  color: isActive ? "#fff" : "var(--af-text-tertiary)",
-                }}
-              >
-                {g.agents.length}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Active phase body */}
-      {activeGroup && (
-        <div>
-          {activeGroup.detail && (
-            <div
-              style={{
-                fontSize: 11.5,
-                color: "var(--af-text-tertiary)",
-                marginBottom: 8,
-                fontStyle: "italic",
-              }}
-            >
-              {activeGroup.detail}
-            </div>
-          )}
-          {activeGroup.agents.length === 0 ? (
-            <div style={{ fontSize: 12, color: "var(--af-text-tertiary)", padding: "8px 0" }}>
-              No agents recorded for this phase.
-            </div>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {activeGroup.agents.map((a) => (
-                <WorkflowAgentRow
-                  key={`${a.index}-${a.agentId ?? a.label}`}
-                  a={a}
-                  selected={selectedAgentKey === `${w.runId}:${a.agentId ?? a.index}`}
-                  onOpen={() => onOpenAgent(w.runId, a)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** One agent (action) inside a phase — collapsed shows label + metering;
- *  expanding reveals the task prompt and the returned result. */
-/** Full transcript detail for one workflow agent — fetched on demand from
- *  /api/workflow-agent. Mirrors the parser's WorkflowAgentDetail. */
-type WfAgentDetail = {
-  prompt?: string;
-  finalText?: string;
-  steps: { index: number; tool: string; preview: string; full?: string; isError?: boolean }[];
-  toolCalls: { name: string; count: number }[];
-  toolCallCount: number;
-  assistantMessageCount: number;
-  eventCount: number;
-  totalUsage: { input: number; output: number; cacheRead: number; cacheWrite: number };
-  model?: string;
-  durationMs?: number;
-};
-
-function WorkflowAgentRow({
-  a,
-  selected,
-  onOpen,
-}: {
-  a: WorkflowRun["agents"][number];
-  selected: boolean;
-  onOpen: () => void;
-}) {
-  const dur = a.durationMs !== undefined ? formatGap(a.durationMs) : undefined;
-  return (
-    <button
-      onClick={onOpen}
-      style={{
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "8px 10px",
-        textAlign: "left",
-        cursor: "pointer",
-        border: "1px solid",
-        borderColor: selected ? "#EA580C" : "var(--af-border-subtle)",
-        borderRadius: 6,
-        background: selected
-          ? "rgba(234,88,12,0.08)"
-          : "var(--af-surface-subtle, rgba(120,115,108,0.04))",
-        color: "inherit",
-        flexWrap: "wrap",
-      }}
-    >
-      <span
-        title={a.state}
-        style={{ width: 7, height: 7, borderRadius: "50%", background: agentStateColor(a.state), flexShrink: 0 }}
-      />
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: 12,
-          fontWeight: 600,
-          color: "var(--af-text)",
-          minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          maxWidth: 280,
-        }}
-        title={a.label}
-      >
-        {a.label}
-      </span>
-      {a.model && (
-        <span style={{ fontSize: 10, color: "var(--af-text-tertiary)", fontFamily: "var(--font-mono)" }}>
-          {shortenModel(a.model)}
-        </span>
-      )}
-      {a.lastToolSummary && (
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--af-text-tertiary)",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            maxWidth: 240,
-          }}
-          title={a.lastToolSummary}
-        >
-          → {a.lastToolSummary}
-        </span>
-      )}
-      <span style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-        {dur && <WfMiniStat icon={<Clock size={10} />} value={dur} />}
-        {a.tokens !== undefined && <WfMiniStat value={`${formatTokens(a.tokens)} tok`} />}
-        {a.toolCalls !== undefined && <WfMiniStat icon={<Wrench size={10} />} value={`${a.toolCalls}`} />}
-        <span style={{ color: selected ? "#EA580C" : "var(--af-text-tertiary)", display: "inline-flex" }}>
-          <ChevronRight size={14} />
-        </span>
-      </span>
-    </button>
-  );
-}
-
-/** Right side-sheet showing one workflow agent's full transcript — Task,
- *  ordered Steps, and Result — fetched on demand. Kept out of the card so the
- *  Workflows tab stays short even for 100+ step agents. */
-function WorkflowAgentDrawer({
-  sessionId,
-  runId,
-  agent,
-  onClose,
-}: {
-  sessionId: string;
-  runId: string;
-  agent: WorkflowRun["agents"][number];
-  onClose: () => void;
-}) {
-  const [detail, setDetail] = useState<WfAgentDetail | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setDetail(null);
-    setFailed(false);
-    if (!agent.agentId) return;
-    setLoading(true);
-    const ctrl = new AbortController();
-    const url = `/api/workflow-agent?session=${encodeURIComponent(sessionId)}&run=${encodeURIComponent(runId)}&agent=${encodeURIComponent(agent.agentId)}`;
-    fetch(url, { signal: ctrl.signal })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((d: WfAgentDetail) => setDetail(d))
-      .catch((e) => {
-        if (e?.name !== "AbortError") setFailed(true);
-      })
-      .finally(() => setLoading(false));
-    return () => ctrl.abort();
-  }, [sessionId, runId, agent.agentId]);
-
-  const prompt = detail?.prompt ?? agent.promptPreview;
-  const finalText = detail?.finalText ?? agent.resultPreview;
-  const dur = detail?.durationMs ?? agent.durationMs;
-  const model = detail?.model ?? agent.model;
-  const toolCount = detail?.toolCallCount ?? agent.toolCalls;
-  const tok = detail ? detail.totalUsage.input + detail.totalUsage.output : agent.tokens;
-
-  return (
-    <div>
-      {/* Sticky title bar */}
-      <div
-        style={{
-          padding: "14px 18px",
-          borderBottom: "1px solid var(--af-border-subtle)",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          background: "var(--af-surface)",
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-        }}
-      >
-        <span
-          title={agent.state}
-          style={{ width: 8, height: 8, borderRadius: "50%", background: agentStateColor(agent.state), flexShrink: 0 }}
-        />
-        <span
-          style={{
-            fontSize: 13.5,
-            fontWeight: 600,
-            fontFamily: "var(--font-mono)",
-            color: "var(--af-text)",
-            flex: 1,
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-          title={agent.label}
-        >
-          {agent.label}
-        </span>
-        <button
-          onClick={onClose}
-          style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--af-text-tertiary)", padding: 4 }}
-          aria-label="Close"
-        >
-          <X size={16} />
-        </button>
-      </div>
-
-      {/* Meta strip */}
-      <div
-        style={{
-          padding: "9px 18px",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--af-text-tertiary)",
-          borderBottom: "1px solid var(--af-border-subtle)",
-          display: "flex",
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        {agent.phaseTitle && <span>phase {agent.phaseTitle}</span>}
-        {agent.state && <span>· {agent.state}</span>}
-        {model && <span>· {shortenModel(model)}</span>}
-        {dur !== undefined && <span>· {formatGap(dur)}</span>}
-        {toolCount !== undefined && <span>· {toolCount} tools</span>}
-        {tok !== undefined && <span>· {formatTokens(tok)} tok</span>}
-      </div>
-
-      {/* Body — each section collapsed by default; click to expand. */}
-      <div style={{ padding: "12px 18px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
-        {loading && (
-          <div style={{ fontSize: 11.5, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
-            Loading full transcript…
-          </div>
-        )}
-        {failed && (
-          <div style={{ fontSize: 11.5, color: "var(--af-text-tertiary)", fontStyle: "italic" }}>
-            Full transcript unavailable — showing the journal summary.
-          </div>
-        )}
-
-        {prompt && (
-          <DrawerCollapsible title="Task" hint={detail ? undefined : "preview"}>
-            <div style={{ fontSize: 12, color: "var(--af-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-              {prompt}
-            </div>
-          </DrawerCollapsible>
-        )}
-
-        {detail && detail.steps.length > 0 && (
-          <DrawerCollapsible
-            title="Steps"
-            count={detail.steps.length}
-            hint={detail.toolCalls.slice(0, 6).map((t) => `${shortenToolName(t.name)} ×${t.count}`).join("  ·  ")}
-          >
-            <div style={{ border: "1px solid var(--af-border-subtle)", borderRadius: 6, background: "var(--af-surface)" }}>
-              {detail.steps.map((s) => (
-                <WorkflowStepRow key={s.index} s={s} />
-              ))}
-            </div>
-          </DrawerCollapsible>
-        )}
-
-        {finalText && (
-          <DrawerCollapsible title="Result" hint={detail ? undefined : "preview"}>
-            <div
-              style={{
-                fontFamily: "var(--font-mono)",
-                fontSize: 11,
-                color: "var(--af-text-secondary)",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                lineHeight: 1.5,
-                background: "var(--af-surface)",
-                border: "1px solid var(--af-border-subtle)",
-                borderRadius: 4,
-                padding: "8px 10px",
-              }}
-            >
-              {finalText}
-            </div>
-          </DrawerCollapsible>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** Collapsible section inside the agent sheet — default collapsed. */
-function DrawerCollapsible({
-  title,
-  count,
-  hint,
-  defaultOpen = false,
-  children,
-}: {
-  title: string;
-  count?: number;
-  hint?: string;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div style={{ border: "1px solid var(--af-border-subtle)", borderRadius: 8, overflow: "hidden" }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          padding: "9px 12px",
-          background: open ? "var(--af-surface-subtle, rgba(120,115,108,0.05))" : "transparent",
-          border: "none",
-          cursor: "pointer",
-          textAlign: "left",
-          color: "inherit",
-        }}
-      >
-        <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex" }}>
-          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </span>
-        <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--af-text-secondary)" }}>
-          {title}
-        </span>
-        {count !== undefined && (
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              padding: "1px 7px",
-              borderRadius: 100,
-              background: "rgba(234,88,12,0.14)",
-              color: "#EA580C",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            {count}
-          </span>
-        )}
-        {hint && (
-          <span
-            style={{
-              marginLeft: "auto",
-              fontSize: 10.5,
-              color: "var(--af-text-tertiary)",
-              fontFamily: "var(--font-mono)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              maxWidth: 280,
-            }}
-          >
-            {hint}
-          </span>
-        )}
-      </button>
-      {open && <div style={{ padding: "0 12px 12px" }}>{children}</div>}
-    </div>
-  );
-}
-
-/** One step row — click to reveal the full tool input (e.g. the complete
- *  multi-line bash command) when it's longer than the one-line preview. */
-function WorkflowStepRow({ s }: { s: WfAgentDetail["steps"][number] }) {
-  const [open, setOpen] = useState(false);
-  const expandable = !!s.full;
-  return (
-    <div style={{ borderTop: s.index === 1 ? "none" : "1px solid var(--af-border-subtle)" }}>
-      <div
-        onClick={() => expandable && setOpen((v) => !v)}
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          gap: 8,
-          padding: "4px 10px",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          cursor: expandable ? "pointer" : "default",
-        }}
-      >
-        <span style={{ color: "var(--af-text-tertiary)", minWidth: 28, textAlign: "right", flexShrink: 0 }}>
-          {s.index}
-        </span>
-        <span style={{ fontWeight: 600, color: s.isError ? "#EF4444" : "var(--af-text)", flexShrink: 0, minWidth: 104 }}>
-          {s.isError ? "⚠ " : ""}
-          {shortenToolName(s.tool)}
-        </span>
-        <span
-          style={{ flex: 1, color: "var(--af-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-          title={s.preview}
-        >
-          {s.preview}
-        </span>
-        {expandable && (
-          <span style={{ color: "var(--af-text-tertiary)", display: "inline-flex", flexShrink: 0 }}>
-            {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-          </span>
-        )}
-      </div>
-      {open && s.full && (
-        <pre
-          style={{
-            margin: 0,
-            padding: "6px 10px 10px 40px",
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-            color: "var(--af-text-secondary)",
-            background: "var(--af-surface-subtle, rgba(120,115,108,0.05))",
-            lineHeight: 1.5,
-          }}
-        >
-          {s.full}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-/** Collapsible coarse run log (▶ / ✓ task markers) — secondary to the
- *  per-phase agent view. */
-function WorkflowRunLog({ logs }: { logs: string[] }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 5,
-          fontSize: 10,
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.04em",
-          color: "var(--af-text-tertiary)",
-          background: "transparent",
-          border: "none",
-          cursor: "pointer",
-          padding: 0,
-        }}
-      >
-        {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        Run log ({logs.length})
-      </button>
-      {open && (
-        <div
-          style={{
-            marginTop: 6,
-            fontFamily: "var(--font-mono)",
-            fontSize: 11.5,
-            lineHeight: 1.7,
-            color: "var(--af-text-secondary)",
-            background: "var(--af-surface-subtle, rgba(120,115,108,0.05))",
-            border: "1px solid var(--af-border-subtle)",
-            borderRadius: 6,
-            padding: "8px 12px",
-            maxHeight: 240,
-            overflowY: "auto",
-            whiteSpace: "pre-wrap",
-          }}
-        >
-          {logs.map((l, i) => (
-            <div key={i}>{l}</div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+// WorkflowsPanel, WorkflowCard, WorkflowPhaseTabs, WorkflowAgentRow,
+// WorkflowAgentDrawer, DrawerCollapsible, WorkflowStepRow, WorkflowRunLog,
+// shortenModel, agentStateColor, WfAgentDetail moved to ./session-view/workflows-panel.tsx
 
 // WfMiniStat, SectionLabel, StatCell, TokenLine moved to ./session-view/workflows-shared.tsx
 
