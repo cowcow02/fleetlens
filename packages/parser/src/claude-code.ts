@@ -706,7 +706,7 @@ type SubagentMeta = { agentType?: string; description?: string };
 /** Quick-pass parser for a subagent JSONL. Skips the full presentation
  *  layer (expensive on large transcripts) and extracts just what the
  *  detail drawer needs: timing, deduped usage, tool counts, final text. */
-function summarizeSubagentLines(lines: unknown[]): {
+export function summarizeSubagentLines(lines: unknown[]): {
   startMs?: number;
   endMs?: number;
   totalUsage: Usage;

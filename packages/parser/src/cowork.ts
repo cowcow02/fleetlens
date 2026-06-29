@@ -18,8 +18,9 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { canonicalProjectName, toLocalDay } from "./analytics.js";
+import { summarizeSubagentLines } from "./claude-code.js";
 import { parseTranscript } from "./parser.js";
-import type { SessionDetail, SessionMeta } from "./types.js";
+import type { SessionDetail, SessionMeta, SubagentRun } from "./types.js";
 
 export const DEFAULT_COWORK_ROOT = defaultCoworkRoot();
 
@@ -219,7 +220,151 @@ function dedupeReplayedLines(lines: unknown[]): unknown[] {
   });
 }
 
-type Parsed = { meta: SessionMeta; events: SessionDetail["events"] };
+function textFromContent(content: unknown): string | undefined {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const b of content) {
+      if (b && typeof b === "object" && (b as { type?: unknown }).type === "text") {
+        const t = (b as { text?: unknown }).text;
+        if (typeof t === "string") parts.push(t);
+      }
+    }
+    if (parts.length) return parts.join("\n");
+  }
+  return undefined;
+}
+
+type CoworkAgentRef = {
+  parentUuid?: string;
+  description?: string;
+  agentType?: string;
+  prompt?: string;
+  /** The subagent's output, taken from the tool_result returned to the main
+   *  agent — cowork's subagent group ends on a tool_result, not a final
+   *  assistant text, so summarizeSubagentLines can't recover it. */
+  finalText?: string;
+};
+
+/** Cowork interleaves each spawned subagent's own transcript INTO the audit
+ *  log, tagged with `parent_tool_use_id` = the dispatching `Agent` tool_use id
+ *  (Claude Code instead keeps them in sibling `subagents/*.jsonl` files). Lift
+ *  those inline events off the main timeline and re-expose them as SubagentRuns
+ *  so the viewer renders lanes + a drawer instead of flattening a chapter's
+ *  worth of subagent Writes into the parent transcript. The dispatching Agent
+ *  call and the tool_result carrying the subagent's output both stay on the
+ *  main timeline — their own `parent_tool_use_id` is null. */
+function partitionCoworkLines(lines: unknown[]): {
+  mainLines: unknown[];
+  subagentGroups: Map<string, unknown[]>;
+} {
+  const mainLines: unknown[] = [];
+  const subagentGroups = new Map<string, unknown[]>();
+  for (const line of lines) {
+    const ptid = (line as { parent_tool_use_id?: unknown }).parent_tool_use_id;
+    if (typeof ptid === "string") {
+      const g = subagentGroups.get(ptid);
+      if (g) g.push(line);
+      else subagentGroups.set(ptid, [line]);
+    } else {
+      mainLines.push(line);
+    }
+  }
+  return { mainLines, subagentGroups };
+}
+
+function buildCoworkSubagents(
+  subagentGroups: Map<string, unknown[]>,
+  allLines: unknown[],
+  sessionStartMs: number | undefined,
+): SubagentRun[] {
+  if (subagentGroups.size === 0) return [];
+
+  // Index every Agent dispatch + the tool_result returning its output, keyed by
+  // tool_use id. Scan all lines so a subagent that itself dispatched an Agent
+  // still resolves its parent.
+  const refs = new Map<string, CoworkAgentRef>();
+  for (const line of allLines) {
+    const rec = line as { uuid?: unknown; message?: { content?: unknown } };
+    const content = rec.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const b of content) {
+      if (!b || typeof b !== "object") continue;
+      const block = b as Record<string, unknown>;
+      if (block.type === "tool_use" && block.name === "Agent" && typeof block.id === "string") {
+        const input = (block.input as Record<string, unknown>) ?? {};
+        const ref = refs.get(block.id) ?? {};
+        if (typeof rec.uuid === "string") ref.parentUuid = rec.uuid;
+        if (typeof input.description === "string") ref.description = input.description;
+        if (typeof input.subagent_type === "string") ref.agentType = input.subagent_type;
+        if (typeof input.prompt === "string") ref.prompt = input.prompt;
+        refs.set(block.id, ref);
+      } else if (
+        block.type === "tool_result" &&
+        typeof block.tool_use_id === "string" &&
+        subagentGroups.has(block.tool_use_id)
+      ) {
+        const ref = refs.get(block.tool_use_id) ?? {};
+        ref.finalText = textFromContent(block.content) ?? ref.finalText;
+        refs.set(block.tool_use_id, ref);
+      }
+    }
+  }
+
+  const runs: SubagentRun[] = [];
+  for (const [toolUseId, groupLines] of subagentGroups) {
+    const summary = summarizeSubagentLines(groupLines);
+    const ref = refs.get(toolUseId) ?? {};
+    const finalText = ref.finalText ?? summary.finalText;
+    const finalPreview = finalText
+      ? finalText.replace(/\s+/g, " ").trim().slice(0, 240)
+      : summary.finalPreview;
+    const startTOffsetMs =
+      sessionStartMs !== undefined && summary.startMs !== undefined
+        ? Math.max(0, summary.startMs - sessionStartMs)
+        : undefined;
+    const endTOffsetMs =
+      sessionStartMs !== undefined && summary.endMs !== undefined
+        ? Math.max(0, summary.endMs - sessionStartMs)
+        : undefined;
+    const durationMs =
+      summary.startMs !== undefined && summary.endMs !== undefined
+        ? summary.endMs - summary.startMs
+        : undefined;
+    runs.push({
+      agentId: toolUseId,
+      agentType: ref.agentType ?? "unknown",
+      description:
+        ref.description ??
+        (ref.prompt ? ref.prompt.replace(/\s+/g, " ").trim().slice(0, 80) : "(no description)"),
+      startMs: summary.startMs,
+      endMs: summary.endMs,
+      durationMs,
+      startTOffsetMs,
+      endTOffsetMs,
+      eventCount: summary.eventCount,
+      totalUsage: summary.totalUsage,
+      parentUuid: ref.parentUuid,
+      parentToolUseId: toolUseId,
+      runInBackground: false,
+      finalPreview,
+      finalText,
+      prompt: ref.prompt,
+      model: summary.model,
+      toolCalls: summary.toolCalls,
+      toolCallCount: summary.toolCallCount,
+      assistantMessageCount: summary.assistantMessageCount,
+    });
+  }
+  runs.sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0));
+  return runs;
+}
+
+type Parsed = {
+  meta: SessionMeta;
+  events: SessionDetail["events"];
+  subagents: SubagentRun[];
+};
 
 async function parseCoworkSession(file: SessionFile): Promise<Parsed> {
   const [lines, coworkMeta, spaceIdToPath] = await Promise.all([
@@ -227,7 +372,14 @@ async function parseCoworkSession(file: SessionFile): Promise<Parsed> {
     readCoworkMeta(file.metaPath),
     loadSpacesForWorkspace(file.workspaceDir),
   ]);
-  const { meta: baseMeta, events } = parseTranscript(dedupeReplayedLines(lines));
+  const deduped = dedupeReplayedLines(lines);
+  const { mainLines, subagentGroups } = partitionCoworkLines(deduped);
+  const { meta: baseMeta, events } = parseTranscript(mainLines);
+  // Subagent lane offsets share the main timeline's t=0 (min main-event ts).
+  const sessionStartMs = baseMeta.firstTimestamp
+    ? Date.parse(baseMeta.firstTimestamp)
+    : undefined;
+  const subagents = buildCoworkSubagents(subagentGroups, deduped, sessionStartMs);
   const { projectName, projectDir, cwd } = resolveProject(coworkMeta, spaceIdToPath);
 
   // The audit JSONL's `cwd` field is the VM path (`/sessions/<vmProcessName>`)
@@ -243,7 +395,7 @@ async function parseCoworkSession(file: SessionFile): Promise<Parsed> {
     cwd: cwd ?? baseMeta.cwd,
     model: baseMeta.model ?? coworkMeta.model,
   };
-  return { meta, events };
+  return { meta, events, subagents };
 }
 
 type CacheKey = {
@@ -323,8 +475,12 @@ export async function getCoworkSession(
   const key = cacheKeyFor(file);
   const cached = detailCache.get(file.auditPath);
   if (cached && cacheKeyMatches(cached.key, key)) return cached.detail;
-  const { meta, events } = await parseCoworkSession(file);
-  const detail: SessionDetail = { ...meta, events };
+  const { meta, events, subagents } = await parseCoworkSession(file);
+  const detail: SessionDetail = {
+    ...meta,
+    events,
+    ...(subagents.length ? { subagents } : {}),
+  };
   detailCache.set(file.auditPath, { detail, key });
   return detail;
 }

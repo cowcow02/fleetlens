@@ -248,6 +248,8 @@ describe("cowork parser", () => {
     expect(toolResult?.toolUseId).toBe("tu-1");
     const userEvent = detail!.events.find((e) => e.role === "user");
     expect(userEvent?.preview).toBe("Help me sort my screenshots.");
+    // No Agent dispatches in this fixture → no subagent lane.
+    expect(detail!.subagents).toBeUndefined();
   });
 
   it("returns empty list when root has no sessions", async () => {
@@ -292,5 +294,133 @@ describe("cowork parser", () => {
     // The kept copy is the timestamped one, so the turn lands on the timeline.
     expect(userEvents[0]!.preview).toBe("from this project name, what do I want?");
     expect(userEvents[0]!.timestamp).toBe("2026-05-01T07:05:02.000Z");
+  });
+
+  it("lifts inline subagents (parent_tool_use_id) into a subagent lane, off the main timeline", async () => {
+    // Cowork interleaves a spawned subagent's transcript into audit.jsonl,
+    // tagged with parent_tool_use_id = the dispatching Agent tool_use id. The
+    // Agent call and the tool_result returning its output stay on the main
+    // timeline (parent_tool_use_id null); the internals move to a SubagentRun.
+    const AGENT_ID = "toolu_agent_1";
+    const root = await makeFixture({
+      auditLines: [
+        {
+          type: "user",
+          uuid: "u-1",
+          parent_tool_use_id: null,
+          message: { role: "user", content: "Write chapter 1." },
+          timestamp: "2026-05-01T07:05:00.000Z",
+        },
+        {
+          type: "assistant",
+          uuid: "a-1",
+          parent_tool_use_id: null,
+          timestamp: "2026-05-01T07:05:01.000Z",
+          requestId: "r-1",
+          message: {
+            id: "msg-1",
+            role: "assistant",
+            model: "claude-opus-4-7",
+            content: [
+              {
+                type: "tool_use",
+                id: AGENT_ID,
+                name: "Agent",
+                input: {
+                  description: "Write Chapter 1",
+                  subagent_type: "general-purpose",
+                  prompt: "Write a great chapter 1.",
+                },
+              },
+            ],
+            usage: { input_tokens: 100, output_tokens: 10 },
+          },
+        },
+        // --- subagent internals (parent_tool_use_id === AGENT_ID) ---
+        {
+          type: "user",
+          uuid: "s-u-1",
+          parent_tool_use_id: AGENT_ID,
+          timestamp: "2026-05-01T07:05:02.000Z",
+          message: { role: "user", content: [{ type: "text", text: "Write a great chapter 1." }] },
+        },
+        {
+          type: "assistant",
+          uuid: "s-a-1",
+          parent_tool_use_id: AGENT_ID,
+          timestamp: "2026-05-01T07:05:03.000Z",
+          requestId: "s-r-1",
+          message: {
+            id: "s-msg-1",
+            role: "assistant",
+            model: "claude-opus-4-7",
+            content: [
+              { type: "tool_use", id: "toolu_write_1", name: "Write", input: { file_path: "/ch1.md" } },
+            ],
+            usage: { input_tokens: 500, output_tokens: 300 },
+          },
+        },
+        {
+          type: "user",
+          uuid: "s-u-2",
+          parent_tool_use_id: AGENT_ID,
+          timestamp: "2026-05-01T07:05:04.000Z",
+          message: {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "toolu_write_1", content: "File created." }],
+          },
+        },
+        // --- main tool_result: the subagent's output, returned to the parent ---
+        {
+          type: "user",
+          uuid: "u-2",
+          parent_tool_use_id: null,
+          timestamp: "2026-05-01T07:05:05.000Z",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: AGENT_ID,
+                content: [{ type: "text", text: "Done. File at /ch1.md" }],
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const detail = await getCoworkSession(SESSION_ID, { root });
+    expect(detail).not.toBeNull();
+
+    // One subagent lane, faithfully attributed.
+    expect(detail!.subagents).toHaveLength(1);
+    const sa = detail!.subagents![0]!;
+    expect(sa.agentType).toBe("general-purpose");
+    expect(sa.description).toBe("Write Chapter 1");
+    expect(sa.prompt).toBe("Write a great chapter 1.");
+    expect(sa.parentToolUseId).toBe(AGENT_ID);
+    expect(sa.parentUuid).toBe("a-1");
+    // Final output comes from the main tool_result, not the group's last block.
+    expect(sa.finalText).toBe("Done. File at /ch1.md");
+    expect(sa.toolCallCount).toBe(1);
+    expect(sa.toolCalls?.[0]?.name).toBe("Write");
+    // Offset shares the main timeline's t=0 (first main event at 07:05:00).
+    expect(sa.startTOffsetMs).toBe(2000);
+
+    // The subagent's internal Write is OFF the main timeline...
+    const writeCall = detail!.events.find(
+      (e) => e.role === "tool-call" && e.toolName === "Write",
+    );
+    expect(writeCall).toBeUndefined();
+    // ...but the dispatching Agent call and its result remain.
+    const agentCall = detail!.events.find(
+      (e) => e.role === "tool-call" && e.toolName === "Agent",
+    );
+    expect(agentCall).toBeDefined();
+    const agentResult = detail!.events.find(
+      (e) => e.role === "tool-result" && e.toolUseId === AGENT_ID,
+    );
+    expect(agentResult).toBeDefined();
   });
 });
