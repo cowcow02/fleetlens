@@ -193,6 +193,32 @@ async function readJsonl(filePath: string): Promise<unknown[]> {
   return out;
 }
 
+/** Cowork's audit.jsonl logs each user message twice under the SAME `uuid`: the
+ *  raw desktop input (no `timestamp`) and an `isReplay` copy fed into the agent
+ *  runtime (carrying a real `timestamp` and a fresh inner `session_id`).
+ *  parseTranscript would emit both, doubling every user turn in the transcript.
+ *  Keep one line per uuid — prefer the copy that has a `timestamp` so the event
+ *  still lands on the timeline. Lines without a uuid (system/result/rate-limit)
+ *  pass through untouched. */
+function dedupeReplayedLines(lines: unknown[]): unknown[] {
+  const keepAt = new Map<string, number>();
+  lines.forEach((line, i) => {
+    const rec = line as { uuid?: unknown; timestamp?: unknown };
+    if (typeof rec.uuid !== "string") return;
+    const prev = keepAt.get(rec.uuid);
+    if (prev === undefined) {
+      keepAt.set(rec.uuid, i);
+      return;
+    }
+    const prevHasTs = (lines[prev] as { timestamp?: unknown }).timestamp !== undefined;
+    if (!prevHasTs && rec.timestamp !== undefined) keepAt.set(rec.uuid, i);
+  });
+  return lines.filter((line, i) => {
+    const rec = line as { uuid?: unknown };
+    return typeof rec.uuid !== "string" || keepAt.get(rec.uuid) === i;
+  });
+}
+
 type Parsed = { meta: SessionMeta; events: SessionDetail["events"] };
 
 async function parseCoworkSession(file: SessionFile): Promise<Parsed> {
@@ -201,7 +227,7 @@ async function parseCoworkSession(file: SessionFile): Promise<Parsed> {
     readCoworkMeta(file.metaPath),
     loadSpacesForWorkspace(file.workspaceDir),
   ]);
-  const { meta: baseMeta, events } = parseTranscript(lines);
+  const { meta: baseMeta, events } = parseTranscript(dedupeReplayedLines(lines));
   const { projectName, projectDir, cwd } = resolveProject(coworkMeta, spaceIdToPath);
 
   // The audit JSONL's `cwd` field is the VM path (`/sessions/<vmProcessName>`)
