@@ -1747,6 +1747,10 @@ function TranscriptList({
     const indented = d.kind === "presentation" ? d.indented : false;
     if (!indented) {
       const band = idleBandBeforeOffset(rowTOffset(d));
+      // Set when this boundary's idle divider already states the new day + time,
+      // so the "Start of <new day>" marker below can be dropped as a redundant
+      // restatement.
+      let resumeStamped = false;
       if (
         band !== null &&
         band.durationMs > IDLE_THRESHOLD_MS &&
@@ -1762,6 +1766,7 @@ function TranscriptList({
           currentDayKey !== null && resumeDayKey !== null && resumeDayKey !== currentDayKey
             ? rowTimestamp(d)
             : undefined;
+        resumeStamped = resumeTs !== undefined;
         out.push(
           <IdleDivider
             key={`idle-before-${i}`}
@@ -1783,7 +1788,11 @@ function TranscriptList({
         // Fallback scroll target for days with no digest card: the day's first
         // row by PRIMARY index (i is the displayRows position — wrong key space).
         const firstIdx = rowPrimaryIndexOf(d);
-        if (endedKey) {
+        // Skip the "Start of <new day>" marker when the resume divider above
+        // already names this day + time — it would just restate it. With no
+        // resume divider (continuous or sub-threshold crossing) the marker is
+        // the only thing labeling the boundary, so it stays.
+        if (endedKey && !resumeStamped) {
           out.push(
             <DayJumpRow
               key={`daydown-${dk}`}
