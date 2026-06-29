@@ -390,6 +390,14 @@ export function Minimap({
       }
     }
 
+    // A windowed timeline shouldn't open on dead air. The gap leading INTO the
+    // first real row/turn — e.g. the overnight idle before a day's first
+    // message, which at day scope can be 60-70% of the whole bar — is the
+    // previous period's tail, not this view's content. Drop leading idle so the
+    // first activity anchors the left edge; a gap that FOLLOWS the first
+    // activity is real in-view dead air and is left in place.
+    while (fused.length && fused[0]!.kind === "idle") fused.shift();
+
     // Cap the number of rendered segments. Each <rect> carries two
     // event handlers (onMouseEnter + onClick), so 2000 raw-events in
     // "All events" mode becomes 4000 DOM event listeners — enough to
