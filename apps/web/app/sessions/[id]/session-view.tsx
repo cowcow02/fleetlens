@@ -64,7 +64,7 @@ import {
   WorkflowAgentDrawer,
 } from "./session-view/workflows-panel";
 import { SubagentDrawer } from "./session-view/subagent-drawer";
-import { estimateCost, formatCost, formatGap, formatOffset, formatRelative, formatTokens, shortId } from "@/lib/format";
+import { estimateCost, formatCost, formatGap, formatOffset, formatRelative, formatResumeStamp, formatTokens, shortId } from "@/lib/format";
 import { LiveBadge } from "@/components/live-badge";
 import { AskButton, AskDrawer } from "@/components/ask";
 import { TailMode } from "@/components/tail-mode";
@@ -1702,6 +1702,18 @@ function TranscriptList({
     if (d.kind === "turn-expanded-footer") return undefined;
     return d.row.tOffsetMs;
   };
+  /** Absolute ISO timestamp of a row's primary event — used to date-stamp an
+   *  idle gap that resumes on a later day. */
+  const rowTimestamp = (d: DisplayRow): string | undefined => {
+    const r =
+      d.kind === "presentation"
+        ? d.row
+        : d.kind === "turn-collapsed" || d.kind === "turn-expanded-header"
+          ? d.turn.rows[0]
+          : undefined;
+    if (!r) return undefined;
+    return r.kind === "tool-group" ? r.events[0]?.timestamp : r.event?.timestamp;
+  };
   // A display row → its event PRIMARY index (what jumpAcrossDay's turn/row
   // lookups are keyed by — NOT the displayRows loop position).
   const rowPrimaryIndexOf = (d: DisplayRow): number =>
@@ -1741,7 +1753,22 @@ function TranscriptList({
         !emittedBandStarts.has(band.start)
       ) {
         emittedBandStarts.add(band.start);
-        out.push(<IdleDivider key={`idle-before-${i}`} gapMs={band.durationMs} />);
+        // When the gap resumes on a LATER day, "1d" is vaguer than the actual
+        // resume moment — show that instead. Same day-key trigger as the day
+        // boundary marker emitted just below, so the two agree. Sub-day gaps
+        // keep the duration (the pause length is the useful signal there).
+        const resumeDayKey = dayKeyForOffset(rowTOffset(d));
+        const resumeTs =
+          currentDayKey !== null && resumeDayKey !== null && resumeDayKey !== currentDayKey
+            ? rowTimestamp(d)
+            : undefined;
+        out.push(
+          <IdleDivider
+            key={`idle-before-${i}`}
+            gapMs={band.durationMs}
+            resumeStamp={resumeTs ? formatResumeStamp(resumeTs) : undefined}
+          />,
+        );
       }
       // Day boundary: drop this day's digest card at its first row (after any
       // overnight idle divider that led into the day) so per-day perception
@@ -1866,7 +1893,7 @@ function TranscriptList({
   return <div>{out}</div>;
 }
 
-function IdleDivider({ gapMs }: { gapMs: number }) {
+function IdleDivider({ gapMs, resumeStamp }: { gapMs: number; resumeStamp?: string }) {
   return (
     <div
       style={{
@@ -1882,7 +1909,7 @@ function IdleDivider({ gapMs }: { gapMs: number }) {
         letterSpacing: "0.02em",
       }}
     >
-      Session idle · {formatGap(gapMs)}
+      {resumeStamp ? `Session resumed ${resumeStamp}` : `Session idle · ${formatGap(gapMs)}`}
     </div>
   );
 }
