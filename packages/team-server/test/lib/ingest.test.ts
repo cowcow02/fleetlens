@@ -190,6 +190,66 @@ describe("processIngest", () => {
     expect(row.rows[0].sessions).toBe(2);
   });
 
+  // Regression: a regex-valid but non-existent calendar date (2026-99-99) used
+  // to pass block validation, then throw casting to the `date` column
+  // mid-transaction and roll back OTHER accepted blocks. It must now be caught
+  // as a skipped block while a co-present valid block still commits.
+  it("skips an impossible calendar date without rolling back accepted blocks", async () => {
+    const result = await processIngest(
+      {
+        ingestId: `badcal-${Math.random().toString(36).slice(2)}`,
+        observedAt: new Date().toISOString(),
+        dailyRollup: {
+          day: "2026-99-99", // passes the YYYY-MM-DD regex, impossible calendar date
+          agentTimeMs: 1,
+          sessions: 1,
+          toolCalls: 1,
+          turns: 1,
+          tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        },
+        cyclePeaks: {
+          fiveHour: [{ endsAt: "2026-07-05T05:00:00+00:00", peakPct: 4242, source: "real", current: true }],
+          sevenDay: [],
+        },
+      },
+      membershipId,
+      teamId,
+      pool,
+    );
+    expect(result.accepted).toBe(true);
+    expect(result.blocks?.skipped.dailyRollup).toBeTruthy();
+    expect(result.blocks?.accepted).not.toContain("dailyRollup");
+    // The co-present cyclePeaks block committed — proving the bad date did not
+    // abort the transaction.
+    expect(result.blocks?.accepted).toContain("cyclePeaks");
+    const row = await pool.query(
+      "SELECT count(*)::int AS n FROM membership_cycle_peaks WHERE team_id=$1 AND membership_id=$2 AND peak_pct=4242",
+      [teamId, membershipId],
+    );
+    expect(row.rows[0].n).toBeGreaterThan(0);
+  });
+
+  // DoS guard: row-level snapshotHistory resilience must not become an
+  // unbounded-work primitive. An oversized array (mostly invalid rows, so
+  // valid.length stays under the cap) must be rejected on RAW length before the
+  // server safe-parses every row.
+  it("rejects an oversized snapshotHistory on raw length before parsing", async () => {
+    const arr = Array.from({ length: 1001 }, () => ({ not: "a-valid-snapshot" })); // > SNAPSHOT_HISTORY_MAX (1000)
+    const result = await processIngest(
+      {
+        ingestId: `bigsnap-${Math.random().toString(36).slice(2)}`,
+        observedAt: new Date().toISOString(),
+        snapshotHistory: arr,
+      },
+      membershipId,
+      teamId,
+      pool,
+    );
+    expect(result.accepted).toBe(true);
+    expect(result.blocks?.accepted ?? []).not.toContain("snapshotHistory");
+    expect(result.blocks?.skipped.snapshotHistory).toContain("cap");
+  });
+
   // §1b — peakPct legitimately exceeds 200 on overage/predicted peaks; the
   // old `.max(200)` rejected real payloads and (since cyclePeaks rides the
   // daily push) 400'd the whole thing.
@@ -530,7 +590,7 @@ describe("processIngest", () => {
     expect(res.rows[0].loads_total).toBeGreaterThanOrEqual(2);
   });
 
-  it("preserves prior outcome_mix when a later push omits enrichedExtras (opt-out path)", async () => {
+  it("preserves prior outcome_mix when a later push omits enrichedExtras (e.g. a day with no enriched entries)", async () => {
     const day = "2026-05-13";
     const richRollup = {
       day,

@@ -278,6 +278,62 @@ describe("runTeamSync", () => {
     expect(logs.some(([, m]) => m.includes("skipping past"))).toBe(true);
   });
 
+  it("drops a 4xx-poison item during the queue drain instead of re-enqueueing it forever", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    const { dequeuePayloads, enqueuePayload } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([
+      { ingestId: "queued-poison", observedAt: "2026-04-13T00:00:00.000Z" } as never,
+    ]);
+
+    // Fresh-day push OK, then the queued item 422s on drain (validation poison).
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 422, json: async () => ({ error: "Validation failed" }) } as Response)
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as Response);
+
+    const logs: Array<[string, string]> = [];
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync((level, msg) => logs.push([level, msg]));
+
+    expect(result.pushed).toBe(1);
+    // The poison item was dropped: not counted as drained, and NOT re-enqueued
+    // (the whole point — a queued poison used to loop forever and block the rest).
+    expect(result.queuedDrained).toBe(0);
+    expect(enqueuePayload).not.toHaveBeenCalled();
+    expect(logs.some(([, m]) => m.includes("dropping unrecoverable item"))).toBe(true);
+  });
+
+  it("re-enqueues a transient (5xx) queued item during the drain", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    const { dequeuePayloads, enqueuePayload } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([
+      { ingestId: "queued-transient", observedAt: "2026-04-13T00:00:00.000Z" } as never,
+    ]);
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) } as Response)
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync();
+
+    expect(result.pushed).toBe(1);
+    expect(result.queuedDrained).toBe(0);
+    // Transient failure → the item is put back for a later retry, not dropped.
+    expect(enqueuePayload).toHaveBeenCalledOnce();
+  });
+
   it("does NOT advance past a 5xx day — queues for retry instead", async () => {
     const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue(CONFIG);

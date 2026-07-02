@@ -120,7 +120,8 @@ export type IngestPayload = {
   dailyRollup?: DailyRollup;
   // Layer A — Entry-derived rollup; same day key as dailyRollup.
   richRollup?: RichDailyRollup;
-  // Layer B — LLM-enriched extras, only when the member opted in.
+  // Layer B — LLM-enriched extras, always shared when available (the per-member
+  // enrichment opt-out was removed; the daemon sends whatever it has computed).
   enrichedExtras?: EnrichedDailyExtras;
   // V2.1 — Layer C: file-system artifact signals (no LLM, no raw text).
   // Same day key as richRollup; safe to share, hashes only.

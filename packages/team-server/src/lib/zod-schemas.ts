@@ -70,8 +70,23 @@ export const UsageHistoryPayload = z.object({
   planTier: PlanTierKeySchema.optional(),
 });
 
+// A regex-valid `YYYY-MM-DD` can still be a non-existent calendar date
+// (`2026-99-99`, `2026-02-30`). The `daily_rollups.day` column is `date`, so a
+// bad value passes block validation but then throws mid-INSERT and rolls back
+// OTHER already-accepted blocks — defeating partial-success. Validate the
+// calendar date here so a bad day is a skipped block, not a transaction killer.
+function isCalendarDate(s: string): boolean {
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+export const DaySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isCalendarDate, { message: "not a valid calendar date" });
+
 export const DailyRollupSchema = z.object({
-  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  day: DaySchema,
   agentTimeMs: z.number().int().nonnegative(),
   sessions: z.number().int().nonnegative(),
   // Optional for back-compat: CLIs predating the per-day split don't send it.

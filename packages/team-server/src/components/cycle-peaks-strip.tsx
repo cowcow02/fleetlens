@@ -83,7 +83,10 @@ function EmptyCycleBar() {
 
 
 function CycleBar({ cycle }: { cycle: MembershipCyclePeak }) {
+  // Bar height / tone stay clamped to 100; the LABEL shows the true value so
+  // an overage cycle reads "247%", not a misleading "100%".
   const pct = Math.max(0, Math.min(100, cycle.peakPct));
+  const labelPct = Math.max(0, cycle.peakPct);
   const tone = cycle.isCurrent
     ? paceToneForCycle(pct, cycle.endsAt.getTime(), SEVEN_DAYS_MS)
     : utilizationTone(pct);
@@ -109,7 +112,7 @@ function CycleBar({ cycle }: { cycle: MembershipCyclePeak }) {
           letterSpacing: "0.02em",
         }}
       >
-        {pct.toFixed(0)}%
+        {labelPct.toFixed(0)}%
       </div>
       <div
         style={{

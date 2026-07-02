@@ -115,6 +115,37 @@ export async function runTeamSync(
       }
     };
 
+    // A 4xx validation error (400/422) is unrecoverable: the same payload will
+    // fail identically forever. Auth (401/403) and rate-limit (429) are NOT
+    // day-specific and ARE recoverable, so they fall through to the transient
+    // path (queue + retry). With the server's partial-success ingestion a
+    // data-block error now returns 200, so this guards against a future
+    // hard-4xx, not the common path.
+    const isValidationPoison = (status: number): boolean => status === 400 || status === 422;
+
+    // Drain queued payloads while the server is reachable. A queued item that
+    // now fails with 4xx validation-poison is DROPPED (it would fail identically
+    // forever and, worse, block every item behind it); a transient failure
+    // re-enqueues the remainder and stops so ordering/backpressure is kept.
+    const drainBacklog = async (): Promise<number> => {
+      let drained = 0;
+      const backlog = dequeuePayloads() as IngestPayload[];
+      for (let i = 0; i < backlog.length; i++) {
+        const qResult = await pushToTeamServer(config, backlog[i]!);
+        if (!qResult.ok) {
+          if (isValidationPoison(qResult.status)) {
+            log("warn", `team push: queued payload rejected (HTTP ${qResult.status}); dropping unrecoverable item`);
+            continue;
+          }
+          for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
+          break;
+        }
+        collectCommands(qResult.body?.commands);
+        drained++;
+      }
+      return drained;
+    };
+
     const usageBackfill = await runTeamBackfill(log, USAGE_LOG, config, {
       sinceCapturedAt: options.forceUsageBackfill
         ? undefined
@@ -153,6 +184,13 @@ export async function runTeamSync(
       const payload = buildIngestPayload({ usageSnapshot, planTier, cyclePeaks });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
+        if (isValidationPoison(result.status)) {
+          // Unrecoverable — queuing it would just wedge the drain loop forever.
+          const errLine = `team push: live-only payload rejected (HTTP ${result.status}); dropping unrecoverable payload`;
+          log("warn", errLine);
+          writeLastPushFailure(payload, errLine);
+          return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
+        }
         const errLine = `team push failed (${result.status})`;
         log("warn", `${errLine}; queueing`);
         writeLastPushFailure(payload, errLine);
@@ -162,17 +200,7 @@ export async function runTeamSync(
       writeLastPushSuccess(payload);
       collectCommands(result.body?.commands);
       // Try to drain any queued backlog while the server is reachable.
-      let queuedDrained = 0;
-      const backlog = dequeuePayloads() as IngestPayload[];
-      for (let i = 0; i < backlog.length; i++) {
-        const qResult = await pushToTeamServer(config, backlog[i]);
-        if (!qResult.ok) {
-          for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
-          break;
-        }
-        collectCommands(qResult.body?.commands);
-        queuedDrained++;
-      }
+      const queuedDrained = await drainBacklog();
       log("info", `team push ok: live-only (no new daily activity)` +
         (queuedDrained ? `, ${queuedDrained} queued retried` : ""));
       await dispatchAndReport();
@@ -186,15 +214,6 @@ export async function runTeamSync(
     // skipped as validation-poison. lastSyncedDay never rewinds before it, so
     // a skipped poison day is not re-pushed on the next tick.
     let lastResolvedDay: string | undefined;
-
-    // A 4xx validation error (400/422) is unrecoverable: the same payload
-    // will fail identically forever, so we advance PAST the day instead of
-    // wedging the loop re-pushing it every ~5 min. Auth (401/403) and
-    // rate-limit (429) are NOT day-specific and ARE recoverable, so they fall
-    // through to the transient path (queue + retry, no advance). With the
-    // server's partial-success ingestion a data-block error now returns 200,
-    // so this is a guard against a future hard-4xx, not the common path.
-    const isValidationPoison = (status: number): boolean => status === 400 || status === 422;
 
     const resolveRepo = createRepoResolver();
 
@@ -262,19 +281,7 @@ export async function runTeamSync(
       persistConfig({ lastSyncedDay: today });
     }
 
-    let queuedDrained = 0;
-    if (!failedDay) {
-      const backlog = dequeuePayloads() as IngestPayload[];
-      for (let i = 0; i < backlog.length; i++) {
-        const qResult = await pushToTeamServer(config, backlog[i]);
-        if (!qResult.ok) {
-          for (const remaining of backlog.slice(i)) enqueuePayload(remaining);
-          break;
-        }
-        collectCommands(qResult.body?.commands);
-        queuedDrained++;
-      }
-    }
+    const queuedDrained = !failedDay ? await drainBacklog() : 0;
 
     if (pushed > 0) {
       log("info", `team push ok: ${pushed} day${pushed === 1 ? "" : "s"} pushed` +

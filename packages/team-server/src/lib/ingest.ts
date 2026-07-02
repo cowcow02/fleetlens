@@ -88,20 +88,25 @@ export async function processIngest(
     const arr = rawObj.snapshotHistory;
     if (Array.isArray(arr)) {
       rawSnapshotCount = arr.length;
-      const valid: UsageSnapshot[] = [];
-      let firstBad: string | undefined;
-      for (let i = 0; i < arr.length; i++) {
-        const res = UsageSnapshotSchema.safeParse(arr[i]);
-        if (res.success) valid.push(res.data);
-        else if (!firstBad) {
-          const issue = res.error.issues[0];
-          firstBad = `snapshotHistory[${i}]${issue?.path.length ? "." + issue.path.join(".") : ""}: ${issue?.message ?? "invalid"}`;
-        }
-      }
-      if (valid.length > SNAPSHOT_HISTORY_MAX) {
-        skippedBlocks.snapshotHistory = `snapshotHistory: exceeds ${SNAPSHOT_HISTORY_MAX}-row cap`;
+      // Cap on RAW length BEFORE parsing. Row-level resilience must not become
+      // an unbounded-work primitive: a hostile member could send millions of
+      // mostly-invalid rows (so `valid.length` stays under the cap) and force a
+      // safeParse of every one. Enforce the old schema-level `.max(1000)` bound
+      // on the raw array first.
+      if (arr.length > SNAPSHOT_HISTORY_MAX) {
+        skippedBlocks.snapshotHistory = `snapshotHistory: exceeds ${SNAPSHOT_HISTORY_MAX}-row cap (${arr.length} received)`;
         console.warn(`[ingest] skipped block "snapshotHistory": ${skippedBlocks.snapshotHistory}`);
       } else {
+        const valid: UsageSnapshot[] = [];
+        let firstBad: string | undefined;
+        for (let i = 0; i < arr.length; i++) {
+          const res = UsageSnapshotSchema.safeParse(arr[i]);
+          if (res.success) valid.push(res.data);
+          else if (!firstBad) {
+            const issue = res.error.issues[0];
+            firstBad = `snapshotHistory[${i}]${issue?.path.length ? "." + issue.path.join(".") : ""}: ${issue?.message ?? "invalid"}`;
+          }
+        }
         if (valid.length > 0) {
           snapshotHistory = valid;
           acceptedBlocks.push("snapshotHistory");
