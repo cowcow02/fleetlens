@@ -55,7 +55,8 @@ describe("POST /api/admin/prune", () => {
   it("prunes and returns count when secret matches", async () => {
     process.env.FLEETLENS_SCHEDULER_SECRET = "s3cret";
     const pruneIngestLog = vi.fn().mockResolvedValue(12);
-    vi.doMock("../../src/lib/scheduler.js", () => ({ pruneIngestLog }));
+    const pruneMemberSyncLog = vi.fn().mockResolvedValue(3);
+    vi.doMock("../../src/lib/scheduler.js", () => ({ pruneIngestLog, pruneMemberSyncLog }));
     const { POST } = await import("../../src/app/api/admin/prune/route.js");
     const res = await POST(
       new Request("http://localhost/api/admin/prune", {
@@ -64,7 +65,8 @@ describe("POST /api/admin/prune", () => {
       })
     );
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ pruned: 12 });
+    await expect(res.json()).resolves.toEqual({ pruned: 12, prunedSyncLog: 3 });
     expect(pruneIngestLog).toHaveBeenCalledOnce();
+    expect(pruneMemberSyncLog).toHaveBeenCalledOnce();
   });
 });

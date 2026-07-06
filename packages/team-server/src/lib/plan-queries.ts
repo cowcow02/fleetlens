@@ -448,6 +448,62 @@ export async function loadMemberPlanSummary(
   };
 }
 
+export type MemberSyncLogRow = {
+  id: number;
+  ingestId: string;
+  cliVersion: string | null;
+  accepted: string[];
+  skipped: Record<string, string>;
+  status: "ok" | "partial";
+  dedup: boolean;
+  histInserted: number;
+  histReceived: number;
+  createdAtMs: number;
+};
+
+// Recent per-push sync events for one member, newest first. Backs the in-UI
+// "View logs" panel so admins can see sync health without container stdout.
+export async function loadMemberSyncLog(
+  teamId: string,
+  membershipId: string,
+  pool: pg.Pool,
+  limit = 100,
+): Promise<MemberSyncLogRow[]> {
+  const res = await pool.query<{
+    id: string;
+    ingest_id: string;
+    cli_version: string | null;
+    accepted: unknown;
+    skipped: unknown;
+    status: string;
+    dedup: boolean;
+    hist_inserted: number;
+    hist_received: number;
+    created_ms: number;
+  }>(
+    `SELECT id, ingest_id, cli_version, accepted, skipped, status, dedup,
+            hist_inserted, hist_received,
+            EXTRACT(EPOCH FROM created_at)::float8 * 1000 AS created_ms
+       FROM member_sync_log
+       WHERE team_id = $1 AND membership_id = $2
+       ORDER BY created_at DESC
+       LIMIT $3`,
+    [teamId, membershipId, limit],
+  );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    ingestId: r.ingest_id,
+    cliVersion: r.cli_version,
+    accepted: Array.isArray(r.accepted) ? (r.accepted as string[]) : [],
+    skipped: (r.skipped && typeof r.skipped === "object" ? r.skipped : {}) as Record<string, string>,
+    status: r.status === "partial" ? "partial" : "ok",
+    dedup: r.dedup,
+    histInserted: Number(r.hist_inserted),
+    histReceived: Number(r.hist_received),
+    createdAtMs: Number(r.created_ms),
+  }));
+}
+
 export async function loadOptimizerSettings(
   teamId: string,
   pool: pg.Pool,

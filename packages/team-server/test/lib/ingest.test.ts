@@ -835,3 +835,45 @@ describe("processIngest health log line", () => {
     }
   });
 });
+
+// The persisted per-push row is what the in-UI "View logs" panel reads, so
+// admins can see sync health without container stdout. It must land on a real
+// push and capture the dropped block on a partial one.
+describe("processIngest member_sync_log persistence", () => {
+  it("writes an 'ok' row (member, cli, accepted blocks) on a clean push", async () => {
+    const ingestId = `synclog-${Math.random().toString(36).slice(2)}`;
+    await processIngest(makePayload({ ingestId, cliVersion: "9.9.9" }), membershipId, teamId, pool);
+    const { rows } = await pool.query(
+      "SELECT membership_id, cli_version, accepted, skipped, status, dedup FROM member_sync_log WHERE ingest_id = $1",
+      [ingestId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].membership_id).toBe(membershipId);
+    expect(rows[0].cli_version).toBe("9.9.9");
+    expect(rows[0].status).toBe("ok");
+    expect(rows[0].accepted).toContain("dailyRollup");
+    expect(rows[0].dedup).toBe(false);
+  });
+
+  it("writes a 'partial' row naming the dropped block on a bad-date push", async () => {
+    const ingestId = `synclog-bad-${Math.random().toString(36).slice(2)}`;
+    await processIngest(
+      makePayload({
+        ingestId,
+        dailyRollup: { day: "2026-99-99", agentTimeMs: 1, sessions: 1, toolCalls: 1, turns: 1, tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } },
+        planTier: "pro-max-20x",
+      }),
+      membershipId,
+      teamId,
+      pool,
+    );
+    const { rows } = await pool.query(
+      "SELECT status, accepted, skipped FROM member_sync_log WHERE ingest_id = $1",
+      [ingestId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("partial");
+    expect(rows[0].accepted).toContain("planTier");
+    expect(rows[0].skipped).toHaveProperty("dailyRollup");
+  });
+});

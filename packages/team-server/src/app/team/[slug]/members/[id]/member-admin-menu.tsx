@@ -7,7 +7,13 @@ import { useState } from "react";
 // holds one action (30-day backfill); new admin actions slot in as menu items.
 type Status = "idle" | "submitting" | "success" | "already-queued" | "error";
 
-export function MemberAdminMenu({ membershipId }: { membershipId: string }) {
+export function MemberAdminMenu({
+  membershipId,
+  slug,
+}: {
+  membershipId: string;
+  slug: string;
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
@@ -88,6 +94,24 @@ export function MemberAdminMenu({ membershipId }: { membershipId: string }) {
               padding: 4,
             }}
           >
+            <a
+              role="menuitem"
+              href={`/team/${slug}/members/${membershipId}/logs`}
+              onClick={() => setMenuOpen(false)}
+              style={{
+                display: "block",
+                width: "100%",
+                textAlign: "left",
+                textDecoration: "none",
+                cursor: "pointer",
+                padding: "9px 12px",
+                fontSize: 12,
+                color: "var(--ink)",
+                fontFamily: "JetBrains Mono, monospace",
+              }}
+            >
+              View logs
+            </a>
             <button
               type="button"
               role="menuitem"

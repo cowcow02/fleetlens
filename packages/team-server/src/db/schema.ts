@@ -162,6 +162,34 @@ export const ingestLog = pgTable(
   }),
 );
 
+// Human-viewable per-push sync log. One row per meaningful ingest (skips the
+// pure no-op dedup replays) so admins can see each member's sync history in
+// the UI without shelling into container stdout. `accepted` is a string[] of
+// block names; `skipped` is a { blockName: reason } map; `status` = 'partial'
+// when any block was dropped, else 'ok'. Pruned on a retention window — this
+// table is append-only and grows ~1 row/push/member.
+export const memberSyncLog = pgTable(
+  "member_sync_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id").notNull().references(() => memberships.id, { onDelete: "cascade" }),
+    ingestId: text("ingest_id").notNull(),
+    cliVersion: text("cli_version"),
+    accepted: jsonb("accepted").notNull().default([]),
+    skipped: jsonb("skipped").notNull().default({}),
+    status: text("status").notNull(),
+    dedup: boolean("dedup").notNull().default(false),
+    histInserted: integer("hist_inserted").notNull().default(0),
+    histReceived: integer("hist_received").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    member: index("idx_member_sync_log_member").on(t.membershipId, sql`${t.createdAt} DESC`),
+    created: index("idx_member_sync_log_created").on(t.createdAt),
+  }),
+);
+
 export const serverConfig = pgTable("server_config", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),

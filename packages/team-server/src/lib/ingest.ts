@@ -372,6 +372,29 @@ export async function processIngest(
   if (skippedDetail.length > 0) console.warn(health);
   else console.log(health);
 
+  // Persist the same health event so it's viewable per member in the UI
+  // ("View logs") without shelling into container stdout. POST-COMMIT and
+  // best-effort: an observability write must NEVER fail a member's real
+  // ingest. Skips pure no-op dedup replays (nothing happened) to avoid
+  // flooding — anything that did work or dropped a block is kept.
+  const syncStatus = skippedDetail.length > 0 ? "partial" : "ok";
+  if (!dedupHit || historyInserted > 0 || syncStatus === "partial") {
+    try {
+      await p.query(
+        `INSERT INTO member_sync_log
+           (team_id, membership_id, ingest_id, cli_version, accepted, skipped, status, dedup, hist_inserted, hist_received)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          teamId, membershipId, payload.ingestId, payload.cliVersion ?? null,
+          JSON.stringify(acceptedBlocks), JSON.stringify(skippedBlocks), syncStatus,
+          dedupHit, historyInserted, rawSnapshotCount,
+        ],
+      );
+    } catch (err) {
+      console.warn(`[ingest] member_sync_log write failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
   return result;
 }
 

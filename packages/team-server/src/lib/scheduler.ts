@@ -48,6 +48,17 @@ export async function prunePlanUtilization(): Promise<number> {
   return res.rowCount ?? 0;
 }
 
+// Per-push sync-log rows are high-frequency operational data (~1/push/member),
+// and the UI only ever shows the last 100. A fixed 30-day window keeps them
+// useful for troubleshooting while bounding growth regardless of a team's
+// (analytics-oriented) retention_days.
+export async function pruneMemberSyncLog(): Promise<number> {
+  const res = await getPool().query(
+    "DELETE FROM member_sync_log WHERE created_at < now() - interval '30 days'"
+  );
+  return res.rowCount ?? 0;
+}
+
 let started = false;
 
 export function startScheduler(): void {
@@ -61,6 +72,12 @@ export function startScheduler(): void {
       if (n) console.log(`[scheduler] pruned ${n} ingest_log rows`);
     } catch (err) {
       console.error(`[scheduler] prune failed: ${(err as Error).message}`);
+    }
+    try {
+      const n = await pruneMemberSyncLog();
+      if (n) console.log(`[scheduler] pruned ${n} member_sync_log rows`);
+    } catch (err) {
+      console.error(`[scheduler] member_sync_log prune failed: ${(err as Error).message}`);
     }
   }, 60 * 60 * 1000);
 
