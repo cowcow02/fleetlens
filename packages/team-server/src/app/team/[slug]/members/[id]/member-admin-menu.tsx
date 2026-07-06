@@ -10,9 +10,11 @@ type Status = "idle" | "submitting" | "success" | "already-queued" | "error";
 export function MemberAdminMenu({
   membershipId,
   slug,
+  isStaff,
 }: {
   membershipId: string;
   slug: string;
+  isStaff: boolean;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -94,24 +96,26 @@ export function MemberAdminMenu({
               padding: 4,
             }}
           >
-            <a
-              role="menuitem"
-              href={`/team/${slug}/members/${membershipId}/logs`}
-              onClick={() => setMenuOpen(false)}
-              style={{
-                display: "block",
-                width: "100%",
-                textAlign: "left",
-                textDecoration: "none",
-                cursor: "pointer",
-                padding: "9px 12px",
-                fontSize: 12,
-                color: "var(--ink)",
-                fontFamily: "JetBrains Mono, monospace",
-              }}
-            >
-              View logs
-            </a>
+            {isStaff && (
+              <a
+                role="menuitem"
+                href={`/team/${slug}/members/${membershipId}/logs`}
+                onClick={() => setMenuOpen(false)}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  textDecoration: "none",
+                  cursor: "pointer",
+                  padding: "9px 12px",
+                  fontSize: 12,
+                  color: "var(--ink)",
+                  fontFamily: "JetBrains Mono, monospace",
+                }}
+              >
+                View logs
+              </a>
+            )}
             <button
               type="button"
               role="menuitem"

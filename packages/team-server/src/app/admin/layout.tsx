@@ -41,6 +41,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <div className="shell-nav-label">Server admin</div>
           <a href="/admin/updates">Updates</a>
           <a href="/admin/staff">Staff</a>
+          <a href="/admin/logs">Logs</a>
 
           <NavFooter email={session.user.email} />
         </nav>
