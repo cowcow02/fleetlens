@@ -8,6 +8,7 @@ import {
   readLatestUsageSnapshotForWire,
   sessionTouchesDay,
   type IngestPayload,
+  type WireUsageSnapshot,
 } from "./push.js";
 import { createRepoResolver } from "./git-remote.js";
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
@@ -46,7 +47,117 @@ export type SyncOutcome = {
 
 export type TeamSyncOptions = {
   forceUsageBackfill?: boolean;
+  // What kicked off this run — surfaced in the one-per-run [sync] summary
+  // line so an operator (or an agent) can tell automatic ticks apart from a
+  // first-boot catch-up. Only values the daemon actually emits: "auto" (the
+  // 5-min timer) and "boot" (first sync after the daemon starts).
+  trigger?: "auto" | "boot";
+  // The scheduler's interval to the NEXT team sync, so the summary line can
+  // print an accurate "next ~Nm" rather than a hardcoded guess.
+  nextSyncMs?: number;
 };
+
+// Fixed leading status word of every uploaded [sync] line — the ONE token a
+// human or an agent greps to know how the last sync went. Ordered by
+// severity so the level mapping below is obvious:
+//   ok       — rollups pushed clean
+//   idle     — nothing new to push (live snapshot only / truly nothing)
+//   degraded — pushed, but the server skipped a block or a day was dropped
+//   failed   — a transient push error; queued for retry
+//   error    — unrecoverable (validation-poison drop, or the run threw)
+export type SyncStatus = "ok" | "idle" | "degraded" | "failed" | "error";
+
+// Everything the one-per-run summary line reports. Accumulated across the run
+// so a MIXED outcome (pushed 1 day, queued another) is not flattened to a
+// single verb — the line shows both.
+export type SyncSummary = {
+  pushedDays: string[];
+  droppedDays: string[];
+  queued: number;
+  queuedDay?: string;
+  queuedStatus?: number;
+  queuedDrained: number;
+  idleReason?: string;
+  live?: string;
+  usageSnapshots: number;
+  // The server's own verdict on the last successful push this run — which
+  // data blocks it accepted vs. skipped (with reason). Closes the loop: the
+  // member log shows both what the daemon sent AND what the server did with it.
+  accepted?: string[];
+  skipped?: Record<string, string>;
+  errorMsg?: string;
+};
+
+function levelForStatus(s: SyncStatus): "info" | "warn" | "error" {
+  if (s === "ok" || s === "idle") return "info";
+  if (s === "degraded" || s === "failed") return "warn";
+  return "error";
+}
+
+function fmtDuration(ms: number): string {
+  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+function liveSnapshotStr(snap: WireUsageSnapshot | undefined): string | undefined {
+  if (!snap) return undefined;
+  const f = snap.fiveHour?.utilization;
+  const s = snap.sevenDay?.utilization;
+  const parts = [
+    typeof f === "number" ? `5h ${Math.round(f)}%` : null,
+    typeof s === "number" ? `7d ${Math.round(s)}%` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" / ") : undefined;
+}
+
+// The single self-contained sync-log line the daemon writes per run and
+// uploads to the Team Edition. Format: a fixed status word, then the trigger,
+// then whatever actually happened this run as ` · `-separated attributes, so
+// it stays human-readable while an agent can regex the leading `[sync] <word>`
+// and the inline `key value` facts. Empty sections are omitted, not blanked.
+export function buildSyncLine(
+  status: SyncStatus,
+  trigger: string,
+  s: SyncSummary,
+  elapsedMs: number,
+  nextSyncMs: number | undefined,
+): string {
+  const parts: string[] = [`[sync] ${status}`, trigger];
+  if (s.pushedDays.length) {
+    parts.push(
+      s.pushedDays.length === 1
+        ? `pushed 1 day (${s.pushedDays[0]})`
+        : `pushed ${s.pushedDays.length} days (${s.pushedDays[0]}→${s.pushedDays[s.pushedDays.length - 1]})`,
+    );
+  }
+  if (s.queued) {
+    parts.push(
+      s.queuedDay
+        ? `queued ${s.queued} for retry (${s.queuedDay}, HTTP ${s.queuedStatus})`
+        : `queued ${s.queued} for retry`,
+    );
+  }
+  if (s.droppedDays.length) {
+    parts.push(`dropped ${s.droppedDays.length} unrecoverable (${s.droppedDays.join(",")})`);
+  }
+  if (s.queuedDrained) parts.push(`drained ${s.queuedDrained} from backlog`);
+  if (s.idleReason) parts.push(s.idleReason);
+  if (s.live) parts.push(`live ${s.live}`);
+  if (s.usageSnapshots > 0) {
+    parts.push(`usage +${s.usageSnapshots} snapshot${s.usageSnapshots === 1 ? "" : "s"}`);
+  }
+  if (s.accepted?.length) parts.push(`server accepted ${s.accepted.join(",")}`);
+  if (s.skipped && Object.keys(s.skipped).length) {
+    parts.push(
+      `server SKIPPED ${Object.entries(s.skipped)
+        .map(([k, v]) => `${k} (${v})`)
+        .join("; ")}`,
+    );
+  }
+  if (s.errorMsg) parts.push(s.errorMsg);
+  parts.push(fmtDuration(elapsedMs));
+  if (nextSyncMs) parts.push(`next ~${Math.round(nextSyncMs / 60_000)}m`);
+  return parts.join(" · ");
+}
 
 export async function runTeamSync(
   log: LogFn = noopLog,
@@ -55,6 +166,38 @@ export async function runTeamSync(
 ): Promise<SyncOutcome> {
   const config = configOverride === undefined ? readTeamConfig() : configOverride;
   if (!config) return { paired: false, pushed: 0, queued: 0, queuedDrained: 0 };
+
+  // One-per-run [sync] summary line. Fields accumulate through the run; a
+  // single `finish(status)` at each exit (including the catch) builds and
+  // writes the line. It's read back off daemon.log at the START of a LATER
+  // run (self-reference guard) and uploaded per-member — this IS the
+  // member-side sync log. Declared outside the try so the catch can emit too.
+  const startedAt = Date.now();
+  const trigger = options.trigger ?? "auto";
+  const summary: SyncSummary = {
+    pushedDays: [],
+    droppedDays: [],
+    queued: 0,
+    queuedDrained: 0,
+    usageSnapshots: 0,
+  };
+  const finish = (status: SyncStatus): void => {
+    log(
+      levelForStatus(status),
+      buildSyncLine(status, trigger, summary, Date.now() - startedAt, options.nextSyncMs),
+    );
+  };
+  // Capture the server's block-level verdict from a successful push so the
+  // line shows accepted vs. skipped. Last successful push wins (most recent
+  // server state). No-op against a V1 server that omits `blocks`.
+  const recordVerdict = (
+    body: { blocks?: { accepted: string[]; skipped: Record<string, string> } } | null,
+  ): void => {
+    if (body?.blocks) {
+      summary.accepted = body.blocks.accepted;
+      summary.skipped = body.blocks.skipped;
+    }
+  };
 
   try {
     const { listSessions, loadCalibrationCurve } = await import("@claude-lens/parser/fs");
@@ -186,32 +329,45 @@ export async function runTeamSync(
       // don't freeze.
       const hasLiveData = Boolean(usageSnapshot || planTier || cyclePeaks);
       if (!hasLiveData) {
-        if (usageBackfill.sentSnapshots === 0) log("info", "team push: nothing to sync");
+        summary.usageSnapshots = usageBackfill.sentSnapshots;
+        if (usageBackfill.sentSnapshots > 0) {
+          finish("ok");
+        } else {
+          summary.idleReason = "nothing to sync";
+          finish("idle");
+        }
         return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
       }
+      summary.usageSnapshots = usageBackfill.sentSnapshots;
+      summary.live = liveSnapshotStr(usageSnapshot);
       const payload = buildIngestPayload({ usageSnapshot, planTier, cyclePeaks, syncLog: pendingLog.lines });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
         if (isValidationPoison(result.status)) {
           // Unrecoverable — queuing it would just wedge the drain loop forever.
           const errLine = `team push: live-only payload rejected (HTTP ${result.status}); dropping unrecoverable payload`;
-          log("warn", errLine);
           writeLastPushFailure(payload, errLine);
+          summary.errorMsg = `live-snapshot push HTTP ${result.status} (validation) — dropped unrecoverable`;
+          finish("error");
           return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
         }
         const errLine = `team push failed (${result.status})`;
-        log("warn", `${errLine}; queueing`);
         writeLastPushFailure(payload, errLine);
         enqueuePayload(payload);
+        summary.queued = 1;
+        summary.errorMsg = `live-snapshot push HTTP ${result.status} — queued for retry`;
+        finish("failed");
         return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
       writeLastPushSuccess(payload);
       if (pendingLog.watermark) persistConfig({ lastSyncedLogAt: pendingLog.watermark });
       collectCommands(result.body?.commands);
+      recordVerdict(result.body);
       // Try to drain any queued backlog while the server is reachable.
       const queuedDrained = await drainBacklog();
-      log("info", `team push ok: live-only (no new daily activity)` +
-        (queuedDrained ? `, ${queuedDrained} queued retried` : ""));
+      summary.queuedDrained = queuedDrained;
+      summary.idleReason = "no new daily activity";
+      finish(summary.skipped && Object.keys(summary.skipped).length ? "degraded" : "idle");
       await dispatchAndReport();
       return { paired: true, pushed: 1, queued: 0, queuedDrained, usageBackfill };
     }
@@ -265,25 +421,28 @@ export async function runTeamSync(
         if (isValidationPoison(result.status)) {
           // Unrecoverable: skip past this day so the loop makes progress.
           // Don't queue (it would fail identically forever); don't set
-          // failedDay (later days should still push). Log so the skip is
-          // never silent data loss.
+          // failedDay (later days should still push). The dropped day lands
+          // in the summary line so the skip is never silent data loss.
           const errLine = `team push: ${rollup.day} rejected (HTTP ${result.status}); skipping past unrecoverable day`;
-          log("warn", errLine);
           writeLastPushFailure(payload, errLine);
+          summary.droppedDays.push(rollup.day);
           lastResolvedDay = rollup.day;
           continue;
         }
         const errLine = `team push failed on ${rollup.day} (${result.status})`;
-        log("warn", `${errLine}; queueing`);
         writeLastPushFailure(payload, errLine);
         enqueuePayload(payload);
         queued++;
+        summary.queuedDay = rollup.day;
+        summary.queuedStatus = result.status;
         failedDay = rollup.day;
         break;
       }
       writeLastPushSuccess(payload);
       collectCommands(result.body?.commands);
+      recordVerdict(result.body);
       pushed++;
+      summary.pushedDays.push(rollup.day);
       lastResolvedDay = rollup.day;
     }
 
@@ -297,17 +456,24 @@ export async function runTeamSync(
 
     const queuedDrained = !failedDay ? await drainBacklog() : 0;
 
-    if (pushed > 0) {
-      log("info", `team push ok: ${pushed} day${pushed === 1 ? "" : "s"} pushed` +
-        (queuedDrained ? `, ${queuedDrained} queued retried` : "") +
-        (queued ? `, ${queued} queued for retry` : ""));
-    }
+    summary.queued = queued;
+    summary.queuedDrained = queuedDrained;
+    summary.usageSnapshots = usageBackfill.sentSnapshots;
+    // Status precedence: a queued day (transient failure) is the loudest
+    // signal → "failed"; else a dropped day or a server-skipped block means
+    // the push landed but incompletely → "degraded"; else clean → "ok".
+    let status: SyncStatus;
+    if (failedDay) status = "failed";
+    else if (summary.droppedDays.length || (summary.skipped && Object.keys(summary.skipped).length)) status = "degraded";
+    else status = "ok";
+    finish(status);
 
     await dispatchAndReport();
     return { paired: true, pushed, queued, queuedDrained, usageBackfill, failedDay };
   } catch (err) {
     const message = (err as Error).message;
-    log("warn", `team push error: ${message}`);
+    summary.errorMsg = `sync aborted: ${message}`;
+    finish("error");
     writeLastPushFailure(
       { ingestId: "n/a", observedAt: new Date().toISOString() },
       `team push error: ${message}`,

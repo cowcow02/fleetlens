@@ -7,9 +7,10 @@ const MAX_LINES = 300;
 
 // Read the daemon's own sync-log lines from daemon.log since `watermark`, for
 // upload to the team server. daemon.log lines are `${ISO} ${LEVEL} ${message}`
-// (daemon-worker.ts). We keep only the team-sync lines (the "team " prefix,
-// same filter as `fleetlens daemon logs`) so we upload the sync story, not the
-// usage-poll noise. Chronological, so the newest line's ts is the new watermark.
+// (daemon-worker.ts). We keep only the one-per-run `[sync]` summary lines that
+// runTeamSync emits — self-contained, human- and agent-readable, one per sync
+// cycle — so the member-side log is the sync story and not the raw per-leg
+// noise. Chronological, so the newest line's ts is the new watermark.
 export function readPendingSyncLog(watermark?: string): {
   lines: SyncLogLine[];
   watermark?: string;
@@ -26,7 +27,7 @@ export function readPendingSyncLog(watermark?: string): {
     const m = line.match(/^(\S+) (INFO|WARN|ERROR) (.*)$/);
     if (!m) continue;
     const [, ts, levelRaw, msg] = m;
-    if (!msg.includes("team ")) continue;
+    if (!msg.startsWith("[sync] ")) continue;
     if (watermark && ts <= watermark) continue;
     lines.push({ ts, level: levelRaw.toLowerCase(), msg });
   }

@@ -179,4 +179,12 @@ export type IngestResponse = {
   ok?: boolean;
   snapshotHistory?: { inserted: number; skipped: number };
   commands?: ServerCommand[];
+  // The server's per-block verdict for this push — which data blocks it
+  // accepted vs. skipped (with reason). Lets the daemon log the server's
+  // own view so the member sync log shows both sides of each push.
+  blocks?: { accepted: string[]; skipped: Record<string, string> };
+  // ISO ts the server wants the next push after (present ⇒ work happened).
+  nextSyncAfter?: string;
+  // True when this push's ingestId was a replay the server already had.
+  deduplicated?: boolean;
 };

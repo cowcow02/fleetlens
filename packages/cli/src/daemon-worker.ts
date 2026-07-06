@@ -47,6 +47,9 @@ function log(level: "info" | "warn" | "error", message: string): void {
 
 let nextPollAtMs = 0;
 let nextTeamSyncAtMs = 0;
+// First team sync after this daemon booted is tagged trigger="boot" in the
+// [sync] summary line; every tick after is "auto".
+let firstTeamSync = true;
 let currentIntervalMs = BASE_INTERVAL_MS;
 let waitingForRefresh = false;
 let updateCheckInFlight = false;
@@ -315,7 +318,11 @@ async function runLoop(): Promise<void> {
       // Team push is independent of Claude OAuth state — it uses its own bearer
       // and a different server. Keep it on its own cadence so an expired Claude
       // token cannot turn the team sync loop into a 5-second retry storm.
-      await runTeamSync(log);
+      await runTeamSync(log, undefined, {
+        trigger: firstTeamSync ? "boot" : "auto",
+        nextSyncMs: BASE_INTERVAL_MS,
+      });
+      firstTeamSync = false;
       nextTeamSyncAtMs = Date.now() + BASE_INTERVAL_MS;
     }
     if (Date.now() >= nextUpdateCheckAtMs) {

@@ -24,40 +24,41 @@ function writeLog(lines: string[]) {
 }
 
 describe("readPendingSyncLog", () => {
-  it("keeps only team-sync lines, dropping non-team noise", () => {
+  it("keeps only the [sync] summary lines, dropping every other line", () => {
     writeLog([
-      "2026-07-01T10:00:00.000Z INFO team sync pushed 3 rollups",
+      "2026-07-01T10:00:00.000Z INFO [sync] ok · auto · pushed 1 day (2026-07-01) · 1.2s · next ~5m",
       "2026-07-01T10:00:01.000Z INFO codex snapshot saved",
-      "2026-07-01T10:00:02.000Z WARN team sync retry scheduled",
+      "2026-07-01T10:00:02.000Z INFO team backfill: 1 new, 0 already-known across 1 batch",
+      "2026-07-01T10:00:03.000Z WARN [sync] failed · auto · live-snapshot push HTTP 503 — queued for retry · 0.9s",
       "some malformed line without a level",
     ]);
     const { lines } = readPendingSyncLog();
     expect(lines.map((l) => l.msg)).toEqual([
-      "team sync pushed 3 rollups",
-      "team sync retry scheduled",
+      "[sync] ok · auto · pushed 1 day (2026-07-01) · 1.2s · next ~5m",
+      "[sync] failed · auto · live-snapshot push HTTP 503 — queued for retry · 0.9s",
     ]);
   });
 
   it("respects the watermark (excludes ts <= watermark)", () => {
     writeLog([
-      "2026-07-01T10:00:00.000Z INFO team sync a",
-      "2026-07-01T10:00:05.000Z INFO team sync b",
-      "2026-07-01T10:00:10.000Z INFO team sync c",
+      "2026-07-01T10:00:00.000Z INFO [sync] ok · auto · a",
+      "2026-07-01T10:00:05.000Z INFO [sync] ok · auto · b",
+      "2026-07-01T10:00:10.000Z INFO [sync] ok · auto · c",
     ]);
     const { lines } = readPendingSyncLog("2026-07-01T10:00:05.000Z");
-    expect(lines.map((l) => l.msg)).toEqual(["team sync c"]);
+    expect(lines.map((l) => l.msg)).toEqual(["[sync] ok · auto · c"]);
   });
 
   it("lowercases the level", () => {
-    writeLog(["2026-07-01T10:00:00.000Z WARN team sync retry"]);
+    writeLog(["2026-07-01T10:00:00.000Z WARN [sync] degraded · auto · retry"]);
     const { lines } = readPendingSyncLog();
     expect(lines[0].level).toBe("warn");
   });
 
   it("returns the newest line's ts as the watermark", () => {
     writeLog([
-      "2026-07-01T10:00:00.000Z INFO team sync a",
-      "2026-07-01T10:00:10.000Z ERROR team sync b",
+      "2026-07-01T10:00:00.000Z INFO [sync] ok · auto · a",
+      "2026-07-01T10:00:10.000Z ERROR [sync] error · auto · b",
     ]);
     const { watermark } = readPendingSyncLog();
     expect(watermark).toBe("2026-07-01T10:00:10.000Z");
@@ -71,13 +72,13 @@ describe("readPendingSyncLog", () => {
     const lines: string[] = [];
     for (let i = 0; i < 350; i++) {
       const ts = new Date(Date.UTC(2026, 6, 1, 0, 0, i)).toISOString();
-      lines.push(`${ts} INFO team sync #${i}`);
+      lines.push(`${ts} INFO [sync] ok · auto · #${i}`);
     }
     writeLog(lines);
     const res = readPendingSyncLog();
     expect(res.lines).toHaveLength(300);
-    expect(res.lines[0].msg).toBe("team sync #50");
-    expect(res.lines[299].msg).toBe("team sync #349");
+    expect(res.lines[0].msg).toBe("[sync] ok · auto · #50");
+    expect(res.lines[299].msg).toBe("[sync] ok · auto · #349");
     expect(res.watermark).toBe(new Date(Date.UTC(2026, 6, 1, 0, 0, 349)).toISOString());
   });
 });

@@ -504,26 +504,47 @@ export async function loadMemberSyncLog(
   }));
 }
 
-export type MemberDaemonLogRow = { tsMs: number; level: string; msg: string };
+export type MemberDaemonLogRow = { id: number; tsMs: number; level: string; msg: string };
 
-// The member's own daemon sync log (uploaded from their machine), newest
-// first. This is the primary per-member troubleshooting artifact — the
+// One page of the member's own daemon sync log (uploaded from their machine),
+// newest first. This is the primary per-member troubleshooting artifact — the
 // client-side story of each sync, not the server's view of what arrived.
-export async function loadMemberDaemonLog(
+// Paginated by the bigserial `id` (a stable, monotonic keyset cursor — rows
+// are inserted in ts order so id DESC == newest first) so the member modal can
+// infinite-scroll back through history. `nextCursor` is the id to pass as
+// `before` for the next page, or null when the tail is reached.
+export async function loadMemberDaemonLogPage(
   teamId: string,
   membershipId: string,
   pool: pg.Pool,
-  limit = 500,
-): Promise<MemberDaemonLogRow[]> {
-  const res = await pool.query<{ ts_ms: number; level: string; msg: string }>(
-    `SELECT EXTRACT(EPOCH FROM ts)::float8 * 1000 AS ts_ms, level, msg
+  opts: { before?: number; limit?: number } = {},
+): Promise<{ rows: MemberDaemonLogRow[]; nextCursor: number | null }> {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const params: unknown[] = [teamId, membershipId];
+  let cursorClause = "";
+  if (opts.before != null && Number.isFinite(opts.before)) {
+    params.push(opts.before);
+    cursorClause = `AND id < $${params.length}`;
+  }
+  // Over-fetch by one to detect whether another page exists without a count.
+  params.push(limit + 1);
+  const res = await pool.query<{ id: string; ts_ms: number; level: string; msg: string }>(
+    `SELECT id, EXTRACT(EPOCH FROM ts)::float8 * 1000 AS ts_ms, level, msg
        FROM member_daemon_log
-       WHERE team_id = $1 AND membership_id = $2
-       ORDER BY ts DESC
-       LIMIT $3`,
-    [teamId, membershipId, limit],
+       WHERE team_id = $1 AND membership_id = $2 ${cursorClause}
+       ORDER BY id DESC
+       LIMIT $${params.length}`,
+    params,
   );
-  return res.rows.map((r) => ({ tsMs: Number(r.ts_ms), level: r.level, msg: r.msg }));
+  const all = res.rows.map((r) => ({
+    id: Number(r.id),
+    tsMs: Number(r.ts_ms),
+    level: r.level,
+    msg: r.msg,
+  }));
+  const hasMore = all.length > limit;
+  const rows = hasMore ? all.slice(0, limit) : all;
+  return { rows, nextCursor: hasMore ? rows[rows.length - 1].id : null };
 }
 
 export async function loadOptimizerSettings(

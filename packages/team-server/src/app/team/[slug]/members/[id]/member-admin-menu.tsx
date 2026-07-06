@@ -1,20 +1,27 @@
 "use client";
 
 import { useState } from "react";
+import { MemberSyncLogModal } from "./member-sync-log-modal";
 
 // Admin-only overflow menu for a member. Lives in the header's top-right as a
-// kebab (⋯) so per-member admin actions don't need their own section. Today it
-// holds one action (30-day backfill); new admin actions slot in as menu items.
+// kebab (⋯) so per-member admin actions don't need their own section. Holds
+// "View logs" (opens the sync-log modal) + a 30-day backfill; new admin actions
+// slot in as menu items.
 type Status = "idle" | "submitting" | "success" | "already-queued" | "error";
 
 export function MemberAdminMenu({
   membershipId,
   slug,
+  name,
+  daemonLastSeenAtMs,
 }: {
   membershipId: string;
   slug: string;
+  name: string;
+  daemonLastSeenAtMs: number | null;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -94,15 +101,19 @@ export function MemberAdminMenu({
               padding: 4,
             }}
           >
-            <a
+            <button
+              type="button"
               role="menuitem"
-              href={`/team/${slug}/members/${membershipId}/logs`}
-              onClick={() => setMenuOpen(false)}
+              onClick={() => {
+                setMenuOpen(false);
+                setLogOpen(true);
+              }}
               style={{
                 display: "block",
                 width: "100%",
                 textAlign: "left",
-                textDecoration: "none",
+                background: "transparent",
+                border: "none",
                 cursor: "pointer",
                 padding: "9px 12px",
                 fontSize: 12,
@@ -111,7 +122,7 @@ export function MemberAdminMenu({
               }}
             >
               View logs
-            </a>
+            </button>
             <button
               type="button"
               role="menuitem"
@@ -136,6 +147,16 @@ export function MemberAdminMenu({
             </button>
           </div>
         </>
+      )}
+
+      {logOpen && (
+        <MemberSyncLogModal
+          slug={slug}
+          membershipId={membershipId}
+          name={name}
+          daemonLastSeenAtMs={daemonLastSeenAtMs}
+          onClose={() => setLogOpen(false)}
+        />
       )}
 
       {confirmOpen && (

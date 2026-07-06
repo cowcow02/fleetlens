@@ -274,8 +274,10 @@ describe("runTeamSync", () => {
     expect(writeTeamConfig).toHaveBeenCalledWith(
       expect.objectContaining({ lastSyncedDay: toLocalDay(Date.now()) }),
     );
-    // The skip is logged, never silent.
-    expect(logs.some(([, m]) => m.includes("skipping past"))).toBe(true);
+    // The skip is surfaced in the one-per-run [sync] summary, never silent.
+    expect(
+      logs.some(([, m]) => m.startsWith("[sync] ") && m.includes("dropped 1 unrecoverable")),
+    ).toBe(true);
   });
 
   it("drops a 4xx-poison item during the queue drain instead of re-enqueueing it forever", async () => {
@@ -483,10 +485,11 @@ describe("runTeamSync", () => {
     const { runTeamSync } = await import("../../src/team/sync.js");
     await runTeamSync(log);
 
-    // At least one log entry should have been emitted (the push ok message)
+    // At least one log entry should have been emitted (the [sync] summary line)
     expect(logMessages.length).toBeGreaterThanOrEqual(1);
-    const [, msg] = logMessages[0]!;
-    expect(msg).toContain("team push");
+    const summaryLine = logMessages.find(([, m]) => m.startsWith("[sync] "));
+    expect(summaryLine).toBeDefined();
+    expect(summaryLine![1]).toMatch(/^\[sync\] (ok|idle|degraded|failed|error) /);
   });
 
   it("respects sinceDay via config.lastSyncedDay — skips older data", async () => {
