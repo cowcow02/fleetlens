@@ -168,8 +168,8 @@ export default async function MemberPage({
                   ? `${tier.label} · $${tier.monthlyPriceUsd}/mo`
                   : tier.label}
               </div>
-              <div style={{ color: daemonColor(planSummary.lastSeenAtMs) }}>
-                DAEMON · {daemonFreshness(planSummary.lastSeenAtMs)}
+              <div style={{ color: daemonColor(planSummary.daemonLastSeenAtMs) }}>
+                DAEMON · {daemonFreshness(planSummary.daemonLastSeenAtMs)}
               </div>
               <div>CLI · {member.cli_version ? `v${member.cli_version}` : "—"}</div>
             </div>
@@ -235,9 +235,11 @@ function HeaderField({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Mirrors the helper in member-plan-block.tsx; duplicated here so the
-// header doesn't have to import an internal helper. Both renderers
-// agree on the same buckets ("live" within 10 min of last poll, etc).
+// Daemon LIVENESS (heartbeat), not sync health: fed by memberships.last_seen_at,
+// which advances on every non-dedup push. It answers "is the daemon talking?" —
+// NOT "are pushes fully accepted?" (a live push can still drop blocks). Whether
+// a member's sync is actually healthy is determined from the per-push server
+// ingest log, which lists accepted/skipped blocks per member.
 function daemonFreshness(lastSeenAtMs: number | null): string {
   if (lastSeenAtMs == null) return "—";
   const ageMs = Date.now() - lastSeenAtMs;

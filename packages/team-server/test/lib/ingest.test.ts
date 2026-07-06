@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { resetDb } from "../helpers/db.js";
 import { getPool } from "../../src/db/pool.js";
 import { processIngest, processUsageHistory } from "../../src/lib/ingest.js";
@@ -792,5 +792,46 @@ describe("processIngest planTier auto-upsert", () => {
       [membershipId],
     );
     expect(rows[0].plan_tier).toBe("pro-max-20x");
+  });
+});
+
+// The per-push health line is the single "always observe + per-member" signal.
+// It MUST fire on the clean path (else a healthy sync is silent) and on the
+// dropped-block path (else degraded syncs are invisible), and MUST carry the
+// membership id (else a failure can't be attributed to a member).
+describe("processIngest health log line", () => {
+  it("logs a health line with member identity on a clean push (success is never silent)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      await processIngest(makePayload(), membershipId, teamId, pool);
+      const line = logSpy.mock.calls.map((c) => String(c[0])).find((s) => s.startsWith("[ingest] push"));
+      expect(line).toBeDefined();
+      expect(line).toContain(`member=${membershipId}`);
+      expect(line).toContain(`team=${teamId}`);
+      expect(line).toContain("accepted=[dailyRollup]");
+      expect(line).toContain("skipped=[]");
+      expect(line).toContain("dedup=false");
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("warns a health line naming the member and dropped block on a partial push (degraded is observable)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await processIngest(
+        makePayload({ dailyRollup: { day: "2026-99-99", agentTimeMs: 1, sessions: 1, toolCalls: 1, turns: 1, tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 } }, planTier: "pro-max-20x" }),
+        membershipId,
+        teamId,
+        pool,
+      );
+      const line = warnSpy.mock.calls.map((c) => String(c[0])).find((s) => s.startsWith("[ingest] push"));
+      expect(line).toBeDefined();
+      expect(line).toContain(`member=${membershipId}`);
+      expect(line).toContain("not a valid calendar date");
+      expect(line).toContain("accepted=[planTier]");
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });

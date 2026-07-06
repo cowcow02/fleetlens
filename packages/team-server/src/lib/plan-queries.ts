@@ -337,7 +337,14 @@ export type MemberPlanSummary = {
   worstFiveHourPeak: number;
   worstOpusPeak: number;
   totalDaysObserved: number;
+  // Recency of the last USAGE snapshot (drives utilization-data staleness).
   lastSeenAtMs: number | null;
+  // True daemon heartbeat: memberships.last_seen_at, updated on EVERY non-dedup
+  // push (metrics OR usage). This is LIVENESS ("is the daemon talking?"), not
+  // sync health — a push can land here and still drop blocks. Health lives in
+  // the server ingest log. Drives the DAEMON badge so it stops reading
+  // "stalled" for a member who syncs metrics but sends no usage snapshot.
+  daemonLastSeenAtMs: number | null;
   trail: number[];
   // Number of distinct local days in the last 30 where the daemon observed
   // utilization at or above 100% — i.e., this member ran into the wall.
@@ -352,8 +359,10 @@ export async function loadMemberPlanSummary(
   pool: pg.Pool,
 ): Promise<MemberPlanSummary> {
   const [tierRes, statsRes, trailRes, wallsRes, settings] = await Promise.all([
-    pool.query<{ plan_tier: string }>(
-      "SELECT plan_tier FROM memberships WHERE id = $1 AND team_id = $2",
+    pool.query<{ plan_tier: string; daemon_last_seen_ms: number | null }>(
+      `SELECT plan_tier,
+              EXTRACT(EPOCH FROM last_seen_at)::float8 * 1000 AS daemon_last_seen_ms
+       FROM memberships WHERE id = $1 AND team_id = $2`,
       [membershipId, teamId],
     ),
     pool.query<{
@@ -428,6 +437,10 @@ export async function loadMemberPlanSummary(
     worstOpusPeak: memberStats.worstOpusPeak,
     totalDaysObserved: memberStats.totalDaysObserved,
     lastSeenAtMs: memberStats.lastSeenAtMs,
+    daemonLastSeenAtMs:
+      tierRes.rows[0]?.daemon_last_seen_ms == null
+        ? null
+        : Number(tierRes.rows[0].daemon_last_seen_ms),
     trail: trailRes.rows.map((r) => Number(r.peak_seven_day_pct ?? 0)),
     wallHits5h: Number(walls.wall_hits_5h ?? 0),
     wallHits7d: Number(walls.wall_hits_7d ?? 0),

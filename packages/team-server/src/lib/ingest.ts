@@ -353,6 +353,25 @@ export async function processIngest(
   }
   result.blocks = { accepted: acceptedBlocks, skipped: skippedBlocks };
   if (commands.length > 0) result.commands = commands;
+
+  // Always-on per-push health line — the single source of truth for "is this
+  // member's sync healthy?". Emitted on EVERY push (success, partial, dedup)
+  // so a healthy sync is never silent, and it survives production `next start`
+  // (unlike Next's dev-only request log). Carries member/team/cli/ingest
+  // identity so it's greppable per member, and lists accepted/skipped BLOCK
+  // NAMES so a split-brain (usage lands / metrics rot, or vice versa) reads at
+  // a glance. warn when any block dropped so degraded pushes surface at warn
+  // level; log otherwise.
+  const skippedDetail = Object.values(skippedBlocks);
+  const histNote =
+    rawSnapshotCount > 0 || historyInserted > 0 ? ` hist=${historyInserted}/${rawSnapshotCount}` : "";
+  const health =
+    `[ingest] push member=${membershipId} team=${teamId} cli=${payload.cliVersion ?? "-"}` +
+    ` ingest=${payload.ingestId} accepted=[${acceptedBlocks.join(",")}]` +
+    ` skipped=[${skippedDetail.join("; ")}] dedup=${dedupHit}${histNote}`;
+  if (skippedDetail.length > 0) console.warn(health);
+  else console.log(health);
+
   return result;
 }
 

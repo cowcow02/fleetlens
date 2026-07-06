@@ -12,6 +12,9 @@ export async function POST(req: NextRequest) {
   const pool = getPool();
   const membership = await resolveMembershipFromBearer(token, pool);
   if (!membership) {
+    // No member to attribute — but still log so a daemon wedged on a stale/
+    // revoked token is observable (it would otherwise retry forever silently).
+    console.warn("[ingest] auth rejected: invalid or revoked bearer token (no member)");
     return NextResponse.json({ error: "Invalid or revoked token" }, { status: 401 });
   }
 
@@ -24,7 +27,12 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       const issues = (err as unknown as { issues?: unknown[] }).issues;
-      console.warn("[ingest] validation failed:", JSON.stringify(issues?.slice(0, 3)));
+      // Identity-tagged so a member whose daemon sends a malformed ENVELOPE
+      // (rejected whole, before per-block ingest) is attributable, not anonymous.
+      console.warn(
+        `[ingest] envelope rejected member=${membership.id} team=${membership.teamId}:`,
+        JSON.stringify(issues?.slice(0, 3)),
+      );
       return NextResponse.json({ error: "Validation failed", issues }, { status: 400 });
     }
     throw err;
