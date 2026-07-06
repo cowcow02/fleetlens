@@ -187,15 +187,18 @@ export async function runTeamSync(
       buildSyncLine(status, trigger, summary, Date.now() - startedAt, options.nextSyncMs),
     );
   };
-  // Capture the server's block-level verdict from a successful push so the
-  // line shows accepted vs. skipped. Last successful push wins (most recent
-  // server state). No-op against a V1 server that omits `blocks`.
+  // Capture the server's block-level verdict from each successful push so the
+  // line shows accepted vs. skipped. Accumulated (not last-wins) across the
+  // multi-day loop: a skip on ANY day must survive to the status computation —
+  // otherwise a later clean day would erase an earlier day's dropped block and
+  // silently downgrade a degraded run to "ok". No-op against a V1 server that
+  // omits `blocks`.
   const recordVerdict = (
     body: { blocks?: { accepted: string[]; skipped: Record<string, string> } } | null,
   ): void => {
     if (body?.blocks) {
-      summary.accepted = body.blocks.accepted;
-      summary.skipped = body.blocks.skipped;
+      summary.accepted = [...new Set([...(summary.accepted ?? []), ...body.blocks.accepted])];
+      summary.skipped = { ...summary.skipped, ...body.blocks.skipped };
     }
   };
 

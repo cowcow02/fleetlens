@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { liveness } from "./sync-liveness";
 
 type Row = { id: number; tsMs: number; level: string; msg: string };
 
@@ -296,16 +297,4 @@ function rawColor(level: string): string {
 function fmtTs(ms: number): string {
   // mm-dd hh:mm:ss in UTC — compact and monotonic for scanning.
   return new Date(ms).toISOString().slice(5, 19).replace("T", " ");
-}
-
-function liveness(ms: number | null): { label: string; color: string; stale: boolean } {
-  if (ms == null) return { label: "never", color: "#e8b866", stale: true };
-  const age = Date.now() - ms;
-  const stale = age >= 30 * 60_000; // > 30 min without a push == transport suspect
-  let label: string;
-  if (age < 60_000) label = "just now";
-  else if (age < 3_600_000) label = `${Math.round(age / 60_000)}m ago`;
-  else if (age < 86_400_000) label = `${Math.round(age / 3_600_000)}h ago`;
-  else label = `${Math.round(age / 86_400_000)}d ago`;
-  return { label, color: stale ? "#e8b866" : "#6fcf8e", stale };
 }

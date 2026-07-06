@@ -5,7 +5,10 @@ export async function teamLogs() {
   const logPath = cclensPath("daemon.log");
   try {
     const lines = readFileSync(logPath, "utf8").trim().split("\n");
-    const teamLines = lines.filter((l) => l.includes("team "));
+    // Match both the per-run `[sync]` summary line (the primary outcome) and the
+    // older `team …` detail lines (backfill / command results) so this stays a
+    // complete view of the sync story.
+    const teamLines = lines.filter((l) => l.includes("[sync] ") || l.includes("team "));
     if (teamLines.length === 0) {
       console.log("No team-related log entries found.");
       return;
