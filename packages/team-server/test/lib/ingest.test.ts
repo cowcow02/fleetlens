@@ -665,6 +665,61 @@ describe("processIngest", () => {
   });
 });
 
+// The member daemon uploads its own sync log via the metrics push. Each line
+// lands as a member_daemon_log row (the in-UI member log panel reads these).
+// Row-level dedup on (membership_id, ts, msg) makes retries idempotent.
+describe("processIngest syncLog → member_daemon_log", () => {
+  it("inserts one row per syncLog line", async () => {
+    const syncLog = [
+      { ts: "2026-06-01T10:00:00.000Z", level: "info", msg: "team sync pushed 3 rollups" },
+      { ts: "2026-06-01T10:05:00.000Z", level: "warn", msg: "team sync retry scheduled" },
+    ];
+    await processIngest(
+      makePayload({ ingestId: `daemonlog-${Math.random().toString(36).slice(2)}`, syncLog }),
+      membershipId, teamId, pool,
+    );
+    const { rows } = await pool.query(
+      `SELECT ts, level, msg FROM member_daemon_log
+       WHERE membership_id = $1 ORDER BY ts`,
+      [membershipId],
+    );
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.msg)).toEqual([
+      "team sync pushed 3 rollups",
+      "team sync retry scheduled",
+    ]);
+    expect(rows.map((r) => r.level)).toEqual(["info", "warn"]);
+    expect(new Date(rows[0].ts).toISOString()).toBe("2026-06-01T10:00:00.000Z");
+  });
+
+  it("dedups on re-POST of identical lines (row count unchanged)", async () => {
+    const syncLog = [
+      { ts: "2026-06-02T08:00:00.000Z", level: "info", msg: "team sync a" },
+      { ts: "2026-06-02T08:01:00.000Z", level: "error", msg: "team sync b failed" },
+    ];
+    const countLines = async () => {
+      const { rows } = await pool.query<{ c: string }>(
+        `SELECT count(*)::text AS c FROM member_daemon_log
+         WHERE membership_id = $1 AND msg IN ('team sync a', 'team sync b failed')`,
+        [membershipId],
+      );
+      return Number(rows[0].c);
+    };
+    // Two distinct ingestIds carrying the SAME lines (a retry).
+    await processIngest(
+      makePayload({ ingestId: `dedup-a-${Math.random().toString(36).slice(2)}`, syncLog }),
+      membershipId, teamId, pool,
+    );
+    const after1 = await countLines();
+    expect(after1).toBe(2);
+    await processIngest(
+      makePayload({ ingestId: `dedup-b-${Math.random().toString(36).slice(2)}`, syncLog }),
+      membershipId, teamId, pool,
+    );
+    expect(await countLines()).toBe(after1);
+  });
+});
+
 describe("processUsageHistory", () => {
   function makeSnap(capturedAt: string, fiveHourPct = 25, sevenDayPct = 40) {
     return {
