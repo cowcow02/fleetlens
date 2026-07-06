@@ -14,6 +14,7 @@ import {
   PlanTierKeySchema,
   WireCyclePeaksSchema,
   CommandResultsSchema,
+  SyncLogSchema,
   type UsageSnapshot,
 } from "./zod-schemas";
 import { refreshMembershipWeeklyUtilization } from "./scheduler";
@@ -141,10 +142,12 @@ export async function processIngest(
     cyclePeaks: tryBlock("cyclePeaks", WireCyclePeaksSchema),
     snapshotHistory,
     commandResults,
+    syncLog: tryBlock("syncLog", SyncLogSchema),
   };
 
   let dedupHit!: boolean;
   let historyInserted = 0;
+  let daemonLogInserted = 0;
 
   const client = await p.connect();
   try {
@@ -201,6 +204,25 @@ export async function processIngest(
       historyInserted = await insertPlanUtilizationSnapshots(
         client, teamId, membershipId, payload.snapshotHistory,
       );
+    }
+
+    // Member daemon log — the client-side sync story. Row-level dedup on
+    // (membership_id, ts, msg) so a retried push (same lines) is idempotent;
+    // processed regardless of the ingestId gate, like snapshotHistory.
+    if (payload.syncLog?.length) {
+      const vals: unknown[] = [];
+      const tuples = payload.syncLog.map((l, i) => {
+        const b = i * 5;
+        vals.push(teamId, membershipId, l.ts, l.level, l.msg);
+        return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5})`;
+      });
+      const res = await client.query(
+        `INSERT INTO member_daemon_log (team_id, membership_id, ts, level, msg)
+         VALUES ${tuples.join(",")}
+         ON CONFLICT (membership_id, ts, msg) DO NOTHING`,
+        vals,
+      );
+      daemonLogInserted = res.rowCount ?? 0;
     }
 
     if (payload.richRollup) {
@@ -365,10 +387,12 @@ export async function processIngest(
   const skippedDetail = Object.values(skippedBlocks);
   const histNote =
     rawSnapshotCount > 0 || historyInserted > 0 ? ` hist=${historyInserted}/${rawSnapshotCount}` : "";
+  const logNote =
+    payload.syncLog?.length ? ` daemonLog=${daemonLogInserted}/${payload.syncLog.length}` : "";
   const health =
     `[ingest] push member=${membershipId} team=${teamId} cli=${payload.cliVersion ?? "-"}` +
     ` ingest=${payload.ingestId} accepted=[${acceptedBlocks.join(",")}]` +
-    ` skipped=[${skippedDetail.join("; ")}] dedup=${dedupHit}${histNote}`;
+    ` skipped=[${skippedDetail.join("; ")}] dedup=${dedupHit}${histNote}${logNote}`;
   if (skippedDetail.length > 0) console.warn(health);
   else console.log(health);
 

@@ -17,6 +17,10 @@ export type TeamConfig = {
   pairedAt: string;
   lastSyncedDay?: string;
   lastSyncedUsageSnapshotAt?: string;
+  /** ISO ts of the newest daemon.log line already uploaded to the team server
+   *  as a sync-log line. Only advanced after a successful push, so a failed
+   *  upload re-sends (the server dedups on (member, ts, msg)). */
+  lastSyncedLogAt?: string;
 };
 
 export function readTeamConfig(dir?: string): TeamConfig | null {

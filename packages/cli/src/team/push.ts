@@ -356,6 +356,7 @@ export type IngestPayloadInputs = {
   usageSnapshot?: WireUsageSnapshot;
   planTier?: string;
   cyclePeaks?: WireCyclePeaks;
+  syncLog?: { ts: string; level: string; msg: string }[];
 };
 
 export function buildIngestPayload(inputs: IngestPayloadInputs): IngestPayload {
@@ -376,6 +377,7 @@ export function buildIngestPayload(inputs: IngestPayloadInputs): IngestPayload {
     ...(inputs.usageSnapshot ? { usageSnapshot: inputs.usageSnapshot } : {}),
     ...(inputs.planTier ? { planTier: inputs.planTier } : {}),
     ...(inputs.cyclePeaks ? { cyclePeaks: inputs.cyclePeaks } : {}),
+    ...(inputs.syncLog && inputs.syncLog.length ? { syncLog: inputs.syncLog } : {}),
   };
 }
 

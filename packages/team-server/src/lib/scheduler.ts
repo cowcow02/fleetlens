@@ -59,6 +59,44 @@ export async function pruneMemberSyncLog(): Promise<number> {
   return res.rowCount ?? 0;
 }
 
+export async function pruneMemberDaemonLog(): Promise<number> {
+  const res = await getPool().query(
+    "DELETE FROM member_daemon_log WHERE ts < now() - interval '30 days'"
+  );
+  return res.rowCount ?? 0;
+}
+
+export async function pruneServerLog(): Promise<number> {
+  const res = await getPool().query(
+    "DELETE FROM server_log WHERE ts < now() - interval '7 days'"
+  );
+  return res.rowCount ?? 0;
+}
+
+// Flush the in-memory server-log ring buffer to server_log in batches. Runs on
+// a short interval rather than write-through per line, because a synchronous
+// per-line DB write would re-enter the patched console (pg logs errors via
+// console) and infinite-loop. Tracks a high-water seq across calls.
+let lastFlushedSeq = 0;
+export async function flushServerLog(): Promise<number> {
+  const { drainForFlush } = await import("./log-buffer");
+  const pending = drainForFlush(lastFlushedSeq);
+  if (pending.length === 0) return 0;
+  const vals: unknown[] = [];
+  const tuples = pending.map((l, i) => {
+    const b = i * 4;
+    vals.push(l.seq, new Date(l.ts).toISOString(), l.level, l.msg);
+    return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4})`;
+  });
+  await getPool().query(
+    `INSERT INTO server_log (seq, ts, level, msg) VALUES ${tuples.join(",")}
+     ON CONFLICT (seq) DO NOTHING`,
+    vals,
+  );
+  lastFlushedSeq = pending[pending.length - 1].seq;
+  return pending.length;
+}
+
 let started = false;
 
 export function startScheduler(): void {
@@ -79,7 +117,29 @@ export function startScheduler(): void {
     } catch (err) {
       console.error(`[scheduler] member_sync_log prune failed: ${(err as Error).message}`);
     }
+    try {
+      const n = await pruneMemberDaemonLog();
+      if (n) console.log(`[scheduler] pruned ${n} member_daemon_log rows`);
+    } catch (err) {
+      console.error(`[scheduler] member_daemon_log prune failed: ${(err as Error).message}`);
+    }
+    try {
+      const n = await pruneServerLog();
+      if (n) console.log(`[scheduler] pruned ${n} server_log rows`);
+    } catch (err) {
+      console.error(`[scheduler] server_log prune failed: ${(err as Error).message}`);
+    }
   }, 60 * 60 * 1000);
+
+  // Persist the server-log ring buffer to Postgres so it survives reboots.
+  // Silent on the happy path (logging each flush would itself grow the log).
+  setInterval(async () => {
+    try {
+      await flushServerLog();
+    } catch (err) {
+      console.error(`[scheduler] server_log flush failed: ${(err as Error).message}`);
+    }
+  }, 20_000);
 
   setInterval(async () => {
     try {

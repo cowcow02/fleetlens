@@ -216,6 +216,14 @@ export const IngestPayload = z.object({
   // Outcome of commands the server previously handed to this daemon. Capped
   // per request so a stuck daemon can't flood the ingest with stale results.
   commandResults: z.array(CommandResultSchema).max(50).optional(),
+  // The member daemon's own sync-log lines since its last successful upload —
+  // the client-side troubleshooting story, surfaced per-member. Row-level
+  // dedup on (membership_id, ts, msg), so retries are idempotent. Capped.
+  syncLog: z.array(z.object({
+    ts: z.string().datetime(),
+    level: z.enum(["info", "warn", "error"]),
+    msg: z.string().max(2000),
+  })).max(500).optional(),
 }).passthrough();
 
 // Strict envelope: the identity / routing fields that MUST be valid for the
@@ -238,6 +246,11 @@ export const IngestEnvelope = z.object({
 // per-block validator in processIngest can reuse them.
 export const SnapshotHistorySchema = z.array(UsageSnapshotSchema).max(1000);
 export const CommandResultsSchema = z.array(CommandResultSchema).max(50);
+export const SyncLogSchema = z.array(z.object({
+  ts: z.string().datetime(),
+  level: z.enum(["info", "warn", "error"]),
+  msg: z.string().max(2000),
+})).max(500);
 
 export const ClaimPayload = z.object({
   bootstrapToken: z.string(),

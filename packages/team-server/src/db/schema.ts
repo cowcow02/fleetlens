@@ -190,6 +190,42 @@ export const memberSyncLog = pgTable(
   }),
 );
 
+// The member's own daemon sync log, uploaded via the metrics push — the
+// client-side troubleshooting story surfaced per-member. Row-level dedup on
+// (membership_id, ts, msg).
+export const memberDaemonLog = pgTable(
+  "member_daemon_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    membershipId: uuid("membership_id").notNull().references(() => memberships.id, { onDelete: "cascade" }),
+    ts: timestamp("ts", { withTimezone: true }).notNull(),
+    level: text("level").notNull(),
+    msg: text("msg").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    dedup: uniqueIndex("uq_member_daemon_log_dedup").on(t.membershipId, t.ts, t.msg),
+    member: index("idx_member_daemon_log_member").on(t.membershipId, sql`${t.ts} DESC`),
+  }),
+);
+
+// Durable mirror of the server's own console output so the raw application log
+// survives a reboot. `seq` is assigned by the in-memory buffer (log-buffer.ts)
+// and flushed here in batches; the viewer hydrates from this on boot.
+export const serverLog = pgTable(
+  "server_log",
+  {
+    seq: bigint("seq", { mode: "number" }).primaryKey(),
+    ts: timestamp("ts", { withTimezone: true }).notNull(),
+    level: text("level").notNull(),
+    msg: text("msg").notNull(),
+  },
+  (t) => ({
+    ts: index("idx_server_log_ts").on(sql`${t.ts} DESC`),
+  }),
+);
+
 export const serverConfig = pgTable("server_config", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),

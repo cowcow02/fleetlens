@@ -12,6 +12,7 @@ import {
 import { createRepoResolver } from "./git-remote.js";
 import { enqueuePayload, dequeuePayloads } from "./queue.js";
 import { runTeamBackfill, type BackfillOutcome } from "./backfill.js";
+import { readPendingSyncLog } from "./sync-log.js";
 import { writeLastPushSuccess, writeLastPushFailure } from "./last-push.js";
 import { dispatchCommand, type ServerCommand, type CommandResult } from "./commands.js";
 import { getPlanTier } from "../usage/profile.js";
@@ -65,6 +66,13 @@ export async function runTeamSync(
       nextConfig = { ...nextConfig, ...patch };
       writeTeamConfig(nextConfig);
     };
+
+    // The daemon's own sync-log lines since the last successful upload, read
+    // from daemon.log at the START of this run — so they describe PRIOR runs,
+    // never the push that carries them (which hasn't happened / been logged
+    // yet). Attached to the first push below; watermark advances only on that
+    // push succeeding. These become this member's per-member "View logs".
+    const pendingLog = readPendingSyncLog(config.lastSyncedLogAt);
 
     // Keyed by command id so a command echoed in multiple push responses
     // within this single sync is only collected (and dispatched) once.
@@ -181,7 +189,7 @@ export async function runTeamSync(
         if (usageBackfill.sentSnapshots === 0) log("info", "team push: nothing to sync");
         return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
       }
-      const payload = buildIngestPayload({ usageSnapshot, planTier, cyclePeaks });
+      const payload = buildIngestPayload({ usageSnapshot, planTier, cyclePeaks, syncLog: pendingLog.lines });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
         if (isValidationPoison(result.status)) {
@@ -198,6 +206,7 @@ export async function runTeamSync(
         return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
       writeLastPushSuccess(payload);
+      if (pendingLog.watermark) persistConfig({ lastSyncedLogAt: pendingLog.watermark });
       collectCommands(result.body?.commands);
       // Try to drain any queued backlog while the server is reachable.
       const queuedDrained = await drainBacklog();
@@ -247,6 +256,9 @@ export async function runTeamSync(
         // Same rationale as usageSnapshot — current cycle data only on the
         // latest rollup so older days don't get tagged with today's peaks.
         cyclePeaks: isLatest ? cyclePeaks : undefined,
+        // Sync-log on the FIRST push only — it's not day-specific, and pinning
+        // it to i===0 means "any successful push" implies it was delivered.
+        syncLog: i === 0 ? pendingLog.lines : undefined,
       });
       const result = await pushToTeamServer(config, payload);
       if (!result.ok) {
@@ -280,6 +292,8 @@ export async function runTeamSync(
     } else {
       persistConfig({ lastSyncedDay: today });
     }
+    // syncLog rode the first day's push (i===0); pushed>0 ⇒ it was delivered.
+    if (pushed > 0 && pendingLog.watermark) persistConfig({ lastSyncedLogAt: pendingLog.watermark });
 
     const queuedDrained = !failedDay ? await drainBacklog() : 0;
 

@@ -19,6 +19,7 @@ type Store = { lines: LogLine[]; seq: number };
 const g = globalThis as typeof globalThis & {
   __fleetlensLogStore?: Store;
   __fleetlensLogCaptureInstalled?: boolean;
+  __fleetlensLogHydrated?: boolean;
 };
 const store: Store = (g.__fleetlensLogStore ??= { lines: [], seq: 0 });
 
@@ -80,4 +81,30 @@ export function readLog(opts: ReadOpts = {}): { lines: LogLine[]; lastSeq: numbe
   if (lines.length > limit) lines = lines.slice(lines.length - limit);
 
   return { lines, lastSeq };
+}
+
+// Persistence seams (used by the scheduler flush + boot hydrate). Kept here so
+// the buffer stays the single source of truth for seq; the DB module lives in
+// the caller so log-buffer.ts stays dependency-free.
+
+// Lines newer than `afterSeq`, for the batch flush to server_log.
+export function drainForFlush(afterSeq: number): LogLine[] {
+  return store.lines.filter((l) => l.seq > afterSeq);
+}
+
+export function currentMaxSeq(): number {
+  return store.seq;
+}
+
+// Seed the buffer from persisted rows on boot so the raw log survives a
+// reboot. Prepends history, continues `seq` from the persisted max, and
+// re-appends any lines captured before hydration (a few migration logs) so
+// ordering + monotonicity hold. Idempotent-safe: only hydrates once.
+export function hydrate(rows: { seq: number; ts: number; level: LogLevel; msg: string }[]): void {
+  if (g.__fleetlensLogHydrated) return;
+  g.__fleetlensLogHydrated = true;
+  const preHydrate = store.lines.slice();
+  store.lines = rows.map((r) => ({ seq: r.seq, ts: r.ts, level: r.level, msg: r.msg }));
+  store.seq = rows.length ? rows[rows.length - 1].seq : 0;
+  for (const l of preHydrate) record(l.level, [l.msg]);
 }

@@ -13,8 +13,8 @@ export default function AdminLogsPage() {
           </h1>
           <div className="kicker" style={{ marginTop: 8, maxWidth: "70ch" }}>
             The raw application log this instance has emitted — every ingest push, scheduler
-            run, migration, and error, newest at the bottom. In-memory only: it resets on
-            restart and doesn&rsquo;t span replicas.
+            run, migration, and error, newest at the bottom. Persisted to Postgres, so it
+            survives a restart (the last few thousand lines are restored on boot).
           </div>
         </div>
         <div className="kicker">Staff only</div>

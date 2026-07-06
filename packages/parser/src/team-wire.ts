@@ -147,6 +147,11 @@ export type IngestPayload = {
   // the previous push. Server marks corresponding rows in `member_commands`
   // as completed. See docs/superpowers/specs/2026-05-21-team-issued-commands-design.md.
   commandResults?: CommandResult[];
+  // The member daemon's own sync-log lines (parsed from daemon.log) since the
+  // last successful upload. This is the CLIENT-side troubleshooting story —
+  // what the daemon tried, computed, and the push results/errors — surfaced
+  // per-member in the Team Edition. Server dedups on (member, ts, msg).
+  syncLog?: { ts: string; level: string; msg: string }[];
 };
 
 export type LastPushRecord = {

@@ -173,9 +173,7 @@ export default async function MemberPage({
               </div>
               <div>CLI · {member.cli_version ? `v${member.cli_version}` : "—"}</div>
             </div>
-            {isAdminOrStaff && (
-              <MemberAdminMenu membershipId={id} slug={slug} isStaff={session.user.is_staff} />
-            )}
+            {isAdminOrStaff && <MemberAdminMenu membershipId={id} slug={slug} />}
           </div>
         </div>
 
