@@ -109,18 +109,40 @@ async function weekAggregates(
     tokens_cache_read: string;
     tokens_cache_write: string;
   }>(
-    `SELECT day::text, agent_time_ms::text,
-            COALESCE(unique_sessions, sessions) AS sessions, prs, commits, pushes,
-            parallel_minutes, concurrency_peak,
-            long_auto_count, long_auto_total_min, long_auto_max_single_min,
-            tool_errors, plan_mode_used, brainstorm_warmup_sessions,
-            tokens_input::text, tokens_output::text,
-            tokens_cache_read::text, tokens_cache_write::text
-     FROM rich_daily_rollups
-     WHERE team_id = $1
-       AND membership_id = ANY($2::uuid[])
-       AND day >= $3::date
-       AND day < $4::date`,
+    // Base metrics (agent time, sessions, tokens) come from the daily_rollups
+    // superset FULL-OUTER-joined with rich_daily_rollups; rich-only KPI columns
+    // (prs, commits, concurrency, long-auto, tool errors, plan mode, …) 0-default
+    // so a backfill-only member's base numbers still land in the headline tiles.
+    `SELECT COALESCE(d.day, r.day)::text AS day,
+            COALESCE(d.agent_time_ms, r.agent_time_ms)::text AS agent_time_ms,
+            COALESCE(d.sessions, r.sessions) AS sessions,
+            COALESCE(r.prs, 0) AS prs, COALESCE(r.commits, 0) AS commits, COALESCE(r.pushes, 0) AS pushes,
+            COALESCE(r.parallel_minutes, 0) AS parallel_minutes, COALESCE(r.concurrency_peak, 0) AS concurrency_peak,
+            COALESCE(r.long_auto_count, 0) AS long_auto_count,
+            COALESCE(r.long_auto_total_min, 0) AS long_auto_total_min,
+            COALESCE(r.long_auto_max_single_min, 0) AS long_auto_max_single_min,
+            COALESCE(r.tool_errors, 0) AS tool_errors, COALESCE(r.plan_mode_used, 0) AS plan_mode_used,
+            COALESCE(r.brainstorm_warmup_sessions, 0) AS brainstorm_warmup_sessions,
+            COALESCE(d.tokens_input, r.tokens_input)::text AS tokens_input,
+            COALESCE(d.tokens_output, r.tokens_output)::text AS tokens_output,
+            COALESCE(d.tokens_cache_read, r.tokens_cache_read)::text AS tokens_cache_read,
+            COALESCE(d.tokens_cache_write, r.tokens_cache_write)::text AS tokens_cache_write
+     FROM (SELECT membership_id, day, agent_time_ms,
+                  COALESCE(unique_sessions, sessions) AS sessions,
+                  tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
+           FROM daily_rollups
+           WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
+             AND day >= $3::date AND day < $4::date) d
+     FULL OUTER JOIN (SELECT membership_id, day, agent_time_ms,
+                             COALESCE(unique_sessions, sessions) AS sessions, prs, commits, pushes,
+                             parallel_minutes, concurrency_peak,
+                             long_auto_count, long_auto_total_min, long_auto_max_single_min,
+                             tool_errors, plan_mode_used, brainstorm_warmup_sessions,
+                             tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
+                      FROM rich_daily_rollups
+                      WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
+                        AND day >= $3::date AND day < $4::date) r
+       ON r.membership_id = d.membership_id AND r.day = d.day`,
     [teamId, memberIds, weekMonday, winEnd],
   );
 
@@ -849,16 +871,31 @@ export async function buildTeamInsightReport(
         // from the this-week-vs-last-week numeric block which still drives
         // the headline tiles. Both share the same memberships filter.
         `WITH window_30d AS (
-           -- unique-session count (start-day), not session-days, so the
-           -- maturity gates / cadence keep their unique-session semantics.
-           SELECT r.membership_id, r.day, r.agent_time_ms,
-                  COALESCE(r.unique_sessions, r.sessions) AS sessions,
-                  r.projects, r.skills_loaded, r.subagents_dispatched
-           FROM rich_daily_rollups r
-           WHERE r.team_id = $1
-             AND r.membership_id = ANY($2::uuid[])
-             AND r.day >= ($3::date - INTERVAL '30 days')::date
-             AND r.day < $5::date
+           -- Base (day/agent_time_ms/sessions) from the daily_rollups superset
+           -- FULL-OUTER-joined with rich; the breadth jsonb comes from rich with
+           -- an empty-array default so backfill-only days still contribute their
+           -- active-day / session counts without breaking the LATERAL unpacking.
+           -- unique-session count (start-day), not session-days, so the maturity
+           -- gates / cadence keep their unique-session semantics.
+           SELECT COALESCE(d.membership_id, r.membership_id) AS membership_id,
+                  COALESCE(d.day, r.day) AS day,
+                  COALESCE(d.agent_time_ms, r.agent_time_ms) AS agent_time_ms,
+                  COALESCE(d.sessions, r.sessions) AS sessions,
+                  COALESCE(r.projects, '[]'::jsonb) AS projects,
+                  COALESCE(r.skills_loaded, '[]'::jsonb) AS skills_loaded,
+                  COALESCE(r.subagents_dispatched, '[]'::jsonb) AS subagents_dispatched
+           FROM (SELECT membership_id, day, agent_time_ms,
+                        COALESCE(unique_sessions, sessions) AS sessions
+                 FROM daily_rollups
+                 WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
+                   AND day >= ($3::date - INTERVAL '30 days')::date AND day < $5::date) d
+           FULL OUTER JOIN (SELECT membership_id, day, agent_time_ms,
+                                   COALESCE(unique_sessions, sessions) AS sessions,
+                                   projects, skills_loaded, subagents_dispatched
+                            FROM rich_daily_rollups
+                            WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
+                              AND day >= ($3::date - INTERVAL '30 days')::date AND day < $5::date) r
+             ON r.membership_id = d.membership_id AND r.day = d.day
          ),
          per_member_30d AS (
            SELECT membership_id,
@@ -883,16 +920,40 @@ export async function buildTeamInsightReport(
            SELECT m.id AS membership_id,
                   COALESCE(NULLIF(ua.display_name, ''), split_part(ua.email, '@', 1)) AS display_name,
                   -- unique-session count (start-day), see window_30d note above
-                  r.day, r.agent_time_ms, COALESCE(r.unique_sessions, r.sessions) AS sessions, r.prs,
-                  jsonb_array_length(r.subagents_dispatched) AS subagent_kinds,
-                  jsonb_array_length(r.projects) AS project_count,
-                  jsonb_array_length(r.skills_loaded) AS skill_count,
-                  (r.day < $3::date) AS is_prev
+                  rr.day, rr.agent_time_ms, rr.sessions, rr.prs,
+                  jsonb_array_length(rr.subagents_dispatched) AS subagent_kinds,
+                  jsonb_array_length(rr.projects) AS project_count,
+                  jsonb_array_length(rr.skills_loaded) AS skill_count,
+                  (rr.day < $3::date) AS is_prev
            FROM memberships m
            JOIN user_accounts ua ON ua.id = m.user_account_id
-           LEFT JOIN rich_daily_rollups r ON r.membership_id = m.id
-             AND r.team_id = m.team_id
-             AND r.day >= $4::date AND r.day < $5::date
+           -- Same daily-superset ⟕ rich join as window_30d, one row per member-day
+           -- across this-week + last-week; jsonb defaults to '[]' so a backfill-only
+           -- member's base agent time / sessions land in the roster + maturity block
+           -- while its breadth counters read zero. LEFT JOIN keeps members with rows
+           -- in NEITHER table (rr.* NULL → L0) in the result.
+           LEFT JOIN (
+             SELECT COALESCE(d.membership_id, r.membership_id) AS membership_id,
+                    COALESCE(d.day, r.day) AS day,
+                    COALESCE(d.agent_time_ms, r.agent_time_ms) AS agent_time_ms,
+                    COALESCE(d.sessions, r.sessions) AS sessions,
+                    COALESCE(r.prs, 0) AS prs,
+                    COALESCE(r.projects, '[]'::jsonb) AS projects,
+                    COALESCE(r.skills_loaded, '[]'::jsonb) AS skills_loaded,
+                    COALESCE(r.subagents_dispatched, '[]'::jsonb) AS subagents_dispatched
+             FROM (SELECT membership_id, day, agent_time_ms,
+                          COALESCE(unique_sessions, sessions) AS sessions
+                   FROM daily_rollups
+                   WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
+                     AND day >= $4::date AND day < $5::date) d
+             FULL OUTER JOIN (SELECT membership_id, day, agent_time_ms,
+                                     COALESCE(unique_sessions, sessions) AS sessions,
+                                     prs, projects, skills_loaded, subagents_dispatched
+                              FROM rich_daily_rollups
+                              WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
+                                AND day >= $4::date AND day < $5::date) r
+               ON r.membership_id = d.membership_id AND r.day = d.day
+           ) rr ON rr.membership_id = m.id
            WHERE m.team_id = $1
              AND m.id = ANY($2::uuid[])
              AND m.revoked_at IS NULL
