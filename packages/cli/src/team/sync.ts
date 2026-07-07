@@ -51,7 +51,7 @@ export type TeamSyncOptions = {
   // line so an operator (or an agent) can tell automatic ticks apart from a
   // first-boot catch-up. Only values the daemon actually emits: "auto" (the
   // 5-min timer) and "boot" (first sync after the daemon starts).
-  trigger?: "auto" | "boot";
+  trigger?: "auto" | "boot" | "pair";
   // The scheduler's interval to the NEXT team sync, so the summary line can
   // print an accurate "next ~Nm" rather than a hardcoded guess.
   nextSyncMs?: number;

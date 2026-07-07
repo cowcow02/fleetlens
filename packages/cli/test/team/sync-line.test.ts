@@ -63,6 +63,18 @@ describe("buildSyncLine", () => {
     expect(line).toBe("[sync] idle · boot · nothing to sync · 90ms · next ~5m");
   });
 
+  it("tags the first-pair backfill with trigger=pair and its full day range", () => {
+    const s = empty();
+    s.pushedDays = Array.from({ length: 51 }, (_, i) =>
+      new Date(Date.UTC(2026, 4, 18 + i)).toISOString().slice(0, 10),
+    );
+    s.usageSnapshots = 3;
+    const line = buildSyncLine("ok", "pair", s, 6100, undefined);
+    expect(line).toContain("[sync] ok · pair");
+    expect(line).toContain("pushed 51 days (2026-05-18→2026-07-07)");
+    expect(line).not.toContain("next ~"); // no daemon cadence promise at pair time
+  });
+
   it("carries the error detail on an aborted run", () => {
     const s = empty();
     s.errorMsg = "sync aborted: ECONNREFUSED";

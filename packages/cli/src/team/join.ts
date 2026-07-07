@@ -1,5 +1,24 @@
+import { appendFileSync } from "node:fs";
+import { cclensPath } from "@claude-lens/parser/fs";
 import { writeTeamConfig, type TeamConfig } from "./config.js";
 import { runTeamSync } from "./sync.js";
+
+// Same line format as daemon-worker's log() so sync-log.ts picks the pairing
+// run's [sync] summary off daemon.log. Without this the first-pair backfill —
+// the largest sync of a member's life — never reaches the team-side log, and
+// the member's story starts at the next boot sync ("pushed 1 day") while the
+// server already holds weeks of history.
+function logToDaemonLog(level: "info" | "warn" | "error", message: string): void {
+  try {
+    appendFileSync(
+      cclensPath("daemon.log"),
+      `${new Date().toISOString()} ${level.toUpperCase()} ${message}\n`,
+      "utf8",
+    );
+  } catch {
+    // Pairing must not fail on a log write.
+  }
+}
 
 export async function joinTeam(args: string[]) {
   const [serverUrl, bearerToken] = args;
@@ -45,7 +64,10 @@ export async function joinTeam(args: string[]) {
   // retries, and daily activity. Threading `config` directly avoids a stale
   // disk-read race during the first paired moment.
   console.log("  Syncing local history…");
-  const sync = await runTeamSync(undefined, config, { forceUsageBackfill: true });
+  const sync = await runTeamSync(logToDaemonLog, config, {
+    forceUsageBackfill: true,
+    trigger: "pair",
+  });
   const backfill = sync.usageBackfill;
   if (backfill?.error) {
     console.log(`  ⚠ Usage history sync failed: ${backfill.error} — daemon will retry automatically.`);
