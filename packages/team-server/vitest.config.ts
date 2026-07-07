@@ -14,6 +14,12 @@ export default defineConfig({
         "src/app/**/page.tsx",
         "src/app/**/layout.tsx",
         "src/components/**",
+        // Client ("use client") React components colocated under app routes —
+        // the only non-page/layout .tsx under src/app. Same category as
+        // src/components/**: presentational, exercised by the dev-server smoke
+        // loop, not vitest (no jsdom/RTL harness here).
+        "src/app/**/member-sync-log-modal.tsx",
+        "src/app/**/member-admin-menu.tsx",
         "src/proxy.ts",
         "src/db/schema.ts",
         // Pure type-definition module backing the v7 mock report — no runtime.
