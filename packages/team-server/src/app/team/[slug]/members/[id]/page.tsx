@@ -74,6 +74,14 @@ export default async function MemberPage({
 
   // 30-day rollup totals — surfaced inline in the header card so admins
   // don't have to scroll to find "is this seat actually being used?"
+  // "Active days" counts days with real session activity from the rollups —
+  // NOT planSummary.totalDaysObserved, which counts days of usage-snapshot
+  // coverage (a daemon-observation metric: a freshly-paired member with weeks
+  // of backfilled activity would show "1 active day" because the daemon has
+  // only been collecting snapshots since pairing).
+  const activeDays = headerRollups.filter(
+    (r) => Number(r.agent_time_ms) > 0 || (r.unique_sessions ?? r.sessions) > 0,
+  ).length;
   const totalAgentMs = headerRollups.reduce((s, r) => s + Number(r.agent_time_ms), 0);
   // Unique sessions (start-day), not session-days, for the headline seat-usage
   // figure. Falls back to the session-days column for pre-split rows.
@@ -198,10 +206,7 @@ export default async function MemberPage({
             fontSize: 12,
           }}
         >
-          <HeaderField
-            label="Last 30 days · engagement"
-            value={`${planSummary.totalDaysObserved} active days`}
-          />
+          <HeaderField label="Last 30 days · engagement" value={`${activeDays} active days`} />
           <HeaderField label="Last 30 days · agent time" value={formatAgentTime(totalAgentMs)} />
           <HeaderField label="Last 30 days · sessions" value={String(totalSessions)} />
           <HeaderField label="Last 30 days · tokens" value={formatTokens(totalTokens)} />
