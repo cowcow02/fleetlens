@@ -60,8 +60,11 @@ export async function pruneMemberSyncLog(): Promise<number> {
 }
 
 export async function pruneMemberDaemonLog(): Promise<number> {
+  // Prune on server-assigned created_at, not the member-supplied ts — a
+  // daemon with a skewed clock could otherwise have fresh lines deleted
+  // immediately (or junk-dated lines retained forever).
   const res = await getPool().query(
-    "DELETE FROM member_daemon_log WHERE ts < now() - interval '30 days'"
+    "DELETE FROM member_daemon_log WHERE created_at < now() - interval '30 days'"
   );
   return res.rowCount ?? 0;
 }
@@ -79,9 +82,21 @@ export async function pruneServerLog(): Promise<number> {
 // console) and infinite-loop. Tracks a high-water seq across calls.
 let lastFlushedSeq = 0;
 export async function flushServerLog(): Promise<number> {
-  const { drainForFlush } = await import("./log-buffer");
-  const pending = drainForFlush(lastFlushedSeq);
+  const { drainForFlush, isHydrated, reconcileSeqPast } = await import("./log-buffer");
+  let pending = drainForFlush(lastFlushedSeq);
   if (pending.length === 0) return 0;
+  if (!isHydrated()) {
+    // Boot hydrate failed (or never ran): fresh seqs restart at 1 and can
+    // collide with persisted rows — ON CONFLICT (seq) DO NOTHING would then
+    // silently drop every new line. Re-anchor past the persisted max before
+    // flushing anything; if this query fails too, the flush aborts and the
+    // next tick retries, so we never flush while seqs may collide.
+    const res = await getPool().query<{ max: string }>(
+      "SELECT COALESCE(MAX(seq), 0)::text AS max FROM server_log",
+    );
+    reconcileSeqPast(Number(res.rows[0].max));
+    pending = drainForFlush(lastFlushedSeq);
+  }
   const vals: unknown[] = [];
   const tuples = pending.map((l, i) => {
     const b = i * 4;

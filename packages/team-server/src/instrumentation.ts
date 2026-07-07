@@ -27,6 +27,9 @@ export async function register() {
     })));
     console.log(`[instrumentation] hydrated ${res.rows.length} server_log lines`);
   } catch (err) {
+    // Buffer stays un-hydrated; flushServerLog re-anchors seqs past the
+    // persisted max before its first flush so new lines can't collide with
+    // (and be silently dropped by) rows already in server_log.
     console.warn(`[instrumentation] server_log hydrate skipped: ${(err as Error).message}`);
   }
 

@@ -85,6 +85,16 @@ describe("migrations", () => {
     );
     expect(tableRows).toHaveLength(1);
   });
+
+  it("0014 creates the (membership_id, id) index the daemon-log page query cursors on", async () => {
+    const { rows } = await getPool().query<{ indexname: string; indexdef: string }>(
+      "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'member_daemon_log'",
+    );
+    const idx = rows.find((r) => r.indexname === "idx_member_daemon_log_member_id");
+    expect(idx).toBeDefined();
+    expect(idx!.indexdef).toContain("membership_id");
+    expect(idx!.indexdef).toMatch(/id DESC/);
+  });
 });
 
 describe("schema parity with SCHEMA_SQL", () => {

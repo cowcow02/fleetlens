@@ -177,6 +177,14 @@ export const DayArtifactSignalsSchema = z.object({
   claudemdLineDelta: z.number().int().default(0),
 }).passthrough();
 
+// One syncLog line. Exported standalone so processIngest can validate the
+// block row-by-row.
+export const SyncLogLineSchema = z.object({
+  ts: z.string().datetime(),
+  level: z.enum(["info", "warn", "error"]),
+  msg: z.string().max(2000),
+});
+
 // Every field except ingestId/observedAt is optional so the daemon can push
 // any subset on each tick:
 //   - idle day  →  { snapshot, cyclePeaks, planTier }
@@ -218,12 +226,10 @@ export const IngestPayload = z.object({
   commandResults: z.array(CommandResultSchema).max(50).optional(),
   // The member daemon's own sync-log lines since its last successful upload —
   // the client-side troubleshooting story, surfaced per-member. Row-level
-  // dedup on (membership_id, ts, msg), so retries are idempotent. Capped.
-  syncLog: z.array(z.object({
-    ts: z.string().datetime(),
-    level: z.enum(["info", "warn", "error"]),
-    msg: z.string().max(2000),
-  })).max(500).optional(),
+  // dedup on (membership_id, ts, msg), so retries are idempotent. Capped;
+  // processIngest validates rows individually (like snapshotHistory) so one
+  // corrupt line can't drop the rest of the batch.
+  syncLog: z.array(SyncLogLineSchema).max(500).optional(),
 }).passthrough();
 
 // Strict envelope: the identity / routing fields that MUST be valid for the
@@ -242,15 +248,10 @@ export const IngestEnvelope = z.object({
   cliVersion: z.string().max(64).optional(),
 }).passthrough();
 
-// snapshotHistory / commandResults as standalone block schemas so the
-// per-block validator in processIngest can reuse them.
-export const SnapshotHistorySchema = z.array(UsageSnapshotSchema).max(1000);
+// commandResults as a standalone block schema so the per-block validator in
+// processIngest can reuse it. (snapshotHistory and syncLog get row-by-row
+// validation in ingest.ts instead of a block schema.)
 export const CommandResultsSchema = z.array(CommandResultSchema).max(50);
-export const SyncLogSchema = z.array(z.object({
-  ts: z.string().datetime(),
-  level: z.enum(["info", "warn", "error"]),
-  msg: z.string().max(2000),
-})).max(500);
 
 export const ClaimPayload = z.object({
   bootstrapToken: z.string(),

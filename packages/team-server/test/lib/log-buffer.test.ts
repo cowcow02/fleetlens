@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { installLogCapture, readLog } from "../../src/lib/log-buffer";
+import { installLogCapture, readLog, isHydrated, reconcileSeqPast } from "../../src/lib/log-buffer";
 
 // Unique marker so assertions ignore any other console noise in the buffer.
 const M = `__logbuf_test_${Math.round(performance.now())}`;
@@ -42,5 +42,24 @@ describe("log-buffer", () => {
     expect(tail.lines).toHaveLength(1);
     expect(tail.lines[0].msg).toContain("second");
     expect(tail.lastSeq).toBeGreaterThanOrEqual(tail.lines[0].seq);
+  });
+
+  // Failed-boot-hydrate recovery: without re-anchoring, fresh seqs collide
+  // with persisted rows and ON CONFLICT (seq) DO NOTHING drops every new line.
+  // Runs LAST in this file — it flips the global hydrated flag.
+  it("reconcileSeqPast shifts buffered seqs past the persisted max, exactly once", () => {
+    installLogCapture();
+    const r = `${M}_reconcile`;
+    console.log(`${r} line`);
+    const before = readLog({ q: r }).lines[0].seq;
+    expect(isHydrated()).toBe(false);
+
+    reconcileSeqPast(1000);
+    expect(isHydrated()).toBe(true);
+    expect(readLog({ q: r }).lines[0].seq).toBe(before + 1000);
+
+    // Second call is a no-op — seqs must not drift again.
+    reconcileSeqPast(5000);
+    expect(readLog({ q: r }).lines[0].seq).toBe(before + 1000);
   });
 });

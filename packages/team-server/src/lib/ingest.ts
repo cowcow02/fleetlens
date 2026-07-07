@@ -14,7 +14,7 @@ import {
   PlanTierKeySchema,
   WireCyclePeaksSchema,
   CommandResultsSchema,
-  SyncLogSchema,
+  SyncLogLineSchema,
   type UsageSnapshot,
 } from "./zod-schemas";
 import { refreshMembershipWeeklyUtilization } from "./scheduler";
@@ -23,10 +23,11 @@ import { processCommandResults, fetchPendingCommands, type PendingCommand } from
 
 export type SnapshotHistoryResult = { received: number; inserted: number; skipped: number };
 // Per-block validation outcome surfaced to the daemon. `accepted` lists the
-// data blocks that were present AND passed validation (and were therefore
-// applied, modulo the ingestId dedup gate); `skipped` maps a rejected block
-// name to the failing field path + reason. This is the 200-with-partial
-// contract: a single bad block is dropped, not fatal to the whole push.
+// data blocks that were APPLIED within this call's transaction — on a dedup
+// replay only the row-level-idempotent streams (snapshotHistory, syncLog)
+// can appear; `skipped` maps a rejected block name to the failing field
+// path + reason. This is the 200-with-partial contract: a single bad block
+// is dropped, not fatal to the whole push.
 export type IngestBlocksResult = { accepted: string[]; skipped: Record<string, string> };
 export type IngestResult = {
   accepted: true;
@@ -38,9 +39,25 @@ export type IngestResult = {
 };
 
 type ParsedIngest = z.infer<typeof IngestPayload>;
+type SyncLogLine = z.infer<typeof SyncLogLineSchema>;
 
 // Keep snapshotHistory transactions bounded — mirrors the old schema cap.
 const SNAPSHOT_HISTORY_MAX = 1000;
+// syncLog raw-length cap — mirrors the old block schema's `.max(500)`.
+const SYNC_LOG_MAX = 500;
+// btree index tuples top out around ~2704 bytes, and the syncLog dedup index
+// carries msg — a ≤2000-CHAR multibyte msg can be ~8000 BYTES, aborting the
+// whole txn (500 → the daemon re-sends the same poison line forever). Bound
+// msg by bytes before insert.
+const SYNC_LOG_MSG_MAX_BYTES = 2000;
+
+// Truncate to a UTF-8 byte budget at a codepoint boundary, marking the cut.
+function truncateUtf8Bytes(s: string, maxBytes: number): string {
+  if (Buffer.byteLength(s, "utf8") <= maxBytes) return s;
+  const cut = Buffer.from(s, "utf8").subarray(0, maxBytes - 3).toString("utf8"); // 3 = "…"
+  // A mid-codepoint cut decodes to trailing U+FFFD — strip before marking.
+  return cut.replace(/�+$/, "") + "…";
+}
 
 export async function processIngest(
   raw: unknown,
@@ -123,6 +140,46 @@ export async function processIngest(
     }
   }
 
+  // syncLog gets the same row-level resilience as snapshotHistory: the block
+  // used to validate atomically, so one corrupt line killed up to 500 valid
+  // ones. Keep every valid line; the block reports skipped only when nothing
+  // survives (a partial drop is warn-logged but the block is still accepted
+  // with the valid subset).
+  let syncLog: SyncLogLine[] | undefined;
+  if (rawObj.syncLog !== undefined) {
+    const arr = rawObj.syncLog;
+    if (!Array.isArray(arr)) {
+      skippedBlocks.syncLog = "syncLog: expected array";
+      console.warn(`[ingest] skipped block "syncLog": ${skippedBlocks.syncLog}`);
+    } else if (arr.length > SYNC_LOG_MAX) {
+      // Cap on RAW length before parsing — same DoS reasoning as snapshotHistory.
+      skippedBlocks.syncLog = `syncLog: exceeds ${SYNC_LOG_MAX}-row cap (${arr.length} received)`;
+      console.warn(`[ingest] skipped block "syncLog": ${skippedBlocks.syncLog}`);
+    } else {
+      const valid: SyncLogLine[] = [];
+      let firstBad: string | undefined;
+      for (let i = 0; i < arr.length; i++) {
+        const res = SyncLogLineSchema.safeParse(arr[i]);
+        if (res.success) {
+          valid.push({ ...res.data, msg: truncateUtf8Bytes(res.data.msg, SYNC_LOG_MSG_MAX_BYTES) });
+        } else if (!firstBad) {
+          const issue = res.error.issues[0];
+          firstBad = `syncLog[${i}]${issue?.path.length ? "." + issue.path.join(".") : ""}: ${issue?.message ?? "invalid"}`;
+        }
+      }
+      if (valid.length > 0) {
+        syncLog = valid;
+        acceptedBlocks.push("syncLog");
+        if (firstBad) {
+          console.warn(`[ingest] partial syncLog: ${firstBad} (${arr.length - valid.length}/${arr.length} rows dropped)`);
+        }
+      } else if (firstBad) {
+        skippedBlocks.syncLog = `${firstBad} (${arr.length}/${arr.length} rows dropped)`;
+        console.warn(`[ingest] skipped block "syncLog": ${skippedBlocks.syncLog}`);
+      }
+    }
+  }
+
   const commandResults = tryBlock("commandResults", CommandResultsSchema);
 
   // Reconstructed payload of only the envelope + valid blocks. The downstream
@@ -142,8 +199,27 @@ export async function processIngest(
     cyclePeaks: tryBlock("cyclePeaks", WireCyclePeaksSchema),
     snapshotHistory,
     commandResults,
-    syncLog: tryBlock("syncLog", SyncLogSchema),
+    syncLog,
   };
+
+  // accepted must imply applied. Both extras blocks are keyed to a rollup day
+  // they don't carry themselves: enrichedExtras only lands through the rich
+  // upsert's COALESCE columns, and artifactSignals needs the push's day. When
+  // the prerequisite block is absent (or itself skipped), demote them —
+  // reporting them accepted would tell the daemon data landed that didn't.
+  if (payload.enrichedExtras && !payload.richRollup) {
+    acceptedBlocks.splice(acceptedBlocks.indexOf("enrichedExtras"), 1);
+    skippedBlocks.enrichedExtras = "enrichedExtras: requires richRollup";
+    console.warn(`[ingest] skipped block "enrichedExtras": ${skippedBlocks.enrichedExtras}`);
+    payload.enrichedExtras = undefined;
+  }
+  const signalsDay = payload.richRollup?.day ?? payload.dailyRollup?.day;
+  if (payload.artifactSignals && !signalsDay) {
+    acceptedBlocks.splice(acceptedBlocks.indexOf("artifactSignals"), 1);
+    skippedBlocks.artifactSignals = "artifactSignals: requires richRollup or dailyRollup (day key)";
+    console.warn(`[ingest] skipped block "artifactSignals": ${skippedBlocks.artifactSignals}`);
+    payload.artifactSignals = undefined;
+  }
 
   let dedupHit!: boolean;
   let historyInserted = 0;
@@ -225,7 +301,10 @@ export async function processIngest(
       daemonLogInserted = res.rowCount ?? 0;
     }
 
-    if (payload.richRollup) {
+    // Headline blocks below are gated on !dedupHit like dailyRollup: a replay
+    // with the same ingestId carries the same content, so re-upserting is a
+    // no-op at best and must not be reported as applied.
+    if (!dedupHit && payload.richRollup) {
       const r = payload.richRollup;
       const ex = payload.enrichedExtras;
       await client.query(`
@@ -304,13 +383,16 @@ export async function processIngest(
       ]);
     }
 
-    if (payload.artifactSignals && payload.richRollup) {
-      await upsertDayArtifactSignals(client, teamId, membershipId, payload.richRollup.day, payload.artifactSignals);
-      await reconcileTeamSkillCatalog(client, teamId, membershipId, payload.richRollup.day, payload);
-    } else if (payload.richRollup) {
-      // Always reconcile the catalog from skills_loaded so adopters are
-      // tracked even when the file-system probe hasn't reported authorship.
-      await reconcileTeamSkillCatalog(client, teamId, membershipId, payload.richRollup.day, payload);
+    // artifactSignals writes its own table (day_artifact_signals) but carries
+    // no day — keyed to the push's rollup day (richRollup, or dailyRollup when
+    // the rich block was dropped) so a skipped richRollup doesn't strand it.
+    if (!dedupHit && payload.artifactSignals && signalsDay) {
+      await upsertDayArtifactSignals(client, teamId, membershipId, signalsDay, payload.artifactSignals);
+    }
+    // Always reconcile the catalog when richRollup is present (skills_loaded
+    // tracks adopters even without the file-system probe's authorship).
+    if (!dedupHit && signalsDay && (payload.artifactSignals || payload.richRollup)) {
+      await reconcileTeamSkillCatalog(client, teamId, membershipId, signalsDay, payload);
     }
 
     if (!dedupHit || historyInserted > 0) {
@@ -354,6 +436,13 @@ export async function processIngest(
   }
   const commands = await fetchPendingCommands(p, membershipId);
 
+  // blocks.accepted must list exactly what this call APPLIED. On a dedup
+  // replay every headline block is skipped wholesale — only the row-level-
+  // idempotent streams (snapshotHistory, syncLog) still ran.
+  const appliedBlocks = dedupHit
+    ? acceptedBlocks.filter((b) => b === "snapshotHistory" || b === "syncLog")
+    : acceptedBlocks;
+
   // nextSyncAfter is the 200-vs-202 signal at the HTTP layer: present iff
   // actual work happened. A dedup'd headline that still landed history rows
   // counts as work; a pure replay (no history work) doesn't.
@@ -373,7 +462,7 @@ export async function processIngest(
       skipped: rawSnapshotCount - historyInserted,
     };
   }
-  result.blocks = { accepted: acceptedBlocks, skipped: skippedBlocks };
+  result.blocks = { accepted: appliedBlocks, skipped: skippedBlocks };
   if (commands.length > 0) result.commands = commands;
 
   // Always-on per-push health line — the single source of truth for "is this
@@ -391,7 +480,7 @@ export async function processIngest(
     payload.syncLog?.length ? ` daemonLog=${daemonLogInserted}/${payload.syncLog.length}` : "";
   const health =
     `[ingest] push member=${membershipId} team=${teamId} cli=${payload.cliVersion ?? "-"}` +
-    ` ingest=${payload.ingestId} accepted=[${acceptedBlocks.join(",")}]` +
+    ` ingest=${payload.ingestId} accepted=[${appliedBlocks.join(",")}]` +
     ` skipped=[${skippedDetail.join("; ")}] dedup=${dedupHit}${histNote}${logNote}`;
   if (skippedDetail.length > 0) console.warn(health);
   else console.log(health);
@@ -410,7 +499,7 @@ export async function processIngest(
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           teamId, membershipId, payload.ingestId, payload.cliVersion ?? null,
-          JSON.stringify(acceptedBlocks), JSON.stringify(skippedBlocks), syncStatus,
+          JSON.stringify(appliedBlocks), JSON.stringify(skippedBlocks), syncStatus,
           dedupHit, historyInserted, rawSnapshotCount,
         ],
       );

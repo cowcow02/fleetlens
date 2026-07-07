@@ -226,6 +226,25 @@ describe("refreshMembershipWeeklyUtilization", () => {
   });
 });
 
+describe("pruneMemberDaemonLog", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("prunes on server-assigned created_at, not the member-supplied ts", async () => {
+    const mockQuery = vi.fn().mockResolvedValue({ rowCount: 4 });
+    vi.doMock("../../src/db/pool.js", () => ({ getPool: () => ({ query: mockQuery }) }));
+    const { pruneMemberDaemonLog } = await import("../../src/lib/scheduler.js");
+    await expect(pruneMemberDaemonLog()).resolves.toBe(4);
+
+    const sql = String(mockQuery.mock.calls[0][0]);
+    expect(sql).toMatch(/DELETE FROM member_daemon_log WHERE created_at </);
+    // A daemon with a skewed clock must not control its own retention.
+    expect(sql).not.toMatch(/WHERE ts </);
+  });
+});
+
 describe("prunePlanUtilization", () => {
   afterEach(() => {
     vi.restoreAllMocks();

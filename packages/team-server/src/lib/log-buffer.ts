@@ -96,6 +96,23 @@ export function currentMaxSeq(): number {
   return store.seq;
 }
 
+export function isHydrated(): boolean {
+  return !!g.__fleetlensLogHydrated;
+}
+
+// Recovery path for a FAILED boot hydrate: fresh seqs restart at 1 and would
+// collide with rows already in server_log — the flush's ON CONFLICT (seq)
+// DO NOTHING would then silently drop every new line. Shift all buffered seqs
+// past the persisted max and continue from there. Marks the store hydrated so
+// this runs at most once (and a late hydrate() can't rewind seq).
+export function reconcileSeqPast(maxPersistedSeq: number): void {
+  if (g.__fleetlensLogHydrated) return;
+  g.__fleetlensLogHydrated = true;
+  if (maxPersistedSeq <= 0) return;
+  for (const l of store.lines) l.seq += maxPersistedSeq;
+  store.seq += maxPersistedSeq;
+}
+
 // Seed the buffer from persisted rows on boot so the raw log survives a
 // reboot. Prepends history, continues `seq` from the persisted max, and
 // re-appends any lines captured before hydration (a few migration logs) so

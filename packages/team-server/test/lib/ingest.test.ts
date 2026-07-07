@@ -720,6 +720,194 @@ describe("processIngest syncLog → member_daemon_log", () => {
   });
 });
 
+// blocks.accepted must list exactly what a call APPLIED. A dedup replay skips
+// every headline block, so reporting them accepted let the CLI verdict lie
+// ("metrics pushed" when nothing was written). Only the row-level-idempotent
+// streams (snapshotHistory, syncLog) may stay accepted on a replay.
+describe("processIngest dedup blocks honesty", () => {
+  it("returns empty accepted on a pure dedup replay (nothing was applied)", async () => {
+    const payload = makePayload({ planTier: "pro-max-20x" });
+    const first = await processIngest(payload, membershipId, teamId, pool);
+    expect(first.blocks?.accepted).toContain("dailyRollup");
+    const replay = await processIngest(payload, membershipId, teamId, pool);
+    expect(replay.deduplicated).toBe(true);
+    expect(replay.blocks?.accepted).toEqual([]);
+  });
+
+  it("keeps syncLog accepted on a dedup replay because its rows still apply", async () => {
+    const ingestId = `dedup-rows-${Math.random().toString(36).slice(2)}`;
+    await processIngest(
+      makePayload({ ingestId, syncLog: [{ ts: "2026-06-03T09:00:00.000Z", level: "info", msg: "dedup replay line 1" }] }),
+      membershipId, teamId, pool,
+    );
+    const replay = await processIngest(
+      makePayload({ ingestId, syncLog: [{ ts: "2026-06-03T09:05:00.000Z", level: "info", msg: "dedup replay line 2" }] }),
+      membershipId, teamId, pool,
+    );
+    expect(replay.deduplicated).toBe(true);
+    expect(replay.blocks?.accepted).toEqual(["syncLog"]);
+    const { rows } = await pool.query(
+      "SELECT 1 FROM member_daemon_log WHERE membership_id = $1 AND msg = 'dedup replay line 2'",
+      [membershipId],
+    );
+    expect(rows).toHaveLength(1);
+  });
+});
+
+// Extras blocks are keyed to a rollup day they don't carry: enrichedExtras
+// lands only via the rich upsert's COALESCE columns, artifactSignals via the
+// push's day. Previously both passed validation into blocks.accepted while
+// their apply code sat behind `if (payload.richRollup)` — accepted-but-never-
+// applied.
+describe("processIngest extras honesty (accepted implies applied)", () => {
+  const emptyRich = (day: string) => ({
+    day, agentTimeMs: 0, sessions: 0, toolCalls: 0, turns: 0,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    projects: [], workingShapes: [], concurrencyPeak: 0, parallelMinutes: 0,
+    longAutonomous: { count: 0, totalMin: 0, maxSingleMin: 0 },
+    toolErrors: 0, skillsLoaded: [], subagentsDispatched: [],
+    brainstormWarmupSessions: 0, planModeUsed: 0, prs: 0, commits: 0, pushes: 0,
+  });
+  const signals = (day: string) => ({
+    skillsAuthored: [{ pathHash: "e".repeat(32), firstSeenDate: day }],
+    skillsEdited: [], subagentsAuthored: [], slashCommandsAuthored: [],
+    claudemdLineDelta: 3,
+  });
+
+  it("skips enrichedExtras when richRollup is absent", async () => {
+    const result = await processIngest(
+      makePayload({
+        ingestId: `extras-norich-${Math.random().toString(36).slice(2)}`,
+        schemaVersion: 2,
+        enrichedExtras: { outcomeMix: { shipped: 1 }, helpfulnessMix: {}, goalMix: {} },
+      }),
+      membershipId, teamId, pool,
+    );
+    expect(result.blocks?.accepted).not.toContain("enrichedExtras");
+    expect(result.blocks?.skipped.enrichedExtras).toContain("requires richRollup");
+  });
+
+  it("skips enrichedExtras when richRollup was itself skipped as invalid", async () => {
+    const result = await processIngest(
+      makePayload({
+        ingestId: `extras-badrich-${Math.random().toString(36).slice(2)}`,
+        schemaVersion: 2,
+        richRollup: { ...emptyRich("2026-06-04"), day: "not-a-date" },
+        enrichedExtras: { outcomeMix: { shipped: 1 }, helpfulnessMix: {}, goalMix: {} },
+      }),
+      membershipId, teamId, pool,
+    );
+    expect(result.blocks?.skipped.richRollup).toBeTruthy();
+    expect(result.blocks?.accepted).not.toContain("enrichedExtras");
+    expect(result.blocks?.skipped.enrichedExtras).toContain("requires richRollup");
+  });
+
+  it("applies artifactSignals keyed to dailyRollup.day when richRollup is absent", async () => {
+    const day = "2026-06-05";
+    const result = await processIngest(
+      makePayload({
+        ingestId: `signals-daily-${Math.random().toString(36).slice(2)}`,
+        schemaVersion: 2,
+        dailyRollup: {
+          day, agentTimeMs: 100, sessions: 1, toolCalls: 1, turns: 1,
+          tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        },
+        artifactSignals: signals(day),
+      }),
+      membershipId, teamId, pool,
+    );
+    expect(result.blocks?.accepted).toContain("artifactSignals");
+    expect(result.blocks?.skipped.artifactSignals).toBeUndefined();
+    const res = await pool.query(
+      `SELECT claudemd_line_delta FROM day_artifact_signals
+       WHERE team_id = $1 AND membership_id = $2 AND day = $3::date`,
+      [teamId, membershipId, day],
+    );
+    expect(res.rowCount).toBe(1);
+    expect(res.rows[0].claudemd_line_delta).toBe(3);
+  });
+
+  it("skips artifactSignals when no rollup day is available", async () => {
+    const result = await processIngest(
+      {
+        ingestId: `signals-noday-${Math.random().toString(36).slice(2)}`,
+        observedAt: new Date().toISOString(),
+        schemaVersion: 2,
+        artifactSignals: signals("2026-06-06"),
+      },
+      membershipId, teamId, pool,
+    );
+    expect(result.blocks?.accepted).not.toContain("artifactSignals");
+    expect(result.blocks?.skipped.artifactSignals).toContain("requires richRollup or dailyRollup");
+  });
+});
+
+// Row-level syncLog resilience: the block used to validate atomically, so one
+// corrupt line killed up to 500 valid ones (500 → the daemon re-sends the same
+// poison batch forever).
+describe("processIngest syncLog row-level validation + byte bound", () => {
+  it("keeps valid syncLog rows when one row is corrupt (block still accepted)", async () => {
+    const result = await processIngest(
+      makePayload({
+        ingestId: `rowlevel-${Math.random().toString(36).slice(2)}`,
+        syncLog: [
+          { ts: "2026-06-07T10:00:00.000Z", level: "info", msg: "rowlevel keep 1" },
+          { ts: "not-a-timestamp", level: "info", msg: "rowlevel corrupt" },
+          { ts: "2026-06-07T10:02:00.000Z", level: "warn", msg: "rowlevel keep 2" },
+        ],
+      }),
+      membershipId, teamId, pool,
+    );
+    expect(result.blocks?.accepted).toContain("syncLog");
+    expect(result.blocks?.skipped.syncLog).toBeUndefined();
+    const { rows } = await pool.query(
+      "SELECT msg FROM member_daemon_log WHERE membership_id = $1 AND msg LIKE 'rowlevel%' ORDER BY ts",
+      [membershipId],
+    );
+    expect(rows.map((r) => r.msg)).toEqual(["rowlevel keep 1", "rowlevel keep 2"]);
+  });
+
+  it("skips the syncLog block with a dropped-row reason only when every row is invalid", async () => {
+    const result = await processIngest(
+      makePayload({
+        ingestId: `allbad-${Math.random().toString(36).slice(2)}`,
+        syncLog: [
+          { ts: "junk", level: "info", msg: "a" },
+          { ts: "2026-06-07T11:00:00.000Z", level: "fatal", msg: "b" },
+        ],
+      }),
+      membershipId, teamId, pool,
+    );
+    expect(result.blocks?.accepted).not.toContain("syncLog");
+    expect(result.blocks?.skipped.syncLog).toContain("2/2 rows dropped");
+  });
+
+  it("byte-truncates a multibyte msg so the dedup index can't abort the txn", async () => {
+    // 1500 chars (passes the 2000-CHAR schema cap) but 4500 UTF-8 bytes —
+    // over the ~2704-byte btree tuple limit. Pre-fix this aborted the whole
+    // transaction and 500'd the push.
+    const msg = "危".repeat(1500);
+    const result = await processIngest(
+      makePayload({
+        ingestId: `multibyte-${Math.random().toString(36).slice(2)}`,
+        syncLog: [{ ts: "2026-06-08T09:00:00.000Z", level: "error", msg }],
+      }),
+      membershipId, teamId, pool,
+    );
+    // The push survived and BOTH blocks applied — no txn abort.
+    expect(result.blocks?.accepted).toContain("dailyRollup");
+    expect(result.blocks?.accepted).toContain("syncLog");
+    const { rows } = await pool.query(
+      `SELECT msg, octet_length(msg) AS bytes FROM member_daemon_log
+       WHERE membership_id = $1 AND msg LIKE '危%'`,
+      [membershipId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(Number(rows[0].bytes)).toBeLessThanOrEqual(2000);
+    expect(rows[0].msg.endsWith("…")).toBe(true);
+  });
+});
+
 describe("processUsageHistory", () => {
   function makeSnap(capturedAt: string, fiveHourPct = 25, sevenDayPct = 40) {
     return {
