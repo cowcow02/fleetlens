@@ -32,7 +32,7 @@ import {
   type CommandResult,
 } from "@claude-lens/parser/fs";
 import type { Entry } from "@claude-lens/entries";
-import { listEntriesForDay, readEntry, writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
+import { listEntriesForDay, entryExists, writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
 import { buildEntriesForFile } from "../perception/build-entries.js";
 import { latestClaudeCodeSnapshot } from "../usage/storage.js";
 import type { TeamConfig } from "./config.js";
@@ -334,12 +334,18 @@ export function buildEnrichedExtras(entries: Entry[]): EnrichedDailyExtras {
 }
 
 // Session ids we've already attempted an on-the-spot entry build for in THIS
-// process — success OR failure. A pair backfill walks ~51 days sequentially
+// sync run — success OR failure. A pair backfill walks ~51 days sequentially
 // and a session spanning two days appears in both days' `daySessions`; without
 // this a cross-midnight session would be re-parsed once per touched day. The
 // builder emits one Entry per touched day from a single parse, so one attempt
-// per session covers every day it lands on.
+// per session covers every day it lands on. RUN-SCOPED: `resetEnsuredSessions`
+// clears it at the start of each `runTeamSync` so a transient read failure
+// retries on the next tick instead of being poisoned for the daemon's life.
 const ensuredSessions = new Set<string>();
+
+export function resetEnsuredSessions(): void {
+  ensuredSessions.clear();
+}
 
 // On a freshly-paired machine no perception entries exist yet, so a weeks-long
 // backfill would push base `dailyRollup` blocks only — no `richRollup`, no
@@ -360,10 +366,11 @@ function ensureEntriesForDay(day: string, daySessions: SessionMeta[]): void {
     if ((s.agent ?? "claude-code") !== "claude-code") continue;
     // Already cached for this session-day (real sweep, or an earlier day of
     // this same run) — leave it; only pay the parse when it's genuinely absent.
-    if (readEntry(s.id, day)) continue;
+    // Existence check only (no read+parse); listEntriesForDay reads the file.
+    if (entryExists(s.id, day)) continue;
     ensuredSessions.add(s.id);
     try {
-      for (const e of buildEntriesForFile(s.filePath)) writeEntryPreservingEnrichment(e);
+      for (const e of buildEntriesForFile(s.filePath) ?? []) writeEntryPreservingEnrichment(e);
     } catch {
       // Missing / unparseable transcript — push base-only for this session's
       // days. Marked ensured above so we don't re-attempt on later days.

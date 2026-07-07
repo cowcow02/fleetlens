@@ -75,6 +75,22 @@ describe("buildSyncLine", () => {
     expect(line).not.toContain("next ~"); // no daemon cadence promise at pair time
   });
 
+  it("tags an operator-driven run with trigger=manual", () => {
+    const s = empty();
+    s.pushedDays = ["2026-07-07"];
+    const line = buildSyncLine("ok", "manual", s, 800, undefined);
+    expect(line).toBe("[sync] ok · manual · pushed 1 day (2026-07-07) · 800ms");
+  });
+
+  it("surfaces a recovered dropped day without downgrading status", () => {
+    const s = empty();
+    s.pushedDays = ["2026-07-07"];
+    s.recoveredDays = ["2026-07-01"];
+    const line = buildSyncLine("ok", "auto", s, 900, 5 * 60_000);
+    expect(line).toContain("recovered 1 dropped day (2026-07-01)");
+    expect(line.startsWith("[sync] ok")).toBe(true);
+  });
+
   it("carries the error detail on an aborted run", () => {
     const s = empty();
     s.errorMsg = "sync aborted: ECONNREFUSED";

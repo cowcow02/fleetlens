@@ -13,12 +13,13 @@
  */
 
 import { spawn } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { appendSnapshot } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
+import { appendDaemonLogLine } from "./daemon-log.js";
 import { isUsable, readOAuthCredentials } from "./usage/token.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
 import { runTeamSync } from "./team/sync.js";
@@ -37,12 +38,7 @@ const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 mkdirSync(dirname(USAGE_LOG), { recursive: true });
 
 function log(level: "info" | "warn" | "error", message: string): void {
-  const line = `${new Date().toISOString()} ${level.toUpperCase()} ${message}\n`;
-  try {
-    appendFileSync(DAEMON_LOG, line, "utf8");
-  } catch {
-    // Disk might be full. Swallow and keep running.
-  }
+  appendDaemonLogLine(level, message);
 }
 
 let nextPollAtMs = 0;

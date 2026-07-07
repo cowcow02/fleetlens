@@ -23,7 +23,17 @@ export async function team(args: string[]) {
     }
     case "sync": {
       const { runTeamSync } = await import("../team/sync.js");
-      const outcome = await runTeamSync((level, msg) => console.log(`[${level}] ${msg}`));
+      const { appendDaemonLogLine } = await import("../daemon-log.js");
+      // Log to the console AND daemon.log with trigger="manual" so a hand-run
+      // sync's [sync] summary enters the member story like the daemon's ticks.
+      const outcome = await runTeamSync(
+        (level, msg) => {
+          console.log(`[${level}] ${msg}`);
+          appendDaemonLogLine(level, msg);
+        },
+        undefined,
+        { trigger: "manual" },
+      );
       if (!outcome.paired) {
         console.error("Not paired. Run 'fleetlens team join <url> <device-token>' first.");
         process.exit(1);

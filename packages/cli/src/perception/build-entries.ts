@@ -18,24 +18,18 @@ export function decodeProjectDirName(projectDir: string): string {
 }
 
 /**
- * Parse a single Claude Code session JSONL file and build its deterministic
- * Entries (no LLM). The `SessionDetail` is reconstructed BYTE-IDENTICALLY to
- * the perception sweep's claude-code branch (basename → session id,
- * `parseTranscript` on raw lines, `meta.cwd ?? decodeProjectDirName`), so the
- * `(session_id, local_day)` keys `buildEntries` derives match exactly — a
- * later sweep then preserves rather than duplicates. `source_checkpoint`
- * carries the file's byte size for provenance.
- *
- * CLAUDE-CODE ONLY: the sweep processes non-claude sources through a different
- * path (`source.getSession(id)` keyed by the source's own id, NOT the
- * basename). Feeding a codex/gemini transcript here would either throw on the
- * foreign format or write an entry under a mismatched key. Callers must gate
+ * Parse a Claude Code session JSONL into deterministic Entries (no LLM),
+ * reconstructing `SessionDetail` BYTE-IDENTICALLY to the perception sweep's
+ * claude-code branch so the `(session_id, local_day)` keys match exactly and a
+ * later sweep preserves rather than duplicates. CLAUDE-CODE ONLY — callers gate
  * on `(s.agent ?? "claude-code") === "claude-code"`.
  *
- * Returns `[]` for an empty/blank transcript. Throws (missing file, unreadable
- * bytes) — callers should catch and fall through to base-only rollups.
+ * Return contract drives the sweep's checkpointing: `null` = blank/unreadable
+ * (nothing parsed → caller must NOT advance the byte checkpoint); `[]` = parsed
+ * but zero entries (caller SHOULD checkpoint so it isn't re-parsed every tick).
+ * Throws on missing/unreadable bytes — callers catch and fall through.
  */
-export function buildEntriesForFile(filePath: string): Entry[] {
+export function buildEntriesForFile(filePath: string): Entry[] | null {
   const stat = statSync(filePath);
   const raw = readFileSync(filePath, "utf8");
   const rawLines: unknown[] = raw
@@ -46,7 +40,7 @@ export function buildEntriesForFile(filePath: string): Entry[] {
     })
     .filter((x): x is object => x !== null);
 
-  if (rawLines.length === 0) return [];
+  if (rawLines.length === 0) return null;
 
   const { meta, events } = parseTranscript(rawLines);
   const fileName = basename(filePath);

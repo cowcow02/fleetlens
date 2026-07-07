@@ -285,6 +285,137 @@ describe("runTeamSync", () => {
     ).toBe(true);
   });
 
+  it("advances the sync-log watermark ONLY when the server accepted the syncLog block", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    // A pending [sync] line on daemon.log (CCLENS_HOME) that the push carries.
+    writeFileSync(
+      join(cclensDir, "daemon.log"),
+      "2026-04-10T00:00:00.000Z INFO [sync] ok · auto · pushed 1 day (2026-04-10)\n",
+    );
+
+    // Server ingests the day but SKIPS the syncLog block.
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ blocks: { accepted: ["dailyRollup"], skipped: {} } }),
+    } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    const advanced = vi
+      .mocked(writeTeamConfig)
+      .mock.calls.some((c) => (c[0] as TeamConfig).lastSyncedLogAt === "2026-04-10T00:00:00.000Z");
+    expect(advanced).toBe(false);
+  });
+
+  it("advances the sync-log watermark when the server accepts the syncLog block", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([makeSession("2026-04-14")]);
+
+    writeFileSync(
+      join(cclensDir, "daemon.log"),
+      "2026-04-10T00:00:00.000Z INFO [sync] ok · auto · pushed 1 day (2026-04-10)\n",
+    );
+
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ blocks: { accepted: ["dailyRollup", "syncLog"], skipped: {} } }),
+    } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    const advanced = vi
+      .mocked(writeTeamConfig)
+      .mock.calls.some((c) => (c[0] as TeamConfig).lastSyncedLogAt === "2026-04-10T00:00:00.000Z");
+    expect(advanced).toBe(true);
+  });
+
+  it("retries the oldest dropped day and clears it from config on success", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue({
+      ...CONFIG,
+      lastSyncedDay: "2026-04-14",
+      droppedDays: ["2026-04-01"],
+    });
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    // The new day AND the previously-dropped day both have local sessions so
+    // allRollups can rebuild the dropped day's full payload.
+    vi.mocked(listSessions).mockResolvedValue([
+      makeSession("2026-04-14"),
+      makeSession("2026-04-01"),
+    ]);
+
+    // Main-loop day + retry day both 200.
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    } as Response);
+
+    const logs: Array<[string, string]> = [];
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync((level, msg) => logs.push([level, msg]));
+
+    // Two pushes: the new day and the recovered day.
+    expect(vi.mocked(fetch).mock.calls.length).toBeGreaterThanOrEqual(2);
+    // Recovered day surfaced in the [sync] line.
+    expect(
+      logs.some(([, m]) => m.startsWith("[sync] ") && m.includes("recovered 1 dropped day (2026-04-01)")),
+    ).toBe(true);
+    // The dropped day is cleared from the persisted config.
+    const clearedCall = vi
+      .mocked(writeTeamConfig)
+      .mock.calls.find((c) => Array.isArray((c[0] as TeamConfig).droppedDays));
+    expect(clearedCall).toBeDefined();
+    expect((clearedCall![0] as TeamConfig).droppedDays).toEqual([]);
+  });
+
+  it("leaves a dropped day in config when its retry still 400s", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue({
+      ...CONFIG,
+      lastSyncedDay: "2026-04-14",
+      droppedDays: ["2026-04-01"],
+    });
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([
+      makeSession("2026-04-14"),
+      makeSession("2026-04-01"),
+    ]);
+
+    // Main-loop day 200, retry day still 400 (old server not yet upgraded).
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) } as Response)
+      .mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({ error: "bad" }) } as Response)
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    await runTeamSync();
+
+    // The day is NOT cleared — no config write drops it from droppedDays.
+    const clearedCall = vi
+      .mocked(writeTeamConfig)
+      .mock.calls.find(
+        (c) =>
+          Array.isArray((c[0] as TeamConfig).droppedDays) &&
+          !(c[0] as TeamConfig).droppedDays!.includes("2026-04-01"),
+      );
+    expect(clearedCall).toBeUndefined();
+  });
+
   it("drops a 4xx-poison item during the queue drain instead of re-enqueueing it forever", async () => {
     const { readTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue(CONFIG);

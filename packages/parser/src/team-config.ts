@@ -21,6 +21,11 @@ export type TeamConfig = {
    *  as a sync-log line. Only advanced after a successful push, so a failed
    *  upload re-sends (the server dedups on (member, ts, msg)). */
   lastSyncedLogAt?: string;
+  /** Days (YYYY-MM-DD) whose full payload the server rejected with a hard 4xx
+   *  and which lastSyncedDay has already advanced past. Retried one-at-a-time
+   *  (oldest first) each sync so a server upgrade self-heals the day instead of
+   *  losing it forever. Capped + deduped by the writer. */
+  droppedDays?: string[];
 };
 
 export function readTeamConfig(dir?: string): TeamConfig | null {

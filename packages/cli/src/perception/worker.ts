@@ -47,7 +47,10 @@ export async function runPerceptionSweep(opts: SweepOptions = {}): Promise<Sweep
         // team-sync ensure-entries path produces byte-identical (session, day)
         // keys (see build-entries.ts).
         const built = buildEntriesForFile(f);
-        if (built.length === 0) continue;
+        // null = blank/unreadable → nothing parsed, don't checkpoint. []
+        // = parsed with zero entries → checkpoint below so this file isn't
+        // re-parsed every 5-min sweep (418 such transcripts on a real machine).
+        if (built === null) continue;
 
         for (const e of built) {
           // Preserve any committed enrichment on disk — `buildEntries` always

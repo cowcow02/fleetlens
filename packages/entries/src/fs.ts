@@ -124,6 +124,12 @@ export function readEntry(sessionId: string, localDay: string): Entry | null {
   return JSON.parse(raw) as Entry;
 }
 
+/** Presence check only — no read/parse. For hot paths that just need to know
+ *  whether an entry is already cached before deciding to (re)build it. */
+export function entryExists(sessionId: string, localDay: string): boolean {
+  return existsSync(pathFor(sessionId, localDay));
+}
+
 export function listEntryKeys(): string[] {
   const dir = entriesDir();
   if (!existsSync(dir)) return [];

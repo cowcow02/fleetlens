@@ -68,7 +68,7 @@ describe("readPendingSyncLog", () => {
     expect(readPendingSyncLog()).toEqual({ lines: [] });
   });
 
-  it("caps at the last 300 lines", () => {
+  it("drains the OLDEST 300 lines first, watermark = last included line", () => {
     const lines: string[] = [];
     for (let i = 0; i < 350; i++) {
       const ts = new Date(Date.UTC(2026, 6, 1, 0, 0, i)).toISOString();
@@ -77,8 +77,22 @@ describe("readPendingSyncLog", () => {
     writeLog(lines);
     const res = readPendingSyncLog();
     expect(res.lines).toHaveLength(300);
-    expect(res.lines[0].msg).toBe("[sync] ok · auto · #50");
-    expect(res.lines[299].msg).toBe("[sync] ok · auto · #349");
-    expect(res.watermark).toBe(new Date(Date.UTC(2026, 6, 1, 0, 0, 349)).toISOString());
+    // Oldest-first so an outage's onset lines aren't skipped past forever.
+    expect(res.lines[0].msg).toBe("[sync] ok · auto · #0");
+    expect(res.lines[299].msg).toBe("[sync] ok · auto · #299");
+    // Watermark is the LAST INCLUDED line, so the next sync resumes at #300.
+    expect(res.watermark).toBe(new Date(Date.UTC(2026, 6, 1, 0, 0, 299)).toISOString());
+    const next = readPendingSyncLog(res.watermark);
+    expect(next.lines[0].msg).toBe("[sync] ok · auto · #300");
+    expect(next.lines).toHaveLength(50);
+  });
+
+  it("truncates an over-long msg to 1900 chars + ellipsis (server caps at 2000)", () => {
+    const huge = "x".repeat(5000);
+    writeLog([`2026-07-01T10:00:00.000Z INFO [sync] ok · auto · ${huge}`]);
+    const { lines } = readPendingSyncLog();
+    expect(lines).toHaveLength(1);
+    expect(lines[0].msg.length).toBe(1901); // 1900 + the "…"
+    expect(lines[0].msg.endsWith("…")).toBe(true);
   });
 });
