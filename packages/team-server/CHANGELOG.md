@@ -4,6 +4,24 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.14.0] — 2026-07-08
+
+Sync observability + report accuracy. Pairs best with CLI 0.14.0 (rich `[sync]` lines and complete pair backfills come from the member side). Includes migration `0014` (index on the member daemon-log page query) — applied automatically on boot.
+
+### Added
+- **Per-member "View logs" modal** on the roster member page: the member's own daemon sync log, uploaded with every push — infinite scroll through history, 10-second live refresh with new lines flashed in, timestamps in the viewer's local time, and a daemon-liveness header so an empty log next to a stale heartbeat reads as "transport broken", not "healthy".
+- **Server log survives reboots** and a staff-only raw log console (`Server admin → Logs`) with live tail, level filter, and search.
+
+### Changed
+- **Insight reports count every member.** Aggregates read base activity (`daily_rollups`) joined with rich rollups, so freshly-backfilled members appear in adoption, momentum, and maturity views instead of showing "0 projects" against real cadence. Active-day semantics unified across the member page, roster, and reports.
+- Previous 7d cycles display up to 26 cycles (was 12); the strip no longer reserves empty columns for cycles that never existed.
+
+### Fixed
+- `blocks.accepted` in the ingest response now means *applied*: artifact signals apply independently of rich rollups; enriched extras are honestly reported skipped when they can't land; dedup replays no longer claim acceptance.
+- One corrupt sync-log line no longer drops the member's whole log batch (row-level validation + byte-safe truncation under the index limit).
+- Member daemon-log retention prunes on server time, not the member's clock.
+- Boot-time log hydration failure no longer silently discards all subsequent server-log lines.
+
 ## [0.13.0] — 2026-06-18
 
 ### Added

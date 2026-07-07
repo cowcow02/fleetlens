@@ -4,6 +4,21 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.14.0] — 2026-07-08
+
+Team-sync overhauled around one idea: a fresh pairing syncs **everything**, and every run leaves a story you can read. Safe upgrade from 0.13.x; pairs best with team-server 0.14.0.
+
+### Added
+- **One rich `[sync]` line per run** in the daemon log: `status · trigger(auto|boot|pair|manual) · pushed N days (range) · usage +N · server accepted <blocks> · duration · next ~Nm` — including the server's own accepted/skipped verdict, so the log shows both what was sent and what the server did with it. Uploaded per-member to the Team Edition.
+- **Pair backfill is complete and deterministic.** `team join` now pushes rich rollups (projects, skills, sub-agents, working shapes) for the whole backfilled history — perception entries are built on the spot at push time, no LLM required. Historical 7d cycle peaks now cover up to 26 cycles (was 12).
+- **Dropped-day self-heal**: a day rejected by an older server is remembered and retried once per sync until accepted (`recovered N dropped days`), instead of being lost.
+
+### Fixed
+- Re-pairing a machine to a different team no longer uploads the previous team's sync-log history.
+- The sync-log watermark only advances when the server actually accepted the log batch; oversized lines are truncated instead of poisoning the batch; long backlogs drain oldest-first so an outage's onset is never lost.
+- Manual `fleetlens team sync` runs now appear in the member's sync story (tagged `manual`).
+- Perception sweep no longer re-parses entry-less transcripts every 5 minutes; a transient transcript read failure no longer blocks a session's entries until daemon restart.
+
 ## [0.13.2] — 2026-06-29
 
 Timeline and session-view polish, plus the second half of the session-view modularization. Mostly day-scope refinements — jumping into a session now lands on the right day, and the minimap and idle dividers read far more cleanly on long multi-day runs. Safe upgrade from 0.13.1.
