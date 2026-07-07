@@ -65,6 +65,40 @@ describe("loadMemberDaemonLogPage", () => {
     expect(p3.nextCursor).toBeNull();
   });
 
+  it("after mode returns only rows newer than the cursor, newest-first", async () => {
+    // #119 is the newest (id order == chronological). Ask for everything newer
+    // than the id at #116 → should be #117, #118, #119, newest-first.
+    const all = await loadMemberDaemonLogPage(teamId, membershipId, pool, { limit: 200 });
+    const at116 = all.rows.find((r) => r.msg.endsWith("#116"))!;
+    const page = await loadMemberDaemonLogPage(teamId, membershipId, pool, { after: at116.id });
+    expect(page.rows.map((r) => r.msg)).toEqual([
+      "[sync] ok · auto · #119",
+      "[sync] ok · auto · #118",
+      "[sync] ok · auto · #117",
+    ]);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it("after mode is gap-safe: a burst larger than limit fills oldest-of-new first", async () => {
+    // From the very start with a tiny limit: must return the OLDEST new rows
+    // (#0, #1) not the newest, so the caller's cursor advances without skipping.
+    const all = await loadMemberDaemonLogPage(teamId, membershipId, pool, { limit: 200 });
+    const min = Math.min(...all.rows.map((r) => r.id));
+    const page = await loadMemberDaemonLogPage(teamId, membershipId, pool, {
+      after: min - 1,
+      limit: 2,
+    });
+    // ASC scan, reversed for display → [#1, #0].
+    expect(page.rows.map((r) => r.msg)).toEqual(["[sync] ok · auto · #1", "[sync] ok · auto · #0"]);
+  });
+
+  it("after mode returns nothing when the cursor is already the newest", async () => {
+    const all = await loadMemberDaemonLogPage(teamId, membershipId, pool, { limit: 200 });
+    const max = Math.max(...all.rows.map((r) => r.id));
+    const page = await loadMemberDaemonLogPage(teamId, membershipId, pool, { after: max });
+    expect(page.rows).toHaveLength(0);
+  });
+
   it("scopes to the membership (no cross-member leakage)", async () => {
     const other = await createUserAccount("dlog-other@example.com", "pass1234", null, {}, pool);
     const res = await pool.query<{ id: string }>(

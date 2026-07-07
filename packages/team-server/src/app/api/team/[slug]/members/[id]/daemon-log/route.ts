@@ -41,10 +41,14 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const beforeRaw = new URL(req.url).searchParams.get("before");
+  const qs = new URL(req.url).searchParams;
+  const beforeRaw = qs.get("before");
+  const afterRaw = qs.get("after");
   const before = beforeRaw != null ? Number(beforeRaw) : undefined;
+  const after = afterRaw != null ? Number(afterRaw) : undefined;
   const { rows, nextCursor } = await loadMemberDaemonLogPage(member.team_id, id, pool, {
     before: before != null && Number.isFinite(before) ? before : undefined,
+    after: after != null && Number.isFinite(after) ? after : undefined,
     limit: 50,
   });
 

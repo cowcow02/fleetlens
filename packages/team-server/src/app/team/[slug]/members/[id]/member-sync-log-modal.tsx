@@ -31,12 +31,20 @@ export function MemberSyncLogModal({
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadedOnce, setLoadedOnce] = useState(false);
+  // ids that arrived via the live poll — briefly flashed so a sync landing while
+  // the modal is open is visible, not silent.
+  const [freshIds, setFreshIds] = useState<Set<number>>(() => new Set());
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
-  // Guards against the IntersectionObserver firing a second fetch while one is
-  // already in flight (state updates are async, so a bare `loading` check races).
+  // Guards against the IntersectionObserver firing a second older-page fetch
+  // while one is already in flight (state updates are async, so a bare `loading`
+  // check races). The live poll uses its own guard so the two never block.
   const inFlight = useRef(false);
+  const pollInFlight = useRef(false);
+  // Newest id currently shown — the cursor for the "fetch newer" poll. Kept in a
+  // ref so the interval reads the live value without re-subscribing each render.
+  const newestIdRef = useRef<number | null>(null);
 
   const loadMore = useCallback(async () => {
     if (inFlight.current || done) return;
@@ -60,11 +68,63 @@ export function MemberSyncLogModal({
     }
   }, [cursor, done, slug, membershipId]);
 
+  // Poll for rows newer than the top of the list so a sync that fires while the
+  // modal is open shows up on its own. `after` mode never overlaps existing rows;
+  // the empty-list case (zero history yet) falls back to the newest page and
+  // seeds pagination state.
+  const pollNewer = useCallback(async () => {
+    if (pollInFlight.current) return;
+    pollInFlight.current = true;
+    try {
+      const after = newestIdRef.current;
+      const qs = after != null ? `?after=${after}` : "";
+      const res = await fetch(`/api/team/${slug}/members/${membershipId}/daemon-log${qs}`);
+      if (!res.ok) return;
+      const body: { rows: Row[]; nextCursor: number | null } = await res.json();
+      if (body.rows.length === 0) return;
+      setRows((prev) => {
+        const seen = new Set(prev.map((r) => r.id));
+        const incoming = body.rows.filter((r) => !seen.has(r.id));
+        if (incoming.length === 0) return prev;
+        return [...incoming, ...prev];
+      });
+      const ids = body.rows.map((r) => r.id);
+      setFreshIds((prev) => new Set([...prev, ...ids]));
+      window.setTimeout(() => {
+        setFreshIds((prev) => {
+          const next = new Set(prev);
+          ids.forEach((i) => next.delete(i));
+          return next;
+        });
+      }, 2500);
+      // Only the empty-list fallback (no `after`) carries pagination state.
+      if (after == null) {
+        setCursor(body.nextCursor);
+        if (body.nextCursor == null) setDone(true);
+      }
+    } catch {
+      // Transient poll failure — the next tick retries.
+    } finally {
+      pollInFlight.current = false;
+    }
+  }, [slug, membershipId]);
+
+  // Keep the poll cursor pointed at the newest row on screen.
+  useEffect(() => {
+    newestIdRef.current = rows.length > 0 ? rows[0].id : null;
+  }, [rows]);
+
   // First page on mount.
   useEffect(() => {
     void loadMore();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Live poll every 10s while the modal is open.
+  useEffect(() => {
+    const iv = window.setInterval(() => void pollNewer(), 10_000);
+    return () => window.clearInterval(iv);
+  }, [pollNewer]);
 
   // Close on Escape.
   useEffect(() => {
@@ -138,8 +198,8 @@ export function MemberSyncLogModal({
               </h3>
               <p style={{ color: "var(--mute)", fontSize: 12.5, lineHeight: 1.5, margin: 0, maxWidth: "62ch" }}>
                 Uploaded from {name}&rsquo;s machine on every push — one line per sync run: what it
-                tried, what the server accepted, and any failure. Newest first. Persisted across
-                restarts.
+                tried, what the server accepted, and any failure. Newest first, in your local time,
+                and live: new syncs appear here on their own. Persisted across restarts.
               </p>
             </div>
             <button
@@ -218,7 +278,7 @@ export function MemberSyncLogModal({
               )}
             </div>
           ) : (
-            rows.map((r) => <LogLine key={r.id} row={r} />)
+            rows.map((r) => <LogLine key={r.id} row={r} fresh={freshIds.has(r.id)} />)
           )}
 
           {error && (
@@ -245,10 +305,24 @@ export function MemberSyncLogModal({
   );
 }
 
-function LogLine({ row }: { row: Row }) {
+function LogLine({ row, fresh }: { row: Row; fresh: boolean }) {
   const parsed = parseSyncLine(row.msg);
   return (
-    <div style={{ display: "flex", gap: 10, whiteSpace: "pre-wrap", wordBreak: "break-word", padding: "1px 0" }}>
+    <div
+      style={{
+        display: "flex",
+        gap: 10,
+        whiteSpace: "pre-wrap",
+        wordBreak: "break-word",
+        padding: "1px 0",
+        // Flash a line that just arrived via the live poll, then fade out.
+        borderLeft: fresh ? "2px solid #6fcf8e" : "2px solid transparent",
+        paddingLeft: 8,
+        marginLeft: -10,
+        background: fresh ? "rgba(111,207,142,0.12)" : "transparent",
+        transition: "background 1.2s ease, border-color 1.2s ease",
+      }}
+    >
       <span style={{ color: "#6b665a", flex: "0 0 auto", userSelect: "none" }}>
         {fmtTs(row.tsMs)}
       </span>
@@ -295,6 +369,9 @@ function rawColor(level: string): string {
 }
 
 function fmtTs(ms: number): string {
-  // mm-dd hh:mm:ss in UTC — compact and monotonic for scanning.
-  return new Date(ms).toISOString().slice(5, 19).replace("T", " ");
+  // mm-dd hh:mm:ss in the VIEWER's local time — the admin reads the log in their
+  // own zone, not UTC. Client-only component, so no SSR hydration mismatch.
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }

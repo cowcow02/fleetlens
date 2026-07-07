@@ -513,17 +513,42 @@ export type MemberDaemonLogRow = { id: number; tsMs: number; level: string; msg:
 // are inserted in ts order so id DESC == newest first) so the member modal can
 // infinite-scroll back through history. `nextCursor` is the id to pass as
 // `before` for the next page, or null when the tail is reached.
+//
+// `after` flips it into "fetch newer" mode for the modal's live poll: rows with
+// id > after, still returned newest-first. It scans ASC (oldest-of-the-new
+// first) so a burst larger than `limit` fills the gap without skipping — the
+// caller advances its cursor to the newest returned and the next poll picks up
+// the rest. `before` takes precedence if both are somehow passed.
 export async function loadMemberDaemonLogPage(
   teamId: string,
   membershipId: string,
   pool: pg.Pool,
-  opts: { before?: number; limit?: number } = {},
+  opts: { before?: number; after?: number; limit?: number } = {},
 ): Promise<{ rows: MemberDaemonLogRow[]; nextCursor: number | null }> {
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const before = opts.before != null && Number.isFinite(opts.before) ? opts.before : undefined;
+  const after =
+    before == null && opts.after != null && Number.isFinite(opts.after) ? opts.after : undefined;
+
+  if (after != null) {
+    const res = await pool.query<{ id: string; ts_ms: number; level: string; msg: string }>(
+      `SELECT id, EXTRACT(EPOCH FROM ts)::float8 * 1000 AS ts_ms, level, msg
+         FROM member_daemon_log
+         WHERE team_id = $1 AND membership_id = $2 AND id > $3
+         ORDER BY id ASC
+         LIMIT $4`,
+      [teamId, membershipId, after, limit],
+    );
+    const rows = res.rows
+      .map((r) => ({ id: Number(r.id), tsMs: Number(r.ts_ms), level: r.level, msg: r.msg }))
+      .reverse(); // newest-first for display
+    return { rows, nextCursor: null };
+  }
+
   const params: unknown[] = [teamId, membershipId];
   let cursorClause = "";
-  if (opts.before != null && Number.isFinite(opts.before)) {
-    params.push(opts.before);
+  if (before != null) {
+    params.push(before);
     cursorClause = `AND id < $${params.length}`;
   }
   // Over-fetch by one to detect whether another page exists without a count.
