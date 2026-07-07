@@ -34,11 +34,10 @@ export function CyclePeaksStrip({
 
   const visible = filtered.slice(-maxBars);
 
-  // Pad left with nulls to ensure a consistent, right-aligned maxBars grid structure
-  const padded = [
-    ...Array(Math.max(0, maxBars - visible.length)).fill(null),
-    ...visible,
-  ];
+  // Grid stays maxBars wide so bar width is consistent across members, but a
+  // short history renders ONLY its real bars, right-aligned via column offset —
+  // no grey placeholder tiles for cycles that never existed.
+  const offset = Math.max(0, maxBars - visible.length);
 
   return (
     <div
@@ -50,33 +49,11 @@ export function CyclePeaksStrip({
         minWidth: 0,
       }}
     >
-      {padded.map((c, i) =>
-        c ? <CycleBar key={i} cycle={c} /> : <EmptyCycleBar key={i} />
-      )}
-    </div>
-  );
-}
-
-function EmptyCycleBar() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "stretch",
-        gap: 2,
-      }}
-    >
-      <div style={{ fontSize: 9, height: 11 }} />
-      <div
-        style={{
-          height: 36,
-          background: "var(--rule)",
-          borderRadius: 2,
-          opacity: 0.15,
-        }}
-      />
-      <div style={{ fontSize: 9, height: 11 }} />
+      {visible.map((c, i) => (
+        <div key={i} style={i === 0 ? { gridColumnStart: offset + 1 } : undefined}>
+          <CycleBar cycle={c} />
+        </div>
+      ))}
     </div>
   );
 }
