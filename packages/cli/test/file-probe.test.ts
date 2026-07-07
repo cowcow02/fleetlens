@@ -5,6 +5,13 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { pathHash, probeArtifactSignals } from "../src/perception/file-probe.js";
 
+function localDay(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function makeRepo(): string {
   const dir = mkdtempSync(join(tmpdir(), "fp-"));
   execFileSync("git", ["init", "-q"], { cwd: dir });
@@ -41,7 +48,9 @@ describe("file-probe", () => {
     execFileSync("git", ["add", "."], { cwd: projectDir });
     execFileSync("git", ["commit", "-m", "add skill", "--no-gpg-sign"], { cwd: projectDir });
 
-    const today = new Date().toISOString().slice(0, 10);
+    // LOCAL day — the probe attributes days in local time (git %cs, file
+    // mtimes); UTC here failed nightly within the UTC offset of midnight.
+    const today = localDay(new Date());
     const result = probeArtifactSignals({ extraRoots: [projectDir], day: today });
     expect(result).not.toBeNull();
     expect(result!.skillsAuthored.length).toBeGreaterThanOrEqual(1);
@@ -85,7 +94,7 @@ describe("file-probe", () => {
     const tomorrow = (() => {
       const d = new Date();
       d.setDate(d.getDate() + 1);
-      return d.toISOString().slice(0, 10);
+      return localDay(d);
     })();
     const result = probeArtifactSignals({
       extraRoots: [projectDir],

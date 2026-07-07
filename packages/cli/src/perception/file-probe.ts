@@ -95,9 +95,12 @@ function firstSeenDateOf(file: string): string {
   }
   try {
     const s = statSync(file);
-    return new Date((s.birthtime || s.mtime).getTime()).toISOString().slice(0, 10);
+    // LOCAL day — git's %cs above is committer-local, and rollup days are
+    // local everywhere else. toISOString() (UTC) drifted a day for any
+    // activity within the UTC offset of midnight.
+    return localDay(s.birthtime || s.mtime);
   } catch {
-    return new Date().toISOString().slice(0, 10);
+    return todayLocal();
   }
 }
 
@@ -120,12 +123,15 @@ function detectGitEmail(cwd: string): string | null {
   }
 }
 
-function todayLocal(): string {
-  const d = new Date();
+function localDay(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+function todayLocal(): string {
+  return localDay(new Date());
 }
 
 /** Detect files newly authored on `day`. A file is "authored today" if its
@@ -166,7 +172,7 @@ function scanEdited(
       if (firstSeen === day) continue; // already counted as authored
       let stat;
       try { stat = statSync(f); } catch { continue; }
-      const mtimeDay = new Date(stat.mtime.getTime()).toISOString().slice(0, 10);
+      const mtimeDay = localDay(stat.mtime);
       if (mtimeDay !== day) continue;
       const rel = relative(dir, f);
       out.push({ pathHash: pathHash(`${r.label}:skills:${rel}`), lineDelta: 0 });
