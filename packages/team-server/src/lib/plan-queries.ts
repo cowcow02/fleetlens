@@ -148,7 +148,11 @@ export type MembershipCyclePeak = {
 export async function loadMembership7dCyclePeaks(
   teamId: string,
   pool: pg.Pool,
-  maxCyclesPerMember = 12,
+  // 26 ≈ six months of 7d cycles. MUST match the CLI push cap
+  // (buildCyclePeaksForPush sevenDay slice in packages/cli/src/team/sync.ts)
+  // and the renderer (CyclePeaksStrip maxBars in member-plan-block.tsx) — the
+  // three move together or the strip silently truncates history.
+  maxCyclesPerMember = 26,
 ): Promise<Map<string, MembershipCyclePeak[]>> {
   const res = await pool.query<{
     membership_id: string;

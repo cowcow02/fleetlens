@@ -650,7 +650,12 @@ async function buildCyclePeaksForPush(
   };
 
   return {
+    // 7d cycle history cap (26 ≈ six months) MUST stay in lock-step with two
+    // downstream sites or the strip silently truncates: the server read
+    // (loadMembership7dCyclePeaks maxCyclesPerMember in plan-queries.ts) and
+    // the renderer (CyclePeaksStrip maxBars in member-plan-block.tsx). The 5h
+    // cap (24) is independent — leave it.
     fiveHour: peaksFor("cycle_end_5h", "real_5h", "pred_5h", 24),
-    sevenDay: peaksFor("cycle_end_7d", "real_7d", "pred_7d", 12),
+    sevenDay: peaksFor("cycle_end_7d", "real_7d", "pred_7d", 26),
   };
 }
