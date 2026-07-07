@@ -1,6 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  LOG_AMBER,
+  LOG_BG,
+  LOG_BLUE,
+  LOG_FG,
+  LOG_GREEN,
+  LOG_GUTTER,
+  LOG_ORANGE,
+  LOG_RED,
+  levelColor,
+} from "../../../../../components/log-colors";
 import { liveness } from "./sync-liveness";
 
 type Row = { id: number; tsMs: number; level: string; msg: string };
@@ -45,6 +56,9 @@ export function MemberSyncLogModal({
   // Newest id currently shown — the cursor for the "fetch newer" poll. Kept in a
   // ref so the interval reads the live value without re-subscribing each render.
   const newestIdRef = useRef<number | null>(null);
+  // Pending flash-fade timers, cleared on unmount so a closed modal can't fire
+  // setState on an unmounted component.
+  const flashTimersRef = useRef<Set<number>>(new Set());
 
   const loadMore = useCallback(async () => {
     if (inFlight.current || done) return;
@@ -81,6 +95,10 @@ export function MemberSyncLogModal({
       const res = await fetch(`/api/team/${slug}/members/${membershipId}/daemon-log${qs}`);
       if (!res.ok) return;
       const body: { rows: Row[]; nextCursor: number | null } = await res.json();
+      // A successful poll supersedes a failed mount fetch — clear the stale
+      // "Failed to load … retry" banner instead of leaving it up forever.
+      setError(null);
+      setLoadedOnce(true);
       if (body.rows.length === 0) return;
       setRows((prev) => {
         const seen = new Set(prev.map((r) => r.id));
@@ -90,13 +108,15 @@ export function MemberSyncLogModal({
       });
       const ids = body.rows.map((r) => r.id);
       setFreshIds((prev) => new Set([...prev, ...ids]));
-      window.setTimeout(() => {
+      const timer = window.setTimeout(() => {
+        flashTimersRef.current.delete(timer);
         setFreshIds((prev) => {
           const next = new Set(prev);
           ids.forEach((i) => next.delete(i));
           return next;
         });
       }, 2500);
+      flashTimersRef.current.add(timer);
       // Only the empty-list fallback (no `after`) carries pagination state.
       if (after == null) {
         setCursor(body.nextCursor);
@@ -120,11 +140,27 @@ export function MemberSyncLogModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Live poll every 10s while the modal is open.
+  // Live poll every 10s while the modal is open — skipped in hidden tabs, with
+  // an immediate catch-up poll when the tab becomes visible again.
   useEffect(() => {
-    const iv = window.setInterval(() => void pollNewer(), 10_000);
-    return () => window.clearInterval(iv);
+    const iv = window.setInterval(() => {
+      if (!document.hidden) void pollNewer();
+    }, 10_000);
+    const onVisible = () => {
+      if (!document.hidden) void pollNewer();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(iv);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [pollNewer]);
+
+  // Clear pending flash-fade timers on unmount.
+  useEffect(() => {
+    const timers = flashTimersRef.current;
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, []);
 
   // Close on Escape.
   useEffect(() => {
@@ -255,7 +291,7 @@ export function MemberSyncLogModal({
           style={{
             flex: "1 1 auto",
             overflowY: "auto",
-            background: "#14120e",
+            background: LOG_BG,
             padding: "12px 16px",
             fontFamily: "JetBrains Mono, ui-monospace, monospace",
             fontSize: 12,
@@ -266,13 +302,13 @@ export function MemberSyncLogModal({
             <div style={{ color: "#8a8474", fontSize: 12.5, padding: "18px 4px", lineHeight: 1.6 }}>
               {live.stale ? (
                 <>
-                  No sync log uploaded, and the daemon heartbeat is <b style={{ color: "#e8b866" }}>{live.label}</b>.
+                  No sync log uploaded, and the daemon heartbeat is <b style={{ color: LOG_AMBER }}>{live.label}</b>.
                   That points at the transport itself — the daemon may be stopped, unpaired, or unable
                   to reach the server. Nothing is arriving to log.
                 </>
               ) : (
                 <>
-                  No sync log yet. The heartbeat is <b style={{ color: "#6fcf8e" }}>{live.label}</b>, so once{" "}
+                  No sync log yet. The heartbeat is <b style={{ color: LOG_GREEN }}>{live.label}</b>, so once{" "}
                   {name}&rsquo;s daemon completes a sync (within ~5 min of activity) its lines appear here.
                 </>
               )}
@@ -282,12 +318,12 @@ export function MemberSyncLogModal({
           )}
 
           {error && (
-            <div style={{ color: "#f0857a", fontSize: 12, padding: "10px 4px" }}>
+            <div style={{ color: LOG_RED, fontSize: 12, padding: "10px 4px" }}>
               Failed to load: {error}{" "}
               <button
                 type="button"
                 onClick={() => void loadMore()}
-                style={{ background: "transparent", border: "none", color: "#e8b866", cursor: "pointer", padding: 0, fontSize: 12 }}
+                style={{ background: "transparent", border: "none", color: LOG_AMBER, cursor: "pointer", padding: 0, fontSize: 12 }}
               >
                 retry
               </button>
@@ -296,7 +332,7 @@ export function MemberSyncLogModal({
 
           {/* Sentinel + status row */}
           <div ref={sentinelRef} style={{ height: 1 }} />
-          <div style={{ color: "#6b665a", fontSize: 11, padding: "10px 4px", userSelect: "none" }}>
+          <div style={{ color: LOG_GUTTER, fontSize: 11, padding: "10px 4px", userSelect: "none" }}>
             {loading ? "Loading…" : done && rows.length > 0 ? "— end of log —" : ""}
           </div>
         </div>
@@ -316,14 +352,14 @@ function LogLine({ row, fresh }: { row: Row; fresh: boolean }) {
         wordBreak: "break-word",
         padding: "1px 0",
         // Flash a line that just arrived via the live poll, then fade out.
-        borderLeft: fresh ? "2px solid #6fcf8e" : "2px solid transparent",
+        borderLeft: fresh ? `2px solid ${LOG_GREEN}` : "2px solid transparent",
         paddingLeft: 8,
         marginLeft: -10,
         background: fresh ? "rgba(111,207,142,0.12)" : "transparent",
         transition: "background 1.2s ease, border-color 1.2s ease",
       }}
     >
-      <span style={{ color: "#6b665a", flex: "0 0 auto", userSelect: "none" }}>
+      <span style={{ color: LOG_GUTTER, flex: "0 0 auto", userSelect: "none" }}>
         {fmtTs(row.tsMs)}
       </span>
       {parsed ? (
@@ -339,33 +375,27 @@ function LogLine({ row, fresh }: { row: Row; fresh: boolean }) {
           >
             {parsed.status}
           </span>
-          <span style={{ color: "#cfc9b8" }}>{parsed.rest}</span>
+          <span style={{ color: LOG_FG }}>{parsed.rest}</span>
         </span>
       ) : (
-        <span style={{ color: rawColor(row.level), flex: "1 1 auto" }}>{row.msg}</span>
+        <span style={{ color: levelColor(row.level), flex: "1 1 auto" }}>{row.msg}</span>
       )}
     </div>
   );
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  ok: "#6fcf8e",
-  idle: "#8ab4d8",
-  degraded: "#e8b866",
-  failed: "#f0a35a",
-  error: "#f0857a",
+  ok: LOG_GREEN,
+  idle: LOG_BLUE,
+  degraded: LOG_AMBER,
+  failed: LOG_ORANGE,
+  error: LOG_RED,
 };
 
 function parseSyncLine(msg: string): { status: string; rest: string; color: string } | null {
   const m = msg.match(/^\[sync\] (ok|idle|degraded|failed|error) · (.*)$/s);
   if (!m) return null;
-  return { status: m[1], rest: m[2], color: STATUS_COLOR[m[1]] ?? "#cfc9b8" };
-}
-
-function rawColor(level: string): string {
-  if (level === "error") return "#f0857a";
-  if (level === "warn") return "#e8b866";
-  return "#cfc9b8";
+  return { status: m[1], rest: m[2], color: STATUS_COLOR[m[1]] ?? LOG_FG };
 }
 
 function fmtTs(ms: number): string {

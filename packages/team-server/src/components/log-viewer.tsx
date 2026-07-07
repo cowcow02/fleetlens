@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LOG_BG, LOG_GUTTER, levelColor } from "./log-colors";
 
 type LogLevel = "log" | "warn" | "error";
 type LogLine = { seq: number; ts: number; level: LogLevel; msg: string };
@@ -17,6 +18,9 @@ export function LogViewer({ initialQuery = "" }: { initialQuery?: string }) {
   const [level, setLevel] = useState<LevelFilter>("all");
   const [q, setQ] = useState(initialQuery);
   const [paused, setPaused] = useState(false);
+  // Auto-pause while the tab is hidden — kept separate from the manual `paused`
+  // button so un-hiding resumes polling unless the user paused it themselves.
+  const [hidden, setHidden] = useState(false);
   const [follow, setFollow] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -61,10 +65,17 @@ export function LogViewer({ initialQuery = "" }: { initialQuery?: string }) {
   }, [fetchLines]);
 
   useEffect(() => {
-    if (paused) return;
+    const onVis = () => setHidden(document.hidden);
+    onVis();
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
+  useEffect(() => {
+    if (paused || hidden) return;
     const id = setInterval(() => fetchLines(false), POLL_MS);
     return () => clearInterval(id);
-  }, [paused, fetchLines]);
+  }, [paused, hidden, fetchLines]);
 
   // Auto-scroll to bottom on new lines while following.
   useEffect(() => {
@@ -163,7 +174,7 @@ export function LogViewer({ initialQuery = "" }: { initialQuery?: string }) {
         style={{
           height: "min(66vh, 640px)",
           overflow: "auto",
-          background: "#14120e",
+          background: LOG_BG,
           border: "1px solid var(--ink)",
           borderRadius: 2,
           padding: "12px 14px",
@@ -187,13 +198,11 @@ export function LogViewer({ initialQuery = "" }: { initialQuery?: string }) {
 }
 
 function Line({ line, q }: { line: LogLine; q: string }) {
-  const color =
-    line.level === "error" ? "#f0857a" : line.level === "warn" ? "#e8b866" : "#cfc9b8";
   const time = new Date(line.ts).toISOString().slice(11, 23); // HH:MM:SS.mmm
   return (
     <div style={{ display: "flex", gap: 10, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-      <span style={{ color: "#6b665a", flex: "0 0 auto", userSelect: "none" }}>{time}</span>
-      <span style={{ color, flex: "1 1 auto" }}>{highlight(line.msg, q)}</span>
+      <span style={{ color: LOG_GUTTER, flex: "0 0 auto", userSelect: "none" }}>{time}</span>
+      <span style={{ color: levelColor(line.level), flex: "1 1 auto" }}>{highlight(line.msg, q)}</span>
     </div>
   );
 }

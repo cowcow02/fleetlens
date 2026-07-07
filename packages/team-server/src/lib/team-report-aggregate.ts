@@ -30,6 +30,7 @@ import {
   workingShapeDistribution,
   type InsightsScope,
 } from "./insights-aggregate";
+import { rollupJoin } from "./rollup-join";
 import {
   jiraVelocity,
   linearVelocity,
@@ -127,22 +128,15 @@ async function weekAggregates(
             COALESCE(d.tokens_output, r.tokens_output)::text AS tokens_output,
             COALESCE(d.tokens_cache_read, r.tokens_cache_read)::text AS tokens_cache_read,
             COALESCE(d.tokens_cache_write, r.tokens_cache_write)::text AS tokens_cache_write
-     FROM (SELECT membership_id, day, agent_time_ms,
-                  COALESCE(unique_sessions, sessions) AS sessions,
-                  tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
-           FROM daily_rollups
-           WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
-             AND day >= $3::date AND day < $4::date) d
-     FULL OUTER JOIN (SELECT membership_id, day, agent_time_ms,
-                             COALESCE(unique_sessions, sessions) AS sessions, prs, commits, pushes,
-                             parallel_minutes, concurrency_peak,
-                             long_auto_count, long_auto_total_min, long_auto_max_single_min,
-                             tool_errors, plan_mode_used, brainstorm_warmup_sessions,
-                             tokens_input, tokens_output, tokens_cache_read, tokens_cache_write
-                      FROM rich_daily_rollups
-                      WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
-                        AND day >= $3::date AND day < $4::date) r
-       ON r.membership_id = d.membership_id AND r.day = d.day`,
+     ${rollupJoin({
+       team: "$1", memberIds: "$2", dayStart: "$3::date", dayEnd: "$4::date",
+       baseCols: ["tokens_input", "tokens_output", "tokens_cache_read", "tokens_cache_write"],
+       richCols: [
+         "prs", "commits", "pushes", "parallel_minutes", "concurrency_peak",
+         "long_auto_count", "long_auto_total_min", "long_auto_max_single_min",
+         "tool_errors", "plan_mode_used", "brainstorm_warmup_sessions",
+       ],
+     })}`,
     [teamId, memberIds, weekMonday, winEnd],
   );
 
@@ -884,23 +878,19 @@ export async function buildTeamInsightReport(
                   COALESCE(r.projects, '[]'::jsonb) AS projects,
                   COALESCE(r.skills_loaded, '[]'::jsonb) AS skills_loaded,
                   COALESCE(r.subagents_dispatched, '[]'::jsonb) AS subagents_dispatched
-           FROM (SELECT membership_id, day, agent_time_ms,
-                        COALESCE(unique_sessions, sessions) AS sessions
-                 FROM daily_rollups
-                 WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
-                   AND day >= ($3::date - INTERVAL '30 days')::date AND day < $5::date) d
-           FULL OUTER JOIN (SELECT membership_id, day, agent_time_ms,
-                                   COALESCE(unique_sessions, sessions) AS sessions,
-                                   projects, skills_loaded, subagents_dispatched
-                            FROM rich_daily_rollups
-                            WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
-                              AND day >= ($3::date - INTERVAL '30 days')::date AND day < $5::date) r
-             ON r.membership_id = d.membership_id AND r.day = d.day
+           ${rollupJoin({
+             team: "$1", memberIds: "$2",
+             dayStart: "($3::date - INTERVAL '30 days')::date", dayEnd: "$5::date",
+             richCols: ["projects", "skills_loaded", "subagents_dispatched"],
+           })}
          ),
          per_member_30d AS (
+           -- Active day = agent time OR sessions: presence-only days (sessions > 0,
+           -- agent_time_ms = 0, e.g. subagent-past-midnight) exist by design and
+           -- must count — same predicate as teamPulseWeek / the member page.
            SELECT membership_id,
                   COALESCE(SUM(sessions), 0)::int AS sessions_30d,
-                  COUNT(*) FILTER (WHERE agent_time_ms > 0)::int AS active_days_30d,
+                  COUNT(*) FILTER (WHERE agent_time_ms > 0 OR sessions > 0)::int AS active_days_30d,
                   COALESCE((SELECT COUNT(DISTINCT p->>'project')
                             FROM window_30d w2
                             CROSS JOIN LATERAL jsonb_array_elements(w2.projects) p
@@ -941,18 +931,10 @@ export async function buildTeamInsightReport(
                     COALESCE(r.projects, '[]'::jsonb) AS projects,
                     COALESCE(r.skills_loaded, '[]'::jsonb) AS skills_loaded,
                     COALESCE(r.subagents_dispatched, '[]'::jsonb) AS subagents_dispatched
-             FROM (SELECT membership_id, day, agent_time_ms,
-                          COALESCE(unique_sessions, sessions) AS sessions
-                   FROM daily_rollups
-                   WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
-                     AND day >= $4::date AND day < $5::date) d
-             FULL OUTER JOIN (SELECT membership_id, day, agent_time_ms,
-                                     COALESCE(unique_sessions, sessions) AS sessions,
-                                     prs, projects, skills_loaded, subagents_dispatched
-                              FROM rich_daily_rollups
-                              WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
-                                AND day >= $4::date AND day < $5::date) r
-               ON r.membership_id = d.membership_id AND r.day = d.day
+             ${rollupJoin({
+               team: "$1", memberIds: "$2", dayStart: "$4::date", dayEnd: "$5::date",
+               richCols: ["prs", "projects", "skills_loaded", "subagents_dispatched"],
+             })}
            ) rr ON rr.membership_id = m.id
            WHERE m.team_id = $1
              AND m.id = ANY($2::uuid[])
@@ -961,10 +943,10 @@ export async function buildTeamInsightReport(
          SELECT wr.membership_id AS id, wr.display_name,
                 COALESCE(SUM(CASE WHEN NOT wr.is_prev THEN wr.agent_time_ms ELSE 0 END), 0)::text AS agent_time_ms_curr,
                 COALESCE(SUM(CASE WHEN NOT wr.is_prev THEN wr.sessions ELSE 0 END), 0)::int AS sessions_curr,
-                COUNT(*) FILTER (WHERE NOT wr.is_prev AND wr.agent_time_ms > 0)::int AS active_days_curr,
+                COUNT(*) FILTER (WHERE NOT wr.is_prev AND (wr.agent_time_ms > 0 OR wr.sessions > 0))::int AS active_days_curr,
                 COALESCE(SUM(CASE WHEN NOT wr.is_prev THEN wr.prs ELSE 0 END), 0)::int AS prs_curr,
                 COALESCE(MAX(CASE WHEN NOT wr.is_prev THEN wr.subagent_kinds ELSE 0 END), 0)::int AS subagents_curr,
-                COUNT(*) FILTER (WHERE wr.is_prev AND wr.agent_time_ms > 0)::int AS active_days_prev,
+                COUNT(*) FILTER (WHERE wr.is_prev AND (wr.agent_time_ms > 0 OR wr.sessions > 0))::int AS active_days_prev,
                 COALESCE(SUM(CASE WHEN wr.is_prev THEN wr.sessions ELSE 0 END), 0)::int AS sessions_prev,
                 COALESCE(MAX(CASE WHEN NOT wr.is_prev THEN wr.project_count ELSE 0 END), 0)::int AS projects_curr,
                 COALESCE(MAX(CASE WHEN NOT wr.is_prev THEN wr.skill_count ELSE 0 END), 0)::int AS skills_curr,

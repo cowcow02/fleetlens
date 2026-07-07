@@ -14,6 +14,7 @@ import { MemberProfile } from "../../../../../components/member-profile";
 import { MemberPlanBlock } from "../../../../../components/member-plan-block";
 import { canSeeMember, loadManagedMemberIds } from "../../../../../lib/visibility";
 import { MemberAdminMenu } from "./member-admin-menu";
+import { liveness } from "./sync-liveness";
 
 export default async function MemberPage({
   params,
@@ -96,6 +97,10 @@ export default async function MemberPage({
     0,
   );
   const tier = tierEntry(planSummary.planTier);
+  // Heartbeat (last_seen_at advances on every non-dedup push), not sync health.
+  // Rendered from the same liveness() as the sync-log modal so the header badge
+  // and the modal can never disagree about stale.
+  const daemon = liveness(planSummary.daemonLastSeenAtMs);
 
   return (
     <>
@@ -176,9 +181,7 @@ export default async function MemberPage({
                   ? `${tier.label} · $${tier.monthlyPriceUsd}/mo`
                   : tier.label}
               </div>
-              <div style={{ color: daemonColor(planSummary.daemonLastSeenAtMs) }}>
-                DAEMON · {daemonFreshness(planSummary.daemonLastSeenAtMs)}
-              </div>
+              <div style={{ color: daemon.color }}>DAEMON · {daemon.label}</div>
               <div>CLI · {member.cli_version ? `v${member.cli_version}` : "—"}</div>
             </div>
             {isAdminOrStaff && (
@@ -245,30 +248,4 @@ function HeaderField({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
-}
-
-// Daemon LIVENESS (heartbeat), not sync health: fed by memberships.last_seen_at,
-// which advances on every non-dedup push. It answers "is the daemon talking?" —
-// NOT "are pushes fully accepted?" (a live push can still drop blocks). Whether
-// a member's sync is actually healthy is determined from the per-push server
-// ingest log, which lists accepted/skipped blocks per member.
-function daemonFreshness(lastSeenAtMs: number | null): string {
-  if (lastSeenAtMs == null) return "—";
-  const ageMs = Date.now() - lastSeenAtMs;
-  if (ageMs < 0) return "just now";
-  if (ageMs < 10 * 60 * 1000) return "live";
-  if (ageMs < 60 * 60 * 1000) return `${Math.round(ageMs / 60_000)}m ago`;
-  if (ageMs < 24 * 60 * 60 * 1000) return `${Math.round(ageMs / 3_600_000)}h ago`;
-  if (ageMs < 7 * 86_400_000) return `${Math.round(ageMs / 86_400_000)}d ago — stalled?`;
-  return `${Math.round(ageMs / 86_400_000)}d ago — down`;
-}
-
-// Color the DAEMON line: green when live, amber when 1h-1d ago, red for
-// >1d (suggests the daemon is stalled or the seat is genuinely idle).
-function daemonColor(lastSeenAtMs: number | null): string {
-  if (lastSeenAtMs == null) return "var(--mute)";
-  const ageMs = Date.now() - lastSeenAtMs;
-  if (ageMs < 60 * 60 * 1000) return "#2c6e49";
-  if (ageMs < 24 * 60 * 60 * 1000) return "#b58400";
-  return "#a93b2c";
 }

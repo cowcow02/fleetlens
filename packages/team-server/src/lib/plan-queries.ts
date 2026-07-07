@@ -506,19 +506,11 @@ export async function loadMemberSyncLog(
 
 export type MemberDaemonLogRow = { id: number; tsMs: number; level: string; msg: string };
 
-// One page of the member's own daemon sync log (uploaded from their machine),
-// newest first. This is the primary per-member troubleshooting artifact — the
-// client-side story of each sync, not the server's view of what arrived.
-// Paginated by the bigserial `id` (a stable, monotonic keyset cursor — rows
-// are inserted in ts order so id DESC == newest first) so the member modal can
-// infinite-scroll back through history. `nextCursor` is the id to pass as
-// `before` for the next page, or null when the tail is reached.
-//
-// `after` flips it into "fetch newer" mode for the modal's live poll: rows with
-// id > after, still returned newest-first. It scans ASC (oldest-of-the-new
-// first) so a burst larger than `limit` fills the gap without skipping — the
-// caller advances its cursor to the newest returned and the next poll picks up
-// the rest. `before` takes precedence if both are somehow passed.
+// Keyset-paginated by the bigserial `id` — stable and monotonic (rows insert in
+// ts order), unlike ts which can collide. `before` pages older history; `after`
+// is the live poll's "fetch newer" mode and scans ASC so a burst larger than
+// `limit` fills the gap oldest-first without skipping — the caller advances to
+// the newest returned id and the next poll picks up the rest.
 export async function loadMemberDaemonLogPage(
   teamId: string,
   membershipId: string,
