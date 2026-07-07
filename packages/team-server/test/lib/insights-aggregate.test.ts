@@ -15,6 +15,7 @@ import {
   visibleMembershipIds,
   workingShapeDistribution,
 } from "../../src/lib/insights-aggregate.js";
+import { buildTeamInsightReport } from "../../src/lib/team-report-aggregate.js";
 
 async function seed(): Promise<{
   pool: Awaited<ReturnType<typeof resetDb>>;
@@ -86,6 +87,96 @@ async function insertRichRollup(
     ],
   );
 }
+
+// daily_rollups is the base superset every push writes; rich_daily_rollups is
+// only written when the member's perception entries existed at push time. A
+// freshly-paired member whose backfill carried no rich blocks lands here with
+// base-only rows and must still count as active in the aggregates.
+async function insertBaseRollup(
+  pool: Awaited<ReturnType<typeof resetDb>>,
+  teamId: string,
+  membershipId: string,
+  day: string,
+  patch: Partial<{ agentTimeMs: number; sessions: number }> = {},
+): Promise<void> {
+  const r = { agentTimeMs: 0, sessions: 0, ...patch };
+  await pool.query(
+    `INSERT INTO daily_rollups (team_id, membership_id, day, agent_time_ms, sessions)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [teamId, membershipId, day, r.agentTimeMs, r.sessions],
+  );
+}
+
+describe("daily-only (backfill) member visibility", () => {
+  // Alice pushed only base daily_rollups (no rich); Bob pushed both (the prod
+  // state — rich always implies a matching daily row for the same day). The
+  // FULL OUTER JOIN must count Alice and must NOT double-count Bob. Carol has a
+  // presence-only day (sessions > 0, agentTime = 0 — the subagent-past-midnight
+  // shape, which exists by design) and must count as active everywhere.
+  const thisWk = "2026-05-11";
+
+  async function seedMixed() {
+    const s = await seed();
+    // Alice — backfill-only: daily_rollups only.
+    await insertBaseRollup(s.pool, s.teamId, s.alice, thisWk, { agentTimeMs: 3_600_000, sessions: 3 });
+    // Bob — normal: matching daily + rich rows for the same day.
+    await insertBaseRollup(s.pool, s.teamId, s.bob, thisWk, { agentTimeMs: 7_200_000, sessions: 5 });
+    await insertRichRollup(s.pool, s.teamId, s.bob, thisWk, {
+      agentTimeMs: 7_200_000, sessions: 5, prs: 2, concurrencyPeak: 3,
+    });
+    // Carol — presence-only: a session started, all agent time fell on another day.
+    await insertBaseRollup(s.pool, s.teamId, s.carol, thisWk, { agentTimeMs: 0, sessions: 2 });
+    return s;
+  }
+
+  it("teamPulseWeek counts the daily-only member with combined agent time (no double count)", async () => {
+    const s = await seedMixed();
+    const pulse = await teamPulseWeek(s.teamId, { kind: "team-wide" }, thisWk, s.pool);
+    expect(pulse.membersActive).toBe(3); // Alice (daily-only) + Bob + Carol (presence-only)
+    expect(pulse.agentHours).toBeCloseTo(3, 5); // (3.6M + 7.2M) ms — Bob counted once
+    expect(pulse.sessions).toBe(10);
+    expect(pulse.prs).toBe(2); // rich-only, from Bob
+  });
+
+  it("groupMomentumTrend's activeMembers includes daily-only and presence-only members", async () => {
+    const s = await seedMixed();
+    const g = await createGroup(s.teamId, "platform", "Platform", s.userId, s.pool);
+    await addGroupMember(g.id, s.alice, s.userId, s.pool);
+    await addGroupMember(g.id, s.bob, s.userId, s.pool);
+    await addGroupMember(g.id, s.carol, s.userId, s.pool);
+
+    const trend = await groupMomentumTrend(s.teamId, { kind: "group", groupId: g.id }, thisWk, s.pool, 4);
+    const wk = trend[trend.length - 1];
+    expect(wk.weekMonday).toBe(thisWk);
+    expect(wk.activeMembers).toBe(3); // daily-only Alice + presence-only Carol included
+    expect(wk.agentHours).toBeCloseTo(3, 5);
+    expect(wk.sessions).toBe(10);
+    expect(wk.prs).toBe(2);
+  });
+
+  it("buildTeamInsightReport counts daily-only and presence-only members as active", async () => {
+    const s = await seedMixed();
+    const ctx = { teamSlug: "t", teamName: "Team T", membersTotal: 3 };
+    const rep = await buildTeamInsightReport(s.teamId, { kind: "team-wide" }, s.pool, ctx, thisWk);
+
+    // Alice (daily-only) + Bob + Carol (presence-only) all active.
+    expect(rep.live_extras?.active_rate.active_7d).toBe(3);
+    expect(rep.live_extras?.active_rate.members_total).toBe(3);
+    expect(rep.volume.agent_hours_total).toBeCloseTo(3, 5);
+    expect(rep.outcomes.prs_shipped).toBe(2);
+    // Alice must appear in the roster with her daily-only agent time.
+    const aliceRow = rep.cross_edition.roster.find((r) => r.membership_id === s.alice);
+    expect(aliceRow?.agent_hours).toBeCloseTo(1, 5); // 3.6M ms
+    // Alice is not L0 — she has real activity from daily_rollups alone.
+    const alicePortrait = rep.live_extras?.member_portraits?.find((p) => p.member === "alice");
+    expect(alicePortrait?.level).not.toBe("L0");
+    // Carol's presence-only day counts as an active day in her cadence.
+    const carolPortrait = rep.live_extras?.member_portraits?.find((p) => p.member === "carol");
+    expect(carolPortrait?.level).not.toBe("L0");
+    expect(carolPortrait?.cadence.active_days_7d).toBe(1);
+    expect(carolPortrait?.cadence.active_days_30d).toBe(1);
+  });
+});
 
 describe("insights-aggregate · week math", () => {
   it("isoMondayOf rolls Sunday back to the previous Monday", () => {

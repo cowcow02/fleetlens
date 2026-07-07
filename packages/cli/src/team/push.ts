@@ -32,7 +32,8 @@ import {
   type CommandResult,
 } from "@claude-lens/parser/fs";
 import type { Entry } from "@claude-lens/entries";
-import { listEntriesForDay } from "@claude-lens/entries/fs";
+import { listEntriesForDay, entryExists, writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
+import { buildEntriesForFile } from "../perception/build-entries.js";
 import { latestClaudeCodeSnapshot } from "../usage/storage.js";
 import type { TeamConfig } from "./config.js";
 
@@ -157,8 +158,8 @@ export function sessionTouchesDay(s: SessionMeta, day: string): boolean {
 
 // Compute per-day rich rollup blocks from raw sessions + cached Entries.
 // Sessions provide the parallelism-burst math; Entries provide the Entry-
-// derived counts, working_shape, skills, subagents. `privateProjects`
-// filters project labels out of the projects[] breakdown.
+// derived counts, working_shape, skills, subagents. Every project the member
+// worked on is included — there is no per-project gating.
 //
 // `daySessions` should include every session whose active segments touch
 // `day`, not just sessions that started on it — cross-midnight sessions
@@ -168,7 +169,6 @@ export function buildRichRollupBlocks(
   day: string,
   daySessions: SessionMeta[],
   entries: Entry[],
-  privateProjects: ReadonlySet<string>,
   resolveRepo?: (dir: string) => string | null,
 ): Omit<RichDailyRollup, keyof DailyRollup> {
   const bounds = dayBoundsMs(day);
@@ -202,7 +202,6 @@ export function buildRichRollupBlocks(
   };
   const sessionRepo = new Map<string, string>();
   for (const e of entries) {
-    if (privateProjects.has(projectRepoName(e.project)) || privateProjects.has(e.project)) continue;
     const r = repoForEntry(e);
     if (r) sessionRepo.set(e.session_id, r);
   }
@@ -215,10 +214,6 @@ export function buildRichRollupBlocks(
     // absolute paths and same-repo-different-harness rows fold together.
     const canonical = canonicalProjectName(s.projectName);
     const name = projectRepoName(s.projectName);
-    // Privacy opt-out: the consent UI writes the repo-name identity that
-    // groupByProject now surfaces, so match on that — and still honor any
-    // legacy full-canonical-path entry. Either match excludes the project.
-    if (privateProjects.has(name) || privateProjects.has(canonical)) continue;
     const repo = resolveRepo?.(canonical) ?? sessionRepo.get(s.id);
     const key = repo ?? name;
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
@@ -245,9 +240,6 @@ export function buildRichRollupBlocks(
   let longTotalMin = 0;
   let longMaxSingleMin = 0;
   for (const e of entries) {
-    // Same dual-key privacy check as the projects loop (repo name + legacy
-    // full path) — e.project is the entry's full canonical path.
-    if (privateProjects.has(projectRepoName(e.project)) || privateProjects.has(e.project)) continue;
     const shape = e.signals?.working_shape ?? null;
     if (shape) {
       const cur = workingShapes.get(shape) ?? { sessions: 0, agentTimeMs: 0 };
@@ -341,21 +333,66 @@ export function buildEnrichedExtras(entries: Entry[]): EnrichedDailyExtras {
   return { outcomeMix, helpfulnessMix, goalMix };
 }
 
+// Session ids we've already attempted an on-the-spot entry build for in THIS
+// sync run — success OR failure. A pair backfill walks ~51 days sequentially
+// and a session spanning two days appears in both days' `daySessions`; without
+// this a cross-midnight session would be re-parsed once per touched day. The
+// builder emits one Entry per touched day from a single parse, so one attempt
+// per session covers every day it lands on. RUN-SCOPED: `resetEnsuredSessions`
+// clears it at the start of each `runTeamSync` so a transient read failure
+// retries on the next tick instead of being poisoned for the daemon's life.
+const ensuredSessions = new Set<string>();
+
+export function resetEnsuredSessions(): void {
+  ensuredSessions.clear();
+}
+
+// On a freshly-paired machine no perception entries exist yet, so a weeks-long
+// backfill would push base `dailyRollup` blocks only — no `richRollup`, no
+// `enrichedExtras` — leaving the member's server-side maturity card incoherent
+// (0 projects / 0 skills against dozens of sessions). Build the day's entries
+// DETERMINISTICALLY on the spot (no LLM — the daemon's perception sweep
+// enriches later) so rich blocks ride along for every backfilled day.
+//
+// Reuses the sweep's exact claude-code reconstruction (build-entries.ts) so
+// keys match and `writeEntryPreservingEnrichment` means a later sweep updates
+// rather than duplicates. Non-claude sessions are skipped (the sweep processes
+// them through a different, id-keyed path). A missing/unparseable transcript
+// (test fixtures, a deleted checkout) is caught and the day degrades to
+// base-only — never throws.
+function ensureEntriesForDay(day: string, daySessions: SessionMeta[]): void {
+  for (const s of daySessions) {
+    if (ensuredSessions.has(s.id)) continue;
+    if ((s.agent ?? "claude-code") !== "claude-code") continue;
+    // Already cached for this session-day (real sweep, or an earlier day of
+    // this same run) — leave it; only pay the parse when it's genuinely absent.
+    // Existence check only (no read+parse); listEntriesForDay reads the file.
+    if (entryExists(s.id, day)) continue;
+    ensuredSessions.add(s.id);
+    try {
+      for (const e of buildEntriesForFile(s.filePath) ?? []) writeEntryPreservingEnrichment(e);
+    } catch {
+      // Missing / unparseable transcript — push base-only for this session's
+      // days. Marked ensured above so we don't re-attempt on later days.
+    }
+  }
+}
+
 // Convenience: produce both V2 blocks for a single day. Returns undefined
 // when there are no Entries cached for the day (the day was active but the
-// perception sweep hasn't built Entries yet — push V1 only).
+// perception sweep hasn't built Entries yet — push V1 only). LLM-enriched
+// extras always ride along (no member-side opt-out).
 export function buildRichBlocksForDay(
   day: string,
   daySessions: SessionMeta[],
-  privateProjects: ReadonlySet<string>,
-  enrichmentOptIn: boolean,
   resolveRepo?: (dir: string) => string | null,
-): { rich: Omit<RichDailyRollup, keyof DailyRollup>; enriched?: EnrichedDailyExtras } | undefined {
+): { rich: Omit<RichDailyRollup, keyof DailyRollup>; enriched: EnrichedDailyExtras } | undefined {
+  ensureEntriesForDay(day, daySessions);
   const entries = listEntriesForDay(day);
   if (entries.length === 0) return undefined;
-  const rich = buildRichRollupBlocks(day, daySessions, entries, privateProjects, resolveRepo);
-  const enriched = enrichmentOptIn ? buildEnrichedExtras(entries) : undefined;
-  return enriched ? { rich, enriched } : { rich };
+  const rich = buildRichRollupBlocks(day, daySessions, entries, resolveRepo);
+  const enriched = buildEnrichedExtras(entries);
+  return { rich, enriched };
 }
 
 export type IngestPayloadInputs = {
@@ -366,6 +403,7 @@ export type IngestPayloadInputs = {
   usageSnapshot?: WireUsageSnapshot;
   planTier?: string;
   cyclePeaks?: WireCyclePeaks;
+  syncLog?: { ts: string; level: string; msg: string }[];
 };
 
 export function buildIngestPayload(inputs: IngestPayloadInputs): IngestPayload {
@@ -386,6 +424,7 @@ export function buildIngestPayload(inputs: IngestPayloadInputs): IngestPayload {
     ...(inputs.usageSnapshot ? { usageSnapshot: inputs.usageSnapshot } : {}),
     ...(inputs.planTier ? { planTier: inputs.planTier } : {}),
     ...(inputs.cyclePeaks ? { cyclePeaks: inputs.cyclePeaks } : {}),
+    ...(inputs.syncLog && inputs.syncLog.length ? { syncLog: inputs.syncLog } : {}),
   };
 }
 

@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { rollupJoin } from "./rollup-join";
 
 // ── Scope + visibility ──────────────────────────────────────────────────
 
@@ -100,6 +101,11 @@ export async function earliestWeekMonday(
     `SELECT min(d)::text AS d FROM (
        SELECT min(day)::date AS d FROM rich_daily_rollups WHERE membership_id = ANY($2::uuid[])
        UNION ALL
+       -- daily_rollups is the superset (every push writes it; rich only when the
+       -- member's perception entries existed at push time), so a backfill-only
+       -- member's floor lives here, not in rich_daily_rollups.
+       SELECT min(day)::date AS d FROM daily_rollups WHERE membership_id = ANY($2::uuid[])
+       UNION ALL
        SELECT min(merged_at)::date FROM github_pull_requests
        WHERE team_id = $1 AND state = 'merged' AND ($3::text[] IS NULL OR repo = ANY($3::text[]))
        UNION ALL
@@ -172,14 +178,17 @@ export async function teamPulseWeek(
     parallel_minutes: number;
     prs: number;
   }>(
-    `SELECT membership_id, day::text, agent_time_ms::text,
-            COALESCE(unique_sessions, sessions) AS sessions,
-            concurrency_peak, parallel_minutes, prs
-     FROM rich_daily_rollups
-     WHERE team_id = $1
-       AND membership_id = ANY($2::uuid[])
-       AND day >= $3::date
-       AND day < $4::date`,
+    `SELECT COALESCE(d.membership_id, r.membership_id) AS membership_id,
+            COALESCE(d.day, r.day)::text AS day,
+            COALESCE(d.agent_time_ms, r.agent_time_ms)::text AS agent_time_ms,
+            COALESCE(d.sessions, r.sessions) AS sessions,
+            COALESCE(r.concurrency_peak, 0) AS concurrency_peak,
+            COALESCE(r.parallel_minutes, 0) AS parallel_minutes,
+            COALESCE(r.prs, 0) AS prs
+     ${rollupJoin({
+       team: "$1", memberIds: "$2", dayStart: "$3::date", dayEnd: "$4::date",
+       richCols: ["concurrency_peak", "parallel_minutes", "prs"],
+     })}`,
     [teamId, memberIds, prevMonday, winEnd],
   );
 
@@ -431,15 +440,20 @@ export async function groupMomentumTrend(
     week_monday: string; agent_ms: string; sessions: number; prs: number; active_members: number;
   }>(
     // date_trunc('week') is ISO (Monday-anchored), so the bucket key matches our
-    // weekMonday strings directly.
-    `SELECT date_trunc('week', day)::date::text AS week_monday,
-            COALESCE(SUM(agent_time_ms), 0)::text AS agent_ms,
-            COALESCE(SUM(COALESCE(unique_sessions, sessions)), 0)::int AS sessions,
-            COALESCE(SUM(prs), 0)::int AS prs,
-            COUNT(DISTINCT membership_id) FILTER (WHERE agent_time_ms > 0)::int AS active_members
-     FROM rich_daily_rollups
-     WHERE team_id = $1 AND membership_id = ANY($2::uuid[])
-       AND day >= $3::date AND day < $4::date
+    // weekMonday strings directly. Active = agent time OR sessions — presence-only
+    // days (sessions > 0, agent_time_ms = 0, e.g. subagent-past-midnight) exist by
+    // design and must count, same predicate as teamPulseWeek / the report roster.
+    `SELECT date_trunc('week', COALESCE(d.day, r.day))::date::text AS week_monday,
+            COALESCE(SUM(COALESCE(d.agent_time_ms, r.agent_time_ms)), 0)::text AS agent_ms,
+            COALESCE(SUM(COALESCE(d.sessions, r.sessions)), 0)::int AS sessions,
+            COALESCE(SUM(COALESCE(r.prs, 0)), 0)::int AS prs,
+            COUNT(DISTINCT COALESCE(d.membership_id, r.membership_id))
+              FILTER (WHERE COALESCE(d.agent_time_ms, r.agent_time_ms) > 0
+                         OR COALESCE(d.sessions, r.sessions) > 0)::int AS active_members
+     ${rollupJoin({
+       team: "$1", memberIds: "$2", dayStart: "$3::date", dayEnd: "$4::date",
+       richCols: ["prs"],
+     })}
      GROUP BY 1`,
     [teamId, memberIds, mondays[0], weekEndExclusive(weekMonday)],
   );

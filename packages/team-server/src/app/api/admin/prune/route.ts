@@ -1,4 +1,4 @@
-import { pruneIngestLog } from "../../../../lib/scheduler";
+import { pruneIngestLog, pruneMemberSyncLog } from "../../../../lib/scheduler";
 
 export async function POST(req: Request) {
   const secret = process.env.FLEETLENS_SCHEDULER_SECRET;
@@ -9,5 +9,6 @@ export async function POST(req: Request) {
     return new Response("unauthorized", { status: 401 });
   }
   const pruned = await pruneIngestLog();
-  return Response.json({ pruned });
+  const prunedSyncLog = await pruneMemberSyncLog();
+  return Response.json({ pruned, prunedSyncLog });
 }

@@ -1,5 +1,6 @@
 import { formatAgentTime, formatTokens, timeAgo } from "../lib/format";
 import type { RosterRow, GroupAffiliation } from "../lib/queries";
+import { ROSTER_ACTIVE_MS } from "../app/team/[slug]/members/[id]/sync-liveness";
 
 export function RosterCard({
   member,
@@ -11,7 +12,7 @@ export function RosterCard({
   groups?: GroupAffiliation[];
 }) {
   const lastSeenMs = member.last_seen_at ? Date.now() - new Date(member.last_seen_at).getTime() : Infinity;
-  const isActive = lastSeenMs < 15 * 60 * 1000;
+  const isActive = lastSeenMs < ROSTER_ACTIVE_MS;
 
   return (
     <a href={`/team/${teamSlug}/members/${member.id}`} className="roster-card">

@@ -14,6 +14,7 @@ import { MemberProfile } from "../../../../../components/member-profile";
 import { MemberPlanBlock } from "../../../../../components/member-plan-block";
 import { canSeeMember, loadManagedMemberIds } from "../../../../../lib/visibility";
 import { MemberAdminMenu } from "./member-admin-menu";
+import { liveness } from "./sync-liveness";
 
 export default async function MemberPage({
   params,
@@ -74,6 +75,14 @@ export default async function MemberPage({
 
   // 30-day rollup totals — surfaced inline in the header card so admins
   // don't have to scroll to find "is this seat actually being used?"
+  // "Active days" counts days with real session activity from the rollups —
+  // NOT planSummary.totalDaysObserved, which counts days of usage-snapshot
+  // coverage (a daemon-observation metric: a freshly-paired member with weeks
+  // of backfilled activity would show "1 active day" because the daemon has
+  // only been collecting snapshots since pairing).
+  const activeDays = headerRollups.filter(
+    (r) => Number(r.agent_time_ms) > 0 || (r.unique_sessions ?? r.sessions) > 0,
+  ).length;
   const totalAgentMs = headerRollups.reduce((s, r) => s + Number(r.agent_time_ms), 0);
   // Unique sessions (start-day), not session-days, for the headline seat-usage
   // figure. Falls back to the session-days column for pre-split rows.
@@ -88,6 +97,10 @@ export default async function MemberPage({
     0,
   );
   const tier = tierEntry(planSummary.planTier);
+  // Heartbeat (last_seen_at advances on every non-dedup push), not sync health.
+  // Rendered from the same liveness() as the sync-log modal so the header badge
+  // and the modal can never disagree about stale.
+  const daemon = liveness(planSummary.daemonLastSeenAtMs);
 
   return (
     <>
@@ -168,12 +181,17 @@ export default async function MemberPage({
                   ? `${tier.label} · $${tier.monthlyPriceUsd}/mo`
                   : tier.label}
               </div>
-              <div style={{ color: daemonColor(planSummary.lastSeenAtMs) }}>
-                DAEMON · {daemonFreshness(planSummary.lastSeenAtMs)}
-              </div>
+              <div style={{ color: daemon.color }}>DAEMON · {daemon.label}</div>
               <div>CLI · {member.cli_version ? `v${member.cli_version}` : "—"}</div>
             </div>
-            {isAdminOrStaff && <MemberAdminMenu membershipId={id} />}
+            {isAdminOrStaff && (
+              <MemberAdminMenu
+                membershipId={id}
+                slug={slug}
+                name={member.display_name || member.email || "Anonymous"}
+                daemonLastSeenAtMs={planSummary.daemonLastSeenAtMs}
+              />
+            )}
           </div>
         </div>
 
@@ -191,10 +209,7 @@ export default async function MemberPage({
             fontSize: 12,
           }}
         >
-          <HeaderField
-            label="Last 30 days · engagement"
-            value={`${planSummary.totalDaysObserved} active days`}
-          />
+          <HeaderField label="Last 30 days · engagement" value={`${activeDays} active days`} />
           <HeaderField label="Last 30 days · agent time" value={formatAgentTime(totalAgentMs)} />
           <HeaderField label="Last 30 days · sessions" value={String(totalSessions)} />
           <HeaderField label="Last 30 days · tokens" value={formatTokens(totalTokens)} />
@@ -233,28 +248,4 @@ function HeaderField({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
-}
-
-// Mirrors the helper in member-plan-block.tsx; duplicated here so the
-// header doesn't have to import an internal helper. Both renderers
-// agree on the same buckets ("live" within 10 min of last poll, etc).
-function daemonFreshness(lastSeenAtMs: number | null): string {
-  if (lastSeenAtMs == null) return "—";
-  const ageMs = Date.now() - lastSeenAtMs;
-  if (ageMs < 0) return "just now";
-  if (ageMs < 10 * 60 * 1000) return "live";
-  if (ageMs < 60 * 60 * 1000) return `${Math.round(ageMs / 60_000)}m ago`;
-  if (ageMs < 24 * 60 * 60 * 1000) return `${Math.round(ageMs / 3_600_000)}h ago`;
-  if (ageMs < 7 * 86_400_000) return `${Math.round(ageMs / 86_400_000)}d ago — stalled?`;
-  return `${Math.round(ageMs / 86_400_000)}d ago — down`;
-}
-
-// Color the DAEMON line: green when live, amber when 1h-1d ago, red for
-// >1d (suggests the daemon is stalled or the seat is genuinely idle).
-function daemonColor(lastSeenAtMs: number | null): string {
-  if (lastSeenAtMs == null) return "var(--mute)";
-  const ageMs = Date.now() - lastSeenAtMs;
-  if (ageMs < 60 * 60 * 1000) return "#2c6e49";
-  if (ageMs < 24 * 60 * 60 * 1000) return "#b58400";
-  return "#a93b2c";
 }

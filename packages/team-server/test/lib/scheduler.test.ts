@@ -30,11 +30,11 @@ describe("startScheduler", () => {
     const setIntervalSpy = vi.spyOn(global, "setInterval");
     startScheduler();
     startScheduler();
-    // Five setInterval calls from a single startScheduler invocation
+    // Six setInterval calls from a single startScheduler invocation
     // (ingest-log prune + checkForUpdates + mat view refresh + github sync
-    // sweep + plan_utilization prune); the second startScheduler returns early
-    // and must not schedule more.
-    expect(setIntervalSpy).toHaveBeenCalledTimes(5);
+    // sweep + plan_utilization prune + server_log flush); the second
+    // startScheduler returns early and must not schedule more.
+    expect(setIntervalSpy).toHaveBeenCalledTimes(6);
     vi.useRealTimers();
   });
 
@@ -223,6 +223,25 @@ describe("refreshMembershipWeeklyUtilization", () => {
         /REFRESH MATERIALIZED VIEW CONCURRENTLY membership_weekly_utilization/,
       ),
     );
+  });
+});
+
+describe("pruneMemberDaemonLog", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.resetModules();
+  });
+
+  it("prunes on server-assigned created_at, not the member-supplied ts", async () => {
+    const mockQuery = vi.fn().mockResolvedValue({ rowCount: 4 });
+    vi.doMock("../../src/db/pool.js", () => ({ getPool: () => ({ query: mockQuery }) }));
+    const { pruneMemberDaemonLog } = await import("../../src/lib/scheduler.js");
+    await expect(pruneMemberDaemonLog()).resolves.toBe(4);
+
+    const sql = String(mockQuery.mock.calls[0][0]);
+    expect(sql).toMatch(/DELETE FROM member_daemon_log WHERE created_at </);
+    // A daemon with a skewed clock must not control its own retention.
+    expect(sql).not.toMatch(/WHERE ts </);
   });
 });
 

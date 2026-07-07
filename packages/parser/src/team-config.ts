@@ -17,15 +17,15 @@ export type TeamConfig = {
   pairedAt: string;
   lastSyncedDay?: string;
   lastSyncedUsageSnapshotAt?: string;
-  // Bridge V2 privacy controls — see Phase-1 spec §7.
-  // When true, LLM-enriched per-day fields (outcome/helpfulness/goal mixes)
-  // ride along with the daily ingest payload. Default off; only set after
-  // the member explicitly opts in.
-  enrichmentOptIn?: boolean;
-  // Canonical project names the member never wants to share. Excluded from
-  // richRollup.projects breakdown and any workingShapes/skills aggregation
-  // sourced from entries on those projects.
-  privateProjects?: string[];
+  /** ISO ts of the newest daemon.log line already uploaded to the team server
+   *  as a sync-log line. Only advanced after a successful push, so a failed
+   *  upload re-sends (the server dedups on (member, ts, msg)). */
+  lastSyncedLogAt?: string;
+  /** Days (YYYY-MM-DD) whose full payload the server rejected with a hard 4xx
+   *  and which lastSyncedDay has already advanced past. Retried one-at-a-time
+   *  (oldest first) each sync so a server upgrade self-heals the day instead of
+   *  losing it forever. Capped + deduped by the writer. */
+  droppedDays?: string[];
 };
 
 export function readTeamConfig(dir?: string): TeamConfig | null {

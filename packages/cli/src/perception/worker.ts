@@ -1,30 +1,16 @@
-import { statSync, readFileSync } from "node:fs";
-import { basename, dirname } from "node:path";
-import { parseTranscript } from "@claude-lens/parser";
-import type { SessionDetail } from "@claude-lens/parser";
-import { agentSources } from "@claude-lens/parser/fs";
+import { statSync } from "node:fs";
 import { buildEntries } from "@claude-lens/entries";
+import { agentSources } from "@claude-lens/parser/fs";
 import { writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
 import {
   readState, updateCheckpoint, markSweepStart, markSweepEnd, isSweepStale,
 } from "./state.js";
 import { listAllSessionJsonls } from "./scan.js";
+import { buildEntriesForFile } from "./build-entries.js";
 
 function log(msg: string): void {
   // eslint-disable-next-line no-console
   console.error(`[perception] ${msg}`);
-}
-
-/**
- * Decode a URL-encoded Claude Code project directory name into a human-readable path.
- * Claude Code encodes cwd by replacing "/" with "-"; the leading "-" represents the
- * leading "/". Example: `-Users-alice-Repo-foo` → `/Users/alice/Repo/foo`.
- */
-function decodeProjectDirName(projectDir: string): string {
-  if (projectDir.startsWith("-")) {
-    return "/" + projectDir.slice(1).replace(/-/g, "/");
-  }
-  return projectDir.replace(/-/g, "/");
 }
 
 export type SweepResult = {
@@ -57,35 +43,16 @@ export async function runPerceptionSweep(opts: SweepOptions = {}): Promise<Sweep
         const prev = state.file_checkpoints[f];
         if (prev && prev.byte_offset >= stat.size) continue;
 
-        const raw = readFileSync(f, "utf8");
-        const rawLines: unknown[] = raw
-          .split("\n")
-          .filter(Boolean)
-          .map(l => {
-            try { return JSON.parse(l); } catch { return null; }
-          })
-          .filter((x): x is object => x !== null);
+        // Reconstruct + build entries via the shared claude-code helper so the
+        // team-sync ensure-entries path produces byte-identical (session, day)
+        // keys (see build-entries.ts).
+        const built = buildEntriesForFile(f);
+        // null = blank/unreadable → nothing parsed, don't checkpoint. []
+        // = parsed with zero entries → checkpoint below so this file isn't
+        // re-parsed every 5-min sweep (418 such transcripts on a real machine).
+        if (built === null) continue;
 
-        if (rawLines.length === 0) continue;
-
-        const { meta, events } = parseTranscript(rawLines);
-        const fileName = basename(f);
-        const projectDir = basename(dirname(f));
-        const sessionId = fileName.replace(/\.jsonl$/, "");
-
-        const sd: SessionDetail = {
-          ...meta,
-          id: sessionId,
-          filePath: f,
-          projectDir,
-          projectName: meta.cwd ?? decodeProjectDirName(projectDir),
-          events,
-        };
-
-        const built = buildEntries(sd);
         for (const e of built) {
-          // Stamp real byte_offset so enrichment readers have accurate provenance
-          e.source_checkpoint.byte_offset = stat.size;
           // Preserve any committed enrichment on disk — `buildEntries` always
           // emits status="pending", but a prior sweep may have already paid
           // the LLM cost to enrich this exact (session, local_day) tuple.

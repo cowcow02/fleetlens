@@ -489,7 +489,7 @@ describe("buildRichRollupBlocks", () => {
       }),
     ];
 
-    const blocks = buildRichRollupBlocks(day, [s1, s2, s3], entries, new Set());
+    const blocks = buildRichRollupBlocks(day, [s1, s2, s3], entries);
 
     // Worktree rolled up into parent project (keyed by repo name).
     const fleetlens = blocks.projects.find((p) => p.project === "fleetlens");
@@ -525,30 +525,6 @@ describe("buildRichRollupBlocks", () => {
     expect(blocks.parallelMinutes).toBeGreaterThan(0);
   });
 
-  it("filters projects private by repo name — the identity the consent UI writes", () => {
-    const entries: Entry[] = [
-      makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens" }),
-      makeEntry({ session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka" }),
-    ];
-    // groupByProject now surfaces the repo leaf, so the consent UI saves
-    // "topeka" — the push must honor that, not just the full path.
-    const blocks = buildRichRollupBlocks(day, [s1, s3], entries, new Set(["topeka"]));
-    const names = blocks.projects.map((p) => p.project);
-    expect(names).toContain("fleetlens");
-    expect(names).not.toContain("topeka");
-  });
-
-  it("still honors a legacy full-canonical-path privateProjects entry", () => {
-    const entries: Entry[] = [
-      makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens" }),
-      makeEntry({ session_id: "s3", local_day: day, project: "/Users/x/Repo/topeka" }),
-    ];
-    const blocks = buildRichRollupBlocks(day, [s1, s3], entries, new Set(["/Users/x/Repo/topeka"]));
-    const names = blocks.projects.map((p) => p.project);
-    expect(names).toContain("fleetlens");
-    expect(names).not.toContain("topeka");
-  });
-
   it("clips a cross-midnight session to each touched day", () => {
     const dayA = "2026-05-12";
     const dayB = "2026-05-13";
@@ -568,8 +544,8 @@ describe("buildRichRollupBlocks", () => {
       makeEntry({ session_id: "sx", local_day: dayB, project: "/Users/x/Repo/fleetlens" }),
     ];
 
-    const a = buildRichRollupBlocks(dayA, [cross], entries, new Set());
-    const b = buildRichRollupBlocks(dayB, [cross], entries, new Set());
+    const a = buildRichRollupBlocks(dayA, [cross], entries);
+    const b = buildRichRollupBlocks(dayB, [cross], entries);
     const aProj = a.projects.find((p) => p.project === "fleetlens");
     const bProj = b.projects.find((p) => p.project === "fleetlens");
     expect(aProj?.agentTimeMs).toBe(60 * 60_000);
@@ -586,7 +562,7 @@ describe("buildRichRollupBlocks", () => {
         dir === "/Users/x/Repo/fleetlens" || dir === "/Users/x/Repo/topeka"
           ? "cowcow02/fleetlens"
           : null;
-      const blocks = buildRichRollupBlocks(day, [s1, s2, s3], [], new Set(), resolve);
+      const blocks = buildRichRollupBlocks(day, [s1, s2, s3], [], resolve);
       expect(blocks.projects).toHaveLength(1);
       expect(blocks.projects[0]).toMatchObject({
         sessions: 3,
@@ -608,7 +584,7 @@ describe("buildRichRollupBlocks", () => {
         }),
       ];
       const resolve = (dir: string) => (dir.startsWith("/Users/x/Repo/web-app") ? "acme/web-app" : null);
-      const blocks = buildRichRollupBlocks(day, [parent], entries, new Set(), resolve);
+      const blocks = buildRichRollupBlocks(day, [parent], entries, resolve);
       expect(blocks.projects[0]).toMatchObject({ githubRepos: ["acme/web-app"] });
     });
 
@@ -620,12 +596,12 @@ describe("buildRichRollupBlocks", () => {
           github_repos: ["cowcow02/fleetlens"],
         }),
       ];
-      const blocks = buildRichRollupBlocks(day, [s3], entries, new Set(), () => null);
+      const blocks = buildRichRollupBlocks(day, [s3], entries, () => null);
       expect(blocks.projects[0]).toMatchObject({ githubRepos: ["cowcow02/fleetlens"] });
     });
 
     it("leaves rows keyed by basename when nothing resolves at all", () => {
-      const blocks = buildRichRollupBlocks(day, [s1, s3], [], new Set(), () => null);
+      const blocks = buildRichRollupBlocks(day, [s1, s3], [], () => null);
       expect(blocks.projects.map((p) => p.project).sort()).toEqual(["fleetlens", "topeka"]);
       expect(blocks.projects.every((p) => !p.githubRepos)).toBe(true);
     });
@@ -681,10 +657,10 @@ describe("buildRichBlocksForDay", () => {
   it("returns undefined when no entries are cached for the day", () => {
     const day = "2026-05-12";
     const session = makeSession(day);
-    expect(buildRichBlocksForDay(day, [session], new Set(), false)).toBeUndefined();
+    expect(buildRichBlocksForDay(day, [session])).toBeUndefined();
   });
 
-  it("reads cached entries from disk and returns blocks + enriched when opted in", () => {
+  it("reads cached entries from disk and always returns blocks + enriched", () => {
     const day = "2026-05-12";
     const entry = makeEntry({
       session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens",
@@ -699,22 +675,9 @@ describe("buildRichBlocksForDay", () => {
     const session = makeSession(day, { id: "s1", projectName: "/Users/x/Repo/fleetlens",
       projectDir: "users-x-Repo-fleetlens" });
 
-    const out = buildRichBlocksForDay(day, [session], new Set(), true);
+    const out = buildRichBlocksForDay(day, [session]);
     expect(out).toBeTruthy();
     expect(out!.rich.projects[0]?.project).toBe("fleetlens");
     expect(out!.enriched?.outcomeMix).toEqual({ shipped: 1 });
-  });
-
-  it("omits enriched when enrichmentOptIn=false even if entries are done-enriched", () => {
-    const day = "2026-05-12";
-    writeEntry(makeEntry({ session_id: "s1", local_day: day, project: "/Users/x/Repo/fleetlens",
-      enrichment: { status: "done", generated_at: new Date().toISOString(),
-        model: "x", cost_usd: 0, error: null, brief_summary: "",
-        underlying_goal: null, friction_detail: null, user_instructions: [],
-        outcome: "shipped", claude_helpfulness: null, goal_categories: {}, retry_count: 0 } }));
-    const session = makeSession(day, { id: "s1", projectName: "/Users/x/Repo/fleetlens",
-      projectDir: "users-x-Repo-fleetlens" });
-    const out = buildRichBlocksForDay(day, [session], new Set(), false);
-    expect(out?.enriched).toBeUndefined();
   });
 });

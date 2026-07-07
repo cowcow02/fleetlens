@@ -13,6 +13,7 @@ import {
   type CycleSnap,
   type SnapshotForCalibration,
 } from "../src/calibration.js";
+import { buildCalibrationCurve } from "../src/fs.js";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -219,6 +220,31 @@ describe("predictAnchored", () => {
   });
 });
 
+
+describe("buildCalibrationCurve overage", () => {
+  // Regression for the producer-side clamp: predicted utilization legitimately
+  // exceeds 200 on overage, and the daemon must be able to emit it now that the
+  // team server accepts peakPct up to 10000. The old `Math.min(200, …)` clamp
+  // silently capped predicted overage, so the server-side fix alone was inert.
+  it("does not clamp an overage snapshot's utilization to 200", () => {
+    const cycleEnd = Date.parse("2026-04-21T05:00:00Z");
+    const cycleStart = cycleEnd - 7 * DAY;
+    // A real overage snapshot: 7d utilization at 400% (the daemon ships this on
+    // extra-usage plans). The curve anchors pred to observed real values, so
+    // the point at this snapshot's time must read ~400, not the old clamp of 200.
+    const snapshots = [
+      { captured_at: new Date(cycleStart + DAY).toISOString(), seven_day: { utilization: 50, resets_at: new Date(cycleEnd).toISOString() } },
+      { captured_at: new Date(cycleStart + 3 * DAY).toISOString(), seven_day: { utilization: 400, resets_at: new Date(cycleEnd).toISOString() } },
+    ];
+    const events = eventsCosting(cycleStart + DAY, cycleStart + 3 * DAY, 500, 96);
+    const result = buildCalibrationCurve(events, snapshots, "pro-max-20x", 60);
+    expect(result).not.toBeNull();
+    const maxPred7d = Math.max(...result!.curve.map((p) => p.pred_7d ?? 0));
+    expect(maxPred7d).toBeGreaterThan(200);
+    // Still bounded by the corruption ceiling, not unbounded.
+    expect(maxPred7d).toBeLessThanOrEqual(10_000);
+  });
+});
 
 describe("modelFamily", () => {
   it("maps case variants to canonical families", () => {

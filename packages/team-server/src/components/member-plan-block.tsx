@@ -184,7 +184,12 @@ export function MemberPlanBlock({
           )}
         </div>
         {cyclePeaks.length > 0 ? (
-          <CyclePeaksStrip cycles={cyclePeaks} maxBars={12} />
+          // maxBars (26 ≈ six months) MUST match the CLI push cap
+          // (buildCyclePeaksForPush sevenDay slice in cli/src/team/sync.ts) and
+          // the server read (loadMembership7dCyclePeaks maxCyclesPerMember in
+          // plan-queries.ts) — the three move together. The strip grid uses
+          // minmax(0, 1fr) so 26 bars flex-shrink to fit; no fixed width.
+          <CyclePeaksStrip cycles={cyclePeaks} maxBars={26} />
         ) : (
           // Fall back to the legacy mat-view sparkline when no cycle-peak
           // data has been pushed yet (daemon predates the cyclePeaks wire

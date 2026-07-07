@@ -114,7 +114,10 @@ describe("POST /api/ingest/metrics", () => {
     expect(res.status).toBe(400);
   });
 
-  it("returns 400 for bad dailyRollup.day format", async () => {
+  // Partial-success ingestion: a bad DATA block is skipped (200), not a
+  // whole-payload 400. (Envelope errors still 400 — see the missing-fields
+  // test above.) Previously this returned 400.
+  it("returns 200 and skips a bad dailyRollup block (partial success)", async () => {
     const req = makeReq(makePayload({
       dailyRollup: {
         day: "not-a-date",
@@ -126,7 +129,10 @@ describe("POST /api/ingest/metrics", () => {
       },
     }), `Bearer ${bearerToken}`);
     const res = await POST(req);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.accepted).toBe(true);
+    expect(body.blocks.skipped.dailyRollup).toContain("day");
   });
 
   it("processes snapshotHistory even when ingestId is deduplicated", async () => {

@@ -36,7 +36,15 @@ export const PlanTierKeySchema = z.enum(["pro", "pro-max", "pro-max-20x", "custo
 // cycle plus the in-progress one. Server stores as-is; never recomputes.
 export const WireCyclePeakSchema = z.object({
   endsAt: z.string().datetime({ offset: true }),
-  peakPct: z.number().min(0).max(200),
+  // peakPct is plan-utilization percent. It LEGITIMATELY exceeds 100 — and
+  // can exceed 200 — once a member is on overage/extra-usage, because the
+  // daemon ships the *predicted* cycle peak (an extrapolation), not just the
+  // last observed poll. The old `.max(200)` rejected those real payloads,
+  // which (since cyclePeaks rides the daily-rollup push) 400'd the entire
+  // push and left members with usage-only data. The peak_pct column is
+  // `real`, so a large value stores fine; we keep a generous finite ceiling
+  // only to still reject obvious corruption.
+  peakPct: z.number().min(0).max(10000),
   source: z.enum(["real", "predicted"]),
   current: z.boolean(),
 });
@@ -48,7 +56,7 @@ export const WireCyclePeaksSchema = z.object({
 
 // Daemon-reported outcome of a previously-delivered member command. Matches
 // the wire shape produced by the CLI side of the command channel.
-const CommandResultSchema = z.object({
+export const CommandResultSchema = z.object({
   id: z.string(),
   ok: z.boolean(),
   completedAt: z.string().datetime({ offset: true }),
@@ -62,8 +70,23 @@ export const UsageHistoryPayload = z.object({
   planTier: PlanTierKeySchema.optional(),
 });
 
-const DailyRollupSchema = z.object({
-  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+// A regex-valid `YYYY-MM-DD` can still be a non-existent calendar date
+// (`2026-99-99`, `2026-02-30`). The `daily_rollups.day` column is `date`, so a
+// bad value passes block validation but then throws mid-INSERT and rolls back
+// OTHER already-accepted blocks — defeating partial-success. Validate the
+// calendar date here so a bad day is a skipped block, not a transaction killer.
+function isCalendarDate(s: string): boolean {
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+}
+export const DaySchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isCalendarDate, { message: "not a valid calendar date" });
+
+export const DailyRollupSchema = z.object({
+  day: DaySchema,
   agentTimeMs: z.number().int().nonnegative(),
   sessions: z.number().int().nonnegative(),
   // Optional for back-compat: CLIs predating the per-day split don't send it.
@@ -89,7 +112,14 @@ export const RichDailyRollupSchema = DailyRollupSchema.extend({
     sessions: z.number().int().nonnegative(),
     // owner/name identities from git-push / gh-pr output — lets the report
     // canonicalize the local directory name onto the actual remote.
-    githubRepos: z.array(z.string().max(200)).max(5).optional(),
+    // NOTE: these caps are NOT the source of the partial-data bug — the
+    // daemon resolves only short `owner/name` strings and already
+    // `.slice(0, 5)`s before the wire (see buildRichRollupBlocks in
+    // packages/cli/src/team/push.ts), so real data never reaches the old
+    // 5-element / 200-char limits. Widened purely as forward-looking
+    // headroom (a project legitimately touching many remotes, or an unusual
+    // long identity); this column is JSONB, so longer values store fine.
+    githubRepos: z.array(z.string().max(512)).max(25).optional(),
   }).passthrough()),
   workingShapes: z.array(z.object({
     shape: z.string(),
@@ -147,6 +177,14 @@ export const DayArtifactSignalsSchema = z.object({
   claudemdLineDelta: z.number().int().default(0),
 }).passthrough();
 
+// One syncLog line. Exported standalone so processIngest can validate the
+// block row-by-row.
+export const SyncLogLineSchema = z.object({
+  ts: z.string().datetime(),
+  level: z.enum(["info", "warn", "error"]),
+  msg: z.string().max(2000),
+});
+
 // Every field except ingestId/observedAt is optional so the daemon can push
 // any subset on each tick:
 //   - idle day  →  { snapshot, cyclePeaks, planTier }
@@ -186,7 +224,34 @@ export const IngestPayload = z.object({
   // Outcome of commands the server previously handed to this daemon. Capped
   // per request so a stuck daemon can't flood the ingest with stale results.
   commandResults: z.array(CommandResultSchema).max(50).optional(),
+  // The member daemon's own sync-log lines since its last successful upload —
+  // the client-side troubleshooting story, surfaced per-member. Row-level
+  // dedup on (membership_id, ts, msg), so retries are idempotent. Capped;
+  // processIngest validates rows individually (like snapshotHistory) so one
+  // corrupt line can't drop the rest of the batch.
+  syncLog: z.array(SyncLogLineSchema).max(500).optional(),
 }).passthrough();
+
+// Strict envelope: the identity / routing fields that MUST be valid for the
+// push to be processed at all. processIngest validates each DATA block
+// (dailyRollup, richRollup, usageSnapshot, cyclePeaks, planTier,
+// snapshotHistory, …) independently via safeParse, so one malformed block is
+// skipped (logged) rather than 400-ing the whole payload. The envelope stays
+// all-or-nothing: a bad ingestId/observedAt is a genuine protocol error.
+// commandResults is intentionally NOT in the envelope — it's data-channel
+// feedback, not push identity, so it gets the same lenient per-block
+// treatment (one stale result shouldn't reject a member's metrics push).
+export const IngestEnvelope = z.object({
+  ingestId: z.string(),
+  observedAt: z.string().datetime(),
+  schemaVersion: z.literal(2).optional(),
+  cliVersion: z.string().max(64).optional(),
+}).passthrough();
+
+// commandResults as a standalone block schema so the per-block validator in
+// processIngest can reuse it. (snapshotHistory and syncLog get row-by-row
+// validation in ingest.ts instead of a block schema.)
+export const CommandResultsSchema = z.array(CommandResultSchema).max(50);
 
 export const ClaimPayload = z.object({
   bootstrapToken: z.string(),

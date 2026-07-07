@@ -1,19 +1,63 @@
 import pg from "pg";
+import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
 import { getPool } from "../db/pool";
-import { IngestPayload, UsageHistoryPayload, type UsageSnapshot } from "./zod-schemas";
+import {
+  IngestPayload,
+  IngestEnvelope,
+  UsageHistoryPayload,
+  DailyRollupSchema,
+  RichDailyRollupSchema,
+  EnrichedDailyExtrasSchema,
+  DayArtifactSignalsSchema,
+  UsageSnapshotSchema,
+  PlanTierKeySchema,
+  WireCyclePeaksSchema,
+  CommandResultsSchema,
+  SyncLogLineSchema,
+  type UsageSnapshot,
+} from "./zod-schemas";
 import { refreshMembershipWeeklyUtilization } from "./scheduler";
 import { broadcastEvent } from "./sse";
 import { processCommandResults, fetchPendingCommands, type PendingCommand } from "./member-commands";
 
 export type SnapshotHistoryResult = { received: number; inserted: number; skipped: number };
+// Per-block validation outcome surfaced to the daemon. `accepted` lists the
+// data blocks that were APPLIED within this call's transaction — on a dedup
+// replay only the row-level-idempotent streams (snapshotHistory, syncLog)
+// can appear; `skipped` maps a rejected block name to the failing field
+// path + reason. This is the 200-with-partial contract: a single bad block
+// is dropped, not fatal to the whole push.
+export type IngestBlocksResult = { accepted: string[]; skipped: Record<string, string> };
 export type IngestResult = {
   accepted: true;
   deduplicated?: boolean;
   nextSyncAfter?: string;
   snapshotHistory?: SnapshotHistoryResult;
+  blocks?: IngestBlocksResult;
   commands?: PendingCommand[];
 };
+
+type ParsedIngest = z.infer<typeof IngestPayload>;
+type SyncLogLine = z.infer<typeof SyncLogLineSchema>;
+
+// Keep snapshotHistory transactions bounded — mirrors the old schema cap.
+const SNAPSHOT_HISTORY_MAX = 1000;
+// syncLog raw-length cap — mirrors the old block schema's `.max(500)`.
+const SYNC_LOG_MAX = 500;
+// btree index tuples top out around ~2704 bytes, and the syncLog dedup index
+// carries msg — a ≤2000-CHAR multibyte msg can be ~8000 BYTES, aborting the
+// whole txn (500 → the daemon re-sends the same poison line forever). Bound
+// msg by bytes before insert.
+const SYNC_LOG_MSG_MAX_BYTES = 2000;
+
+// Truncate to a UTF-8 byte budget at a codepoint boundary, marking the cut.
+function truncateUtf8Bytes(s: string, maxBytes: number): string {
+  if (Buffer.byteLength(s, "utf8") <= maxBytes) return s;
+  const cut = Buffer.from(s, "utf8").subarray(0, maxBytes - 3).toString("utf8"); // 3 = "…"
+  // A mid-codepoint cut decodes to trailing U+FFFD — strip before marking.
+  return cut.replace(/�+$/, "") + "…";
+}
 
 export async function processIngest(
   raw: unknown,
@@ -22,10 +66,164 @@ export async function processIngest(
   pool?: pg.Pool
 ): Promise<IngestResult> {
   const p = pool || getPool();
-  const payload = IngestPayload.parse(raw);
+
+  // Envelope is strict (throws ZodError → 400). Data blocks are validated
+  // independently below so one malformed block is skipped, not fatal.
+  const env = IngestEnvelope.parse(raw);
+  const rawObj = raw as Record<string, unknown>;
+
+  const acceptedBlocks: string[] = [];
+  const skippedBlocks: Record<string, string> = {};
+  // safeParse one DATA block. Present + valid → recorded accepted, value
+  // returned for ingest. Present + invalid → skipped with the failing field
+  // path logged (field-agnostic: we never need to know which field is bad).
+  // Absent → undefined, untouched. Validation happens BEFORE the DB
+  // transaction opens, so a skipped block can never roll back an accepted one.
+  const tryBlock = <S extends z.ZodTypeAny>(name: string, schema: S): z.infer<S> | undefined => {
+    const value = rawObj[name];
+    if (value === undefined) return undefined;
+    const res = schema.safeParse(value);
+    if (res.success) {
+      acceptedBlocks.push(name);
+      return res.data;
+    }
+    const issue = res.error.issues[0];
+    const path = issue && issue.path.length ? `${name}.${issue.path.join(".")}` : name;
+    const reason = `${path}: ${issue?.message ?? "invalid"}`;
+    skippedBlocks[name] = reason;
+    console.warn(`[ingest] skipped block "${name}": ${reason}`);
+    return undefined;
+  };
+
+  // snapshotHistory gets row-level resilience rather than block-level: the
+  // backfill push carries ONLY this block, so dropping the whole array on a
+  // single corrupt row would be the all-or-nothing failure we're killing.
+  // Keep every valid snapshot, skip individual bad rows. `rawSnapshotCount`
+  // preserves the daemon's `received` contract even when the field is junk.
+  let rawSnapshotCount = 0;
+  let snapshotHistory: UsageSnapshot[] | undefined;
+  if (rawObj.snapshotHistory !== undefined) {
+    const arr = rawObj.snapshotHistory;
+    if (Array.isArray(arr)) {
+      rawSnapshotCount = arr.length;
+      // Cap on RAW length BEFORE parsing. Row-level resilience must not become
+      // an unbounded-work primitive: a hostile member could send millions of
+      // mostly-invalid rows (so `valid.length` stays under the cap) and force a
+      // safeParse of every one. Enforce the old schema-level `.max(1000)` bound
+      // on the raw array first.
+      if (arr.length > SNAPSHOT_HISTORY_MAX) {
+        skippedBlocks.snapshotHistory = `snapshotHistory: exceeds ${SNAPSHOT_HISTORY_MAX}-row cap (${arr.length} received)`;
+        console.warn(`[ingest] skipped block "snapshotHistory": ${skippedBlocks.snapshotHistory}`);
+      } else {
+        const valid: UsageSnapshot[] = [];
+        let firstBad: string | undefined;
+        for (let i = 0; i < arr.length; i++) {
+          const res = UsageSnapshotSchema.safeParse(arr[i]);
+          if (res.success) valid.push(res.data);
+          else if (!firstBad) {
+            const issue = res.error.issues[0];
+            firstBad = `snapshotHistory[${i}]${issue?.path.length ? "." + issue.path.join(".") : ""}: ${issue?.message ?? "invalid"}`;
+          }
+        }
+        if (valid.length > 0) {
+          snapshotHistory = valid;
+          acceptedBlocks.push("snapshotHistory");
+        }
+        if (firstBad) {
+          skippedBlocks.snapshotHistory = `${firstBad} (${arr.length - valid.length}/${arr.length} rows dropped)`;
+          console.warn(`[ingest] partial snapshotHistory: ${skippedBlocks.snapshotHistory}`);
+        }
+      }
+    } else {
+      skippedBlocks.snapshotHistory = "snapshotHistory: expected array";
+      console.warn(`[ingest] skipped block "snapshotHistory": ${skippedBlocks.snapshotHistory}`);
+    }
+  }
+
+  // syncLog gets the same row-level resilience as snapshotHistory: the block
+  // used to validate atomically, so one corrupt line killed up to 500 valid
+  // ones. Keep every valid line; the block reports skipped only when nothing
+  // survives (a partial drop is warn-logged but the block is still accepted
+  // with the valid subset).
+  let syncLog: SyncLogLine[] | undefined;
+  if (rawObj.syncLog !== undefined) {
+    const arr = rawObj.syncLog;
+    if (!Array.isArray(arr)) {
+      skippedBlocks.syncLog = "syncLog: expected array";
+      console.warn(`[ingest] skipped block "syncLog": ${skippedBlocks.syncLog}`);
+    } else if (arr.length > SYNC_LOG_MAX) {
+      // Cap on RAW length before parsing — same DoS reasoning as snapshotHistory.
+      skippedBlocks.syncLog = `syncLog: exceeds ${SYNC_LOG_MAX}-row cap (${arr.length} received)`;
+      console.warn(`[ingest] skipped block "syncLog": ${skippedBlocks.syncLog}`);
+    } else {
+      const valid: SyncLogLine[] = [];
+      let firstBad: string | undefined;
+      for (let i = 0; i < arr.length; i++) {
+        const res = SyncLogLineSchema.safeParse(arr[i]);
+        if (res.success) {
+          valid.push({ ...res.data, msg: truncateUtf8Bytes(res.data.msg, SYNC_LOG_MSG_MAX_BYTES) });
+        } else if (!firstBad) {
+          const issue = res.error.issues[0];
+          firstBad = `syncLog[${i}]${issue?.path.length ? "." + issue.path.join(".") : ""}: ${issue?.message ?? "invalid"}`;
+        }
+      }
+      if (valid.length > 0) {
+        syncLog = valid;
+        acceptedBlocks.push("syncLog");
+        if (firstBad) {
+          console.warn(`[ingest] partial syncLog: ${firstBad} (${arr.length - valid.length}/${arr.length} rows dropped)`);
+        }
+      } else if (firstBad) {
+        skippedBlocks.syncLog = `${firstBad} (${arr.length}/${arr.length} rows dropped)`;
+        console.warn(`[ingest] skipped block "syncLog": ${skippedBlocks.syncLog}`);
+      }
+    }
+  }
+
+  const commandResults = tryBlock("commandResults", CommandResultsSchema);
+
+  // Reconstructed payload of only the envelope + valid blocks. The downstream
+  // insert logic keeps its `if (payload.x)` guards unchanged — a skipped
+  // block is simply absent here.
+  const payload: ParsedIngest = {
+    ingestId: env.ingestId,
+    observedAt: env.observedAt,
+    schemaVersion: env.schemaVersion,
+    cliVersion: env.cliVersion,
+    dailyRollup: tryBlock("dailyRollup", DailyRollupSchema),
+    richRollup: tryBlock("richRollup", RichDailyRollupSchema),
+    enrichedExtras: tryBlock("enrichedExtras", EnrichedDailyExtrasSchema),
+    artifactSignals: tryBlock("artifactSignals", DayArtifactSignalsSchema),
+    usageSnapshot: tryBlock("usageSnapshot", UsageSnapshotSchema),
+    planTier: tryBlock("planTier", PlanTierKeySchema),
+    cyclePeaks: tryBlock("cyclePeaks", WireCyclePeaksSchema),
+    snapshotHistory,
+    commandResults,
+    syncLog,
+  };
+
+  // accepted must imply applied. Both extras blocks are keyed to a rollup day
+  // they don't carry themselves: enrichedExtras only lands through the rich
+  // upsert's COALESCE columns, and artifactSignals needs the push's day. When
+  // the prerequisite block is absent (or itself skipped), demote them —
+  // reporting them accepted would tell the daemon data landed that didn't.
+  if (payload.enrichedExtras && !payload.richRollup) {
+    acceptedBlocks.splice(acceptedBlocks.indexOf("enrichedExtras"), 1);
+    skippedBlocks.enrichedExtras = "enrichedExtras: requires richRollup";
+    console.warn(`[ingest] skipped block "enrichedExtras": ${skippedBlocks.enrichedExtras}`);
+    payload.enrichedExtras = undefined;
+  }
+  const signalsDay = payload.richRollup?.day ?? payload.dailyRollup?.day;
+  if (payload.artifactSignals && !signalsDay) {
+    acceptedBlocks.splice(acceptedBlocks.indexOf("artifactSignals"), 1);
+    skippedBlocks.artifactSignals = "artifactSignals: requires richRollup or dailyRollup (day key)";
+    console.warn(`[ingest] skipped block "artifactSignals": ${skippedBlocks.artifactSignals}`);
+    payload.artifactSignals = undefined;
+  }
 
   let dedupHit!: boolean;
   let historyInserted = 0;
+  let daemonLogInserted = 0;
 
   const client = await p.connect();
   try {
@@ -84,7 +282,29 @@ export async function processIngest(
       );
     }
 
-    if (payload.richRollup) {
+    // Member daemon log — the client-side sync story. Row-level dedup on
+    // (membership_id, ts, msg) so a retried push (same lines) is idempotent;
+    // processed regardless of the ingestId gate, like snapshotHistory.
+    if (payload.syncLog?.length) {
+      const vals: unknown[] = [];
+      const tuples = payload.syncLog.map((l, i) => {
+        const b = i * 5;
+        vals.push(teamId, membershipId, l.ts, l.level, l.msg);
+        return `($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5})`;
+      });
+      const res = await client.query(
+        `INSERT INTO member_daemon_log (team_id, membership_id, ts, level, msg)
+         VALUES ${tuples.join(",")}
+         ON CONFLICT (membership_id, ts, msg) DO NOTHING`,
+        vals,
+      );
+      daemonLogInserted = res.rowCount ?? 0;
+    }
+
+    // Headline blocks below are gated on !dedupHit like dailyRollup: a replay
+    // with the same ingestId carries the same content, so re-upserting is a
+    // no-op at best and must not be reported as applied.
+    if (!dedupHit && payload.richRollup) {
       const r = payload.richRollup;
       const ex = payload.enrichedExtras;
       await client.query(`
@@ -130,10 +350,13 @@ export async function processIngest(
           working_shapes = EXCLUDED.working_shapes,
           skills_loaded = EXCLUDED.skills_loaded,
           subagents_dispatched = EXCLUDED.subagents_dispatched,
-          -- Preserve previously-pushed enriched extras on opt-out: re-pushing
-          -- without enrichedExtras leaves the columns alone instead of
-          -- nulling them. Member opt-out should be done by the team-server
-          -- admin tool, not silently by every metric push.
+          -- Preserve previously-pushed enriched extras when a push carries no
+          -- enrichment: re-pushing leaves the columns alone instead of nulling
+          -- them. Critical because enrichment is async -- a day's first push
+          -- (before claude -p finishes, or with AI off) carries EMPTY mixes,
+          -- and a later push must not clobber the real mix once it lands. The
+          -- empty-mix to NULL guard is below (Object.keys length), so EXCLUDED is
+          -- NULL for an empty mix and COALESCE keeps the stored value.
           outcome_mix = COALESCE(EXCLUDED.outcome_mix, rich_daily_rollups.outcome_mix),
           helpfulness_mix = COALESCE(EXCLUDED.helpfulness_mix, rich_daily_rollups.helpfulness_mix),
           goal_mix = COALESCE(EXCLUDED.goal_mix, rich_daily_rollups.goal_mix),
@@ -152,21 +375,24 @@ export async function processIngest(
         r.toolErrors, r.brainstormWarmupSessions, r.planModeUsed,
         JSON.stringify(r.projects), JSON.stringify(r.workingShapes),
         JSON.stringify(r.skillsLoaded), JSON.stringify(r.subagentsDispatched),
-        ex?.outcomeMix ? JSON.stringify(ex.outcomeMix) : null,
-        ex?.helpfulnessMix ? JSON.stringify(ex.helpfulnessMix) : null,
-        ex?.goalMix ? JSON.stringify(ex.goalMix) : null,
+        ex?.outcomeMix && Object.keys(ex.outcomeMix).length ? JSON.stringify(ex.outcomeMix) : null,
+        ex?.helpfulnessMix && Object.keys(ex.helpfulnessMix).length ? JSON.stringify(ex.helpfulnessMix) : null,
+        ex?.goalMix && Object.keys(ex.goalMix).length ? JSON.stringify(ex.goalMix) : null,
         r.tokens.input, r.tokens.output, r.tokens.cacheRead, r.tokens.cacheWrite,
         r.uniqueSessions ?? null,
       ]);
     }
 
-    if (payload.artifactSignals && payload.richRollup) {
-      await upsertDayArtifactSignals(client, teamId, membershipId, payload.richRollup.day, payload.artifactSignals);
-      await reconcileTeamSkillCatalog(client, teamId, membershipId, payload.richRollup.day, payload);
-    } else if (payload.richRollup) {
-      // Always reconcile the catalog from skills_loaded so adopters are
-      // tracked even when the file-system probe hasn't reported authorship.
-      await reconcileTeamSkillCatalog(client, teamId, membershipId, payload.richRollup.day, payload);
+    // artifactSignals writes its own table (day_artifact_signals) but carries
+    // no day — keyed to the push's rollup day (richRollup, or dailyRollup when
+    // the rich block was dropped) so a skipped richRollup doesn't strand it.
+    if (!dedupHit && payload.artifactSignals && signalsDay) {
+      await upsertDayArtifactSignals(client, teamId, membershipId, signalsDay, payload.artifactSignals);
+    }
+    // Always reconcile the catalog when richRollup is present (skills_loaded
+    // tracks adopters even without the file-system probe's authorship).
+    if (!dedupHit && signalsDay && (payload.artifactSignals || payload.richRollup)) {
+      await reconcileTeamSkillCatalog(client, teamId, membershipId, signalsDay, payload);
     }
 
     if (!dedupHit || historyInserted > 0) {
@@ -210,6 +436,13 @@ export async function processIngest(
   }
   const commands = await fetchPendingCommands(p, membershipId);
 
+  // blocks.accepted must list exactly what this call APPLIED. On a dedup
+  // replay every headline block is skipped wholesale — only the row-level-
+  // idempotent streams (snapshotHistory, syncLog) still ran.
+  const appliedBlocks = dedupHit
+    ? acceptedBlocks.filter((b) => b === "snapshotHistory" || b === "syncLog")
+    : acceptedBlocks;
+
   // nextSyncAfter is the 200-vs-202 signal at the HTTP layer: present iff
   // actual work happened. A dedup'd headline that still landed history rows
   // counts as work; a pure replay (no history work) doesn't.
@@ -218,15 +451,63 @@ export async function processIngest(
   if (!dedupHit || historyInserted > 0) {
     result.nextSyncAfter = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   }
-  if (payload.snapshotHistory?.length) {
-    const received = payload.snapshotHistory.length;
+  // Report a snapshotHistory result whenever the block was sent (valid or
+  // not) so the daemon's backfill loop sees its inserted/skipped contract and
+  // never trips the "older image" guard. `received` is the raw sent count;
+  // `skipped` folds in both validation-dropped rows and captured_at dups.
+  if (rawSnapshotCount > 0 || skippedBlocks.snapshotHistory) {
     result.snapshotHistory = {
-      received,
+      received: rawSnapshotCount,
       inserted: historyInserted,
-      skipped: received - historyInserted,
+      skipped: rawSnapshotCount - historyInserted,
     };
   }
+  result.blocks = { accepted: appliedBlocks, skipped: skippedBlocks };
   if (commands.length > 0) result.commands = commands;
+
+  // Always-on per-push health line — the single source of truth for "is this
+  // member's sync healthy?". Emitted on EVERY push (success, partial, dedup)
+  // so a healthy sync is never silent, and it survives production `next start`
+  // (unlike Next's dev-only request log). Carries member/team/cli/ingest
+  // identity so it's greppable per member, and lists accepted/skipped BLOCK
+  // NAMES so a split-brain (usage lands / metrics rot, or vice versa) reads at
+  // a glance. warn when any block dropped so degraded pushes surface at warn
+  // level; log otherwise.
+  const skippedDetail = Object.values(skippedBlocks);
+  const histNote =
+    rawSnapshotCount > 0 || historyInserted > 0 ? ` hist=${historyInserted}/${rawSnapshotCount}` : "";
+  const logNote =
+    payload.syncLog?.length ? ` daemonLog=${daemonLogInserted}/${payload.syncLog.length}` : "";
+  const health =
+    `[ingest] push member=${membershipId} team=${teamId} cli=${payload.cliVersion ?? "-"}` +
+    ` ingest=${payload.ingestId} accepted=[${appliedBlocks.join(",")}]` +
+    ` skipped=[${skippedDetail.join("; ")}] dedup=${dedupHit}${histNote}${logNote}`;
+  if (skippedDetail.length > 0) console.warn(health);
+  else console.log(health);
+
+  // Persist the same health event so it's viewable per member in the UI
+  // ("View logs") without shelling into container stdout. POST-COMMIT and
+  // best-effort: an observability write must NEVER fail a member's real
+  // ingest. Skips pure no-op dedup replays (nothing happened) to avoid
+  // flooding — anything that did work or dropped a block is kept.
+  const syncStatus = skippedDetail.length > 0 ? "partial" : "ok";
+  if (!dedupHit || historyInserted > 0 || syncStatus === "partial") {
+    try {
+      await p.query(
+        `INSERT INTO member_sync_log
+           (team_id, membership_id, ingest_id, cli_version, accepted, skipped, status, dedup, hist_inserted, hist_received)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          teamId, membershipId, payload.ingestId, payload.cliVersion ?? null,
+          JSON.stringify(appliedBlocks), JSON.stringify(skippedBlocks), syncStatus,
+          dedupHit, historyInserted, rawSnapshotCount,
+        ],
+      );
+    } catch (err) {
+      console.warn(`[ingest] member_sync_log write failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
   return result;
 }
 

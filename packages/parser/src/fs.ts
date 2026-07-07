@@ -580,9 +580,14 @@ export function buildCalibrationCurve(
     curve.push({
       ts: new Date(cur).toISOString(),
       real_5h: real5,
-      pred_5h: Math.max(0, Math.min(200, p5)),
+      // Predicted utilization LEGITIMATELY exceeds 200 on overage (the
+      // extrapolated cycle close). The old min(200) clamp silently capped it,
+      // so cyclePeaks.peakPct could never carry a *predicted* overage to the
+      // team server (which now accepts up to 10000). Keep only a generous
+      // finite ceiling as a corruption guard, matching the wire cap.
+      pred_5h: Math.max(0, Math.min(10000, p5)),
       real_7d: real7,
-      pred_7d: Math.max(0, Math.min(200, p7)),
+      pred_7d: Math.max(0, Math.min(10000, p7)),
       cycle_end_5h: r5k != null ? new Date(r5k).toISOString() : null,
       cycle_end_7d: r7k != null ? new Date(r7k).toISOString() : null,
     });

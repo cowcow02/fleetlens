@@ -56,6 +56,33 @@ describe("runPerceptionSweep", () => {
     expect(written.some(f => f.startsWith(sessionId))).toBe(true);
   });
 
+  it("checkpoints a parsed-but-entryless transcript so it isn't re-parsed every sweep", async () => {
+    const { readState } = await import("../../src/perception/state.js");
+    const projectDir = join(projectsRoot, "-Users-test-repo-bar");
+    mkdirSync(projectDir, { recursive: true });
+    const sessionId = "empty-session-1";
+    // Parseable JSON but no timestamped conversational events → buildEntries
+    // yields zero entries (the real-machine "418 entryless transcripts" case).
+    const jsonl = [
+      JSON.stringify({ type: "summary", summary: "compacted", leafUuid: "u1" }),
+      JSON.stringify({ type: "summary", summary: "more", leafUuid: "u2" }),
+    ].join("\n");
+    const file = join(projectDir, `${sessionId}.jsonl`);
+    writeFileSync(file, jsonl);
+
+    const r1 = await runPerceptionSweep({ projectsRoot });
+    expect(r1.entriesWritten).toBe(0);
+    expect(r1.errors).toBe(0);
+    // Checkpoint set at the file's byte size despite zero entries — the fix.
+    const cp = readState().file_checkpoints[file];
+    expect(cp).toBeDefined();
+    expect(cp!.byte_offset).toBe(Buffer.byteLength(jsonl));
+
+    // A second sweep skips the file (byte_offset >= size) → not re-parsed.
+    const r2 = await runPerceptionSweep({ projectsRoot });
+    expect(r2.sessionsProcessed).toBe(0);
+  });
+
   it("returns zero counts when projects dir is empty", async () => {
     const r = await runPerceptionSweep({ projectsRoot });
     expect(r).toEqual({ sessionsProcessed: 0, entriesWritten: 0, errors: 0 });

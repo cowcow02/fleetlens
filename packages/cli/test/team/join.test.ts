@@ -109,6 +109,10 @@ describe("joinTeam", () => {
     expect(call.memberId).toBe("mem_abc");
     expect(call.teamSlug).toBe("acme");
     expect(call.teamName).toBe("Acme Inc");
+    // Fences off any previous team's daemon.log history so the first push
+    // doesn't sweep the prior team's [sync] lines onto this team's log.
+    expect(call.lastSyncedLogAt).toBeTruthy();
+    expect(Number.isNaN(Date.parse(call.lastSyncedLogAt!))).toBe(false);
 
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining("Acme Inc"),

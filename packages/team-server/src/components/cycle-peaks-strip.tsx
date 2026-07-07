@@ -34,56 +34,31 @@ export function CyclePeaksStrip({
 
   const visible = filtered.slice(-maxBars);
 
-  // Pad left with nulls to ensure a consistent, right-aligned maxBars grid structure
-  const padded = [
-    ...Array(Math.max(0, maxBars - visible.length)).fill(null),
-    ...visible,
-  ];
-
+  // Only real cycles get columns — no reserved space for cycles that never
+  // existed. Bars always stretch to fill the full row width.
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${maxBars}, minmax(0, 1fr))`,
+        gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
         gap: 4,
         alignItems: "end",
         minWidth: 0,
       }}
     >
-      {padded.map((c, i) =>
-        c ? <CycleBar key={i} cycle={c} /> : <EmptyCycleBar key={i} />
-      )}
-    </div>
-  );
-}
-
-function EmptyCycleBar() {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "stretch",
-        gap: 2,
-      }}
-    >
-      <div style={{ fontSize: 9, height: 11 }} />
-      <div
-        style={{
-          height: 36,
-          background: "var(--rule)",
-          borderRadius: 2,
-          opacity: 0.15,
-        }}
-      />
-      <div style={{ fontSize: 9, height: 11 }} />
+      {visible.map((c, i) => (
+        <CycleBar key={i} cycle={c} />
+      ))}
     </div>
   );
 }
 
 
 function CycleBar({ cycle }: { cycle: MembershipCyclePeak }) {
+  // Bar height / tone stay clamped to 100; the LABEL shows the true value so
+  // an overage cycle reads "247%", not a misleading "100%".
   const pct = Math.max(0, Math.min(100, cycle.peakPct));
+  const labelPct = Math.max(0, cycle.peakPct);
   const tone = cycle.isCurrent
     ? paceToneForCycle(pct, cycle.endsAt.getTime(), SEVEN_DAYS_MS)
     : utilizationTone(pct);
@@ -109,7 +84,7 @@ function CycleBar({ cycle }: { cycle: MembershipCyclePeak }) {
           letterSpacing: "0.02em",
         }}
       >
-        {pct.toFixed(0)}%
+        {labelPct.toFixed(0)}%
       </div>
       <div
         style={{

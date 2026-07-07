@@ -13,12 +13,13 @@
  */
 
 import { spawn } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { appendSnapshot } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
+import { appendDaemonLogLine } from "./daemon-log.js";
 import { isUsable, readOAuthCredentials } from "./usage/token.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
 import { runTeamSync } from "./team/sync.js";
@@ -37,16 +38,14 @@ const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
 mkdirSync(dirname(USAGE_LOG), { recursive: true });
 
 function log(level: "info" | "warn" | "error", message: string): void {
-  const line = `${new Date().toISOString()} ${level.toUpperCase()} ${message}\n`;
-  try {
-    appendFileSync(DAEMON_LOG, line, "utf8");
-  } catch {
-    // Disk might be full. Swallow and keep running.
-  }
+  appendDaemonLogLine(level, message);
 }
 
 let nextPollAtMs = 0;
 let nextTeamSyncAtMs = 0;
+// First team sync after this daemon booted is tagged trigger="boot" in the
+// [sync] summary line; every tick after is "auto".
+let firstTeamSync = true;
 let currentIntervalMs = BASE_INTERVAL_MS;
 let waitingForRefresh = false;
 let updateCheckInFlight = false;
@@ -315,7 +314,11 @@ async function runLoop(): Promise<void> {
       // Team push is independent of Claude OAuth state — it uses its own bearer
       // and a different server. Keep it on its own cadence so an expired Claude
       // token cannot turn the team sync loop into a 5-second retry storm.
-      await runTeamSync(log);
+      await runTeamSync(log, undefined, {
+        trigger: firstTeamSync ? "boot" : "auto",
+        nextSyncMs: BASE_INTERVAL_MS,
+      });
+      firstTeamSync = false;
       nextTeamSyncAtMs = Date.now() + BASE_INTERVAL_MS;
     }
     if (Date.now() >= nextUpdateCheckAtMs) {

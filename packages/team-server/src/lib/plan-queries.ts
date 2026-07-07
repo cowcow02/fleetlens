@@ -148,7 +148,11 @@ export type MembershipCyclePeak = {
 export async function loadMembership7dCyclePeaks(
   teamId: string,
   pool: pg.Pool,
-  maxCyclesPerMember = 12,
+  // 26 ≈ six months of 7d cycles. MUST match the CLI push cap
+  // (buildCyclePeaksForPush sevenDay slice in packages/cli/src/team/sync.ts)
+  // and the renderer (CyclePeaksStrip maxBars in member-plan-block.tsx) — the
+  // three move together or the strip silently truncates history.
+  maxCyclesPerMember = 26,
 ): Promise<Map<string, MembershipCyclePeak[]>> {
   const res = await pool.query<{
     membership_id: string;
@@ -337,7 +341,14 @@ export type MemberPlanSummary = {
   worstFiveHourPeak: number;
   worstOpusPeak: number;
   totalDaysObserved: number;
+  // Recency of the last USAGE snapshot (drives utilization-data staleness).
   lastSeenAtMs: number | null;
+  // True daemon heartbeat: memberships.last_seen_at, updated on EVERY non-dedup
+  // push (metrics OR usage). This is LIVENESS ("is the daemon talking?"), not
+  // sync health — a push can land here and still drop blocks. Health lives in
+  // the server ingest log. Drives the DAEMON badge so it stops reading
+  // "stalled" for a member who syncs metrics but sends no usage snapshot.
+  daemonLastSeenAtMs: number | null;
   trail: number[];
   // Number of distinct local days in the last 30 where the daemon observed
   // utilization at or above 100% — i.e., this member ran into the wall.
@@ -352,8 +363,10 @@ export async function loadMemberPlanSummary(
   pool: pg.Pool,
 ): Promise<MemberPlanSummary> {
   const [tierRes, statsRes, trailRes, wallsRes, settings] = await Promise.all([
-    pool.query<{ plan_tier: string }>(
-      "SELECT plan_tier FROM memberships WHERE id = $1 AND team_id = $2",
+    pool.query<{ plan_tier: string; daemon_last_seen_ms: number | null }>(
+      `SELECT plan_tier,
+              EXTRACT(EPOCH FROM last_seen_at)::float8 * 1000 AS daemon_last_seen_ms
+       FROM memberships WHERE id = $1 AND team_id = $2`,
       [membershipId, teamId],
     ),
     pool.query<{
@@ -428,11 +441,131 @@ export async function loadMemberPlanSummary(
     worstOpusPeak: memberStats.worstOpusPeak,
     totalDaysObserved: memberStats.totalDaysObserved,
     lastSeenAtMs: memberStats.lastSeenAtMs,
+    daemonLastSeenAtMs:
+      tierRes.rows[0]?.daemon_last_seen_ms == null
+        ? null
+        : Number(tierRes.rows[0].daemon_last_seen_ms),
     trail: trailRes.rows.map((r) => Number(r.peak_seven_day_pct ?? 0)),
     wallHits5h: Number(walls.wall_hits_5h ?? 0),
     wallHits7d: Number(walls.wall_hits_7d ?? 0),
     recommendation: recommend(memberStats, tierEntry(planTier), settings),
   };
+}
+
+export type MemberSyncLogRow = {
+  id: number;
+  ingestId: string;
+  cliVersion: string | null;
+  accepted: string[];
+  skipped: Record<string, string>;
+  status: "ok" | "partial";
+  dedup: boolean;
+  histInserted: number;
+  histReceived: number;
+  createdAtMs: number;
+};
+
+// Recent per-push sync events for one member, newest first. Backs the in-UI
+// "View logs" panel so admins can see sync health without container stdout.
+export async function loadMemberSyncLog(
+  teamId: string,
+  membershipId: string,
+  pool: pg.Pool,
+  limit = 100,
+): Promise<MemberSyncLogRow[]> {
+  const res = await pool.query<{
+    id: string;
+    ingest_id: string;
+    cli_version: string | null;
+    accepted: unknown;
+    skipped: unknown;
+    status: string;
+    dedup: boolean;
+    hist_inserted: number;
+    hist_received: number;
+    created_ms: number;
+  }>(
+    `SELECT id, ingest_id, cli_version, accepted, skipped, status, dedup,
+            hist_inserted, hist_received,
+            EXTRACT(EPOCH FROM created_at)::float8 * 1000 AS created_ms
+       FROM member_sync_log
+       WHERE team_id = $1 AND membership_id = $2
+       ORDER BY created_at DESC
+       LIMIT $3`,
+    [teamId, membershipId, limit],
+  );
+  return res.rows.map((r) => ({
+    id: Number(r.id),
+    ingestId: r.ingest_id,
+    cliVersion: r.cli_version,
+    accepted: Array.isArray(r.accepted) ? (r.accepted as string[]) : [],
+    skipped: (r.skipped && typeof r.skipped === "object" ? r.skipped : {}) as Record<string, string>,
+    status: r.status === "partial" ? "partial" : "ok",
+    dedup: r.dedup,
+    histInserted: Number(r.hist_inserted),
+    histReceived: Number(r.hist_received),
+    createdAtMs: Number(r.created_ms),
+  }));
+}
+
+export type MemberDaemonLogRow = { id: number; tsMs: number; level: string; msg: string };
+
+// Keyset-paginated by the bigserial `id` — stable and monotonic (rows insert in
+// ts order), unlike ts which can collide. `before` pages older history; `after`
+// is the live poll's "fetch newer" mode and scans ASC so a burst larger than
+// `limit` fills the gap oldest-first without skipping — the caller advances to
+// the newest returned id and the next poll picks up the rest.
+export async function loadMemberDaemonLogPage(
+  teamId: string,
+  membershipId: string,
+  pool: pg.Pool,
+  opts: { before?: number; after?: number; limit?: number } = {},
+): Promise<{ rows: MemberDaemonLogRow[]; nextCursor: number | null }> {
+  const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const before = opts.before != null && Number.isFinite(opts.before) ? opts.before : undefined;
+  const after =
+    before == null && opts.after != null && Number.isFinite(opts.after) ? opts.after : undefined;
+
+  if (after != null) {
+    const res = await pool.query<{ id: string; ts_ms: number; level: string; msg: string }>(
+      `SELECT id, EXTRACT(EPOCH FROM ts)::float8 * 1000 AS ts_ms, level, msg
+         FROM member_daemon_log
+         WHERE team_id = $1 AND membership_id = $2 AND id > $3
+         ORDER BY id ASC
+         LIMIT $4`,
+      [teamId, membershipId, after, limit],
+    );
+    const rows = res.rows
+      .map((r) => ({ id: Number(r.id), tsMs: Number(r.ts_ms), level: r.level, msg: r.msg }))
+      .reverse(); // newest-first for display
+    return { rows, nextCursor: null };
+  }
+
+  const params: unknown[] = [teamId, membershipId];
+  let cursorClause = "";
+  if (before != null) {
+    params.push(before);
+    cursorClause = `AND id < $${params.length}`;
+  }
+  // Over-fetch by one to detect whether another page exists without a count.
+  params.push(limit + 1);
+  const res = await pool.query<{ id: string; ts_ms: number; level: string; msg: string }>(
+    `SELECT id, EXTRACT(EPOCH FROM ts)::float8 * 1000 AS ts_ms, level, msg
+       FROM member_daemon_log
+       WHERE team_id = $1 AND membership_id = $2 ${cursorClause}
+       ORDER BY id DESC
+       LIMIT $${params.length}`,
+    params,
+  );
+  const all = res.rows.map((r) => ({
+    id: Number(r.id),
+    tsMs: Number(r.ts_ms),
+    level: r.level,
+    msg: r.msg,
+  }));
+  const hasMore = all.length > limit;
+  const rows = hasMore ? all.slice(0, limit) : all;
+  return { rows, nextCursor: hasMore ? rows[rows.length - 1].id : null };
 }
 
 export async function loadOptimizerSettings(

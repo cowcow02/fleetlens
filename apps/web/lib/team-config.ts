@@ -15,8 +15,6 @@ export type TeamConfig = {
   pairedAt: string;
   lastSyncedDay?: string;
   lastSyncedUsageSnapshotAt?: string;
-  enrichmentOptIn?: boolean;
-  privateProjects?: string[];
 };
 
 const CONFIG_FILE = "team.json";
