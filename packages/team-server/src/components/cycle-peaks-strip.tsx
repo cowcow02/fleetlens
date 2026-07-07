@@ -35,8 +35,7 @@ export function CyclePeaksStrip({
   const visible = filtered.slice(-maxBars);
 
   // Only real cycles get columns — no reserved space for cycles that never
-  // existed. Bar width is capped (so 3 bars don't balloon) and the block
-  // right-aligns; a long history compresses via 1fr to fill the row.
+  // existed. Bars always stretch to fill the full row width.
   return (
     <div
       style={{
@@ -45,8 +44,6 @@ export function CyclePeaksStrip({
         gap: 4,
         alignItems: "end",
         minWidth: 0,
-        maxWidth: visible.length * 84,
-        marginLeft: "auto",
       }}
     >
       {visible.map((c, i) => (
