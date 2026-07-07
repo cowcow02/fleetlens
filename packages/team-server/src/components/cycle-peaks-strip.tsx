@@ -34,25 +34,23 @@ export function CyclePeaksStrip({
 
   const visible = filtered.slice(-maxBars);
 
-  // Grid stays maxBars wide so bar width is consistent across members, but a
-  // short history renders ONLY its real bars, right-aligned via column offset —
-  // no grey placeholder tiles for cycles that never existed.
-  const offset = Math.max(0, maxBars - visible.length);
-
+  // Only real cycles get columns — no reserved space for cycles that never
+  // existed. Bar width is capped (so 3 bars don't balloon) and the block
+  // right-aligns; a long history compresses via 1fr to fill the row.
   return (
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: `repeat(${maxBars}, minmax(0, 1fr))`,
+        gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))`,
         gap: 4,
         alignItems: "end",
         minWidth: 0,
+        maxWidth: visible.length * 84,
+        marginLeft: "auto",
       }}
     >
       {visible.map((c, i) => (
-        <div key={i} style={i === 0 ? { gridColumnStart: offset + 1 } : undefined}>
-          <CycleBar cycle={c} />
-        </div>
+        <CycleBar key={i} cycle={c} />
       ))}
     </div>
   );
