@@ -32,7 +32,8 @@ import {
   type CommandResult,
 } from "@claude-lens/parser/fs";
 import type { Entry } from "@claude-lens/entries";
-import { listEntriesForDay } from "@claude-lens/entries/fs";
+import { listEntriesForDay, readEntry, writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
+import { buildEntriesForFile } from "../perception/build-entries.js";
 import { latestClaudeCodeSnapshot } from "../usage/storage.js";
 import type { TeamConfig } from "./config.js";
 
@@ -332,6 +333,44 @@ export function buildEnrichedExtras(entries: Entry[]): EnrichedDailyExtras {
   return { outcomeMix, helpfulnessMix, goalMix };
 }
 
+// Session ids we've already attempted an on-the-spot entry build for in THIS
+// process — success OR failure. A pair backfill walks ~51 days sequentially
+// and a session spanning two days appears in both days' `daySessions`; without
+// this a cross-midnight session would be re-parsed once per touched day. The
+// builder emits one Entry per touched day from a single parse, so one attempt
+// per session covers every day it lands on.
+const ensuredSessions = new Set<string>();
+
+// On a freshly-paired machine no perception entries exist yet, so a weeks-long
+// backfill would push base `dailyRollup` blocks only — no `richRollup`, no
+// `enrichedExtras` — leaving the member's server-side maturity card incoherent
+// (0 projects / 0 skills against dozens of sessions). Build the day's entries
+// DETERMINISTICALLY on the spot (no LLM — the daemon's perception sweep
+// enriches later) so rich blocks ride along for every backfilled day.
+//
+// Reuses the sweep's exact claude-code reconstruction (build-entries.ts) so
+// keys match and `writeEntryPreservingEnrichment` means a later sweep updates
+// rather than duplicates. Non-claude sessions are skipped (the sweep processes
+// them through a different, id-keyed path). A missing/unparseable transcript
+// (test fixtures, a deleted checkout) is caught and the day degrades to
+// base-only — never throws.
+function ensureEntriesForDay(day: string, daySessions: SessionMeta[]): void {
+  for (const s of daySessions) {
+    if (ensuredSessions.has(s.id)) continue;
+    if ((s.agent ?? "claude-code") !== "claude-code") continue;
+    // Already cached for this session-day (real sweep, or an earlier day of
+    // this same run) — leave it; only pay the parse when it's genuinely absent.
+    if (readEntry(s.id, day)) continue;
+    ensuredSessions.add(s.id);
+    try {
+      for (const e of buildEntriesForFile(s.filePath)) writeEntryPreservingEnrichment(e);
+    } catch {
+      // Missing / unparseable transcript — push base-only for this session's
+      // days. Marked ensured above so we don't re-attempt on later days.
+    }
+  }
+}
+
 // Convenience: produce both V2 blocks for a single day. Returns undefined
 // when there are no Entries cached for the day (the day was active but the
 // perception sweep hasn't built Entries yet — push V1 only). LLM-enriched
@@ -341,6 +380,7 @@ export function buildRichBlocksForDay(
   daySessions: SessionMeta[],
   resolveRepo?: (dir: string) => string | null,
 ): { rich: Omit<RichDailyRollup, keyof DailyRollup>; enriched: EnrichedDailyExtras } | undefined {
+  ensureEntriesForDay(day, daySessions);
   const entries = listEntriesForDay(day);
   if (entries.length === 0) return undefined;
   const rich = buildRichRollupBlocks(day, daySessions, entries, resolveRepo);

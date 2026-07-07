@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { SessionMeta } from "@claude-lens/parser";
+import { __setEntriesDirForTest } from "@claude-lens/entries/fs";
 import type { TeamConfig } from "../../src/team/config.js";
 import type { LastPushRecord } from "../../src/team/last-push.js";
 
@@ -98,6 +99,10 @@ describe("runTeamSync", () => {
     cclensDir = mkdtempSync(join(tmpdir(), "cclens-sync-"));
     prevCclensHome = process.env.CCLENS_HOME;
     process.env.CCLENS_HOME = cclensDir;
+    // Pin the entries cache per-test — entriesDir() caches on first access, so
+    // without this the first test to touch it would lock every later test onto
+    // an already-removed temp dir. Also isolates the on-the-spot entry builds.
+    __setEntriesDirForTest(join(cclensDir, "entries"));
 
     vi.stubGlobal("fetch", vi.fn());
     const { runTeamBackfill } = await import("../../src/team/backfill.js");
@@ -767,5 +772,69 @@ describe("runTeamSync", () => {
     expect(writeTeamConfig).toHaveBeenCalledWith(
       expect.objectContaining({ lastSyncedUsageSnapshotAt: "2026-04-20T02:00:00.000Z" }),
     );
+  });
+
+  it("builds entries on the spot so a day with sessions but no cached entries still pushes richRollup", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
+
+    // A real, parseable claude-code transcript on disk — the fresh-pair case:
+    // sessions exist but the perception sweep hasn't built any entries yet.
+    const day = "2026-04-14";
+    const sessionId = "ensure-entries-fixture-session";
+    const filePath = join(cclensDir, `${sessionId}.jsonl`);
+    writeFileSync(
+      filePath,
+      [
+        JSON.stringify({
+          type: "user",
+          timestamp: `${day}T10:00:00.000Z`,
+          cwd: "/Users/test/repo/foo",
+          message: { role: "user", content: [{ type: "text", text: "hi" }] },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          timestamp: `${day}T10:00:30.000Z`,
+          cwd: "/Users/test/repo/foo",
+          message: {
+            role: "assistant",
+            model: "claude-sonnet-4-6",
+            content: [{ type: "text", text: "hello" }],
+          },
+        }),
+      ].join("\n"),
+    );
+
+    const startMs = Date.parse(`${day}T10:00:00.000Z`);
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([
+      makeSession(day, { id: sessionId, filePath, projectName: "/Users/test/repo/foo",
+        projectDir: "-Users-test-repo-foo", activeSegments: [{ startMs, endMs: startMs + 60_000 }] }),
+    ]);
+
+    const { dequeuePayloads } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([]);
+
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ received: true }),
+    } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync();
+
+    expect(result.pushed).toBeGreaterThanOrEqual(1);
+
+    // The push carrying this day's rollup must include a richRollup block —
+    // the whole point: rich blocks ride along even when no entry was cached.
+    const dayPush = vi.mocked(fetch).mock.calls
+      .map((c) => JSON.parse(String((c[1] as RequestInit).body)))
+      .find((b) => b.dailyRollup?.day === day);
+    expect(dayPush).toBeDefined();
+    expect(dayPush.richRollup).toBeDefined();
+    expect(dayPush.richRollup.day).toBe(day);
+    expect(dayPush.richRollup.projects.length).toBeGreaterThanOrEqual(1);
+    expect(dayPush.enrichedExtras).toBeDefined();
   });
 });
