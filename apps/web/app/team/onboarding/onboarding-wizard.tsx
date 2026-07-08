@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProjectSyncPicker } from "@/components/project-sync-picker";
 import type { SyncProjectRow } from "@/lib/sync-projects-data";
 import type { SyncProjects } from "@/lib/team-config";
@@ -18,14 +18,26 @@ type SyncProgressEvent =
   // practice, but the route emits it rather than dropping the line silently).
   | { type: "log"; line: string };
 
-type LogRow = { key: number; text: string; tone?: "info" | "warn" | "error" };
+type LogRow = { key: number; text: string; tone?: "warn" | "error" | "dim" };
+
+function selectedProjectNames(projects: SyncProjectRow[], selection: SyncProjects): string[] {
+  return projects
+    .filter((p) => {
+      if (selection.excluded.includes(p.name)) return false;
+      if (selection.included.includes(p.name)) return true;
+      return selection.autoIncludeNew;
+    })
+    .map((p) => p.name);
+}
 
 function selectionCount(projects: SyncProjectRow[], selection: SyncProjects): number {
-  return projects.filter((p) => {
-    if (selection.excluded.includes(p.name)) return false;
-    if (selection.included.includes(p.name)) return true;
-    return selection.autoIncludeNew;
-  }).length;
+  return selectedProjectNames(projects, selection).length;
+}
+
+// Client-side clock, not server time — matches "generated when the event
+// arrives" rather than any timestamp the CLI might embed in the payload.
+function logTimestamp(): string {
+  return new Date().toTimeString().slice(0, 8);
 }
 
 export function OnboardingWizard({
@@ -58,7 +70,8 @@ export function OnboardingWizard({
     setRows([]);
     setPushed(null);
     let seq = 0;
-    const log = (text: string, tone?: LogRow["tone"]) => setRows((r) => [...r, { key: seq++, text, tone }]);
+    const log = (text: string, tone?: LogRow["tone"]) =>
+      setRows((r) => [...r, { key: seq++, text: `${logTimestamp()} ${text}`, tone }]);
 
     let res: Response;
     try {
@@ -102,20 +115,32 @@ export function OnboardingWizard({
         }
         if (eventLine?.slice("event: ".length) === "done") {
           const exitCode = (data as { exitCode: number | null }).exitCode;
-          if (exitCode !== 0) setFailure(`fleetlens team sync exited with code ${exitCode ?? "unknown"}`);
+          if (exitCode !== 0) {
+            setFailure(`fleetlens team sync exited with code ${exitCode ?? "unknown"}`);
+            log(`done — exit ${exitCode ?? "unknown"}`, "error");
+          }
           continue;
         }
         const ev = data as SyncProgressEvent;
         switch (ev.type) {
           case "phase":
-            log(ev.phase === "usage-backfill" ? "Uploading usage history…" : `Pushing ${ev.totalDays ?? "?"} days of activity…`);
+            log(ev.phase === "usage-backfill" ? "checking plan-usage history…" : `pushing ${ev.totalDays ?? "?"} day(s), newest first…`);
             break;
           case "usage":
-            log(`✓ Usage history: ${ev.inserted} new snapshots (${ev.alreadyKnown} already on server)`);
+            log(
+              ev.inserted === 0 && ev.alreadyKnown === 0
+                ? "no plan-usage snapshots yet — the daemon starts collecting them automatically"
+                : `usage: +${ev.inserted} snapshot(s) (${ev.alreadyKnown} already on server)`,
+            );
             break;
           case "day": {
-            const suffix = ev.outcome === "pushed" ? "✓" : ev.outcome === "queued" ? "⚠ queued for retry" : "✗ rejected";
-            log(`${ev.day} ${suffix}`, ev.outcome === "dropped" ? "error" : ev.outcome === "queued" ? "warn" : undefined);
+            const text =
+              ev.outcome === "pushed"
+                ? `✓ ${ev.day} pushed (${ev.index}/${ev.total})`
+                : ev.outcome === "queued"
+                  ? `⚠ ${ev.day} queued for retry (${ev.index}/${ev.total})`
+                  : `✗ ${ev.day} rejected by server (${ev.index}/${ev.total})`;
+            log(text, ev.outcome === "dropped" ? "error" : ev.outcome === "queued" ? "warn" : undefined);
             break;
           }
           case "done":
@@ -126,7 +151,7 @@ export function OnboardingWizard({
             setFailure(ev.message);
             break;
           case "log":
-            log(ev.line);
+            log(ev.line, "dim");
             break;
         }
       }
@@ -157,6 +182,10 @@ export function OnboardingWizard({
       )}
       {step === 3 && (
         <Step3
+          projects={projects}
+          selection={selection}
+          teamName={teamName}
+          serverHost={serverHost}
           rows={rows}
           streaming={streaming}
           finished={finished}
@@ -284,6 +313,10 @@ function Step2({
 }
 
 function Step3({
+  projects,
+  selection,
+  teamName,
+  serverHost,
   rows,
   streaming,
   finished,
@@ -293,6 +326,10 @@ function Step3({
   onBack,
   onStart,
 }: {
+  projects: SyncProjectRow[];
+  selection: SyncProjects;
+  teamName: string;
+  serverHost: string;
   rows: LogRow[];
   streaming: boolean;
   finished: boolean;
@@ -303,16 +340,91 @@ function Step3({
   onStart: () => void;
 }) {
   const succeeded = finished && !failure;
+  // Nothing has happened yet (not even a failed attempt) — show the summary,
+  // not the log/outcome panels below.
+  const notStarted = !streaming && !finished && !failure;
+  const logRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [rows]);
+
+  if (notStarted) {
+    const selected = selectedProjectNames(projects, selection);
+    const excludedCount = projects.length - selected.length;
+    const shown = selected.slice(0, 6);
+    const more = selected.length - shown.length;
+    return (
+      <section className="space-y-4">
+        <h1 className="text-xl font-semibold">
+          Syncing {selected.length} of {projects.length} project{projects.length === 1 ? "" : "s"} to &ldquo;{teamName}&rdquo; (
+          {serverHost})
+        </h1>
+
+        {shown.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {shown.map((name) => (
+              <span
+                key={name}
+                className="rounded-full border border-gray-300 px-2 py-0.5 font-mono text-xs text-gray-600 dark:border-gray-700 dark:text-gray-400"
+              >
+                {name}
+              </span>
+            ))}
+            {more > 0 && <span className="self-center text-xs text-gray-500">+{more} more</span>}
+          </div>
+        )}
+
+        <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
+          {excludedCount > 0 && (
+            <p>
+              {excludedCount} project{excludedCount === 1 ? "" : "s"} stay private on this machine.
+            </p>
+          )}
+          <p>
+            {selection.autoIncludeNew ? "New projects will sync automatically." : "New projects stay private until you add them."}
+          </p>
+        </div>
+
+        <ul className="list-inside list-disc space-y-1 text-xs text-gray-500">
+          <li>Aggregate metrics only — never transcripts, prompts, or file contents</li>
+          <li>Pushes run every 5 minutes from now on</li>
+          <li>You can change the selection anytime in Settings → Synced projects</li>
+        </ul>
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onBack}
+            className="rounded border border-gray-300 px-4 py-2 text-sm dark:border-gray-700"
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            onClick={onStart}
+            className="rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+          >
+            Start syncing
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-4">
       <h1 className="text-xl font-semibold">Sync your history</h1>
 
       {rows.length > 0 && (
-        <div className="max-h-72 space-y-1 overflow-y-auto rounded-lg border border-gray-200 p-3 font-mono text-xs dark:border-gray-800">
+        <div
+          ref={logRef}
+          className="max-h-80 space-y-0.5 overflow-y-auto rounded-lg bg-gray-950 p-3 font-mono text-xs text-gray-200"
+        >
           {rows.map((r) => (
             <div
               key={r.key}
-              className={r.tone === "error" ? "text-red-600" : r.tone === "warn" ? "text-amber-600" : "text-gray-600 dark:text-gray-400"}
+              className={r.tone === "error" ? "text-red-400" : r.tone === "warn" ? "text-amber-400" : r.tone === "dim" ? "text-gray-500" : undefined}
             >
               {r.text}
             </div>
@@ -321,18 +433,29 @@ function Step3({
       )}
 
       {succeeded && (
-        <div className="space-y-2 rounded-lg border border-green-300 bg-green-50 p-4 text-sm dark:border-green-800 dark:bg-green-950">
+        <div className="space-y-3 rounded-lg border border-green-300 bg-green-50 p-4 text-sm dark:border-green-800 dark:bg-green-950">
           <p className="font-medium text-green-800 dark:text-green-300">
             All synced — {pushed ?? 0} day{pushed === 1 ? "" : "s"} pushed
           </p>
-          <div className="flex gap-4 text-sm">
-            <a href={teamUrl} target="_blank" rel="noreferrer" className="underline">
-              Open your team dashboard →
+          <div className="flex flex-wrap items-center gap-3">
+            <a
+              href="/team"
+              className="rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+            >
+              View your team sync page
             </a>
-            <a href="/" className="underline">
-              Go to your local dashboard
+            <a
+              href={teamUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="rounded border border-gray-300 px-4 py-2 text-sm dark:border-gray-700"
+            >
+              Open the team dashboard ↗
             </a>
           </div>
+          <a href="/" className="block text-xs text-gray-500 underline">
+            Back to overview
+          </a>
         </div>
       )}
 
