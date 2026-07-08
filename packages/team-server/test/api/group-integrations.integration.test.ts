@@ -148,6 +148,16 @@ describe("PUT /groups/:group/integrations/:id/sources", () => {
     expect(row.rows[0].config.repos.find((r) => r.name === "acme/onlyg1")!.group_ids).toEqual([g1.id]);
   });
 
+  it("404s (not 500) on a non-UUID integration id", async () => {
+    const req = authedReq(
+      `http://localhost/api/team/${teamSlug}/groups/g1/integrations/not-a-uuid/sources`,
+      m1CookieToken,
+      { method: "PUT", body: { sources: [{ key: "acme/app", counts: true }] } },
+    );
+    const res = await sourcesPUT(req, { params: Promise.resolve({ slug: teamSlug, group: "g1", id: "not-a-uuid" }) });
+    expect(res.status).toBe(404);
+  });
+
   it("404s on a group's manager targeting another group's owned integration", async () => {
     const req = authedReq(
       `http://localhost/api/team/${teamSlug}/groups/g1/integrations/${g2IntegrationId}/sources`,

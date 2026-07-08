@@ -61,6 +61,10 @@ CREATE INDEX IF NOT EXISTS "idx_linear_issues_integration" ON "linear_issues" US
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_jira_issues_integration" ON "jira_issues" USING btree ("integration_id");
 --> statement-breakpoint
+-- The three backfills below assume at most one integrations row per (team, provider),
+-- true at migration time (the source table's PK). Re-running after managers have added
+-- more connections would stamp remaining NULL rows with an arbitrary same-provider row;
+-- acceptable for a one-time backfill, bounded by the IS NULL filter.
 UPDATE "github_pull_requests" p SET "integration_id" = i.id FROM "integrations" i WHERE p."integration_id" IS NULL AND i.team_id = p.team_id AND i.provider = 'github';
 --> statement-breakpoint
 UPDATE "linear_issues" l SET "integration_id" = i.id FROM "integrations" i WHERE l."integration_id" IS NULL AND i.team_id = l.team_id AND i.provider = 'linear';

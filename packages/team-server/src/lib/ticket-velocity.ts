@@ -113,6 +113,8 @@ export async function linearVelocity(
       `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
               (i.completed_at >= $3::date) AS in_current_week,
               EXISTS (
+                -- Deliberately team-wide, not group-scoped: a ticket is AI-linked if ANY
+                -- PR references it, even one synced by another group's connection.
                 SELECT 1 FROM github_pull_requests p
                 WHERE p.team_id = i.team_id AND p.ai_assisted
                   AND p.title ~* ('\\m' || i.identifier || '\\M')
@@ -173,6 +175,8 @@ export async function jiraVelocity(
       `SELECT i.created_at::text, i.started_at::text, i.completed_at::text,
               (i.completed_at >= $3::date) AS in_current_week,
               EXISTS (
+                -- Deliberately team-wide, not group-scoped: a ticket is AI-linked if ANY
+                -- PR references it, even one synced by another group's connection.
                 SELECT 1 FROM github_pull_requests p
                 WHERE p.team_id = i.team_id AND p.ai_assisted
                   AND p.title ~* ('\\m' || i.identifier || '\\M')

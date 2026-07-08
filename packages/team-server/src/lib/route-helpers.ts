@@ -5,7 +5,7 @@ import { validateSession, type SessionContext } from "./auth";
 import { loadGroupBySlug } from "./groups";
 import { getIntegrationById, type IntegrationRow } from "./integrations";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function serverBaseUrl(req: NextRequest): string {
   if (process.env.BASE_URL) return process.env.BASE_URL;

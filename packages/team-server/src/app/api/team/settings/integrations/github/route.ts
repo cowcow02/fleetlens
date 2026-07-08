@@ -104,7 +104,9 @@ export async function PUT(req: NextRequest) {
     label = body.label?.trim() || integ.label;
     ownerGroupId = integ.owner_group_id;
     if (!ctx.user.is_staff && ctx.membership.role !== "admin") {
-      repos = preserveGroupMappings(repoList, normalizeGithubRepos(integ.config.repos), (r) => r.name, integ.owner_group_id!);
+      // owner_group_id is non-null here by invariant: requireIntegrationManager only
+      // admits non-admin callers for group-owned integrations.
+            repos = preserveGroupMappings(repoList, normalizeGithubRepos(integ.config.repos), (r) => r.name, integ.owner_group_id!);
     }
   } else {
     const adminErr = requireAdmin(ctx);

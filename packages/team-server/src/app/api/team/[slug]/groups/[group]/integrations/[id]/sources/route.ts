@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireTeamMembership, requireGroupManager } from "../../../../../../../../../lib/route-helpers";
+import { requireTeamMembership, requireGroupManager, UUID_RE } from "../../../../../../../../../lib/route-helpers";
 import {
   applyDesired,
   getIntegrationById,
@@ -27,6 +27,8 @@ export async function PUT(
   const group = await requireGroupManager(ctx, groupSlug);
   if (group instanceof NextResponse) return group;
 
+  // Non-UUID ids would make Postgres throw (500); 404 like any unknown id.
+  if (!UUID_RE.test(id)) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const integ = await getIntegrationById(ctx.membership.team_id, id, ctx.pool);
   if (!integ || (integ.owner_group_id !== null && integ.owner_group_id !== group.id)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
