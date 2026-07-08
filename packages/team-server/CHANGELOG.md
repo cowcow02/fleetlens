@@ -4,6 +4,18 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.15.0] — unreleased
+
+Group-scoped integrations: teams no longer funnel every GitHub/Jira/Linear connection through one admin-owned account. Includes migration `0015` (new `integrations` table + provenance columns) — applied automatically on boot; the legacy `team_integrations` table is kept one release for zero-downtime swaps and dropped next release.
+
+### Added
+- **Multiple integrations per provider.** Connect as many GitHub/Jira/Linear accounts as you need, each with its own credentials, label, and repo/project/team list. Org settings → Integrations lists every connection with an owner badge and per-connection sync/disconnect.
+- **Group managers connect their own integrations.** The group settings modal's new **Integrations** tab (replaces "Data sources") lets a group's manager connect a GitHub/Jira/Linear account owned by that group — no org-admin account sharing required. Group-owned connections default their sources to count toward that group only; managers still toggle which sources (from org-level connections too) count toward their group's insight report, and never see credentials or other groups' state.
+- Insight reports union mapped sources across all of a provider's connections; shared repos/projects dedupe by name so nothing double-counts.
+
+### Changed
+- Disconnecting an integration now removes only the data it synced (per-connection provenance); sources also tracked by another connection are repopulated on its next hourly sync.
+
 ## [0.14.0] — 2026-07-08
 
 Sync observability + report accuracy. Pairs best with CLI 0.14.0 (rich `[sync]` lines and complete pair backfills come from the member side). Includes migration `0014` (index on the member daemon-log page query) — applied automatically on boot.
