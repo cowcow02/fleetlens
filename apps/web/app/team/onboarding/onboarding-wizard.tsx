@@ -438,9 +438,11 @@ function Step3({
             All synced — {pushed ?? 0} day{pushed === 1 ? "" : "s"} pushed
           </p>
           <div className="flex flex-wrap items-center gap-3">
+            {/* globals.css's un-layered `a { color: inherit }` beats layered
+                utilities — button-styled anchors need the ! variants. */}
             <a
               href="/team"
-              className="rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+              className="rounded bg-black px-4 py-2 text-sm font-medium text-white! dark:bg-white dark:text-black!"
             >
               View your team sync page
             </a>
@@ -453,7 +455,7 @@ function Step3({
               Open the team dashboard ↗
             </a>
           </div>
-          <a href="/" className="block text-xs text-gray-500 underline">
+          <a href="/" className="block text-xs text-gray-500! underline">
             Back to overview
           </a>
         </div>
