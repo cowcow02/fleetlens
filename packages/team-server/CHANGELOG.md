@@ -4,7 +4,7 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
-## [0.15.0] — unreleased
+## [0.15.0] — 2026-07-08
 
 Group-scoped integrations: teams no longer funnel every GitHub/Jira/Linear connection through one admin-owned account. Includes migration `0015` (new `integrations` table + provenance columns) — applied automatically on boot; the legacy `team_integrations` table is kept one release for zero-downtime swaps and dropped next release.
 
