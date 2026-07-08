@@ -24,6 +24,8 @@ export async function POST(req: NextRequest) {
     }
     const integ = await requireIntegrationManager(ctx, body.id);
     if (integ instanceof NextResponse) return integ;
+    // Provider pin: never decrypt another provider's secret and send it to Linear.
+    if (integ.provider !== "linear") return NextResponse.json({ error: "Not a Linear integration" }, { status: 400 });
     apiKey = await storedLinearKey(integ.id, ctx.pool);
     if (!apiKey) return NextResponse.json({ error: "API key required — no stored credentials yet" }, { status: 400 });
   }

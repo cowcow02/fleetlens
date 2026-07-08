@@ -453,9 +453,20 @@ export async function saveJiraIntegration(
 ): Promise<{ id: string; login: string }> {
   const key = encryptionKey();
   const stored = opts.id ? await storedJiraConnection(opts.id, pool) : null;
-  const effSite = opts.site ? normalizeSite(opts.site) : stored?.site;
-  const effEmail = opts.email ?? stored?.email;
+  let effSite = opts.site ? normalizeSite(opts.site) : stored?.site;
+  let effEmail = opts.email ?? stored?.email;
   const effToken = opts.token ?? (opts.id ? await storedCredential(opts.id, pool) : null);
+  if (!opts.token && stored) {
+    // Re-targeting site/email re-aims where the stored secret gets sent
+    // (validateJiraCredentials below) — a caller who can't read the token
+    // must not be able to point it at a host they control. Changing the
+    // target requires pasting a fresh token for it.
+    if ((effSite && effSite !== stored.site) || (effEmail && effEmail !== stored.email)) {
+      throw new Error("Provide a new API token when changing the Jira site or email");
+    }
+    effSite = stored.site;
+    effEmail = stored.email;
+  }
   if (!effSite || !effEmail) throw new Error("Jira site and email are required");
   if (!effToken) throw new Error("Jira API token required — no stored credentials to reuse");
   const viewer = await validateJiraCredentials(effSite, effEmail, effToken);

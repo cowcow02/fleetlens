@@ -226,7 +226,7 @@ function GroupIntegrationSection({
       return;
     }
     setConfirmDisconnect(false);
-    setMessage("Disconnected. Already-synced data is kept but stops updating.");
+    setMessage("Disconnected. Data synced by this connection was removed from reports.");
     await onRefresh();
   }
 
@@ -236,7 +236,7 @@ function GroupIntegrationSection({
   return (
     <div style={{ border: "1px solid var(--rule)", padding: 16, marginBottom: 14 }}>
       <div className="provider-head" style={{ marginBottom: 8 }}>
-        {providerLabel(integration.provider)} · {integration.label}
+        {providerLabel(integration.provider)}{integration.label !== providerLabel(integration.provider) && <> · {integration.label}</>}
         {integration.owned && <span className="badge-tag" style={{ marginLeft: 8 }}>owned</span>}
       </div>
 
@@ -304,7 +304,7 @@ function GroupIntegrationSection({
       <ConfirmModal
         open={confirmDisconnect}
         title={`Disconnect ${integration.label}?`}
-        body="Stored credentials are deleted and hourly syncing stops. Already-synced data stays in report history. You can reconnect any time."
+        body="Stored credentials are deleted and data synced by this connection is removed from reports (sources also tracked by another connection are kept). You can reconnect any time."
         confirmLabel="Disconnect"
         danger
         busy={busy}

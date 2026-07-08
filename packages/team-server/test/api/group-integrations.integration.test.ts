@@ -8,6 +8,7 @@ import { createInvite, redeemInvite } from "../../src/lib/members.js";
 import { createGroup, addGroupMember, setGroupMemberManager, type GroupRow } from "../../src/lib/groups.js";
 import { GET as integrationsGET, POST as integrationsPOST } from "../../src/app/api/team/[slug]/groups/[group]/integrations/route.js";
 import { PUT as sourcesPUT } from "../../src/app/api/team/[slug]/groups/[group]/integrations/[id]/sources/route.js";
+import { POST as githubReposPOST } from "../../src/app/api/team/settings/integrations/github/repos/route.js";
 
 let pool: ReturnType<typeof getPool>;
 let teamSlug: string;
@@ -189,5 +190,28 @@ describe("POST /groups/:group/integrations", () => {
     );
     const res = await integrationsPOST(req, { params: Promise.resolve({ slug: teamSlug, group: "g1" }) });
     expect(res.status).toBe(501);
+  });
+});
+
+describe("stored-credential picker provider pin", () => {
+  it("refuses to send a non-GitHub integration's stored credential to GitHub", async () => {
+    process.env.FLEETLENS_ENCRYPTION_KEY = "a".repeat(64);
+    try {
+      const jiraRes = await pool.query<{ id: string }>(
+        `INSERT INTO integrations (team_id, provider, label, credentials_enc, config, status)
+         VALUES ($1, 'jira', 'Pin Test Jira', 'enc', '{"site":"https://x.atlassian.net","email":"a@b.c"}', 'active') RETURNING id`,
+        [teamId],
+      );
+      const req = authedReq(
+        `http://localhost/api/team/settings/integrations/github/repos?team=${teamSlug}`,
+        adminCookieToken,
+        { method: "POST", body: { id: jiraRes.rows[0].id } },
+      );
+      const res = await githubReposPOST(req);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/Not a GitHub integration/);
+    } finally {
+      delete process.env.FLEETLENS_ENCRYPTION_KEY;
+    }
   });
 });

@@ -341,7 +341,7 @@ function LinearConnectionCard({
       return;
     }
     setConfirmDisconnect(false);
-    setMessage("Disconnected. Already-synced issues are kept but stop updating.");
+    setMessage("Disconnected. Issues synced by this connection were removed from reports.");
     setApiKey("");
     setTeamOptions(null);
     await onRefresh();
@@ -517,7 +517,7 @@ function LinearConnectionCard({
       <ConfirmModal
         open={confirmDisconnect}
         title={`Disconnect ${connection.label || "Linear"}?`}
-        body="The stored API key is deleted and hourly syncing stops. Already-synced issues stay in the report history. You can reconnect any time."
+        body="The stored API key is deleted and issues synced by this connection are removed from reports (teams also tracked by another connection are kept). You can reconnect any time."
         confirmLabel="Disconnect"
         danger
         busy={busy}

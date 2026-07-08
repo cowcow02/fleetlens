@@ -368,7 +368,7 @@ function JiraConnectionCard({
       return;
     }
     setConfirmDisconnect(false);
-    setMessage("Disconnected. Already-synced issues are kept but stop updating.");
+    setMessage("Disconnected. Issues synced by this connection were removed from reports.");
     setApiToken("");
     setProjectOptions(null);
     await onRefresh();
@@ -546,7 +546,7 @@ function JiraConnectionCard({
       <ConfirmModal
         open={confirmDisconnect}
         title={`Disconnect ${connection.label || "Jira"}?`}
-        body="The stored API token is deleted and hourly syncing stops. Already-synced issues stay in the report history. You can reconnect any time."
+        body="The stored API token is deleted and issues synced by this connection are removed from reports (projects also tracked by another connection are kept). You can reconnect any time."
         confirmLabel="Disconnect"
         danger
         busy={busy}

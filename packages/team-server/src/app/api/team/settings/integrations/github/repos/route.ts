@@ -25,6 +25,8 @@ export async function POST(req: NextRequest) {
     }
     const integ = await requireIntegrationManager(ctx, body.id);
     if (integ instanceof NextResponse) return integ;
+    // Provider pin: never decrypt another provider's secret and send it to GitHub.
+    if (integ.provider !== "github") return NextResponse.json({ error: "Not a GitHub integration" }, { status: 400 });
     token = await storedGithubToken(integ.id, ctx.pool);
     if (!token) return NextResponse.json({ error: "token required — no stored credentials yet" }, { status: 400 });
   }

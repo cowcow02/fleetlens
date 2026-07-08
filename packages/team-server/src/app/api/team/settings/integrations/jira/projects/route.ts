@@ -27,11 +27,14 @@ export async function POST(req: NextRequest) {
     }
     const integ = await requireIntegrationManager(ctx, body.id);
     if (integ instanceof NextResponse) return integ;
+    // Provider pin + full stored connection only: mixing a caller-supplied
+    // site with the stored token would send the secret to an arbitrary host.
+    if (integ.provider !== "jira") return NextResponse.json({ error: "Not a Jira integration" }, { status: 400 });
     const stored = await storedJiraConnection(integ.id, ctx.pool);
     const storedToken = await storedJiraToken(integ.id, ctx.pool);
-    site = site ?? stored?.site ?? null;
-    email = email ?? stored?.email ?? null;
-    token = token ?? storedToken;
+    site = stored?.site ?? null;
+    email = stored?.email ?? null;
+    token = storedToken;
     if (!site || !email || !token) {
       return NextResponse.json({ error: "site, email and API token required — no stored credentials yet" }, { status: 400 });
     }

@@ -377,7 +377,7 @@ function GithubConnectionCard({
       return;
     }
     setConfirmDisconnect(false);
-    setMessage("Disconnected. Already-synced PRs are kept but stop updating.");
+    setMessage("Disconnected. PRs synced by this connection were removed from reports.");
     setToken("");
     setRepoOptions(null);
     await onRefresh();
@@ -579,7 +579,7 @@ function GithubConnectionCard({
       <ConfirmModal
         open={confirmDisconnect}
         title={`Disconnect ${connection.label || "GitHub"}?`}
-        body="The stored token is deleted and hourly syncing stops. Already-synced PRs stay in the report history. You can reconnect any time."
+        body="The stored token is deleted and PRs synced by this connection are removed from reports (repos also tracked by another connection are kept). You can reconnect any time."
         confirmLabel="Disconnect"
         danger
         busy={busy}

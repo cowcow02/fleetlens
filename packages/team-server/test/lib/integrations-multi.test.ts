@@ -4,7 +4,8 @@ import { getPool } from "../../src/db/pool.js";
 import { createUserAccount } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
 import { createGroup, deleteGroup } from "../../src/lib/groups.js";
-import { listIntegrations, getIntegrationById, deleteIntegration, preserveGroupMappings } from "../../src/lib/integrations.js";
+import { listIntegrations, getIntegrationById, deleteIntegration, preserveGroupMappings, saveJiraIntegration } from "../../src/lib/integrations.js";
+import { encryptAesGcm } from "../../src/lib/crypto.js";
 import { scopedSourceNames } from "../../src/lib/team-report-aggregate.js";
 
 let pool: ReturnType<typeof getPool>;
@@ -141,6 +142,33 @@ describe("preserveGroupMappings", () => {
       entry("acme/web", []),
       entry("acme/new", ["gA"]),
     ]);
+  });
+});
+
+describe("saveJiraIntegration credential re-targeting guard", () => {
+  it("rejects a site change that would reuse the stored token", async () => {
+    process.env.FLEETLENS_ENCRYPTION_KEY = "b".repeat(64);
+    try {
+      const enc = encryptAesGcm("jira_secret", process.env.FLEETLENS_ENCRYPTION_KEY);
+      const res = await pool.query<{ id: string }>(
+        `INSERT INTO integrations (team_id, provider, label, credentials_enc, config, status)
+         VALUES ($1, 'jira', 'Retarget Jira', $2, '{"site":"https://acme.atlassian.net","email":"mia@acme.dev","projects":[]}', 'active') RETURNING id`,
+        [teamId, enc],
+      );
+      await expect(
+        saveJiraIntegration(
+          {
+            teamId, id: res.rows[0].id, label: "Retarget Jira", ownerGroupId: null,
+            createdBy: "00000000-0000-0000-0000-000000000000",
+            site: "https://evil.example", email: null, token: null,
+            projects: [{ key: "PLAT", group_ids: [] }],
+          },
+          pool,
+        ),
+      ).rejects.toThrow(/new API token when changing the Jira site/);
+    } finally {
+      delete process.env.FLEETLENS_ENCRYPTION_KEY;
+    }
   });
 });
 
