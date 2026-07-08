@@ -4,6 +4,7 @@ import {
   buildIngestPayload,
   buildRichBlocksForDay,
   buildRollupsForRange,
+  filterSyncedSessions,
   pushToTeamServer,
   readLatestUsageSnapshotForWire,
   resetEnsuredSessions,
@@ -46,6 +47,7 @@ export type SyncOutcome = {
   usageBackfill?: BackfillOutcome;
   failedDay?: string;
   error?: string;
+  setupPending?: boolean;
 };
 
 export type TeamSyncOptions = {
@@ -187,6 +189,25 @@ export async function runTeamSync(
 ): Promise<SyncOutcome> {
   const config = configOverride === undefined ? readTeamConfig() : configOverride;
   if (!config) return { paired: false, pushed: 0, queued: 0, queuedDrained: 0 };
+
+  // Wizard gate: the join wrote config but the member hasn't confirmed the
+  // project selection yet. Nothing may leave the machine until they do.
+  if (config.setupPending) {
+    log(
+      "info",
+      buildSyncLine(
+        "idle",
+        options.trigger ?? "auto",
+        {
+          pushedDays: [], droppedDays: [], queued: 0, queuedDrained: 0, usageSnapshots: 0,
+          idleReason: "setup pending — finish onboarding in the dashboard (/team/onboarding)",
+        },
+        0,
+        options.nextSyncMs,
+      ),
+    );
+    return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, setupPending: true };
+  }
 
   // One-per-run [sync] summary line. Fields accumulate through the run; a
   // single `finish(status)` at each exit (including the catch) builds and
@@ -334,7 +355,7 @@ export async function runTeamSync(
       persistConfig({ lastSyncedUsageSnapshotAt: usageBackfill.lastSnapshotAt });
     }
 
-    const sessions = await listSessions({ limit: 10_000 });
+    const sessions = filterSyncedSessions(await listSessions({ limit: 10_000 }), config.syncProjects);
     // All day rollups, unfiltered — `rollups` is the new-days slice pushed by
     // the main loop; the full set is also indexed for the dropped-day retry,
     // whose target predates lastSyncedDay.

@@ -17,6 +17,7 @@ import {
 } from "@claude-lens/parser";
 import {
   RICH_ROLLUP_SCHEMA_VERSION,
+  shouldSyncProject,
   type DailyRollup,
   type RichDailyRollup,
   type EnrichedDailyExtras,
@@ -30,6 +31,7 @@ import {
   type IngestResponse,
   type ServerCommand,
   type CommandResult,
+  type SyncProjects,
 } from "@claude-lens/parser/fs";
 import type { Entry } from "@claude-lens/entries";
 import { listEntriesForDay, entryExists, writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
@@ -146,6 +148,18 @@ function clipSegmentsToDay(
     if (e > s) out.push({ startMs: s, endMs: e });
   }
   return out;
+}
+
+// Session-level choke point for the member's project selection. Applied ONCE
+// where sessions enter payload building so excluded projects vanish from the
+// daily totals too — a per-project-rows-only filter would leak the excluded
+// share as (total − sum of rows).
+export function filterSyncedSessions(
+  sessions: SessionMeta[],
+  syncProjects?: SyncProjects,
+): SessionMeta[] {
+  if (!syncProjects) return sessions;
+  return sessions.filter((s) => shouldSyncProject(projectRepoName(s.projectName), syncProjects));
 }
 
 export function sessionTouchesDay(s: SessionMeta, day: string): boolean {

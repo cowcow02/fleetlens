@@ -38,6 +38,10 @@ export async function team(args: string[]) {
         console.error("Not paired. Run 'fleetlens team join <url> <device-token>' first.");
         process.exit(1);
       }
+      if (outcome.setupPending) {
+        console.error("Setup pending — nothing synced. Finish onboarding in the dashboard (/team/onboarding) or re-run 'fleetlens team join'.");
+        process.exit(1);
+      }
       // Top-level error always fails; backfill-only error fails only when nothing
       // else made progress, so a transient history hiccup doesn't mask a successful
       // daily-activity push for scripted callers.
