@@ -26,7 +26,8 @@ export async function listSyncProjectRows(): Promise<SyncProjectRow[]> {
       lastActiveMs: p.lastActiveMs ?? null,
       worktreeCount: p.worktreeCount,
     }))
-    // Busiest first: the projects a user actually needs to decide about sit
-    // at the top of the picker; one-off scratch sessions sink to the bottom.
-    .sort((a, b) => b.sessions - a.sessions);
+    // Most agent time first: the projects a user actually needs to decide
+    // about sit at the top of the picker. Agent time beats session count as
+    // the signal — many tiny sessions ≠ real work.
+    .sort((a, b) => b.agentTimeMs - a.agentTimeMs);
 }
