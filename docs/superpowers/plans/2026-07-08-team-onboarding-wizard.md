@@ -808,8 +808,9 @@ export default async function TeamOnboardingPage() {
 ### Task 10: End-to-end verification (orchestrator-run — not for implementation subagents)
 
 - [ ] Full build in the worktree: `rm -rf apps/web/.next packages/cli/app && NEXT_OUTPUT=standalone pnpm -F @claude-lens/web build && node scripts/prepare-cli.mjs && pnpm -F fleetlens build`, plus `pnpm test && pnpm typecheck`.
-- [ ] Local team-server up (dev DB) + fresh account via the signup API → device token.
-- [ ] Isolated CLI home: `CCLENS_HOME=/tmp/cclens-onboard-e2e CCLENS_PORT=3399 node packages/cli/dist/index.js team join <url> <token>` → assert: browser opens `/team/onboarding`, terminal prints the URL, `team.json` has `setupPending: true`, and `team sync` refuses with the setup-pending hint.
+- [ ] **Isolated ports — another feature's QA runs concurrently on this machine; never use the defaults (3321 personal / 3000 team-server / 5432 shared dev DB).** This feature's QA slice: personal dashboard `CCLENS_PORT=3399`, team-server `PORT=4399` (+ `BASE_URL=http://localhost:4399`), isolated Postgres database `fleetlens_onboard_e2e` (own container on host port 5499 if dockerized).
+- [ ] Local team-server up on port 4399 (isolated DB) + fresh account via the signup API → device token.
+- [ ] Isolated CLI home: `CCLENS_HOME=/tmp/cclens-onboard-e2e CCLENS_PORT=3399 node packages/cli/dist/index.js team join http://localhost:4399 <token>` → assert: browser opens `localhost:3399/team/onboarding`, terminal prints the URL, `team.json` has `setupPending: true`, and `team sync` refuses with the setup-pending hint.
 - [ ] Drive the wizard in a real browser: step 1 copy renders; step 2 exclude one project; step 3 streams per-day progress and lands on the summary.
 - [ ] Server-side assertion: `rich_daily_rollups.projects` jsonb for the new member contains only selected projects; excluded name appears nowhere.
 - [ ] Settings: flip the excluded project back on, `fleetlens team sync`, assert it now appears server-side.
