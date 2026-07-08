@@ -4,7 +4,9 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.15.0] — 2026-07-08
+
+Team onboarding, rebuilt around a browser wizard — pairing now explains what leaves the machine, lets you pick which projects sync, and streams first-sync progress live. The Team page becomes the single home for sync management, and paired machines keep reporting across reboots. Safe upgrade from 0.14.x; pairs best with team-server 0.15.0.
 
 ### Added
 - `fleetlens team join` now opens a browser onboarding wizard: explains exactly what data leaves the machine, lets you choose which projects sync to the team, and streams first-sync progress as a timestamped log. `--no-browser` keeps the old terminal-only behavior.
@@ -12,9 +14,11 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 - Settings gains a **Daemon auto-start** toggle showing the real LaunchAgent state — on after team pairing, with a durable opt-out.
 - `fleetlens team sync --progress-json` — machine-readable NDJSON progress events.
 - `team join` captures a first plan-usage snapshot before opening the wizard, so the first sync ships usage data even when the daemon's first poll loses a 429 race.
+- The synced-projects editor defaults to a read-only summary — "Syncing N of M projects" with chips linking to each project's dashboard page — and the full picker sits behind an Edit button. The server URL on the Team page opens the team dashboard in a new tab.
 
 ### Changed
 - Team sync pushes days **newest-first**, so a long first sync fills the team dashboard with the freshest data immediately.
+- The project picker orders by **agent time** (busiest first), and the Team/Settings/wizard surfaces adopt the dashboard's design system — warm cards, teal-accent buttons, theme-aware borders (no more harsh black outlines from Tailwind v4's currentColor default).
 - Auto-start is **opt-out for team members** (macOS): `team join` and `fleetlens start` install the login LaunchAgent automatically on paired machines. The agent now launches the **full stack** (`fleetlens start`: dashboard + daemon), so both reporting and the dashboard survive reboots. `fleetlens autostart uninstall` records a durable opt-out that join/start never override.
 
 ## [0.14.0] — 2026-07-08
