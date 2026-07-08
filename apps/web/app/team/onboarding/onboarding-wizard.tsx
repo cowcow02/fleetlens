@@ -378,7 +378,7 @@ function Step3({
         <div className="space-y-1 text-sm text-gray-600 dark:text-gray-400">
           {excludedCount > 0 && (
             <p>
-              {excludedCount} project{excludedCount === 1 ? "" : "s"} stay private on this machine.
+              {excludedCount} project{excludedCount === 1 ? " stays" : "s stay"} private on this machine.
             </p>
           )}
           <p>
