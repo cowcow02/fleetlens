@@ -18,11 +18,15 @@ export type SyncProjectRow = {
 };
 
 export async function listSyncProjectRows(): Promise<SyncProjectRow[]> {
-  return groupByProject(await listSessions()).map((p) => ({
-    name: p.projectName,
-    sessions: p.sessions.length,
-    agentTimeMs: p.metrics.totalAirTimeMs,
-    lastActiveMs: p.lastActiveMs ?? null,
-    worktreeCount: p.worktreeCount,
-  }));
+  return groupByProject(await listSessions())
+    .map((p) => ({
+      name: p.projectName,
+      sessions: p.sessions.length,
+      agentTimeMs: p.metrics.totalAirTimeMs,
+      lastActiveMs: p.lastActiveMs ?? null,
+      worktreeCount: p.worktreeCount,
+    }))
+    // Busiest first: the projects a user actually needs to decide about sit
+    // at the top of the picker; one-off scratch sessions sink to the bottom.
+    .sort((a, b) => b.sessions - a.sessions);
 }
