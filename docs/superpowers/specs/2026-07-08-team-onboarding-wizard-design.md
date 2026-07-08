@@ -94,6 +94,8 @@ One-line copy tweak in `pair-cli-panel.tsx` / `signup-form.tsx`: "your browser w
 - Web server port conflicts / version cycling: existing `ensureCurrentServer` behavior.
 - Concurrent daemon tick during the wizard-triggered sync: cross-process overlap is tolerated today (idempotent upserts + ingestId dedup) — unchanged.
 - Project appears mid-wizard: not in the list; governed by `autoIncludeNew`.
+- Retry-queue payloads (`ingest-queue.jsonl`) built BEFORE a later Settings selection change drain as-built — in-flight history, same "not retroactive" semantic as data already on the server. (Onboarding itself is unaffected: nothing is queued while `setupPending` gates the sync.)
+- Server-commanded `backfill-activity` applies the same session filter as the regular sync (fixed post-review — an admin's re-push request is not consent to resend excluded projects).
 
 ## Testing / verification
 
