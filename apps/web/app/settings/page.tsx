@@ -3,24 +3,30 @@ import { AiFeaturesForm } from "./ai-features-form";
 import { readAutostartState } from "@/lib/autostart-data";
 import { AutostartToggle } from "@/components/autostart-toggle";
 
+// Layout mirrors /team: max-w-3xl, header + subtitle, card-style sections.
 export default function SettingsPage() {
   const s = readSettings();
   return (
-    <main className="mx-auto max-w-2xl p-6 space-y-8">
-      <h1 className="text-2xl font-semibold">Fleetlens Settings</h1>
+    <main className="mx-auto max-w-3xl p-6 space-y-8">
+      <header>
+        <h1 className="text-2xl font-semibold">Settings</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          Local machine preferences. Team-sync management lives on the Team page.
+        </p>
+      </header>
 
-      <section>
-        <h2 className="text-lg font-medium mb-2">Daemon auto-start</h2>
-        <p className="text-sm text-gray-500 mb-4">
+      <section className="border rounded-lg p-5 space-y-3">
+        <h2 className="text-lg font-medium">Daemon auto-start</h2>
+        <p className="text-sm text-gray-500">
           Keeps plan-usage polling and team sync running after a reboot without
           opening the dashboard. Team pairing turns this on by default.
         </p>
         <AutostartToggle initial={readAutostartState()} />
       </section>
 
-      <section>
-        <h2 className="text-lg font-medium mb-2">AI Features</h2>
-        <p className="text-sm text-gray-500 mb-4">
+      <section className="border rounded-lg p-5 space-y-3">
+        <h2 className="text-lg font-medium">AI Features</h2>
+        <p className="text-sm text-gray-500">
           When enabled, Fleetlens synthesizes daily digests and per-entry
           narratives by spawning your local <code>claude</code> CLI (uses your
           existing Claude Code auth — no API key required).
