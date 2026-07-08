@@ -74,7 +74,11 @@ Client component, 3 steps:
 
 1. **What happens** — team name / server host; exact list of what syncs (daily aggregates, per-project name + agent time + session counts, plan-utilization %, sync log lines) and what never leaves (transcripts, prompts, file contents, absolute paths — artifact signals are path-hash-only); 5-minute cadence.
 2. **Choose projects** — checkbox rows (all pre-checked) with sessions / agent time / last active / worktree badge, search filter, auto-include-new toggle (default ON). Selection stays in client state until step 3 — no partial writes.
-3. **Start syncing** — POST + stream; live progress list (per-day ✓ with project count, usage snapshot batches); terminal summary + links to the team dashboard (`serverUrl/team/<slug>`) and the local `/team` page. Errors surface the event message with a retry button.
+3. **Start syncing** — pre-sync summary first (N-of-M projects with name chips, destination team/server, auto-include state, reminder bullets), then POST + stream rendered as a timestamped terminal-style log. Days push **newest first** (see §3a). Terminal summary's primary CTA goes to the local `/team` page; secondary opens the hosted team dashboard. Errors surface the event message with a retry button.
+
+### 3a. Sync ordering (revised 2026-07-08)
+
+The day loop pushes newest→oldest so a long first sync fills the team dashboard with fresh data immediately. Failure semantics: on a transient failure the watermark does **not** advance (the failed day and everything older are still owed; already-pushed newer days re-upload next tick via idempotent per-day upserts). `join`'s browser path also captures one plan-usage snapshot best-effort before opening the wizard, so the first sync has usage data even when the daemon's first poll loses a 429 race.
 
 `/team` page shows a "Finish setup" banner while `setupPending` (wizard-abandonment recovery).
 
