@@ -43,10 +43,10 @@ export function AutostartToggle({ initial }: { initial: AutostartState }) {
           onChange={(e) => void toggle(e.target.checked)}
         />
         <span>
-          Start the usage daemon at login
+          Start Fleetlens at login (dashboard + usage daemon)
           <span className="mt-0.5 block text-xs text-gray-500">
             {state.installed
-              ? "Enabled — reporting keeps running after a reboot."
+              ? "Enabled — the dashboard and reporting come back after a reboot."
               : state.optedOut
                 ? "Disabled — you opted out; joining a team won't re-enable it."
                 : "Disabled — pairing with a team enables this automatically."}

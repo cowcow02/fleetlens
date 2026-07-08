@@ -18,8 +18,8 @@ export default function SettingsPage() {
       <section className="border rounded-lg p-5 space-y-3">
         <h2 className="text-lg font-medium">Daemon auto-start</h2>
         <p className="text-sm text-gray-500">
-          Keeps plan-usage polling and team sync running after a reboot without
-          opening the dashboard. Team pairing turns this on by default.
+          Brings the dashboard, plan-usage polling, and team sync back after a
+          reboot. Team pairing turns this on by default.
         </p>
         <AutostartToggle initial={readAutostartState()} />
       </section>

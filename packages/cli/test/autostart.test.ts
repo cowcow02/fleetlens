@@ -15,11 +15,11 @@ describe("buildPlist", () => {
     expect(plist).toContain("<string>com.fleetlens.daemon</string>");
   });
 
-  it("runs `<node> <script> daemon start` with absolute paths", () => {
+  it("runs `<node> <script> start` (full stack: dashboard + daemon) with absolute paths", () => {
     expect(plist).toContain("<string>/usr/local/bin/node</string>");
     expect(plist).toContain("<string>/opt/fleetlens/dist/index.js</string>");
-    expect(plist).toContain("<string>daemon</string>");
     expect(plist).toContain("<string>start</string>");
+    expect(plist).not.toContain("<string>daemon</string>");
   });
 
   it("runs at load", () => {

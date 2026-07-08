@@ -15,7 +15,7 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
 ### Changed
 - Team sync pushes days **newest-first**, so a long first sync fills the team dashboard with the freshest data immediately.
-- Daemon auto-start is **opt-out for team members** (macOS): `team join` and `fleetlens start` install the login LaunchAgent automatically on paired machines so reporting survives reboots. `fleetlens autostart uninstall` records a durable opt-out that join/start never override.
+- Auto-start is **opt-out for team members** (macOS): `team join` and `fleetlens start` install the login LaunchAgent automatically on paired machines. The agent now launches the **full stack** (`fleetlens start`: dashboard + daemon), so both reporting and the dashboard survive reboots. `fleetlens autostart uninstall` records a durable opt-out that join/start never override.
 
 ## [0.14.0] — 2026-07-08
 

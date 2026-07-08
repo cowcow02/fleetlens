@@ -40,11 +40,12 @@ function resolveScriptPath(): string {
 }
 
 /**
- * Build the LaunchAgent plist. RunAtLoad runs `fleetlens daemon start` once at
- * login; the existing detached, self-updating daemon takes over from there.
- * Deliberately NO KeepAlive — the daemon self-updates (6h check → npm i -g →
- * re-exec), and a KeepAlive supervisor would fight that teardown/re-exec and
- * thrash (or spawn a second daemon). Run-once-at-login is exactly enough to
+ * Build the LaunchAgent plist. RunAtLoad runs `fleetlens start` once at
+ * login — the full stack (dashboard server + usage daemon), so a paired
+ * machine reports AND serves its dashboard after a reboot. Deliberately NO
+ * KeepAlive — both processes self-manage (the daemon self-updates via
+ * 6h check → npm i -g → re-exec), and a KeepAlive supervisor would fight
+ * that teardown/re-exec and thrash. Run-once-at-login is exactly enough to
  * "survive a reboot".
  */
 export function buildPlist(opts: { nodePath: string; scriptPath: string; logPath: string }): string {
@@ -59,7 +60,6 @@ export function buildPlist(opts: { nodePath: string; scriptPath: string; logPath
   <array>
     <string>${nodePath}</string>
     <string>${scriptPath}</string>
-    <string>daemon</string>
     <string>start</string>
   </array>
   <key>RunAtLoad</key>
@@ -96,9 +96,9 @@ export async function installAutostart(): Promise<boolean> {
   await runLaunchctl(["unload", p]).catch(() => {});
   await runLaunchctl(["load", "-w", p]);
   writeFlags({ optedOut: false });
-  console.log("Autostart installed — the Fleetlens usage daemon will start at login.");
+  console.log("Autostart installed — Fleetlens (dashboard + usage daemon) will start at login.");
   console.log(`  LaunchAgent: ${p}`);
-  console.log(`  Runs:        ${nodePath} ${scriptPath} daemon start`);
+  console.log(`  Runs:        ${nodePath} ${scriptPath} start`);
   console.log(
     "  Note: the Node path above is baked in. If you upgrade or switch Node (e.g. via nvm), re-run `fleetlens autostart install`.",
   );
@@ -133,7 +133,7 @@ export async function ensureTeamAutostart(): Promise<void> {
     if (!isMac()) return;
     if (isAutostartInstalled()) return;
     if (hasOptedOut()) return;
-    console.log("  Team reporting stays on across reboots: enabling daemon auto-start at login.");
+    console.log("  Team reporting stays on across reboots: enabling Fleetlens auto-start at login (dashboard + daemon).");
     console.log("  (Opt out anytime: fleetlens autostart uninstall — join won't re-enable it.)");
     await installAutostart();
   } catch {
@@ -238,9 +238,9 @@ export async function maybePromptAutostart(opts: { daemonStarted: boolean }): Pr
     if (isPromptDismissed()) return;
 
     console.log("");
-    console.log("Tip: keep the Fleetlens usage daemon running after you restart your Mac?");
-    console.log("     This installs a launchd LaunchAgent that runs `fleetlens daemon start`");
-    console.log("     at login (daemon only — not the dashboard server).");
+    console.log("Tip: keep Fleetlens running after you restart your Mac?");
+    console.log("     This installs a launchd LaunchAgent that runs `fleetlens start`");
+    console.log("     at login (dashboard server + usage daemon).");
     const yes = await promptYesNo("Set that up now? [Y/n] ", true);
     if (yes) {
       await installAutostart();
