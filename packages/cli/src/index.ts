@@ -97,7 +97,7 @@ Advanced:
   autostart <install|uninstall|status>   Run the usage daemon at login (macOS launchd)
 
 Team:
-  team join <url> <token>           Pair with a team server
+  team join <url> <token>           Pair with a team server (browser setup)
   team status                       Show team pairing state
   team leave                        Unpair from team server
   team logs                         Show team-related daemon logs

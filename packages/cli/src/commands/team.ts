@@ -100,7 +100,7 @@ export async function team(args: string[]) {
     default:
       console.log(`Usage: fleetlens team <join|status|leave|logs|sync|backfill>
 
-  join <url> <device-token>    Pair daemon with a team server (auto-backfills usage history)
+  join <url> <device-token> [--no-browser]   Pair with a team server (opens browser setup; --no-browser syncs everything immediately)
   status                       Show team pairing state and sync info
   leave                        Unpair from the team server
   logs                         Show recent team-related daemon log entries
