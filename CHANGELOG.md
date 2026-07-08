@@ -4,6 +4,13 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Added
+- `fleetlens team join` now opens a browser onboarding wizard: explains exactly what data leaves the machine, lets you choose which projects sync to the team, and streams first-sync progress live. `--no-browser` keeps the old terminal-only behavior.
+- Synced-projects editor in Settings — change the selection any time; the daemon applies it within ~5 minutes.
+- `fleetlens team sync --progress-json` — machine-readable NDJSON progress events.
+
 ## [0.14.0] — 2026-07-08
 
 Team-sync overhauled around one idea: a fresh pairing syncs **everything**, and every run leaves a story you can read. Safe upgrade from 0.13.x; pairs best with team-server 0.14.0.
