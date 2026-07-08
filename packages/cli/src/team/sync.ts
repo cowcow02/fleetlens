@@ -61,7 +61,21 @@ export type TeamSyncOptions = {
   // The scheduler's interval to the NEXT team sync, so the summary line can
   // print an accurate "next ~Nm" rather than a hardcoded guess.
   nextSyncMs?: number;
+  // Fired as the run progresses — the onboarding wizard's SSE relay pipes
+  // these straight to `--progress-json` stdout lines; the daemon's normal
+  // path leaves this unset.
+  onProgress?: (ev: SyncProgressEvent) => void;
 };
+
+// One line per run, streamed via `fleetlens team sync --progress-json` for
+// the onboarding wizard's live progress list. Not the [sync] summary line —
+// that stays log-only.
+export type SyncProgressEvent =
+  | { type: "phase"; phase: "usage-backfill" | "activity"; totalDays?: number }
+  | { type: "usage"; inserted: number; alreadyKnown: number }
+  | { type: "day"; day: string; index: number; total: number; outcome: "pushed" | "queued" | "dropped" }
+  | { type: "done"; pushed: number; queued: number; pushedDays: string[] }
+  | { type: "error"; message: string };
 
 // Fixed leading status word of every uploaded [sync] line — the ONE token a
 // human or an agent greps to know how the last sync went. Ordered by
@@ -243,6 +257,7 @@ export async function runTeamSync(
       summary.skipped = { ...summary.skipped, ...body.blocks.skipped };
     }
   };
+  const emit = options.onProgress ?? (() => {});
 
   try {
     // Run-scoped: a transient read failure on one session must not poison it
@@ -346,10 +361,16 @@ export async function runTeamSync(
       return drained;
     };
 
+    emit({ type: "phase", phase: "usage-backfill" });
     const usageBackfill = await runTeamBackfill(log, USAGE_LOG, config, {
       sinceCapturedAt: options.forceUsageBackfill
         ? undefined
         : config.lastSyncedUsageSnapshotAt,
+    });
+    emit({
+      type: "usage",
+      inserted: usageBackfill.insertedSnapshots ?? 0,
+      alreadyKnown: usageBackfill.skippedSnapshots ?? 0,
     });
     if (usageBackfill.lastSnapshotAt) {
       persistConfig({ lastSyncedUsageSnapshotAt: usageBackfill.lastSnapshotAt });
@@ -361,6 +382,7 @@ export async function runTeamSync(
     // whose target predates lastSyncedDay.
     const allRollups = buildRollupsForRange(sessions);
     const rollups = allRollups.filter((r) => !config.lastSyncedDay || r.day >= config.lastSyncedDay);
+    emit({ type: "phase", phase: "activity", totalDays: rollups.length });
 
     // Snapshot represents *current* utilization, not historical days. Attach
     // only to the most recent rollup so a multi-day backfill doesn't repeat
@@ -389,6 +411,7 @@ export async function runTeamSync(
           summary.idleReason = "nothing to sync";
           finish("idle");
         }
+        emit({ type: "done", pushed: 0, queued: 0, pushedDays: summary.pushedDays });
         return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
       }
       summary.usageSnapshots = usageBackfill.sentSnapshots;
@@ -402,6 +425,7 @@ export async function runTeamSync(
           writeLastPushFailure(payload, errLine);
           summary.errorMsg = `live-snapshot push HTTP ${result.status} (validation) — dropped unrecoverable`;
           finish("error");
+          emit({ type: "done", pushed: 0, queued: 0, pushedDays: summary.pushedDays });
           return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
         }
         const errLine = `team push failed (${result.status})`;
@@ -410,6 +434,7 @@ export async function runTeamSync(
         summary.queued = 1;
         summary.errorMsg = `live-snapshot push HTTP ${result.status} — queued for retry`;
         finish("failed");
+        emit({ type: "done", pushed: 0, queued: 1, pushedDays: summary.pushedDays });
         return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
       writeLastPushSuccess(payload);
@@ -426,6 +451,7 @@ export async function runTeamSync(
       summary.idleReason = "no new daily activity";
       finish(summary.skipped && Object.keys(summary.skipped).length ? "degraded" : "idle");
       await dispatchAndReport();
+      emit({ type: "done", pushed: 1, queued: 0, pushedDays: summary.pushedDays });
       return { paired: true, pushed: 1, queued: 0, queuedDrained, usageBackfill };
     }
 
@@ -500,6 +526,7 @@ export async function runTeamSync(
           summary.droppedDays.push(rollup.day);
           if (!workingDropped.includes(rollup.day)) workingDropped.push(rollup.day);
           lastResolvedDay = rollup.day;
+          emit({ type: "day", day: rollup.day, index: i + 1, total: rollups.length, outcome: "dropped" });
           continue;
         }
         const errLine = `team push failed on ${rollup.day} (${result.status})`;
@@ -509,6 +536,7 @@ export async function runTeamSync(
         summary.queuedDay = rollup.day;
         summary.queuedStatus = result.status;
         failedDay = rollup.day;
+        emit({ type: "day", day: rollup.day, index: i + 1, total: rollups.length, outcome: "queued" });
         break;
       }
       writeLastPushSuccess(payload);
@@ -520,6 +548,7 @@ export async function runTeamSync(
       pushed++;
       summary.pushedDays.push(rollup.day);
       lastResolvedDay = rollup.day;
+      emit({ type: "day", day: rollup.day, index: i + 1, total: rollups.length, outcome: "pushed" });
     }
 
     // Retry AT MOST ONE previously-dropped day (oldest first, and not one just
@@ -584,10 +613,12 @@ export async function runTeamSync(
     finish(status);
 
     await dispatchAndReport();
+    emit({ type: "done", pushed, queued, pushedDays: summary.pushedDays });
     return { paired: true, pushed, queued, queuedDrained, usageBackfill, failedDay };
   } catch (err) {
     const message = (err as Error).message;
     summary.errorMsg = `sync aborted: ${message}`;
+    emit({ type: "error", message });
     finish("error");
     writeLastPushFailure(
       { ingestId: "n/a", observedAt: new Date().toISOString() },

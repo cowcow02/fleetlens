@@ -22,24 +22,35 @@ export async function team(args: string[]) {
       break;
     }
     case "sync": {
+      // --progress-json: the onboarding wizard's SSE relay spawns this and
+      // reads NDJSON off stdout — human [level] lines would corrupt that
+      // stream, so they're suppressed (daemon.log still gets them).
+      const progressJson = args.includes("--progress-json");
       const { runTeamSync } = await import("../team/sync.js");
       const { appendDaemonLogLine } = await import("../daemon-log.js");
       // Log to the console AND daemon.log with trigger="manual" so a hand-run
       // sync's [sync] summary enters the member story like the daemon's ticks.
       const outcome = await runTeamSync(
         (level, msg) => {
-          console.log(`[${level}] ${msg}`);
+          if (!progressJson) console.log(`[${level}] ${msg}`);
           appendDaemonLogLine(level, msg);
         },
         undefined,
-        { trigger: "manual" },
+        {
+          trigger: "manual",
+          onProgress: progressJson ? (ev) => console.log(JSON.stringify(ev)) : undefined,
+        },
       );
       if (!outcome.paired) {
         console.error("Not paired. Run 'fleetlens team join <url> <device-token>' first.");
         process.exit(1);
       }
       if (outcome.setupPending) {
-        console.error("Setup pending — nothing synced. Finish onboarding in the dashboard (/team/onboarding) or re-run 'fleetlens team join'.");
+        if (progressJson) {
+          console.log(JSON.stringify({ type: "error", message: "setup pending — selection not saved yet" }));
+        } else {
+          console.error("Setup pending — nothing synced. Finish onboarding in the dashboard (/team/onboarding) or re-run 'fleetlens team join'.");
+        }
         process.exit(1);
       }
       // Top-level error always fails; backfill-only error fails only when nothing
@@ -48,16 +59,18 @@ export async function team(args: string[]) {
       const inserted = outcome.usageBackfill?.insertedSnapshots ?? 0;
       const madeProgress = outcome.pushed > 0 || outcome.queuedDrained > 0 || inserted > 0;
       if (outcome.error || (outcome.usageBackfill?.error && !madeProgress)) process.exit(1);
-      const sent = outcome.usageBackfill?.sentSnapshots ?? 0;
-      const usageChecked = sent > 0
-        ? `, ${sent} usage snapshot${sent === 1 ? "" : "s"} checked`
-        : "";
-      console.log(
-        `✓ ${outcome.pushed} activity payload${outcome.pushed === 1 ? "" : "s"} pushed` +
-        usageChecked +
-        (outcome.queuedDrained ? `, ${outcome.queuedDrained} queued retried` : "") +
-        (outcome.queued ? `, ${outcome.queued} queued for retry (will fire next cycle)` : "")
-      );
+      if (!progressJson) {
+        const sent = outcome.usageBackfill?.sentSnapshots ?? 0;
+        const usageChecked = sent > 0
+          ? `, ${sent} usage snapshot${sent === 1 ? "" : "s"} checked`
+          : "";
+        console.log(
+          `✓ ${outcome.pushed} activity payload${outcome.pushed === 1 ? "" : "s"} pushed` +
+          usageChecked +
+          (outcome.queuedDrained ? `, ${outcome.queuedDrained} queued retried` : "") +
+          (outcome.queued ? `, ${outcome.queued} queued for retry (will fire next cycle)` : "")
+        );
+      }
       break;
     }
     case "backfill": {
