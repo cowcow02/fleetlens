@@ -56,8 +56,9 @@ describe("runTeamSync onProgress", () => {
     expect(outcome.pushed).toBe(2);
     expect(events.map((e) => e.type)).toEqual(["phase", "usage", "phase", "day", "day", "done"]);
     const days = events.filter((e): e is Extract<SyncProgressEvent, { type: "day" }> => e.type === "day");
-    expect(days[0]).toMatchObject({ day: "2026-07-06", index: 1, total: 2, outcome: "pushed" });
-    expect(days[1]).toMatchObject({ day: "2026-07-07", index: 2, total: 2, outcome: "pushed" });
+    // Newest-first push order
+    expect(days[0]).toMatchObject({ day: "2026-07-07", index: 1, total: 2, outcome: "pushed" });
+    expect(days[1]).toMatchObject({ day: "2026-07-06", index: 2, total: 2, outcome: "pushed" });
     const done = events.at(-1) as Extract<SyncProgressEvent, { type: "done" }>;
     expect(done).toMatchObject({ pushed: 2, queued: 0 });
   });

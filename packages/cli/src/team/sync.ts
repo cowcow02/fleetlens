@@ -472,10 +472,6 @@ export async function runTeamSync(
     let pushed = 0;
     let queued = 0;
     let failedDay: string | undefined;
-    // The most recent day we RESOLVED — pushed successfully OR deliberately
-    // skipped as validation-poison. lastSyncedDay never rewinds before it, so
-    // a skipped poison day is not re-pushed on the next tick.
-    let lastResolvedDay: string | undefined;
     // Days the server hard-4xx'd on a previous run, retried below. Start from
     // the persisted list; this run's own drops are appended in the loop.
     const droppedDaysBefore = config.droppedDays ?? [];
@@ -521,9 +517,12 @@ export async function runTeamSync(
       });
     };
 
-    for (let i = 0; i < rollups.length; i++) {
-      const rollup = rollups[i]!;
-      const isLatest = i === rollups.length - 1;
+    // Newest day first: a long first sync fills the team dashboard with the
+    // freshest data immediately, and the wizard's live log reads naturally.
+    const rollupsDesc = [...rollups].reverse();
+    for (let i = 0; i < rollupsDesc.length; i++) {
+      const rollup = rollupsDesc[i]!;
+      const isLatest = i === 0;
       // File-system probe (skill/sub-agent/CLAUDE.md authoring) rides inside
       // buildDayPayload. Sync-log rides the FIRST push only — it's not
       // day-specific.
@@ -542,8 +541,7 @@ export async function runTeamSync(
           writeLastPushFailure(payload, errLine);
           summary.droppedDays.push(rollup.day);
           if (!workingDropped.includes(rollup.day)) workingDropped.push(rollup.day);
-          lastResolvedDay = rollup.day;
-          emit({ type: "day", day: rollup.day, index: i + 1, total: rollups.length, outcome: "dropped" });
+          emit({ type: "day", day: rollup.day, index: i + 1, total: rollupsDesc.length, outcome: "dropped" });
           continue;
         }
         const errLine = `team push failed on ${rollup.day} (${result.status})`;
@@ -553,7 +551,7 @@ export async function runTeamSync(
         summary.queuedDay = rollup.day;
         summary.queuedStatus = result.status;
         failedDay = rollup.day;
-        emit({ type: "day", day: rollup.day, index: i + 1, total: rollups.length, outcome: "queued" });
+        emit({ type: "day", day: rollup.day, index: i + 1, total: rollupsDesc.length, outcome: "queued" });
         break;
       }
       writeLastPushSuccess(payload);
@@ -564,8 +562,7 @@ export async function runTeamSync(
       if (i === 0) syncLogWasDelivered = syncLogDelivered(result.body);
       pushed++;
       summary.pushedDays.push(rollup.day);
-      lastResolvedDay = rollup.day;
-      emit({ type: "day", day: rollup.day, index: i + 1, total: rollups.length, outcome: "pushed" });
+      emit({ type: "day", day: rollup.day, index: i + 1, total: rollupsDesc.length, outcome: "pushed" });
     }
 
     // Retry AT MOST ONE previously-dropped day (oldest first, and not one just
@@ -603,9 +600,10 @@ export async function runTeamSync(
     const droppedPatch: Partial<TeamConfig> = droppedChanged ? { droppedDays: nextDropped } : {};
 
     if (failedDay) {
-      if (lastResolvedDay || droppedChanged) {
-        persistConfig({ ...(lastResolvedDay ? { lastSyncedDay: lastResolvedDay } : {}), ...droppedPatch });
-      }
+      // Newest-first loop: the failed day and everything OLDER are unresolved,
+      // so the watermark must not advance — already-pushed newer days simply
+      // re-push on the next tick (idempotent per-day upserts server-side).
+      if (droppedChanged) persistConfig(droppedPatch);
     } else {
       persistConfig({ lastSyncedDay: today, ...droppedPatch });
     }

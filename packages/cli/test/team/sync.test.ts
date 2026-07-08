@@ -207,7 +207,7 @@ describe("runTeamSync", () => {
     expect(result.failedDay).toBeDefined();
   });
 
-  it("does not advance lastSyncedDay past an unpushed failed day", async () => {
+  it("keeps the watermark when an older day fails after newer days pushed", async () => {
     const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
 
@@ -232,10 +232,13 @@ describe("runTeamSync", () => {
     const { runTeamSync } = await import("../../src/team/sync.js");
     const result = await runTeamSync();
 
-    expect(result.failedDay).toBe("2026-04-15");
-    expect(writeTeamConfig).toHaveBeenCalledWith(
-      expect.objectContaining({ lastSyncedDay: "2026-04-14" }),
-    );
+    // Newest-first: 2026-04-15 pushed, then 2026-04-14 failed. The watermark
+    // must not advance — 04-14 (and anything older) is still owed; the pushed
+    // newer day re-uploads next tick via idempotent upserts.
+    expect(result.failedDay).toBe("2026-04-14");
+    expect(result.pushed).toBe(1);
+    const writes = vi.mocked(writeTeamConfig).mock.calls.map((c) => c[0]);
+    expect(writes.every((w) => w.lastSyncedDay === undefined)).toBe(true);
   });
 
   it("advances past a validation-poisoned (4xx) day without queueing it", async () => {

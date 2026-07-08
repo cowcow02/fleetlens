@@ -110,6 +110,18 @@ export async function joinTeam(args: string[]) {
     return;
   }
 
+  // Best-effort first plan-usage snapshot so the wizard's first sync has
+  // usage data to push — the daemon's own first poll can lose a 429 race
+  // when other pollers share this machine.
+  try {
+    const { fetchUsage } = await import("../usage/api.js");
+    const { appendSnapshot } = await import("../usage/storage.js");
+    const { cclensPath } = await import("@claude-lens/parser/fs");
+    appendSnapshot(cclensPath("usage.jsonl"), await fetchUsage());
+  } catch {
+    // Daemon collects within its next cycles.
+  }
+
   console.log("  Opening your browser to finish setup…");
   let url: string;
   try {
