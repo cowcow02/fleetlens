@@ -7,14 +7,29 @@ import { cclensHome } from "@claude-lens/parser/fs";
 // so the consent page reflects the daemon's actual sync behavior. The CLI
 // owns the canonical type; this is a deliberate duplicate to avoid making
 // apps/web depend on the cli package.
+
+/** Member-side project selection for team sync. `included`/`excluded` capture
+ *  the explicit wizard checkboxes; projects that appear AFTER selection fall
+ *  through to `autoIncludeNew`. Absent syncProjects = sync everything. */
+export type SyncProjects = {
+  autoIncludeNew: boolean;
+  included: string[];
+  excluded: string[];
+};
+
 export type TeamConfig = {
   serverUrl: string;
   memberId: string;
   bearerToken: string;
   teamSlug: string;
+  teamName?: string;
   pairedAt: string;
   lastSyncedDay?: string;
   lastSyncedUsageSnapshotAt?: string;
+  /** Written by `team join`; nothing syncs while set. Cleared by the wizard's
+   *  "Start syncing". Absent on configs from before the wizard ⇒ not gated. */
+  setupPending?: boolean;
+  syncProjects?: SyncProjects;
 };
 
 const CONFIG_FILE = "team.json";
