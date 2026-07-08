@@ -85,7 +85,8 @@ The day loop pushes newest→oldest so a long first sync fills the team dashboar
 ### 6. Settings → Synced projects (`apps/web/app/settings/`)
 
 - Shared `<ProjectSyncPicker>` component used by wizard step 2 and Settings.
-- `GET/PUT /api/team/sync-projects`: GET returns the project list + current `syncProjects`; PUT read-merge-writes `team.json`. Rendered only when paired. Copy notes changes take effect within ~5 min and are not retroactive server-side.
+- `GET/PUT /api/team/sync-projects`: GET returns the project list + current `syncProjects`; PUT read-merge-writes `team.json`. Rendered only when paired.
+- **Selection changes correct history (revised 2026-07-08).** A PUT whose selection differs also drops `lastSyncedDay`, so the next sync re-pushes every day under the new filter — per-day upserts replace server rows, newly included projects backfill, and a day whose only activity is now-excluded pushes an explicit tombstone (`dailyRollup` zeros + `richRollup.projects: []` + empty enrichment mixes) so the stale row is overwritten rather than kept. The Settings form auto-fires this re-push after such a save and streams the wizard-style log; an unchanged save returns `resync: false` and leaves the watermark alone.
 
 ### 7. Team-server copy
 

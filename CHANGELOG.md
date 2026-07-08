@@ -7,9 +7,13 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 ## [Unreleased]
 
 ### Added
-- `fleetlens team join` now opens a browser onboarding wizard: explains exactly what data leaves the machine, lets you choose which projects sync to the team, and streams first-sync progress live. `--no-browser` keeps the old terminal-only behavior.
-- Synced-projects editor in Settings — change the selection any time; the daemon applies it within ~5 minutes.
+- `fleetlens team join` now opens a browser onboarding wizard: explains exactly what data leaves the machine, lets you choose which projects sync to the team, and streams first-sync progress as a timestamped log. `--no-browser` keeps the old terminal-only behavior.
+- Synced-projects editor in Settings — changing the selection re-pushes your **full history** under the new filter and streams the same live log: excluded projects disappear from the team server (days left with no synced activity are overwritten with empty rollups), newly included ones backfill.
 - `fleetlens team sync --progress-json` — machine-readable NDJSON progress events.
+- `team join` captures a first plan-usage snapshot before opening the wizard, so the first sync ships usage data even when the daemon's first poll loses a 429 race.
+
+### Changed
+- Team sync pushes days **newest-first**, so a long first sync fills the team dashboard with the freshest data immediately.
 
 ## [0.14.0] — 2026-07-08
 
