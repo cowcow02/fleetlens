@@ -462,10 +462,46 @@ export const memberCommands = pgTable(
   }),
 );
 
-// External-system integrations, one row per (team, provider). Credentials are
-// AES-256-GCM blobs under FLEETLENS_ENCRYPTION_KEY (same scheme as the Resend
-// key) — never stored or returned in plaintext. `config` is provider-shaped:
-// github → { repos: ["owner/name", …], sync_days: 60 }.
+// External-system integrations, many rows per (team, provider) — each with its
+// own credentials, label, and source list. owner_group_id NULL = org-level
+// (admin-managed); non-null = owned by that group and manageable by its
+// managers. Credentials are AES-256-GCM blobs under FLEETLENS_ENCRYPTION_KEY
+// (same scheme as the Resend key) — never stored or returned in plaintext.
+// `config` is provider-shaped: github → { repos: [{name, group_ids}], sync_days: 60 }.
+export const integrations = pgTable(
+  "integrations",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
+    provider: text("provider").notNull(),
+    label: text("label").notNull(),
+    ownerGroupId: uuid("owner_group_id").references(() => groups.id, { onDelete: "set null" }),
+    credentialsEnc: text("credentials_enc").notNull(),
+    config: jsonb("config").notNull().default(sql`'{}'::jsonb`),
+    status: text("status").notNull().default("active"),
+    lastError: text("last_error"),
+    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => userAccounts.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    teamProviderLabel: uniqueIndex("integrations_team_provider_label_key").on(t.teamId, t.provider, t.label),
+    teamIdx: index("idx_integrations_team").on(t.teamId, t.provider),
+    providerCheck: check(
+      "integrations_provider_check",
+      sql`${t.provider} IN ('github', 'jira', 'linear')`,
+    ),
+    statusCheck: check(
+      "integrations_status_check",
+      sql`${t.status} IN ('active', 'error')`,
+    ),
+  }),
+);
+
+// Legacy single-integration-per-provider table, superseded by `integrations`
+// (0015 copied the rows across). Kept one release so the previous container's
+// ON CONFLICT (team_id, provider) upserts keep working during the revision
+// swap — dropped next release. Do not use.
 export const teamIntegrations = pgTable(
   "team_integrations",
   {
@@ -516,10 +552,16 @@ export const githubPullRequests = pgTable(
     commitsAi: integer("commits_ai").notNull().default(0),
     aiAssisted: boolean("ai_assisted").notNull().default(false),
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+    // Which integration last synced this row (provenance, drives disconnect
+    // cascade). Nullable: rows written by a pre-0015 container are stamped on
+    // the next sync upsert. Reports never filter by it — natural keys dedupe
+    // shared sources across integrations.
+    integrationId: uuid("integration_id").references(() => integrations.id, { onDelete: "cascade" }),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.teamId, t.repo, t.number] }),
     teamMerged: index("idx_github_prs_team_merged").on(t.teamId, sql`${t.mergedAt} DESC`),
+    integrationIdx: index("idx_github_prs_integration").on(t.integrationId),
     stateCheck: check(
       "github_pull_requests_state_check",
       sql`${t.state} IN ('open', 'merged', 'closed')`,
@@ -548,10 +590,12 @@ export const linearIssues = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     canceledAt: timestamp("canceled_at", { withTimezone: true }),
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+    integrationId: uuid("integration_id").references(() => integrations.id, { onDelete: "cascade" }),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.teamId, t.identifier] }),
     teamCompleted: index("idx_linear_issues_team_completed").on(t.teamId, sql`${t.completedAt} DESC`),
+    integrationIdx: index("idx_linear_issues_integration").on(t.integrationId),
   }),
 );
 
@@ -578,9 +622,11 @@ export const jiraIssues = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     canceledAt: timestamp("canceled_at", { withTimezone: true }),
     syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+    integrationId: uuid("integration_id").references(() => integrations.id, { onDelete: "cascade" }),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.teamId, t.identifier] }),
     teamCompleted: index("idx_jira_issues_team_completed").on(t.teamId, sql`${t.completedAt} DESC`),
+    integrationIdx: index("idx_jira_issues_integration").on(t.integrationId),
   }),
 );

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireTeamMembership, requireAdmin } from "../../../../../../../lib/route-helpers";
+import { requireTeamMembership, requireIntegrationManager } from "../../../../../../../lib/route-helpers";
 import { runJiraSync } from "../../../../../../../lib/integrations";
 
 export async function POST(req: NextRequest) {
@@ -7,11 +7,14 @@ export async function POST(req: NextRequest) {
   if (!slug) return NextResponse.json({ error: "team slug required" }, { status: 400 });
   const ctx = await requireTeamMembership(req, slug, { bySlug: true });
   if (ctx instanceof NextResponse) return ctx;
-  const adminErr = requireAdmin(ctx);
-  if (adminErr) return adminErr;
+  const id = req.nextUrl.searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const integ = await requireIntegrationManager(ctx, id);
+  if (integ instanceof NextResponse) return integ;
+  if (integ.provider !== "jira") return NextResponse.json({ error: "Not a Jira integration" }, { status: 400 });
 
   try {
-    const summary = await runJiraSync(ctx.membership.team_id, ctx.pool);
+    const summary = await runJiraSync(integ.id, ctx.pool);
     return NextResponse.json({ synced: true, ...summary });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 });

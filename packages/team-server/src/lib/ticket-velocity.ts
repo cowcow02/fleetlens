@@ -12,8 +12,11 @@ import {
   type InsightsScope,
 } from "./insights-aggregate";
 
-// One row of team_integrations, fetched once per report build and passed into
+// One row of integrations, fetched once per report build and passed into
 // every block that needs a provider config — they used to each re-query it.
+// A team can have several rows per provider; blocks union the group-scoped
+// sources across them (facts are keyed by source name, so shared sources
+// dedupe naturally).
 export type IntegrationConfigRow = {
   provider: string;
   config: {
@@ -22,6 +25,13 @@ export type IntegrationConfigRow = {
   };
   last_sync_at: string | null;
 };
+
+export function latestSyncAt(integs: IntegrationConfigRow[]): string | null {
+  return integs.reduce<string | null>(
+    (m, i) => (i.last_sync_at && (!m || i.last_sync_at > m) ? i.last_sync_at : m),
+    null,
+  );
+}
 
 export type LinearIssueAggRow = {
   created_at: string;
@@ -60,20 +70,27 @@ export async function linearVelocity(
   scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
-  integ: IntegrationConfigRow | undefined,
+  integs: IntegrationConfigRow[],
 ): Promise<LinearVelocityStats | null> {
-  if (!integ) return null;
+  if (integs.length === 0) return null;
 
-  const allTeams = normalizeLinearTeams(integ.config);
-  const scoped =
-    scope.kind === "group"
-      ? allTeams.filter((t) => t.group_ids.length === 0 || t.group_ids.includes(scope.groupId))
-      : allTeams;
-  const teamKeys = scoped.map((t) => t.key);
+  const lastSyncAt = latestSyncAt(integs);
+  const teamKeys = [
+    ...new Set(
+      integs.flatMap((integ) => {
+        const allTeams = normalizeLinearTeams(integ.config);
+        const scoped =
+          scope.kind === "group"
+            ? allTeams.filter((t) => t.group_ids.length === 0 || t.group_ids.includes(scope.groupId))
+            : allTeams;
+        return scoped.map((t) => t.key);
+      }),
+    ),
+  ];
   if (teamKeys.length === 0) {
     return {
       team_keys: [],
-      last_sync_at: integ.last_sync_at,
+      last_sync_at: lastSyncAt,
       wip_now: 0,
       week: linearWeekVelocity([]),
       prev_week: linearWeekVelocity([]),
@@ -105,7 +122,7 @@ export async function linearVelocity(
 
   return {
     team_keys: teamKeys,
-    last_sync_at: integ.last_sync_at,
+    last_sync_at: lastSyncAt,
     wip_now: wip.rows[0].n,
     week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
     prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),
@@ -124,20 +141,27 @@ export async function jiraVelocity(
   scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
-  integ: IntegrationConfigRow | undefined,
+  integs: IntegrationConfigRow[],
 ): Promise<JiraVelocityStats | null> {
-  if (!integ) return null;
+  if (integs.length === 0) return null;
 
-  const allProjects = normalizeJiraProjects(integ.config);
-  const scoped =
-    scope.kind === "group"
-      ? allProjects.filter((p) => p.group_ids.length === 0 || p.group_ids.includes(scope.groupId))
-      : allProjects;
-  const projectKeys = scoped.map((p) => p.key);
+  const lastSyncAt = latestSyncAt(integs);
+  const projectKeys = [
+    ...new Set(
+      integs.flatMap((integ) => {
+        const allProjects = normalizeJiraProjects(integ.config);
+        const scoped =
+          scope.kind === "group"
+            ? allProjects.filter((p) => p.group_ids.length === 0 || p.group_ids.includes(scope.groupId))
+            : allProjects;
+        return scoped.map((p) => p.key);
+      }),
+    ),
+  ];
   if (projectKeys.length === 0) {
     return {
       project_keys: [],
-      last_sync_at: integ.last_sync_at,
+      last_sync_at: lastSyncAt,
       wip_now: 0,
       week: linearWeekVelocity([]),
       prev_week: linearWeekVelocity([]),
@@ -169,7 +193,7 @@ export async function jiraVelocity(
 
   return {
     project_keys: projectKeys,
-    last_sync_at: integ.last_sync_at,
+    last_sync_at: lastSyncAt,
     wip_now: wip.rows[0].n,
     week: linearWeekVelocity(issues.rows.filter((r) => r.in_current_week)),
     prev_week: linearWeekVelocity(issues.rows.filter((r) => !r.in_current_week)),

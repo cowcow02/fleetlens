@@ -35,7 +35,12 @@ export function normalizeGithubRepos(raw: unknown): GithubRepoMapping[] {
 }
 
 export type IntegrationRow = {
+  id: string;
   provider: string;
+  label: string;
+  // NULL = org-level (admin-managed); set = owned by that group, manageable
+  // by its managers.
+  owner_group_id: string | null;
   // Provider-shaped jsonb — narrow with normalizeGithubRepos /
   // normalizeLinearTeams / normalizeJiraProjects rather than trusting the
   // stored shape.
@@ -49,62 +54,133 @@ export type IntegrationRow = {
   created_at: string;
 };
 
+const ROW_COLUMNS =
+  "id, provider, label, owner_group_id, config, status, last_error, last_sync_at::text, created_at::text";
+
 function encryptionKey(): string {
   const key = process.env.FLEETLENS_ENCRYPTION_KEY;
   if (!key) throw new Error("FLEETLENS_ENCRYPTION_KEY env var must be set to store integration credentials at rest");
   return key;
 }
 
-export async function getIntegration(
+/** Friendly message for the (team_id, provider, label) unique index. */
+function rethrowDuplicateLabel(err: unknown, label: string): never {
+  if ((err as { code?: string }).code === "23505" && (err as { constraint?: string }).constraint === "integrations_team_provider_label_key") {
+    throw new Error(`An integration named "${label}" already exists for this provider — pick a different label`);
+  }
+  throw err;
+}
+
+export async function listIntegrations(
   teamId: string,
-  provider: string,
+  pool: pg.Pool,
+  provider?: string,
+): Promise<IntegrationRow[]> {
+  const res = provider
+    ? await pool.query(
+        `SELECT ${ROW_COLUMNS} FROM integrations WHERE team_id = $1 AND provider = $2 ORDER BY created_at, id`,
+        [teamId, provider],
+      )
+    : await pool.query(
+        `SELECT ${ROW_COLUMNS} FROM integrations WHERE team_id = $1 ORDER BY provider, created_at, id`,
+        [teamId],
+      );
+  return res.rows as IntegrationRow[];
+}
+
+export async function getIntegrationById(
+  teamId: string,
+  integrationId: string,
   pool: pg.Pool,
 ): Promise<IntegrationRow | null> {
   const res = await pool.query(
-    `SELECT provider, config, status, last_error, last_sync_at::text, created_at::text
-     FROM team_integrations WHERE team_id = $1 AND provider = $2`,
-    [teamId, provider],
+    `SELECT ${ROW_COLUMNS} FROM integrations WHERE team_id = $1 AND id = $2`,
+    [teamId, integrationId],
   );
   return (res.rows[0] as IntegrationRow | undefined) ?? null;
 }
 
-/** Decrypted token of an existing integration, or null when not connected. */
-export async function storedGithubToken(teamId: string, pool: pg.Pool): Promise<string | null> {
-  const res = await pool.query(
-    "SELECT credentials_enc FROM team_integrations WHERE team_id = $1 AND provider = 'github'",
-    [teamId],
-  );
+/** Decrypted credential blob of an existing integration, or null. */
+async function storedCredential(integrationId: string, pool: pg.Pool): Promise<string | null> {
+  const res = await pool.query("SELECT credentials_enc FROM integrations WHERE id = $1", [integrationId]);
   if (!res.rowCount) return null;
   return decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
 }
 
-/** Connect or reconfigure. `token` null = keep the stored token (mapping-only
- *  edits and adding repos don't force the admin to re-paste credentials). */
-export async function saveGithubIntegration(
-  teamId: string,
-  token: string | null,
-  repos: GithubRepoMapping[],
-  createdBy: string,
+export const storedGithubToken = storedCredential;
+export const storedLinearKey = storedCredential;
+export const storedJiraToken = storedCredential;
+
+export type SaveIntegrationBase = {
+  teamId: string;
+  // null = connect a new integration; set = reconfigure that one.
+  id: string | null;
+  label: string;
+  // Only applied on create — ownership is fixed for the integration's life.
+  ownerGroupId: string | null;
+  createdBy: string;
+};
+
+async function insertIntegration(
+  opts: SaveIntegrationBase,
+  provider: string,
+  credentialEnc: string,
+  config: unknown,
   pool: pg.Pool,
-): Promise<{ login: string }> {
-  const key = encryptionKey();
-  const effectiveToken = token ?? (await storedGithubToken(teamId, pool));
-  if (!effectiveToken) throw new Error("GitHub token required — no stored credentials to reuse");
-  const { login } = await validateGithubToken(effectiveToken);
-  await assertRepoAccess(effectiveToken, repos.map((r) => r.name));
-  const config: GithubIntegrationConfig = { repos, sync_days: 60, login };
-  await pool.query(
-    `INSERT INTO team_integrations (team_id, provider, credentials_enc, config, status, last_error, created_by)
-     VALUES ($1, 'github', $2, $3, 'active', NULL, $4)
-     ON CONFLICT (team_id, provider)
-     DO UPDATE SET credentials_enc = $2, config = $3, status = 'active', last_error = NULL, created_by = $4`,
-    [teamId, encryptAesGcm(effectiveToken, key), JSON.stringify(config), createdBy],
-  );
-  return { login };
+): Promise<string> {
+  try {
+    const res = await pool.query(
+      `INSERT INTO integrations (team_id, provider, label, owner_group_id, credentials_enc, config, status, last_error, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active', NULL, $7) RETURNING id`,
+      [opts.teamId, provider, opts.label, opts.ownerGroupId, credentialEnc, JSON.stringify(config), opts.createdBy],
+    );
+    return res.rows[0].id as string;
+  } catch (err) {
+    rethrowDuplicateLabel(err, opts.label);
+  }
 }
 
-export async function deleteIntegration(teamId: string, provider: string, pool: pg.Pool): Promise<void> {
-  await pool.query("DELETE FROM team_integrations WHERE team_id = $1 AND provider = $2", [teamId, provider]);
+async function updateIntegration(
+  opts: SaveIntegrationBase & { id: string },
+  credentialEnc: string,
+  config: unknown,
+  pool: pg.Pool,
+): Promise<void> {
+  try {
+    const res = await pool.query(
+      `UPDATE integrations SET label = $3, credentials_enc = $4, config = $5, status = 'active', last_error = NULL
+       WHERE team_id = $1 AND id = $2`,
+      [opts.teamId, opts.id, opts.label, credentialEnc, JSON.stringify(config)],
+    );
+    if (!res.rowCount) throw new Error("Integration not found");
+  } catch (err) {
+    rethrowDuplicateLabel(err, opts.label);
+  }
+}
+
+/** Connect or reconfigure. `token` null = keep the stored token (mapping-only
+ *  edits and adding repos don't force the caller to re-paste credentials). */
+export async function saveGithubIntegration(
+  opts: SaveIntegrationBase & { token: string | null; repos: GithubRepoMapping[] },
+  pool: pg.Pool,
+): Promise<{ id: string; login: string }> {
+  const key = encryptionKey();
+  const effectiveToken = opts.token ?? (opts.id ? await storedCredential(opts.id, pool) : null);
+  if (!effectiveToken) throw new Error("GitHub token required — no stored credentials to reuse");
+  const { login } = await validateGithubToken(effectiveToken);
+  await assertRepoAccess(effectiveToken, opts.repos.map((r) => r.name));
+  const config: GithubIntegrationConfig = { repos: opts.repos, sync_days: 60, login };
+  const enc = encryptAesGcm(effectiveToken, key);
+  const id = opts.id
+    ? (await updateIntegration({ ...opts, id: opts.id }, enc, config, pool), opts.id)
+    : await insertIntegration(opts, "github", enc, config, pool);
+  return { id, login };
+}
+
+export async function deleteIntegration(teamId: string, integrationId: string, pool: pg.Pool): Promise<void> {
+  // Synced facts cascade via the integration_id FK; shared sources tracked by
+  // another integration repopulate on its next sync.
+  await pool.query("DELETE FROM integrations WHERE team_id = $1 AND id = $2", [teamId, integrationId]);
 }
 
 export type GithubSyncSummary = {
@@ -113,55 +189,75 @@ export type GithubSyncSummary = {
   aiAssisted: number;
 };
 
-export async function runGithubSync(teamId: string, pool: pg.Pool): Promise<GithubSyncSummary> {
+async function loadForSync(
+  integrationId: string,
+  provider: string,
+  pool: pg.Pool,
+): Promise<{ teamId: string; credential: string; config: IntegrationRow["config"] }> {
   const res = await pool.query(
-    "SELECT credentials_enc, config FROM team_integrations WHERE team_id = $1 AND provider = 'github'",
-    [teamId],
+    "SELECT team_id, credentials_enc, config FROM integrations WHERE id = $1 AND provider = $2",
+    [integrationId, provider],
   );
-  if (!res.rowCount) throw new Error("GitHub integration not configured");
-  const config = res.rows[0].config as GithubIntegrationConfig;
-  const token = decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
+  if (!res.rowCount) throw new Error(`${provider} integration not configured`);
+  return {
+    teamId: res.rows[0].team_id,
+    credential: decryptAesGcm(res.rows[0].credentials_enc, encryptionKey()),
+    config: res.rows[0].config,
+  };
+}
+
+async function markSyncOutcome(integrationId: string, err: Error | null, pool: pg.Pool): Promise<void> {
+  if (err) {
+    await pool.query(
+      "UPDATE integrations SET status = 'error', last_error = $2 WHERE id = $1",
+      [integrationId, err.message.slice(0, 500)],
+    );
+  } else {
+    await pool.query(
+      "UPDATE integrations SET status = 'active', last_error = NULL, last_sync_at = now() WHERE id = $1",
+      [integrationId],
+    );
+  }
+}
+
+export async function runGithubSync(integrationId: string, pool: pg.Pool): Promise<GithubSyncSummary> {
+  const { teamId, credential: token, config } = await loadForSync(integrationId, "github", pool);
+  const cfg = config as GithubIntegrationConfig;
 
   try {
     let prs = 0;
     let aiAssisted = 0;
-    for (const { name: repo } of normalizeGithubRepos(config.repos)) {
-      const rows = await fetchRepoPulls(token, repo, config.sync_days ?? 60);
+    for (const { name: repo } of normalizeGithubRepos(cfg.repos)) {
+      const rows = await fetchRepoPulls(token, repo, cfg.sync_days ?? 60);
       for (const r of rows) {
         await pool.query(
           `INSERT INTO github_pull_requests (
              team_id, repo, number, title, author_login, state,
              created_at, merged_at, closed_at, first_commit_at, first_review_at,
-             additions, deletions, commits_total, commits_ai, ai_assisted, synced_at
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, now())
+             additions, deletions, commits_total, commits_ai, ai_assisted, integration_id, synced_at
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, now())
            ON CONFLICT (team_id, repo, number) DO UPDATE SET
              title = $4, author_login = $5, state = $6,
              created_at = $7, merged_at = $8, closed_at = $9,
              first_commit_at = $10, first_review_at = $11,
              additions = $12, deletions = $13,
              commits_total = $14, commits_ai = $15, ai_assisted = $16,
+             integration_id = $17,
              synced_at = now()`,
           [
             teamId, repo, r.number, r.title, r.authorLogin, r.state,
             r.createdAt, r.mergedAt, r.closedAt, r.firstCommitAt, r.firstReviewAt,
-            r.additions, r.deletions, r.commitsTotal, r.commitsAi, r.aiAssisted,
+            r.additions, r.deletions, r.commitsTotal, r.commitsAi, r.aiAssisted, integrationId,
           ],
         );
       }
       prs += rows.length;
       aiAssisted += rows.filter((r) => r.aiAssisted).length;
     }
-    await pool.query(
-      `UPDATE team_integrations SET status = 'active', last_error = NULL, last_sync_at = now()
-       WHERE team_id = $1 AND provider = 'github'`,
-      [teamId],
-    );
-    return { repos: config.repos.length, prs, aiAssisted };
+    await markSyncOutcome(integrationId, null, pool);
+    return { repos: normalizeGithubRepos(cfg.repos).length, prs, aiAssisted };
   } catch (err) {
-    await pool.query(
-      `UPDATE team_integrations SET status = 'error', last_error = $2 WHERE team_id = $1 AND provider = 'github'`,
-      [teamId, (err as Error).message.slice(0, 500)],
-    );
+    await markSyncOutcome(integrationId, err as Error, pool);
     throw err;
   }
 }
@@ -198,82 +294,56 @@ export function normalizeLinearTeams(config: { teams?: unknown; team_keys?: unkn
   return [];
 }
 
-export async function storedLinearKey(teamId: string, pool: pg.Pool): Promise<string | null> {
-  const res = await pool.query(
-    "SELECT credentials_enc FROM team_integrations WHERE team_id = $1 AND provider = 'linear'",
-    [teamId],
-  );
-  if (!res.rowCount) return null;
-  return decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
-}
-
 export async function saveLinearIntegration(
-  teamId: string,
-  apiKey: string | null,
-  teams: LinearTeamMapping[],
-  createdBy: string,
+  opts: SaveIntegrationBase & { apiKey: string | null; teams: LinearTeamMapping[] },
   pool: pg.Pool,
-): Promise<{ login: string }> {
+): Promise<{ id: string; login: string }> {
   const key = encryptionKey();
-  const effective = apiKey ?? (await storedLinearKey(teamId, pool));
+  const effective = opts.apiKey ?? (opts.id ? await storedCredential(opts.id, pool) : null);
   if (!effective) throw new Error("Linear API key required — no stored credentials to reuse");
   const viewer = await validateLinearKey(effective);
-  const config: LinearIntegrationConfig = { teams, sync_days: 60, login: viewer.name };
-  await pool.query(
-    `INSERT INTO team_integrations (team_id, provider, credentials_enc, config, status, last_error, created_by)
-     VALUES ($1, 'linear', $2, $3, 'active', NULL, $4)
-     ON CONFLICT (team_id, provider)
-     DO UPDATE SET credentials_enc = $2, config = $3, status = 'active', last_error = NULL, created_by = $4`,
-    [teamId, encryptAesGcm(effective, key), JSON.stringify(config), createdBy],
-  );
-  return { login: viewer.name };
+  const config: LinearIntegrationConfig = { teams: opts.teams, sync_days: 60, login: viewer.name };
+  const enc = encryptAesGcm(effective, key);
+  const id = opts.id
+    ? (await updateIntegration({ ...opts, id: opts.id }, enc, config, pool), opts.id)
+    : await insertIntegration(opts, "linear", enc, config, pool);
+  return { id, login: viewer.name };
 }
 
 export type LinearSyncSummary = { issues: number; completed: number };
 
-export async function runLinearSync(teamId: string, pool: pg.Pool): Promise<LinearSyncSummary> {
-  const res = await pool.query(
-    "SELECT credentials_enc, config FROM team_integrations WHERE team_id = $1 AND provider = 'linear'",
-    [teamId],
-  );
-  if (!res.rowCount) throw new Error("Linear integration not configured");
-  const config = res.rows[0].config as LinearIntegrationConfig;
-  const apiKey = decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
+export async function runLinearSync(integrationId: string, pool: pg.Pool): Promise<LinearSyncSummary> {
+  const { teamId, credential: apiKey, config } = await loadForSync(integrationId, "linear", pool);
+  const cfg = config as LinearIntegrationConfig;
 
   try {
     const rows = await fetchLinearIssues(
       apiKey,
-      normalizeLinearTeams(config).map((t) => t.key),
-      config.sync_days ?? 60,
+      normalizeLinearTeams(cfg).map((t) => t.key),
+      cfg.sync_days ?? 60,
     );
     for (const r of rows) {
       await pool.query(
         `INSERT INTO linear_issues (
            team_id, identifier, title, state_name, state_type, linear_team_key,
-           assignee, estimate, url, created_at, started_at, completed_at, canceled_at, synced_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
+           assignee, estimate, url, created_at, started_at, completed_at, canceled_at, integration_id, synced_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
          ON CONFLICT (team_id, identifier) DO UPDATE SET
            title = $3, state_name = $4, state_type = $5, linear_team_key = $6,
            assignee = $7, estimate = $8, url = $9,
            created_at = $10, started_at = $11, completed_at = $12, canceled_at = $13,
+           integration_id = $14,
            synced_at = now()`,
         [
           teamId, r.identifier, r.title, r.stateName, r.stateType, r.linearTeamKey,
-          r.assignee, r.estimate, r.url, r.createdAt, r.startedAt, r.completedAt, r.canceledAt,
+          r.assignee, r.estimate, r.url, r.createdAt, r.startedAt, r.completedAt, r.canceledAt, integrationId,
         ],
       );
     }
-    await pool.query(
-      `UPDATE team_integrations SET status = 'active', last_error = NULL, last_sync_at = now()
-       WHERE team_id = $1 AND provider = 'linear'`,
-      [teamId],
-    );
+    await markSyncOutcome(integrationId, null, pool);
     return { issues: rows.length, completed: rows.filter((r) => r.stateType === "completed").length };
   } catch (err) {
-    await pool.query(
-      `UPDATE team_integrations SET status = 'error', last_error = $2 WHERE team_id = $1 AND provider = 'linear'`,
-      [teamId, (err as Error).message.slice(0, 500)],
-    );
+    await markSyncOutcome(integrationId, err as Error, pool);
     throw err;
   }
 }
@@ -316,24 +386,14 @@ export function normalizeJiraProjects(config: { projects?: unknown; project_keys
   return [];
 }
 
-/** Decrypted Jira API token of an existing integration, or null. */
-export async function storedJiraToken(teamId: string, pool: pg.Pool): Promise<string | null> {
-  const res = await pool.query(
-    "SELECT credentials_enc FROM team_integrations WHERE team_id = $1 AND provider = 'jira'",
-    [teamId],
-  );
-  if (!res.rowCount) return null;
-  return decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
-}
-
 /** Site+email needed alongside the token for Basic auth — read from config. */
 export async function storedJiraConnection(
-  teamId: string,
+  integrationId: string,
   pool: pg.Pool,
 ): Promise<{ site: string; email: string } | null> {
   const res = await pool.query(
-    "SELECT config FROM team_integrations WHERE team_id = $1 AND provider = 'jira'",
-    [teamId],
+    "SELECT config FROM integrations WHERE id = $1 AND provider = 'jira'",
+    [integrationId],
   );
   if (!res.rowCount) return null;
   const config = res.rows[0].config as JiraIntegrationConfig;
@@ -342,103 +402,134 @@ export async function storedJiraConnection(
 }
 
 /** Connect or reconfigure. `token` null = keep the stored token (mapping-only
- *  edits and adding projects don't force the admin to re-paste credentials). */
+ *  edits and adding projects don't force the caller to re-paste credentials). */
 export async function saveJiraIntegration(
-  teamId: string,
-  site: string | null,
-  email: string | null,
-  token: string | null,
-  projects: JiraProjectMapping[],
-  createdBy: string,
+  opts: SaveIntegrationBase & {
+    site: string | null;
+    email: string | null;
+    token: string | null;
+    projects: JiraProjectMapping[];
+  },
   pool: pg.Pool,
-): Promise<{ login: string }> {
+): Promise<{ id: string; login: string }> {
   const key = encryptionKey();
-  const stored = await storedJiraConnection(teamId, pool);
-  const effSite = site ? normalizeSite(site) : stored?.site;
-  const effEmail = email ?? stored?.email;
-  const effToken = token ?? (await storedJiraToken(teamId, pool));
+  const stored = opts.id ? await storedJiraConnection(opts.id, pool) : null;
+  const effSite = opts.site ? normalizeSite(opts.site) : stored?.site;
+  const effEmail = opts.email ?? stored?.email;
+  const effToken = opts.token ?? (opts.id ? await storedCredential(opts.id, pool) : null);
   if (!effSite || !effEmail) throw new Error("Jira site and email are required");
   if (!effToken) throw new Error("Jira API token required — no stored credentials to reuse");
   const viewer = await validateJiraCredentials(effSite, effEmail, effToken);
   // Defence in depth: never persist a key that isn't JQL-safe, even if a
   // caller skipped normalizeJiraProjects. Reads + the query path filter too.
-  const safeProjects = projects.filter((p) => isSafeProjectKey(p.key));
+  const safeProjects = opts.projects.filter((p) => isSafeProjectKey(p.key));
   const config: JiraIntegrationConfig = {
     site: effSite, email: effEmail, projects: safeProjects, sync_days: 60,
     story_points_field: DEFAULT_STORY_POINTS_FIELD, login: viewer.name,
   };
-  await pool.query(
-    `INSERT INTO team_integrations (team_id, provider, credentials_enc, config, status, last_error, created_by)
-     VALUES ($1, 'jira', $2, $3, 'active', NULL, $4)
-     ON CONFLICT (team_id, provider)
-     DO UPDATE SET credentials_enc = $2, config = $3, status = 'active', last_error = NULL, created_by = $4`,
-    [teamId, encryptAesGcm(effToken, key), JSON.stringify(config), createdBy],
-  );
-  return { login: viewer.name };
+  const enc = encryptAesGcm(effToken, key);
+  const id = opts.id
+    ? (await updateIntegration({ ...opts, id: opts.id }, enc, config, pool), opts.id)
+    : await insertIntegration(opts, "jira", enc, config, pool);
+  return { id, login: viewer.name };
 }
 
 export type JiraSyncSummary = { issues: number; completed: number };
 
-export async function runJiraSync(teamId: string, pool: pg.Pool): Promise<JiraSyncSummary> {
-  const res = await pool.query(
-    "SELECT credentials_enc, config FROM team_integrations WHERE team_id = $1 AND provider = 'jira'",
-    [teamId],
-  );
-  if (!res.rowCount) throw new Error("Jira integration not configured");
-  const config = res.rows[0].config as JiraIntegrationConfig;
-  const token = decryptAesGcm(res.rows[0].credentials_enc, encryptionKey());
+export async function runJiraSync(integrationId: string, pool: pg.Pool): Promise<JiraSyncSummary> {
+  const { teamId, credential: token, config } = await loadForSync(integrationId, "jira", pool);
+  const cfg = config as JiraIntegrationConfig;
 
   try {
     const rows = await fetchJiraIssues(
-      config.site,
-      config.email,
+      cfg.site,
+      cfg.email,
       token,
-      normalizeJiraProjects(config).map((p) => p.key),
-      config.sync_days ?? 60,
-      config.story_points_field ?? DEFAULT_STORY_POINTS_FIELD,
+      normalizeJiraProjects(cfg).map((p) => p.key),
+      cfg.sync_days ?? 60,
+      cfg.story_points_field ?? DEFAULT_STORY_POINTS_FIELD,
     );
     for (const r of rows) {
       await pool.query(
         `INSERT INTO jira_issues (
            team_id, identifier, title, state_name, state_type, jira_project_key,
-           assignee, estimate, url, created_at, started_at, completed_at, canceled_at, synced_at
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, now())
+           assignee, estimate, url, created_at, started_at, completed_at, canceled_at, integration_id, synced_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, now())
          ON CONFLICT (team_id, identifier) DO UPDATE SET
            title = $3, state_name = $4, state_type = $5, jira_project_key = $6,
            assignee = $7, estimate = $8, url = $9,
            created_at = $10, started_at = $11, completed_at = $12, canceled_at = $13,
+           integration_id = $14,
            synced_at = now()`,
         [
           teamId, r.identifier, r.title, r.stateName, r.stateType, r.projectKey,
-          r.assignee, r.estimate, r.url, r.createdAt, r.startedAt, r.completedAt, r.canceledAt,
+          r.assignee, r.estimate, r.url, r.createdAt, r.startedAt, r.completedAt, r.canceledAt, integrationId,
         ],
       );
     }
-    await pool.query(
-      `UPDATE team_integrations SET status = 'active', last_error = NULL, last_sync_at = now()
-       WHERE team_id = $1 AND provider = 'jira'`,
-      [teamId],
-    );
+    await markSyncOutcome(integrationId, null, pool);
     return { issues: rows.length, completed: rows.filter((r) => r.stateType === "completed").length };
   } catch (err) {
-    await pool.query(
-      `UPDATE team_integrations SET status = 'error', last_error = $2 WHERE team_id = $1 AND provider = 'jira'`,
-      [teamId, (err as Error).message.slice(0, 500)],
-    );
+    await markSyncOutcome(integrationId, err as Error, pool);
     throw err;
   }
+}
+
+// Re-derive a mapping array from desired per-source booleans for one group.
+// Empty group_ids means "all groups", so excluding a source from one group
+// expands the default to the remaining groups first.
+export function applyDesired<T extends { group_ids: string[] }>(
+  entries: T[],
+  desired: Map<string, boolean>,
+  keyOf: (e: T) => string,
+  groupId: string,
+  allGroupIds: string[],
+): { updated: T[]; error?: string } {
+  let orphaned = false;
+  const updated = entries.map((e) => {
+    const want = desired.get(keyOf(e));
+    if (want === undefined) return e;
+    const isAll = e.group_ids.length === 0;
+    const has = isAll || e.group_ids.includes(groupId);
+    if (want === has) return e;
+    if (want) {
+      const next = [...e.group_ids, groupId];
+      return { ...e, group_ids: allGroupIds.every((g) => next.includes(g)) ? [] : next };
+    }
+    const expanded = isAll ? allGroupIds : e.group_ids;
+    const next = expanded.filter((g) => g !== groupId);
+    if (next.length === 0) {
+      orphaned = true;
+      return e;
+    }
+    return { ...e, group_ids: next };
+  });
+  if (orphaned) {
+    return {
+      updated: entries,
+      error: "A source must count toward at least one group — remove it from the integration instead of excluding it everywhere.",
+    };
+  }
+  return { updated };
+}
+
+/** Provider-dispatched manual sync — routes and the group connect flow call
+ *  this so they don't each re-implement the switch. */
+export async function runSync(integrationId: string, provider: string, pool: pg.Pool): Promise<GithubSyncSummary | LinearSyncSummary | JiraSyncSummary> {
+  if (provider === "github") return runGithubSync(integrationId, pool);
+  if (provider === "linear") return runLinearSync(integrationId, pool);
+  if (provider === "jira") return runJiraSync(integrationId, pool);
+  throw new Error(`Unknown provider: ${provider}`);
 }
 
 /** Hourly scheduler entry: sync every active integration, all providers. */
 export async function syncAllIntegrations(pool: pg.Pool): Promise<void> {
   const res = await pool.query(
-    "SELECT team_id, provider FROM team_integrations WHERE status = 'active'",
+    "SELECT id, provider, team_id FROM integrations WHERE status = 'active'",
   );
   for (const row of res.rows) {
     try {
-      if (row.provider === "github") await runGithubSync(row.team_id, pool);
-      else if (row.provider === "linear") await runLinearSync(row.team_id, pool);
-      else if (row.provider === "jira") await runJiraSync(row.team_id, pool);
+      await runSync(row.id, row.provider, pool);
     } catch (err) {
       // Row is already marked status='error'; keep going for other teams.
       console.error(`[integrations] ${row.provider} sync failed for team ${row.team_id}: ${(err as Error).message}`);

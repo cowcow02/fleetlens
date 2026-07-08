@@ -33,6 +33,7 @@ import {
 import { rollupJoin } from "./rollup-join";
 import {
   jiraVelocity,
+  latestSyncAt,
   linearVelocity,
   linearWeekVelocity,
   type IntegrationConfigRow,
@@ -244,25 +245,29 @@ export async function scopedSourceNames(
       ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
       : xs;
   return {
-    repoNames: integ.github ? inScope(normalizeGithubRepos(integ.github.config.repos)).map((r) => r.name) : [],
-    teamKeys: integ.linear ? inScope(normalizeLinearTeams(integ.linear.config)).map((t) => t.key) : [],
-    projectKeys: integ.jira ? inScope(normalizeJiraProjects(integ.jira.config)).map((p) => p.key) : [],
+    repoNames: [...new Set(integ.github.flatMap((g) => inScope(normalizeGithubRepos(g.config.repos)).map((r) => r.name)))],
+    teamKeys: [...new Set(integ.linear.flatMap((l) => inScope(normalizeLinearTeams(l.config)).map((t) => t.key)))],
+    projectKeys: [...new Set(integ.jira.flatMap((j) => inScope(normalizeJiraProjects(j.config)).map((p) => p.key)))],
   };
 }
 
+// A team can have several integrations per provider; each block unions the
+// scoped sources across them (facts are keyed by source name, so shared
+// sources dedupe naturally).
 async function loadIntegrationConfigs(
   teamId: string,
   pool: pg.Pool,
-): Promise<{ github?: IntegrationConfigRow; linear?: IntegrationConfigRow; jira?: IntegrationConfigRow }> {
+): Promise<{ github: IntegrationConfigRow[]; linear: IntegrationConfigRow[]; jira: IntegrationConfigRow[] }> {
   const res = await pool.query<IntegrationConfigRow>(
-    `SELECT provider, config, last_sync_at::text FROM team_integrations
-     WHERE team_id = $1 AND provider IN ('github', 'linear', 'jira')`,
+    `SELECT provider, config, last_sync_at::text FROM integrations
+     WHERE team_id = $1 AND provider IN ('github', 'linear', 'jira')
+     ORDER BY created_at, id`,
     [teamId],
   );
   return {
-    github: res.rows.find((r) => r.provider === "github"),
-    linear: res.rows.find((r) => r.provider === "linear"),
-    jira: res.rows.find((r) => r.provider === "jira"),
+    github: res.rows.filter((r) => r.provider === "github"),
+    linear: res.rows.filter((r) => r.provider === "linear"),
+    jira: res.rows.filter((r) => r.provider === "jira"),
   };
 }
 
@@ -399,19 +404,19 @@ async function workTimeline(
   scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
-  gh: IntegrationConfigRow | undefined,
-  lin: IntegrationConfigRow | undefined,
-  jira: IntegrationConfigRow | undefined,
+  gh: IntegrationConfigRow[],
+  lin: IntegrationConfigRow[],
+  jira: IntegrationConfigRow[],
 ): Promise<WorkTimelineStats | null> {
-  if (!gh || (!lin && !jira)) return null;
+  if (gh.length === 0 || (lin.length === 0 && jira.length === 0)) return null;
 
   const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
     scope.kind === "group"
       ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
       : xs;
-  const repoNames = inScope(normalizeGithubRepos(gh.config.repos)).map((r) => r.name);
-  const teamKeys = lin ? inScope(normalizeLinearTeams(lin.config)).map((t) => t.key) : [];
-  const projectKeys = jira ? inScope(normalizeJiraProjects(jira.config)).map((p) => p.key) : [];
+  const repoNames = [...new Set(gh.flatMap((g) => inScope(normalizeGithubRepos(g.config.repos)).map((r) => r.name)))];
+  const teamKeys = [...new Set(lin.flatMap((l) => inScope(normalizeLinearTeams(l.config)).map((t) => t.key)))];
+  const projectKeys = [...new Set(jira.flatMap((j) => inScope(normalizeJiraProjects(j.config)).map((p) => p.key)))];
   if (repoNames.length === 0 || (teamKeys.length === 0 && projectKeys.length === 0)) return null;
 
   // Shared window params; per-source key arrays are appended and the matching
@@ -473,20 +478,27 @@ async function githubDelivery(
   scope: InsightsScope,
   weekMonday: string,
   pool: pg.Pool,
-  integ: IntegrationConfigRow | undefined,
+  integs: IntegrationConfigRow[],
 ): Promise<GithubDeliveryStats | null> {
-  if (!integ) return null;
+  if (integs.length === 0) return null;
 
-  const allRepos = normalizeGithubRepos(integ.config.repos);
-  const scoped =
-    scope.kind === "group"
-      ? allRepos.filter((r) => r.group_ids.length === 0 || r.group_ids.includes(scope.groupId))
-      : allRepos;
-  const repoNames = scoped.map((r) => r.name);
+  const lastSyncAt = latestSyncAt(integs);
+  const repoNames = [
+    ...new Set(
+      integs.flatMap((integ) => {
+        const allRepos = normalizeGithubRepos(integ.config.repos);
+        const scoped =
+          scope.kind === "group"
+            ? allRepos.filter((r) => r.group_ids.length === 0 || r.group_ids.includes(scope.groupId))
+            : allRepos;
+        return scoped.map((r) => r.name);
+      }),
+    ),
+  ];
   if (repoNames.length === 0) {
     return {
       repos: [],
-      last_sync_at: integ.last_sync_at,
+      last_sync_at: lastSyncAt,
       open_now: 0,
       week: githubWeekDelivery([]),
       prev_week: githubWeekDelivery([]),
@@ -513,7 +525,7 @@ async function githubDelivery(
 
   return {
     repos: repoNames,
-    last_sync_at: integ.last_sync_at,
+    last_sync_at: lastSyncAt,
     open_now: open.rows[0].n,
     week: githubWeekDelivery(prs.rows.filter((r) => r.in_current_week)),
     prev_week: githubWeekDelivery(prs.rows.filter((r) => !r.in_current_week)),
@@ -975,7 +987,7 @@ export async function buildTeamInsightReport(
   // GitHub connected, fold them onto the connected repos' identities.
   const projects = canonicalizeProjects(
     rawProjects,
-    integ.github ? normalizeGithubRepos(integ.github.config.repos).map((r) => r.name) : [],
+    [...new Set(integ.github.flatMap((g) => normalizeGithubRepos(g.config.repos).map((r) => r.name)))],
   );
   const roster = { rows: perMemberRes.rows.map((r) => ({
     id: r.id,
