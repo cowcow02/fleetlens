@@ -72,7 +72,7 @@ export function AiFeaturesForm({ initial }: { initial: Initial }) {
       <button
         type="submit"
         disabled={saving}
-        className="px-3 py-1 border rounded bg-black text-white disabled:opacity-60"
+        className="af-btn-primary"
       >
         {saving ? "Saving…" : "Save"}
       </button>

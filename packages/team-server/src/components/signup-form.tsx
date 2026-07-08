@@ -32,6 +32,9 @@ export function SignupForm({ isFirstUser, inviteToken, inviteEmail, inviteTeamNa
         </p>
         <code className="help-example" style={{ userSelect: "all", padding: 16, fontSize: 13 }}>{cmd}</code>
         <p className="lede" style={{ fontSize: 13, color: "var(--mute)" }}>
+          Your browser will open to finish setup — choose which projects to share, then start syncing.
+        </p>
+        <p className="lede" style={{ fontSize: 13, color: "var(--mute)" }}>
           This device token is shown <strong>once</strong>. Copy the whole command above; you can always regenerate a token later in Settings.
         </p>
         <button

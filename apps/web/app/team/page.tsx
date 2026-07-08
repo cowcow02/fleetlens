@@ -2,12 +2,14 @@
  * Team-sync status page.
  *
  * Shows which team this machine's daemon is paired with and what data flows
- * over the wire on the next push. There is exactly one sync behavior: all
- * active projects and all LLM-enriched fields are shared — there is no
- * member-side gating. The page reads the same on-disk team-config.json the
- * daemon reads.
+ * over the wire on the next push. All LLM-enriched fields are shared for
+ * every synced project; which projects are synced is the member's own
+ * choice (Settings' Synced-projects selection, seeded by the onboarding
+ * wizard). The page reads the same on-disk team-config.json the daemon reads.
  */
 import { readTeamConfig, toTeamConfigView } from "@/lib/team-config";
+import { SyncedProjectsSection } from "./synced-projects-section";
+import { SyncActivitySection } from "./sync-activity-section";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +39,7 @@ export default function TeamPage() {
     return (
       <main className="mx-auto max-w-3xl p-6 space-y-6">
         <h1 className="text-2xl font-semibold">Team sync</h1>
-        <section className="border border-dashed rounded-lg p-6 text-sm space-y-3">
+        <section className="af-card border-dashed text-sm space-y-3">
           <p className="font-medium">Not paired with any team.</p>
           <p className="text-gray-600">
             To pair this machine with a Fleetlens team server, run from a
@@ -56,6 +58,12 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
   }
 
   const view = toTeamConfigView(config);
+  const sp = config.syncProjects;
+  const syncSummary = sp
+    ? sp.autoIncludeNew
+      ? `Syncing: all projects except ${sp.excluded.length} excluded`
+      : `Syncing: only ${sp.included.length} selected project${sp.included.length === 1 ? "" : "s"}`
+    : null;
 
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-8">
@@ -66,7 +74,14 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
         </p>
       </header>
 
-      <section className="border rounded-lg p-5 space-y-3">
+      {config.setupPending && (
+        <div className="border border-amber-400/40 bg-amber-400/10 rounded-lg p-4 text-sm">
+          Setup isn&rsquo;t finished — nothing is syncing yet.{" "}
+          <a className="underline font-medium" href="/team/onboarding">Finish onboarding</a>
+        </div>
+      )}
+
+      <section className="af-card space-y-3">
         <div className="flex items-baseline justify-between">
           <h2 className="text-lg font-medium">Pairing</h2>
           <span className="text-xs uppercase tracking-wide text-green-700 dark:text-green-400">
@@ -77,7 +92,11 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
           <dt className="text-gray-500">Team slug</dt>
           <dd className="font-mono">{view.teamSlug}</dd>
           <dt className="text-gray-500">Server</dt>
-          <dd className="font-mono break-all">{view.serverUrl}</dd>
+          <dd className="font-mono break-all">
+            <a href={view.serverUrl} target="_blank" rel="noreferrer" className="hover:underline">
+              {view.serverUrl} <span aria-hidden>↗</span>
+            </a>
+          </dd>
           <dt className="text-gray-500">Member ID</dt>
           <dd className="font-mono break-all text-xs">{view.memberId}</dd>
           <dt className="text-gray-500">Bearer token</dt>
@@ -91,11 +110,18 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
         </dl>
       </section>
 
-      <section className="border rounded-lg p-5 space-y-3">
+      <section className="af-card">
+        <SyncActivitySection />
+      </section>
+
+      <section className="af-card">
+        <SyncedProjectsSection />
+      </section>
+
+      <section className="af-card space-y-3">
         <h2 className="text-lg font-medium">What gets shared</h2>
         <p className="text-sm text-gray-500">
-          Every push shares the same data across all your active projects.
-          There is no per-project or per-field opt-out.
+          {syncSummary ?? "Syncing: all projects (no selection set)."}
         </p>
         <ul className="text-sm space-y-2">
           <li>
@@ -103,8 +129,8 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
             calls, turns, token totals.
           </li>
           <li>
-            <strong>Rich rollup</strong> (Entry-derived counts) for all active
-            projects: working-shape distribution, top skills, subagents
+            <strong>Rich rollup</strong> (Entry-derived counts) for each
+            synced project: working-shape distribution, top skills, subagents
             dispatched, long-autonomous turns, plan-mode usage, brainstorm
             warmups, tool errors, PRs/commits/pushes. Project labels only;
             never raw prompts or agent output.
@@ -119,13 +145,18 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
             model calls ride along with the push).
           </li>
         </ul>
-        <p className="text-xs text-gray-500 pt-2">
-          Never shared: first-user prompts, final-agent output, raw transcript
-          text, tool inputs/outputs.
-        </p>
+        <div className="af-panel p-4 text-sm space-y-2">
+          <div className="font-medium">What does NOT leave your machine</div>
+          <ul className="list-disc list-inside text-gray-600 space-y-1">
+            <li>Session transcripts, prompts, or assistant responses</li>
+            <li>Absolute paths, file contents, or tool-call payloads</li>
+            <li>Anything from projects you exclude above</li>
+            <li>Anything from sessions older than the start-of-day rollup window</li>
+          </ul>
+        </div>
       </section>
 
-      <section className="border rounded-lg p-5 space-y-3">
+      <section className="af-card space-y-3">
         <h2 className="text-lg font-medium">Disconnect</h2>
         <p className="text-sm text-gray-600">
           To leave the team and stop all syncing, run:

@@ -229,6 +229,10 @@ async function main() {
   results.push(await hit("/projects", "Projects grid"));
   results.push(await hit("/settings", "Settings"));
   results.push(await hit("/insights", "Insights (V2 hero)"));
+  results.push(await hit("/team", "Team sync"));
+  // Unpaired dev servers redirect this to /team (200 via fetch's default
+  // follow) — still exercises the onboarding page's server component.
+  results.push(await hit("/team/onboarding", "Team onboarding wizard"));
   results.push(await hit("/changelog", "Changelog"));
   results.push(await hit("/api/digest/week-index?count=4", "Week index API"));
   results.push(await hit("/api/digest/month-index?count=3", "Month index API"));

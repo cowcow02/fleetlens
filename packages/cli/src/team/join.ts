@@ -1,6 +1,8 @@
-import { writeTeamConfig, type TeamConfig } from "./config.js";
+import { readTeamConfig, writeTeamConfig, type TeamConfig, type SyncProjects } from "./config.js";
 import { runTeamSync } from "./sync.js";
 import { appendDaemonLogLine } from "../daemon-log.js";
+import { ensureCurrentServer, openBrowser } from "../server.js";
+import { startDaemonSilent } from "../commands/daemon.js";
 
 // Route the pairing run's log through daemon.log so sync-log.ts picks its
 // [sync] summary. Without this the first-pair backfill — the largest sync of a
@@ -9,10 +11,26 @@ import { appendDaemonLogLine } from "../daemon-log.js";
 // weeks of history.
 const logToDaemonLog = appendDaemonLogLine;
 
+// A re-join to the SAME server+team (e.g. after `team leave` then rejoining,
+// or re-running `join` after an interrupted setup) keeps the member's prior
+// project selection instead of resetting to "sync everything". A different
+// server or team is a genuinely new pairing — nothing carries over.
+export function carryOverSyncProjects(
+  existing: TeamConfig | null,
+  serverUrl: string,
+  teamSlug: string,
+): SyncProjects | undefined {
+  if (existing && existing.serverUrl === serverUrl && existing.teamSlug === teamSlug) {
+    return existing.syncProjects;
+  }
+  return undefined;
+}
+
 export async function joinTeam(args: string[]) {
-  const [serverUrl, bearerToken] = args;
+  const noBrowser = args.includes("--no-browser");
+  const [serverUrl, bearerToken] = args.filter((a) => !a.startsWith("--"));
   if (!serverUrl || !bearerToken) {
-    console.error("Usage: fleetlens team join <server-url> <device-token>");
+    console.error("Usage: fleetlens team join <server-url> <device-token> [--no-browser]");
     console.error("");
     console.error("Get the device token from the dashboard after signup,");
     console.error("or from Settings → My device token.");
@@ -36,6 +54,7 @@ export async function joinTeam(args: string[]) {
     user: { email: string; displayName: string | null };
   };
 
+  const existing = readTeamConfig();
   const config: TeamConfig = {
     serverUrl,
     memberId: data.membership.id,
@@ -48,39 +67,83 @@ export async function joinTeam(args: string[]) {
     // pair run's own [sync] line is written after this instant, so it still
     // uploads on the next sync.
     lastSyncedLogAt: new Date().toISOString(),
+    syncProjects: carryOverSyncProjects(existing, serverUrl, data.team.slug),
+    // Browser path: gate the daemon until the wizard's "Start syncing".
+    ...(noBrowser ? {} : { setupPending: true }),
   };
   writeTeamConfig(config);
 
   console.log(`Paired with "${data.team.name}" as ${data.user.displayName || data.user.email}`);
   console.log(`  role: ${data.membership.role}`);
 
-  // One sync path handles first-pair history, current live utilization, queued
-  // retries, and daily activity. Threading `config` directly avoids a stale
-  // disk-read race during the first paired moment.
-  console.log("  Syncing local history…");
-  const sync = await runTeamSync(logToDaemonLog, config, {
-    forceUsageBackfill: true,
-    trigger: "pair",
-  });
-  const backfill = sync.usageBackfill;
-  if (backfill?.error) {
-    console.log(`  ⚠ Usage history sync failed: ${backfill.error} — daemon will retry automatically.`);
-  } else if ((backfill?.insertedSnapshots ?? 0) > 0) {
-    console.log(
-      `  ✓ Synced ${backfill!.insertedSnapshots} usage snapshot${backfill!.insertedSnapshots === 1 ? "" : "s"} from local history.`,
-    );
-  } else if ((backfill?.sentSnapshots ?? 0) > 0) {
-    console.log(`  ✓ ${backfill!.sentSnapshots} usage snapshots already on server (deduped on capture time).`);
-  } else {
-    console.log("  · No local usage snapshots yet — daemon will start collecting.");
+  if (noBrowser) {
+    // Legacy headless path: sync everything immediately.
+    // One sync path handles first-pair history, current live utilization, queued
+    // retries, and daily activity. Threading `config` directly avoids a stale
+    // disk-read race during the first paired moment.
+    console.log("  Syncing local history…");
+    const sync = await runTeamSync(logToDaemonLog, config, {
+      forceUsageBackfill: true,
+      trigger: "pair",
+    });
+    const backfill = sync.usageBackfill;
+    if (backfill?.error) {
+      console.log(`  ⚠ Usage history sync failed: ${backfill.error} — daemon will retry automatically.`);
+    } else if ((backfill?.insertedSnapshots ?? 0) > 0) {
+      console.log(
+        `  ✓ Synced ${backfill!.insertedSnapshots} usage snapshot${backfill!.insertedSnapshots === 1 ? "" : "s"} from local history.`,
+      );
+    } else if ((backfill?.sentSnapshots ?? 0) > 0) {
+      console.log(`  ✓ ${backfill!.sentSnapshots} usage snapshots already on server (deduped on capture time).`);
+    } else {
+      console.log("  · No local usage snapshots yet — daemon will start collecting.");
+    }
+
+    if (sync.error) {
+      console.log(`  ⚠ Team sync failed: ${sync.error} — will retry on next daemon cycle.`);
+    } else if (sync.pushed > 0) {
+      console.log(`  ✓ Synced ${sync.pushed} activity payload${sync.pushed === 1 ? "" : "s"}.`);
+    } else {
+      console.log("  · No new session activity to push.");
+    }
+    console.log("  Daemon polls every 5 minutes — next push happens automatically.");
+    const { ensureTeamAutostart: ensureNoBrowser } = await import("../commands/autostart.js");
+    await ensureNoBrowser();
+    return;
   }
 
-  if (sync.error) {
-    console.log(`  ⚠ Team sync failed: ${sync.error} — will retry on next daemon cycle.`);
-  } else if (sync.pushed > 0) {
-    console.log(`  ✓ Synced ${sync.pushed} activity payload${sync.pushed === 1 ? "" : "s"}.`);
-  } else {
-    console.log("  · No new session activity to push.");
+  // Best-effort first plan-usage snapshot so the wizard's first sync has
+  // usage data to push — the daemon's own first poll can lose a 429 race
+  // when other pollers share this machine.
+  try {
+    const { fetchUsage } = await import("../usage/api.js");
+    const { appendSnapshot } = await import("../usage/storage.js");
+    const { cclensPath } = await import("@claude-lens/parser/fs");
+    appendSnapshot(cclensPath("usage.jsonl"), await fetchUsage());
+  } catch {
+    // Daemon collects within its next cycles.
   }
-  console.log("  Daemon polls every 5 minutes — next push happens automatically.");
+
+  // Paired machines are opt-OUT for daemon autostart — reporting should
+  // survive reboots without the user remembering to run `fleetlens start`.
+  const { ensureTeamAutostart } = await import("../commands/autostart.js");
+  await ensureTeamAutostart();
+
+  console.log("  Opening your browser to finish setup…");
+  let url: string;
+  try {
+    const server = await ensureCurrentServer({});
+    url = `http://localhost:${server.port}/team/onboarding`;
+    const daemon = startDaemonSilent();
+    if (!daemon.started && !daemon.alreadyRunning) {
+      console.warn(`  ⚠ Daemon failed to start — ${daemon.error}`);
+    }
+  } catch (err) {
+    console.error(`  ⚠ Could not start the dashboard: ${(err as Error).message}`);
+    console.error("  Re-run 'fleetlens team join' after fixing it, or use --no-browser to sync everything from the terminal.");
+    process.exit(1);
+  }
+  openBrowser(url);
+  console.log(`  Continue in your browser: ${url}`);
+  console.log("  Nothing syncs until you finish setup there.");
 }

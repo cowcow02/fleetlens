@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { cclensHome } from "@claude-lens/parser/fs";
 
@@ -7,14 +7,29 @@ import { cclensHome } from "@claude-lens/parser/fs";
 // so the consent page reflects the daemon's actual sync behavior. The CLI
 // owns the canonical type; this is a deliberate duplicate to avoid making
 // apps/web depend on the cli package.
+
+/** Member-side project selection for team sync. `included`/`excluded` capture
+ *  the explicit wizard checkboxes; projects that appear AFTER selection fall
+ *  through to `autoIncludeNew`. Absent syncProjects = sync everything. */
+export type SyncProjects = {
+  autoIncludeNew: boolean;
+  included: string[];
+  excluded: string[];
+};
+
 export type TeamConfig = {
   serverUrl: string;
   memberId: string;
   bearerToken: string;
   teamSlug: string;
+  teamName?: string;
   pairedAt: string;
   lastSyncedDay?: string;
   lastSyncedUsageSnapshotAt?: string;
+  /** Written by `team join`; nothing syncs while set. Cleared by the wizard's
+   *  "Start syncing". Absent on configs from before the wizard ⇒ not gated. */
+  setupPending?: boolean;
+  syncProjects?: SyncProjects;
 };
 
 const CONFIG_FILE = "team.json";
@@ -30,7 +45,11 @@ export function readTeamConfig(): TeamConfig | null {
 export function writeTeamConfig(config: TeamConfig): void {
   const dir = cclensHome();
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, CONFIG_FILE), JSON.stringify(config, null, 2), { mode: 0o600 });
+  // Atomic tmp+rename, mirroring the parser's writeTeamConfig — daemon and web
+  // both write this file; a torn write must never be readable.
+  const tmp = join(dir, `${CONFIG_FILE}.${process.pid}.tmp`);
+  writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 });
+  renameSync(tmp, join(dir, CONFIG_FILE));
 }
 
 /** A "safe-for-UI" view: the bearer token is masked so it's never rendered

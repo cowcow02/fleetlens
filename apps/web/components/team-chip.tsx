@@ -53,7 +53,7 @@ export function TeamChip({ connection }: { connection: TeamConnection }) {
 
   return (
     <Link
-      href="/settings#team"
+      href="/team"
       title={tooltipParts.join("\n")}
       style={{
         display: "flex",

@@ -4,6 +4,7 @@ import {
   buildIngestPayload,
   buildRichBlocksForDay,
   buildRollupsForRange,
+  filterSyncedSessions,
   pushToTeamServer,
   readLatestUsageSnapshotForWire,
   resetEnsuredSessions,
@@ -20,7 +21,7 @@ import { readPendingSyncLog, type SyncLogLine } from "./sync-log.js";
 import { writeLastPushSuccess, writeLastPushFailure } from "./last-push.js";
 import { dispatchCommand, type ServerCommand, type CommandResult } from "./commands.js";
 import { getPlanTier } from "../usage/profile.js";
-import { cclensPath } from "@claude-lens/parser/fs";
+import { cclensPath, shouldSyncProject } from "@claude-lens/parser/fs";
 
 // Process-scoped to prevent the same command from being dispatched twice
 // when a long backfill spans multiple sync ticks (sync N+1 fires before
@@ -46,6 +47,7 @@ export type SyncOutcome = {
   usageBackfill?: BackfillOutcome;
   failedDay?: string;
   error?: string;
+  setupPending?: boolean;
 };
 
 export type TeamSyncOptions = {
@@ -59,7 +61,21 @@ export type TeamSyncOptions = {
   // The scheduler's interval to the NEXT team sync, so the summary line can
   // print an accurate "next ~Nm" rather than a hardcoded guess.
   nextSyncMs?: number;
+  // Fired as the run progresses — the onboarding wizard's SSE relay pipes
+  // these straight to `--progress-json` stdout lines; the daemon's normal
+  // path leaves this unset.
+  onProgress?: (ev: SyncProgressEvent) => void;
 };
+
+// One line per run, streamed via `fleetlens team sync --progress-json` for
+// the onboarding wizard's live progress list. Not the [sync] summary line —
+// that stays log-only.
+export type SyncProgressEvent =
+  | { type: "phase"; phase: "usage-backfill" | "activity"; totalDays?: number }
+  | { type: "usage"; inserted: number; alreadyKnown: number }
+  | { type: "day"; day: string; index: number; total: number; outcome: "pushed" | "queued" | "dropped" }
+  | { type: "done"; pushed: number; queued: number; pushedDays: string[] }
+  | { type: "error"; message: string };
 
 // Fixed leading status word of every uploaded [sync] line — the ONE token a
 // human or an agent greps to know how the last sync went. Ordered by
@@ -188,6 +204,25 @@ export async function runTeamSync(
   const config = configOverride === undefined ? readTeamConfig() : configOverride;
   if (!config) return { paired: false, pushed: 0, queued: 0, queuedDrained: 0 };
 
+  // Wizard gate: the join wrote config but the member hasn't confirmed the
+  // project selection yet. Nothing may leave the machine until they do.
+  if (config.setupPending) {
+    log(
+      "info",
+      buildSyncLine(
+        "idle",
+        options.trigger ?? "auto",
+        {
+          pushedDays: [], droppedDays: [], queued: 0, queuedDrained: 0, usageSnapshots: 0,
+          idleReason: "setup pending — finish onboarding in the dashboard (/team/onboarding)",
+        },
+        0,
+        options.nextSyncMs,
+      ),
+    );
+    return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, setupPending: true };
+  }
+
   // One-per-run [sync] summary line. Fields accumulate through the run; a
   // single `finish(status)` at each exit (including the catch) builds and
   // writes the line. It's read back off daemon.log at the START of a LATER
@@ -222,6 +257,7 @@ export async function runTeamSync(
       summary.skipped = { ...summary.skipped, ...body.blocks.skipped };
     }
   };
+  const emit = options.onProgress ?? (() => {});
 
   try {
     // Run-scoped: a transient read failure on one session must not poison it
@@ -229,13 +265,19 @@ export async function runTeamSync(
     // 5-min tick retries. Within-run dedupe across a multi-day backfill stands.
     resetEnsuredSessions();
     const { listSessions, loadCalibrationCurve } = await import("@claude-lens/parser/fs");
-    const { toLocalDay } = await import("@claude-lens/parser");
+    const { toLocalDay, projectRepoName } = await import("@claude-lens/parser");
     const today = toLocalDay(Date.now());
-    let nextConfig: TeamConfig = { ...config };
+    // Watermark patches accumulate across the run and merge onto a FRESH disk
+    // read at each write — this run only owns watermark keys, so a concurrent
+    // web write (Settings selection change, wizard clearing setupPending) is
+    // never clobbered by this run's stale snapshot.
+    let patches: Partial<TeamConfig> = {};
 
     const persistConfig = (patch: Partial<TeamConfig>) => {
-      nextConfig = { ...nextConfig, ...patch };
-      writeTeamConfig(nextConfig);
+      patches = { ...patches, ...patch };
+      const onDisk = readTeamConfig();
+      if (!onDisk) return; // unpaired mid-run (team leave) — don't resurrect the file
+      writeTeamConfig({ ...onDisk, ...patches });
     };
 
     // The daemon's own sync-log lines since the last successful upload, read
@@ -310,7 +352,15 @@ export async function runTeamSync(
       let drained = 0;
       const backlog = dequeuePayloads() as IngestPayload[];
       for (let i = 0; i < backlog.length; i++) {
-        const qResult = await pushToTeamServer(config, backlog[i]!);
+        const queuedPayload = backlog[i]!;
+        // Queued before a selection change? Don't leak the now-excluded
+        // project — the day rebuilds from filtered sessions anyway, because
+        // lastSyncedDay never advances past a queued day.
+        if (queuedPayload.richRollup?.projects?.some((p) => !shouldSyncProject(p.project, config.syncProjects))) {
+          log("info", "team push: dropped queued payload containing now-excluded project(s)");
+          continue;
+        }
+        const qResult = await pushToTeamServer(config, queuedPayload);
         if (!qResult.ok) {
           if (isValidationPoison(qResult.status)) {
             log("warn", `team push: queued payload rejected (HTTP ${qResult.status}); dropping unrecoverable item`);
@@ -325,21 +375,50 @@ export async function runTeamSync(
       return drained;
     };
 
+    emit({ type: "phase", phase: "usage-backfill" });
     const usageBackfill = await runTeamBackfill(log, USAGE_LOG, config, {
       sinceCapturedAt: options.forceUsageBackfill
         ? undefined
         : config.lastSyncedUsageSnapshotAt,
     });
+    emit({
+      type: "usage",
+      inserted: usageBackfill.insertedSnapshots ?? 0,
+      alreadyKnown: usageBackfill.skippedSnapshots ?? 0,
+    });
     if (usageBackfill.lastSnapshotAt) {
       persistConfig({ lastSyncedUsageSnapshotAt: usageBackfill.lastSnapshotAt });
     }
 
-    const sessions = await listSessions({ limit: 10_000 });
+    const unfilteredSessions = await listSessions({ limit: 10_000 });
+    const sessions = filterSyncedSessions(unfilteredSessions, config.syncProjects);
     // All day rollups, unfiltered — `rollups` is the new-days slice pushed by
     // the main loop; the full set is also indexed for the dropped-day retry,
     // whose target predates lastSyncedDay.
     const allRollups = buildRollupsForRange(sessions);
-    const rollups = allRollups.filter((r) => !config.lastSyncedDay || r.day >= config.lastSyncedDay);
+    const inWindow = (day: string) => !config.lastSyncedDay || day >= config.lastSyncedDay;
+    const rollups = allRollups.filter((r) => inWindow(r.day));
+    // Tombstones: a day whose ONLY activity is now-excluded projects vanishes
+    // from the filtered rollups, so its previously-pushed server row would
+    // linger forever. Push an explicit empty day to overwrite it.
+    if (config.syncProjects) {
+      const filteredDays = new Set(allRollups.map((r) => r.day));
+      for (const r of buildRollupsForRange(unfilteredSessions)) {
+        if (!filteredDays.has(r.day) && inWindow(r.day)) {
+          rollups.push({
+            day: r.day,
+            agentTimeMs: 0,
+            sessions: 0,
+            uniqueSessions: 0,
+            toolCalls: 0,
+            turns: 0,
+            tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          });
+        }
+      }
+      rollups.sort((a, b) => (a.day < b.day ? -1 : 1));
+    }
+    emit({ type: "phase", phase: "activity", totalDays: rollups.length });
 
     // Snapshot represents *current* utilization, not historical days. Attach
     // only to the most recent rollup so a multi-day backfill doesn't repeat
@@ -368,6 +447,7 @@ export async function runTeamSync(
           summary.idleReason = "nothing to sync";
           finish("idle");
         }
+        emit({ type: "done", pushed: 0, queued: 0, pushedDays: summary.pushedDays });
         return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
       }
       summary.usageSnapshots = usageBackfill.sentSnapshots;
@@ -381,6 +461,7 @@ export async function runTeamSync(
           writeLastPushFailure(payload, errLine);
           summary.errorMsg = `live-snapshot push HTTP ${result.status} (validation) — dropped unrecoverable`;
           finish("error");
+          emit({ type: "done", pushed: 0, queued: 0, pushedDays: summary.pushedDays });
           return { paired: true, pushed: 0, queued: 0, queuedDrained: 0, usageBackfill };
         }
         const errLine = `team push failed (${result.status})`;
@@ -389,6 +470,7 @@ export async function runTeamSync(
         summary.queued = 1;
         summary.errorMsg = `live-snapshot push HTTP ${result.status} — queued for retry`;
         finish("failed");
+        emit({ type: "done", pushed: 0, queued: 1, pushedDays: summary.pushedDays });
         return { paired: true, pushed: 0, queued: 1, queuedDrained: 0, usageBackfill };
       }
       writeLastPushSuccess(payload);
@@ -405,16 +487,13 @@ export async function runTeamSync(
       summary.idleReason = "no new daily activity";
       finish(summary.skipped && Object.keys(summary.skipped).length ? "degraded" : "idle");
       await dispatchAndReport();
+      emit({ type: "done", pushed: 1, queued: 0, pushedDays: summary.pushedDays });
       return { paired: true, pushed: 1, queued: 0, queuedDrained, usageBackfill };
     }
 
     let pushed = 0;
     let queued = 0;
     let failedDay: string | undefined;
-    // The most recent day we RESOLVED — pushed successfully OR deliberately
-    // skipped as validation-poison. lastSyncedDay never rewinds before it, so
-    // a skipped poison day is not re-pushed on the next tick.
-    let lastResolvedDay: string | undefined;
     // Days the server hard-4xx'd on a previous run, retried below. Start from
     // the persisted list; this run's own drops are appended in the loop.
     const droppedDaysBefore = config.droppedDays ?? [];
@@ -436,17 +515,42 @@ export async function runTeamSync(
     ): IngestPayload => {
       const daySessions = sessions.filter((s) => sessionTouchesDay(s, rollup.day));
       const richBlocks = buildRichBlocksForDay(rollup.day, daySessions, resolveRepo);
+      // Tombstone day (every session excluded): force EMPTY rich/enriched
+      // blocks — the server upsert replaces `projects` wholesale and
+      // COALESCEs the mixes, so absent blocks would leave the stale row.
+      const tombstone = daySessions.length === 0 && !!config.syncProjects;
+      const emptyRich = tombstone
+        ? {
+            projects: [],
+            workingShapes: [],
+            concurrencyPeak: 0,
+            parallelMinutes: 0,
+            longAutonomous: { count: 0, totalMin: 0, maxSingleMin: 0 },
+            toolErrors: 0,
+            skillsLoaded: [],
+            subagentsDispatched: [],
+            brainstormWarmupSessions: 0,
+            planModeUsed: 0,
+            prs: 0,
+            commits: 0,
+            pushes: 0,
+          }
+        : undefined;
       let artifactSignals: ReturnType<typeof probeArtifactSignals> = null;
       try {
-        // Probe auto-detects git email from `git config user.email`.
-        artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: [process.cwd()] });
+        // Probe auto-detects git email from `git config user.email`. cwd may
+        // itself be an excluded repo (daemon launched from it) — don't let its
+        // .claude/CLAUDE.md authoring signals ride along.
+        const cwdAllowed = shouldSyncProject(projectRepoName(process.cwd()), config.syncProjects);
+        artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: cwdAllowed ? [process.cwd()] : [] });
       } catch {
         // Probe is best-effort; never block the push path.
       }
       return buildIngestPayload({
         rollup,
-        richExtras: richBlocks?.rich,
-        enrichedExtras: richBlocks?.enriched,
+        richExtras: richBlocks?.rich ?? emptyRich,
+        enrichedExtras:
+          richBlocks?.enriched ?? (tombstone ? { outcomeMix: {}, helpfulnessMix: {}, goalMix: {} } : undefined),
         artifactSignals: artifactSignals ?? undefined,
         // Current-cycle data only on the latest day so older days aren't tagged
         // with today's snapshot / peaks.
@@ -457,9 +561,12 @@ export async function runTeamSync(
       });
     };
 
-    for (let i = 0; i < rollups.length; i++) {
-      const rollup = rollups[i]!;
-      const isLatest = i === rollups.length - 1;
+    // Newest day first: a long first sync fills the team dashboard with the
+    // freshest data immediately, and the wizard's live log reads naturally.
+    const rollupsDesc = [...rollups].reverse();
+    for (let i = 0; i < rollupsDesc.length; i++) {
+      const rollup = rollupsDesc[i]!;
+      const isLatest = i === 0;
       // File-system probe (skill/sub-agent/CLAUDE.md authoring) rides inside
       // buildDayPayload. Sync-log rides the FIRST push only — it's not
       // day-specific.
@@ -478,7 +585,7 @@ export async function runTeamSync(
           writeLastPushFailure(payload, errLine);
           summary.droppedDays.push(rollup.day);
           if (!workingDropped.includes(rollup.day)) workingDropped.push(rollup.day);
-          lastResolvedDay = rollup.day;
+          emit({ type: "day", day: rollup.day, index: i + 1, total: rollupsDesc.length, outcome: "dropped" });
           continue;
         }
         const errLine = `team push failed on ${rollup.day} (${result.status})`;
@@ -488,6 +595,7 @@ export async function runTeamSync(
         summary.queuedDay = rollup.day;
         summary.queuedStatus = result.status;
         failedDay = rollup.day;
+        emit({ type: "day", day: rollup.day, index: i + 1, total: rollupsDesc.length, outcome: "queued" });
         break;
       }
       writeLastPushSuccess(payload);
@@ -498,7 +606,7 @@ export async function runTeamSync(
       if (i === 0) syncLogWasDelivered = syncLogDelivered(result.body);
       pushed++;
       summary.pushedDays.push(rollup.day);
-      lastResolvedDay = rollup.day;
+      emit({ type: "day", day: rollup.day, index: i + 1, total: rollupsDesc.length, outcome: "pushed" });
     }
 
     // Retry AT MOST ONE previously-dropped day (oldest first, and not one just
@@ -509,7 +617,32 @@ export async function runTeamSync(
       const retryDay = [...droppedDaysBefore]
         .sort()
         .find((d) => !summary.droppedDays.includes(d));
-      const retryRollup = retryDay ? allRollups.find((r) => r.day === retryDay) : undefined;
+      if (retryDay && summary.pushedDays.includes(retryDay)) {
+        // Main loop already re-pushed this day this run (possibly as a
+        // tombstone after a selection change) — server row is corrected;
+        // just drop it from the list instead of pushing twice.
+        const idx = workingDropped.indexOf(retryDay);
+        if (idx >= 0) workingDropped.splice(idx, 1);
+        summary.recoveredDays = [retryDay];
+      }
+      // A day whose sessions are all excluded since it was dropped has no
+      // filtered rollup — retry it as a tombstone so it still heals instead
+      // of lingering in droppedDays forever.
+      const retryRollup =
+        retryDay && !summary.pushedDays.includes(retryDay)
+          ? (allRollups.find((r) => r.day === retryDay) ??
+            (config.syncProjects
+              ? {
+                  day: retryDay,
+                  agentTimeMs: 0,
+                  sessions: 0,
+                  uniqueSessions: 0,
+                  toolCalls: 0,
+                  turns: 0,
+                  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                }
+              : undefined))
+          : undefined;
       if (retryDay && retryRollup) {
         const payload = buildDayPayload(retryRollup, { latest: false });
         const result = await pushToTeamServer(config, payload);
@@ -536,9 +669,10 @@ export async function runTeamSync(
     const droppedPatch: Partial<TeamConfig> = droppedChanged ? { droppedDays: nextDropped } : {};
 
     if (failedDay) {
-      if (lastResolvedDay || droppedChanged) {
-        persistConfig({ ...(lastResolvedDay ? { lastSyncedDay: lastResolvedDay } : {}), ...droppedPatch });
-      }
+      // Newest-first loop: the failed day and everything OLDER are unresolved,
+      // so the watermark must not advance — already-pushed newer days simply
+      // re-push on the next tick (idempotent per-day upserts server-side).
+      if (droppedChanged) persistConfig(droppedPatch);
     } else {
       persistConfig({ lastSyncedDay: today, ...droppedPatch });
     }
@@ -563,10 +697,12 @@ export async function runTeamSync(
     finish(status);
 
     await dispatchAndReport();
+    emit({ type: "done", pushed, queued, pushedDays: summary.pushedDays });
     return { paired: true, pushed, queued, queuedDrained, usageBackfill, failedDay };
   } catch (err) {
     const message = (err as Error).message;
     summary.errorMsg = `sync aborted: ${message}`;
+    emit({ type: "error", message });
     finish("error");
     writeLastPushFailure(
       { ingestId: "n/a", observedAt: new Date().toISOString() },

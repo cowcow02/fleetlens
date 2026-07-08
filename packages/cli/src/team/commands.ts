@@ -1,5 +1,5 @@
 import type { TeamConfig, ServerCommand, CommandResult } from "@claude-lens/parser/fs";
-import { buildRollupsForRange, buildIngestPayload, buildRichBlocksForDay, sessionTouchesDay, pushToTeamServer } from "./push.js";
+import { buildRollupsForRange, buildIngestPayload, buildRichBlocksForDay, filterSyncedSessions, sessionTouchesDay, pushToTeamServer } from "./push.js";
 import { createRepoResolver } from "./git-remote.js";
 
 export type { ServerCommand, CommandResult };
@@ -31,8 +31,8 @@ async function runActivityBackfill(
   config: TeamConfig,
   log: LogFn,
 ): Promise<CommandResult> {
-  const { listSessions } = await import("@claude-lens/parser/fs");
-  const { toLocalDay } = await import("@claude-lens/parser");
+  const { listSessions, shouldSyncProject } = await import("@claude-lens/parser/fs");
+  const { toLocalDay, projectRepoName } = await import("@claude-lens/parser");
   const { probeArtifactSignals } = await import("../perception/file-probe.js");
 
   const days = command.params.days;
@@ -47,7 +47,10 @@ async function runActivityBackfill(
 
   let sessions;
   try {
-    sessions = await listSessions({ limit: 10_000 });
+    // Server-commanded backfills must respect the member's project selection
+    // too — an admin's "re-push 30 days" is not consent to resend excluded
+    // projects.
+    sessions = filterSyncedSessions(await listSessions({ limit: 10_000 }), config.syncProjects);
   } catch (err) {
     return {
       id: command.id,
@@ -79,7 +82,10 @@ async function runActivityBackfill(
     const richBlocks = buildRichBlocksForDay(rollup.day, daySessions, resolveRepo);
     let artifactSignals: ReturnType<typeof probeArtifactSignals> = null;
     try {
-      artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: [process.cwd()] });
+      // Same cwd gate as the regular sync — an excluded repo the daemon was
+      // launched from must not contribute authoring signals.
+      const cwdAllowed = shouldSyncProject(projectRepoName(process.cwd()), config.syncProjects);
+      artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: cwdAllowed ? [process.cwd()] : [] });
     } catch {
       // Probe is best-effort; never block the backfill.
     }

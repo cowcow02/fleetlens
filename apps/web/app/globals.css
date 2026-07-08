@@ -298,6 +298,88 @@ input::placeholder {
   border-color: var(--af-surface-elevated);
 }
 
+/* Tailwind v4 preflight defaults `border` utilities to currentColor, which
+   reads as a harsh black/white line. Fall back to the theme token. */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--af-border-subtle);
+  }
+}
+
+/* Buttons + panels for management surfaces (team, settings, wizard). */
+.af-btn,
+.af-btn-primary,
+.af-btn-danger {
+  display: inline-block;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  transition: background 0.12s, border-color 0.12s;
+}
+.af-btn {
+  border: 1px solid var(--af-border-subtle);
+  background: var(--af-surface);
+  color: var(--af-text);
+}
+.af-btn:hover:not(:disabled) {
+  border-color: var(--af-accent);
+}
+.af-btn-primary {
+  border: 1px solid transparent;
+  background: var(--af-accent);
+  color: var(--background);
+  font-weight: 500;
+}
+.af-btn-primary:hover:not(:disabled) {
+  background: var(--af-accent-hover);
+}
+.af-btn-danger {
+  border: 1px solid var(--af-danger);
+  background: transparent;
+  color: var(--af-danger);
+}
+.af-btn-danger:hover:not(:disabled) {
+  background: var(--af-danger-subtle);
+}
+.af-btn:disabled,
+.af-btn-primary:disabled,
+.af-btn-danger:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.af-panel {
+  background: var(--af-surface-elevated);
+  border: 1px solid var(--af-border-subtle);
+  border-radius: 8px;
+}
+.af-panel-danger {
+  background: var(--af-danger-subtle);
+  border: 1px solid var(--af-danger);
+  border-radius: 8px;
+  color: var(--af-danger);
+}
+.af-step-active {
+  background: var(--af-accent);
+  color: var(--background);
+}
+.af-chip {
+  display: inline-block;
+  border: 1px solid var(--af-border-subtle);
+  border-radius: 9999px;
+  padding: 2px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+a.af-chip:hover {
+  border-color: var(--af-accent);
+  text-decoration: underline;
+}
+.af-row:hover {
+  background: var(--af-surface-hover);
+}
+
 /* =============================================
    Markdown prose (sessions drawer)
    ============================================= */

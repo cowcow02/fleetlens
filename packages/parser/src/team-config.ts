@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { cclensHome } from "./fs.js";
 
@@ -26,7 +26,27 @@ export type TeamConfig = {
    *  (oldest first) each sync so a server upgrade self-heals the day instead of
    *  losing it forever. Capped + deduped by the writer. */
   droppedDays?: string[];
+  /** Written by `team join`; nothing syncs while set. Cleared by the wizard's
+   *  "Start syncing". Absent on configs from before the wizard ⇒ not gated. */
+  setupPending?: boolean;
+  syncProjects?: SyncProjects;
 };
+
+/** Member-side project selection for team sync. `included`/`excluded` capture
+ *  the explicit wizard checkboxes; projects that appear AFTER selection fall
+ *  through to `autoIncludeNew`. Absent syncProjects = sync everything. */
+export type SyncProjects = {
+  autoIncludeNew: boolean;
+  included: string[];
+  excluded: string[];
+};
+
+export function shouldSyncProject(repoName: string, sp?: SyncProjects): boolean {
+  if (!sp) return true;
+  if (sp.excluded.includes(repoName)) return false;
+  if (sp.included.includes(repoName)) return true;
+  return sp.autoIncludeNew;
+}
 
 export function readTeamConfig(dir?: string): TeamConfig | null {
   const d = dir ?? cclensHome();
@@ -40,7 +60,11 @@ export function readTeamConfig(dir?: string): TeamConfig | null {
 export function writeTeamConfig(config: TeamConfig, dir?: string): void {
   const d = dir ?? cclensHome();
   mkdirSync(d, { recursive: true });
-  writeFileSync(join(d, CONFIG_FILE), JSON.stringify(config, null, 2), { mode: 0o600 });
+  // Atomic tmp+rename: the daemon, the web routes, and a wizard-spawned sync
+  // may all write this file — a torn write must never be readable.
+  const tmp = join(d, `${CONFIG_FILE}.${process.pid}.tmp`);
+  writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 });
+  renameSync(tmp, join(d, CONFIG_FILE));
 }
 
 export function clearTeamConfig(dir?: string): void {

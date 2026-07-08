@@ -1,5 +1,6 @@
 export {
   type TeamConfig,
+  type SyncProjects,
   readTeamConfig,
   writeTeamConfig,
   clearTeamConfig,

@@ -4,14 +4,24 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 // We need to intercept writeTeamConfig so no real ~/.cclens/team.json is written.
-// The module is mocked before import so joinTeam uses the mocked version.
+// readTeamConfig is stubbed to null too — joinTeam now reads it for the
+// carry-over check, and a dev machine's real team.json would otherwise leak
+// into these tests non-hermetically. The module is mocked before import so
+// joinTeam uses the mocked version.
 vi.mock("../../src/team/config.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/team/config.js")>();
   return {
     ...actual,
+    readTeamConfig: vi.fn(() => null),
     writeTeamConfig: vi.fn(),
   };
 });
+
+// Paired machines auto-install daemon autostart (opt-out model). Stub it so
+// tests never write a real LaunchAgent to ~/Library on a dev Mac.
+vi.mock("../../src/commands/autostart.js", () => ({
+  ensureTeamAutostart: vi.fn(),
+}));
 
 // joinTeam fires the unified sync after pairing. Stub it here so tests stay
 // hermetic: no JSONL reads, no extra fetches against the mocked-fetch budget.
@@ -99,7 +109,9 @@ describe("joinTeam", () => {
     } as Response);
 
     const { joinTeam } = await import("../../src/team/join.js");
-    await joinTeam(["https://team.example.com", "tok_good"]);
+    // --no-browser: this test asserts the legacy inline-sync path (config write
+    // + summary log), not the default browser-wizard hand-off.
+    await joinTeam(["https://team.example.com", "tok_good", "--no-browser"]);
 
     const { writeTeamConfig } = await import("../../src/team/config.js");
     expect(writeTeamConfig).toHaveBeenCalledOnce();
@@ -132,7 +144,7 @@ describe("joinTeam", () => {
     } as Response);
 
     const { joinTeam } = await import("../../src/team/join.js");
-    await joinTeam(["https://team.example.com", "tok_good"]);
+    await joinTeam(["https://team.example.com", "tok_good", "--no-browser"]);
 
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining("alice@acme.com"),
@@ -152,7 +164,7 @@ describe("joinTeam", () => {
     } as Response);
 
     const { joinTeam } = await import("../../src/team/join.js");
-    await joinTeam(["https://team.example.com", "tok_123"]);
+    await joinTeam(["https://team.example.com", "tok_123", "--no-browser"]);
 
     const [url, init] = vi.mocked(fetch).mock.calls[0]!;
     expect(url).toBe("https://team.example.com/api/team/whoami");

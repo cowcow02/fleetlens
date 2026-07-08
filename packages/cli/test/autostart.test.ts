@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildPlist, isPromptDismissed, dismissPrompt } from "../src/commands/autostart.js";
+import { buildPlist, isPromptDismissed, dismissPrompt, hasOptedOut, recordOptOut } from "../src/commands/autostart.js";
 
 describe("buildPlist", () => {
   const plist = buildPlist({
@@ -15,11 +15,11 @@ describe("buildPlist", () => {
     expect(plist).toContain("<string>com.fleetlens.daemon</string>");
   });
 
-  it("runs `<node> <script> daemon start` with absolute paths", () => {
+  it("runs `<node> <script> start` (full stack: dashboard + daemon) with absolute paths", () => {
     expect(plist).toContain("<string>/usr/local/bin/node</string>");
     expect(plist).toContain("<string>/opt/fleetlens/dist/index.js</string>");
-    expect(plist).toContain("<string>daemon</string>");
     expect(plist).toContain("<string>start</string>");
+    expect(plist).not.toContain("<string>daemon</string>");
   });
 
   it("runs at load", () => {
@@ -70,5 +70,18 @@ describe("autostart prompt dismissal flag", () => {
     dismissPrompt();
     expect(existsSync(join(dir, "autostart.json"))).toBe(true);
     expect(isPromptDismissed()).toBe(true);
+  });
+
+  it("opt-out defaults to false and persists once recorded", () => {
+    expect(hasOptedOut()).toBe(false);
+    recordOptOut();
+    expect(hasOptedOut()).toBe(true);
+  });
+
+  it("keeps both flags when written independently", () => {
+    dismissPrompt();
+    recordOptOut();
+    expect(isPromptDismissed()).toBe(true);
+    expect(hasOptedOut()).toBe(true);
   });
 });

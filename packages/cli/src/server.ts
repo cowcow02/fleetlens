@@ -122,8 +122,11 @@ export async function startServer(opts: { port?: number } = {}): Promise<{ pid: 
   const pid = child.pid!;
   writePid(PID_FILE, pid, port, CLI_VERSION);
 
-  // Wait for server to be healthy
-  await waitForHealth(`http://localhost:${port}`, 10_000);
+  // Wait for server to be healthy. 30s, not 10: `team join` cold-starts this
+  // on brand-new installs (first-ever Next boot, nothing cached) and a slow
+  // machine blowing the budget gets a misleading "could not start" error
+  // while the server finishes booting seconds later.
+  await waitForHealth(`http://localhost:${port}`, 30_000);
 
   return { pid, port };
 }

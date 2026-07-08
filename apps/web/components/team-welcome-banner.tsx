@@ -46,7 +46,7 @@ export function TeamWelcomeBanner({
         activity totals and current cycle utilization to the team dashboard
         every 5 minutes. Transcripts, prompts, and project content never leave
         your machine.{" "}
-        <Link href="/settings#team" style={{ color: "var(--af-accent)", textDecoration: "underline" }}>
+        <Link href="/team" style={{ color: "var(--af-accent)", textDecoration: "underline" }}>
           See exactly what&apos;s shared →
         </Link>
       </div>

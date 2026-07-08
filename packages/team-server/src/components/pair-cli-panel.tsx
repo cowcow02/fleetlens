@@ -175,6 +175,10 @@ export function PairCliPanel({ teamSlug }: { teamSlug: string }) {
                 {copied ? "✓ Copied" : "Copy"}
               </button>
             </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--mute)" }}>
+              Your browser will open to finish setup — choose which projects
+              to share, then start syncing.
+            </div>
             <div style={{ marginTop: 10, fontSize: 11, color: "var(--mute)" }}>
               Generating a new token revokes the previous one — any other
               machine paired with this seat will stop syncing until you
