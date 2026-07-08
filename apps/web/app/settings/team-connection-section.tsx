@@ -113,8 +113,8 @@ export function TeamConnectionSection() {
         <div className="font-medium">What does NOT leave your machine</div>
         <ul className="list-disc list-inside text-gray-600 space-y-1">
           <li>Session transcripts, prompts, or assistant responses</li>
-          <li>Project names, paths, or repo information</li>
-          <li>File contents or tool-call payloads</li>
+          <li>Absolute paths, file contents, or tool-call payloads</li>
+          <li>Anything from projects excluded in Synced projects below</li>
           <li>Anything from sessions older than the start-of-day rollup window</li>
         </ul>
       </div>
