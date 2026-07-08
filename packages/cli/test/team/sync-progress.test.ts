@@ -41,6 +41,9 @@ import { join } from "node:path";
 process.env.CCLENS_HOME = mkdtempSync(join(tmpdir(), "cclens-progress-"));
 
 import { runTeamSync, type SyncProgressEvent } from "../../src/team/sync.js";
+import { pushToTeamServer } from "../../src/team/push.js";
+import { dequeuePayloads } from "../../src/team/queue.js";
+import { writeTeamConfig, readTeamConfig, type TeamConfig } from "@claude-lens/parser/fs";
 
 describe("runTeamSync onProgress", () => {
   it("emits phase → usage → phase(activity) → day×2 → done, in order", async () => {
@@ -57,5 +60,38 @@ describe("runTeamSync onProgress", () => {
     expect(days[1]).toMatchObject({ day: "2026-07-07", index: 2, total: 2, outcome: "pushed" });
     const done = events.at(-1) as Extract<SyncProgressEvent, { type: "done" }>;
     expect(done).toMatchObject({ pushed: 2, queued: 0 });
+  });
+
+  it("persistConfig merges watermarks onto fresh disk state (concurrent web write survives)", async () => {
+    const base: TeamConfig = { serverUrl: "http://mocked", memberId: "m", bearerToken: "t", teamSlug: "s", pairedAt: "x" };
+    // A web write (Settings selection) landed AFTER the daemon snapshotted its
+    // config — the run's watermark writes must not clobber it.
+    const selection = { autoIncludeNew: false, included: ["work"], excluded: ["personal"] };
+    writeTeamConfig({ ...base, syncProjects: selection });
+    const outcome = await runTeamSync(() => {}, base, {});
+    expect(outcome.pushed).toBe(2);
+    const onDisk = readTeamConfig();
+    expect(onDisk?.syncProjects).toEqual(selection);
+    expect(onDisk?.lastSyncedDay).toBeTruthy();
+  });
+
+  it("drainBacklog drops queued payloads containing now-excluded projects", async () => {
+    vi.mocked(pushToTeamServer).mockClear();
+    vi.mocked(dequeuePayloads).mockReturnValueOnce([
+      { ingestId: "q1", observedAt: "x", richRollup: { day: "2026-07-05", projects: [{ project: "personal", agentTimeMs: 1, sessions: 1 }] } },
+      { ingestId: "q2", observedAt: "x", richRollup: { day: "2026-07-05", projects: [{ project: "work", agentTimeMs: 1, sessions: 1 }] } },
+    ] as never);
+    const outcome = await runTeamSync(
+      () => {},
+      {
+        serverUrl: "http://mocked", memberId: "m", bearerToken: "t", teamSlug: "s", pairedAt: "x",
+        syncProjects: { autoIncludeNew: true, included: [], excluded: ["personal"] },
+      },
+      {},
+    );
+    expect(outcome.queuedDrained).toBe(1);
+    const pushedIds = vi.mocked(pushToTeamServer).mock.calls.map((c) => (c[1] as { ingestId?: string }).ingestId);
+    expect(pushedIds).toContain("q2");
+    expect(pushedIds).not.toContain("q1");
   });
 });

@@ -21,7 +21,7 @@ import { readPendingSyncLog, type SyncLogLine } from "./sync-log.js";
 import { writeLastPushSuccess, writeLastPushFailure } from "./last-push.js";
 import { dispatchCommand, type ServerCommand, type CommandResult } from "./commands.js";
 import { getPlanTier } from "../usage/profile.js";
-import { cclensPath } from "@claude-lens/parser/fs";
+import { cclensPath, shouldSyncProject } from "@claude-lens/parser/fs";
 
 // Process-scoped to prevent the same command from being dispatched twice
 // when a long backfill spans multiple sync ticks (sync N+1 fires before
@@ -265,13 +265,19 @@ export async function runTeamSync(
     // 5-min tick retries. Within-run dedupe across a multi-day backfill stands.
     resetEnsuredSessions();
     const { listSessions, loadCalibrationCurve } = await import("@claude-lens/parser/fs");
-    const { toLocalDay } = await import("@claude-lens/parser");
+    const { toLocalDay, projectRepoName } = await import("@claude-lens/parser");
     const today = toLocalDay(Date.now());
-    let nextConfig: TeamConfig = { ...config };
+    // Watermark patches accumulate across the run and merge onto a FRESH disk
+    // read at each write — this run only owns watermark keys, so a concurrent
+    // web write (Settings selection change, wizard clearing setupPending) is
+    // never clobbered by this run's stale snapshot.
+    let patches: Partial<TeamConfig> = {};
 
     const persistConfig = (patch: Partial<TeamConfig>) => {
-      nextConfig = { ...nextConfig, ...patch };
-      writeTeamConfig(nextConfig);
+      patches = { ...patches, ...patch };
+      const onDisk = readTeamConfig();
+      if (!onDisk) return; // unpaired mid-run (team leave) — don't resurrect the file
+      writeTeamConfig({ ...onDisk, ...patches });
     };
 
     // The daemon's own sync-log lines since the last successful upload, read
@@ -346,7 +352,15 @@ export async function runTeamSync(
       let drained = 0;
       const backlog = dequeuePayloads() as IngestPayload[];
       for (let i = 0; i < backlog.length; i++) {
-        const qResult = await pushToTeamServer(config, backlog[i]!);
+        const queuedPayload = backlog[i]!;
+        // Queued before a selection change? Don't leak the now-excluded
+        // project — the day rebuilds from filtered sessions anyway, because
+        // lastSyncedDay never advances past a queued day.
+        if (queuedPayload.richRollup?.projects?.some((p) => !shouldSyncProject(p.project, config.syncProjects))) {
+          log("info", "team push: dropped queued payload containing now-excluded project(s)");
+          continue;
+        }
+        const qResult = await pushToTeamServer(config, queuedPayload);
         if (!qResult.ok) {
           if (isValidationPoison(qResult.status)) {
             log("warn", `team push: queued payload rejected (HTTP ${qResult.status}); dropping unrecoverable item`);
@@ -485,8 +499,11 @@ export async function runTeamSync(
       const richBlocks = buildRichBlocksForDay(rollup.day, daySessions, resolveRepo);
       let artifactSignals: ReturnType<typeof probeArtifactSignals> = null;
       try {
-        // Probe auto-detects git email from `git config user.email`.
-        artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: [process.cwd()] });
+        // Probe auto-detects git email from `git config user.email`. cwd may
+        // itself be an excluded repo (daemon launched from it) — don't let its
+        // .claude/CLAUDE.md authoring signals ride along.
+        const cwdAllowed = shouldSyncProject(projectRepoName(process.cwd()), config.syncProjects);
+        artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: cwdAllowed ? [process.cwd()] : [] });
       } catch {
         // Probe is best-effort; never block the push path.
       }

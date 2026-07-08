@@ -65,6 +65,15 @@ export async function POST(req: Request): Promise<Response> {
       child.stderr.on("data", () => resetIdle());
       child.on("close", (code) => {
         if (idleTimer) clearTimeout(idleTimer);
+        // Flush a trailing partial line (idle-timer SIGKILL can cut mid-write)
+        // so the progress list doesn't silently end a row early.
+        if (buffer.trim()) {
+          try {
+            send("progress", JSON.parse(buffer));
+          } catch {
+            send("progress", { type: "log", line: buffer });
+          }
+        }
         send("done", { exitCode: code });
         try { controller.close(); } catch {}
       });

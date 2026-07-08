@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { cclensHome } from "./fs.js";
 
@@ -60,7 +60,11 @@ export function readTeamConfig(dir?: string): TeamConfig | null {
 export function writeTeamConfig(config: TeamConfig, dir?: string): void {
   const d = dir ?? cclensHome();
   mkdirSync(d, { recursive: true });
-  writeFileSync(join(d, CONFIG_FILE), JSON.stringify(config, null, 2), { mode: 0o600 });
+  // Atomic tmp+rename: the daemon, the web routes, and a wizard-spawned sync
+  // may all write this file — a torn write must never be readable.
+  const tmp = join(d, `${CONFIG_FILE}.${process.pid}.tmp`);
+  writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 });
+  renameSync(tmp, join(d, CONFIG_FILE));
 }
 
 export function clearTeamConfig(dir?: string): void {

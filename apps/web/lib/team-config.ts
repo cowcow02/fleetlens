@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { cclensHome } from "@claude-lens/parser/fs";
 
@@ -45,7 +45,11 @@ export function readTeamConfig(): TeamConfig | null {
 export function writeTeamConfig(config: TeamConfig): void {
   const dir = cclensHome();
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, CONFIG_FILE), JSON.stringify(config, null, 2), { mode: 0o600 });
+  // Atomic tmp+rename, mirroring the parser's writeTeamConfig — daemon and web
+  // both write this file; a torn write must never be readable.
+  const tmp = join(dir, `${CONFIG_FILE}.${process.pid}.tmp`);
+  writeFileSync(tmp, JSON.stringify(config, null, 2), { mode: 0o600 });
+  renameSync(tmp, join(dir, CONFIG_FILE));
 }
 
 /** A "safe-for-UI" view: the bearer token is masked so it's never rendered

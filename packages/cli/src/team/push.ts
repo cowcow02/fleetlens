@@ -402,7 +402,11 @@ export function buildRichBlocksForDay(
   resolveRepo?: (dir: string) => string | null,
 ): { rich: Omit<RichDailyRollup, keyof DailyRollup>; enriched: EnrichedDailyExtras } | undefined {
   ensureEntriesForDay(day, daySessions);
-  const entries = listEntriesForDay(day);
+  // daySessions is already selection-filtered; entries must match, or an
+  // excluded project's skills/subagents/PR counts and enrichment mixes leak
+  // into richRollup/enrichedExtras via the day-wide entry cache.
+  const sessionIds = new Set(daySessions.map((s) => s.id));
+  const entries = listEntriesForDay(day).filter((e) => sessionIds.has(e.session_id));
   if (entries.length === 0) return undefined;
   const rich = buildRichRollupBlocks(day, daySessions, entries, resolveRepo);
   const enriched = buildEnrichedExtras(entries);
