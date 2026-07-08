@@ -114,7 +114,10 @@ export function TeamConnectionSection() {
         <ul className="list-disc list-inside text-gray-600 space-y-1">
           <li>Session transcripts, prompts, or assistant responses</li>
           <li>Absolute paths, file contents, or tool-call payloads</li>
-          <li>Anything from projects excluded in Synced projects below</li>
+          <li>
+            Anything from projects you exclude — manage the selection on the{" "}
+            <a href="/team" className="underline">Team page</a>
+          </li>
           <li>Anything from sessions older than the start-of-day rollup window</li>
         </ul>
       </div>

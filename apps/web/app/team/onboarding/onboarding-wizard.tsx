@@ -392,7 +392,7 @@ function Step3({
         <ul className="list-inside list-disc space-y-1 text-xs text-gray-500">
           <li>Aggregate metrics only — never transcripts, prompts, or file contents</li>
           <li>Pushes run every 5 minutes from now on</li>
-          <li>You can change the selection anytime in Settings → Synced projects</li>
+          <li>You can change the selection anytime on the Team page</li>
         </ul>
 
         <div className="flex gap-3">
