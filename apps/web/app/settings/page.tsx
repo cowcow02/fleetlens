@@ -1,25 +1,13 @@
 import { readSettings } from "@claude-lens/entries/node";
 import { AiFeaturesForm } from "./ai-features-form";
-import { readTeamConfig } from "@/lib/team-config";
 import { readAutostartState } from "@/lib/autostart-data";
 import { AutostartToggle } from "@/components/autostart-toggle";
 
 export default function SettingsPage() {
   const s = readSettings();
-  const paired = readTeamConfig() !== null;
   return (
     <main className="mx-auto max-w-2xl p-6 space-y-8">
       <h1 className="text-2xl font-semibold">Fleetlens Settings</h1>
-
-      {paired && (
-        <section>
-          <h2 className="text-lg font-medium mb-2">Team</h2>
-          <p className="text-sm text-gray-500">
-            Connection status, sync activity, and synced-project selection live
-            on the <a href="/team" className="underline">Team page</a>.
-          </p>
-        </section>
-      )}
 
       <section>
         <h2 className="text-lg font-medium mb-2">Daemon auto-start</h2>
