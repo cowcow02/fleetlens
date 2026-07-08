@@ -8,6 +8,7 @@
  * wizard). The page reads the same on-disk team-config.json the daemon reads.
  */
 import { readTeamConfig, toTeamConfigView } from "@/lib/team-config";
+import { SyncedProjectsSection } from "../settings/synced-projects-section";
 
 export const dynamic = "force-dynamic";
 
@@ -104,11 +105,14 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
         </dl>
       </section>
 
+      <section className="border rounded-lg p-5">
+        <SyncedProjectsSection />
+      </section>
+
       <section className="border rounded-lg p-5 space-y-3">
         <h2 className="text-lg font-medium">What gets shared</h2>
         <p className="text-sm text-gray-500">
-          Projects are shared according to your Synced-projects selection
-          (Settings). {syncSummary ?? "Syncing: all projects (no selection set)."}
+          {syncSummary ?? "Syncing: all projects (no selection set)."}
         </p>
         <ul className="text-sm space-y-2">
           <li>
