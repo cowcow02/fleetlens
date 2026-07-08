@@ -8,17 +8,17 @@ const HEALTH_COLORS = {
   red: "var(--af-error, #ef4444)",
 } as const;
 
-export function TeamConnectionSection() {
+export function SyncActivitySection() {
   const conn = readTeamConnection();
   if (!conn.paired) return null;
 
-  const { team, member, lastPush, health } = conn;
+  const { lastPush, health } = conn;
   const cliAvailable = Boolean(process.env.FLEETLENS_CLI_BIN);
 
   return (
     <section id="team" className="space-y-4">
       <div className="flex items-baseline gap-3">
-        <h2 className="text-lg font-medium">Team connection</h2>
+        <h2 className="text-lg font-medium">Sync activity</h2>
         <span
           aria-hidden
           style={{
@@ -29,12 +29,9 @@ export function TeamConnectionSection() {
             display: "inline-block",
           }}
         />
-        <span className="text-sm text-gray-500">{team.name}</span>
       </div>
 
       <dl className="grid grid-cols-[8rem_1fr] gap-y-1 text-sm text-gray-600">
-        <dt>Server</dt><dd className="font-mono text-xs">{team.serverUrl}</dd>
-        <dt>Paired</dt><dd>{new Date(member.pairedAt).toLocaleString()}</dd>
         <dt>Last sync</dt>
         <dd suppressHydrationWarning>
           {lastPush.kind === "none"
@@ -108,23 +105,6 @@ export function TeamConnectionSection() {
       )}
 
       <ForceSyncButton cliAvailable={cliAvailable} />
-
-      <div className="rounded border border-gray-200 p-4 text-sm space-y-2">
-        <div className="font-medium">What does NOT leave your machine</div>
-        <ul className="list-disc list-inside text-gray-600 space-y-1">
-          <li>Session transcripts, prompts, or assistant responses</li>
-          <li>Absolute paths, file contents, or tool-call payloads</li>
-          <li>
-            Anything from projects you exclude — manage the selection on the{" "}
-            <a href="/team" className="underline">Team page</a>
-          </li>
-          <li>Anything from sessions older than the start-of-day rollup window</li>
-        </ul>
-      </div>
-
-      <p className="text-xs text-gray-500">
-        To disconnect from this team, run <code>fleetlens team leave</code> in your terminal.
-      </p>
     </section>
   );
 }

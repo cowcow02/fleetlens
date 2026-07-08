@@ -8,7 +8,8 @@
  * wizard). The page reads the same on-disk team-config.json the daemon reads.
  */
 import { readTeamConfig, toTeamConfigView } from "@/lib/team-config";
-import { SyncedProjectsSection } from "../settings/synced-projects-section";
+import { SyncedProjectsSection } from "./synced-projects-section";
+import { SyncActivitySection } from "./sync-activity-section";
 
 export const dynamic = "force-dynamic";
 
@@ -106,6 +107,10 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
       </section>
 
       <section className="border rounded-lg p-5">
+        <SyncActivitySection />
+      </section>
+
+      <section className="border rounded-lg p-5">
         <SyncedProjectsSection />
       </section>
 
@@ -136,10 +141,15 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
             model calls ride along with the push).
           </li>
         </ul>
-        <p className="text-xs text-gray-500 pt-2">
-          Never shared: first-user prompts, final-agent output, raw transcript
-          text, tool inputs/outputs.
-        </p>
+        <div className="rounded border border-gray-200 dark:border-gray-800 p-4 text-sm space-y-2">
+          <div className="font-medium">What does NOT leave your machine</div>
+          <ul className="list-disc list-inside text-gray-600 space-y-1">
+            <li>Session transcripts, prompts, or assistant responses</li>
+            <li>Absolute paths, file contents, or tool-call payloads</li>
+            <li>Anything from projects you exclude above</li>
+            <li>Anything from sessions older than the start-of-day rollup window</li>
+          </ul>
+        </div>
       </section>
 
       <section className="border rounded-lg p-5 space-y-3">
