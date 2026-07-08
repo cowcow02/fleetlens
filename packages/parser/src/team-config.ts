@@ -26,7 +26,27 @@ export type TeamConfig = {
    *  (oldest first) each sync so a server upgrade self-heals the day instead of
    *  losing it forever. Capped + deduped by the writer. */
   droppedDays?: string[];
+  /** Written by `team join`; nothing syncs while set. Cleared by the wizard's
+   *  "Start syncing". Absent on configs from before the wizard ⇒ not gated. */
+  setupPending?: boolean;
+  syncProjects?: SyncProjects;
 };
+
+/** Member-side project selection for team sync. `included`/`excluded` capture
+ *  the explicit wizard checkboxes; projects that appear AFTER selection fall
+ *  through to `autoIncludeNew`. Absent syncProjects = sync everything. */
+export type SyncProjects = {
+  autoIncludeNew: boolean;
+  included: string[];
+  excluded: string[];
+};
+
+export function shouldSyncProject(repoName: string, sp?: SyncProjects): boolean {
+  if (!sp) return true;
+  if (sp.excluded.includes(repoName)) return false;
+  if (sp.included.includes(repoName)) return true;
+  return sp.autoIncludeNew;
+}
 
 export function readTeamConfig(dir?: string): TeamConfig | null {
   const d = dir ?? cclensHome();

@@ -143,9 +143,11 @@ export type {
 
 export {
   type TeamConfig,
+  type SyncProjects,
   readTeamConfig,
   writeTeamConfig,
   clearTeamConfig,
+  shouldSyncProject,
 } from "./team-config.js";
 
 export {
