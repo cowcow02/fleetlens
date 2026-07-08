@@ -8,23 +8,30 @@ import { Callout, CheckChip, isAuthSyncError, PickerRow, StatusStrip } from "./u
 
 type GroupOpt = { id: string; slug: string; name: string };
 
-type RepoStatus = {
-  name: string;
-  group_ids: string[];
+type RepoMapping = { name: string; group_ids: string[] };
+type RepoStatus = RepoMapping & {
   prs_synced: number;
   prs_merged: number;
   prs_ai_assisted: number;
 };
 
-type GithubStatus = {
-  connected: boolean;
+type GithubConnection = {
+  id: string;
+  label: string;
+  owner_group_id: string | null;
+  owner_group_name: string | null;
   login?: string | null;
-  repos?: RepoStatus[];
+  repos: RepoStatus[];
   status?: "active" | "error";
   last_error?: string | null;
   last_sync_at?: string | null;
   prs_synced?: number;
   prs_ai_assisted?: number;
+};
+
+type GithubStatus = {
+  connected: boolean;
+  connections: GithubConnection[];
 };
 
 type RepoOption = { full_name: string; private: boolean; pushed_at: string | null };
@@ -33,23 +40,8 @@ const TOKEN_URL = "https://github.com/settings/personal-access-tokens/new";
 
 export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string; groups?: GroupOpt[] }) {
   const [gh, setGh] = useState<GithubStatus | null>(null);
-
-  // Connect / add-repos flow
-  const [token, setToken] = useState("");
-  const [repoOptions, setRepoOptions] = useState<RepoOption[] | null>(null);
-  const [repoFilter, setRepoFilter] = useState("");
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [adding, setAdding] = useState(false); // picker opened from connected state
-  const [reconnecting, setReconnecting] = useState(false);
-
-  // Group-mapping edits on the connected view
-  const [mapping, setMapping] = useState<{ name: string; group_ids: string[] }[]>([]);
-  const [mappingDirty, setMappingDirty] = useState(false);
-
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   useEffect(() => {
     refresh();
@@ -59,14 +51,82 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
   async function refresh() {
     const res = await fetch(`/api/team/settings/integrations/github?team=${teamSlug}`);
     if (!res.ok) {
-      setGh({ connected: false });
+      setGh({ connected: false, connections: [] });
       return;
     }
     const d = (await res.json()) as GithubStatus;
-    setGh(d);
-    setMapping((d.repos ?? []).map((r) => ({ name: r.name, group_ids: r.group_ids })));
-    setMappingDirty(false);
+    setGh({ connected: d.connected, connections: d.connections ?? [] });
   }
+
+  const connections = gh?.connections ?? [];
+
+  return (
+    <section className="settings-section">
+      <div className="subsection-head">
+        <h2>Integrations</h2>
+        <span className="kicker">GitHub + Linear + Jira · delivery signals for insight reports</span>
+      </div>
+
+      <div className="provider-head">GitHub · merge-confirmed delivery</div>
+      {gh === null ? (
+        <p className="help-note" style={{ border: "none", padding: 0 }}>Loading…</p>
+      ) : (
+        <>
+          {connections.map((connection) => (
+            <GithubConnectionCard
+              key={connection.id}
+              teamSlug={teamSlug}
+              groups={groups}
+              connection={connection}
+              onRefresh={refresh}
+            />
+          ))}
+          {(connections.length === 0 || showAdd) && (
+            <GithubConnectForm
+              teamSlug={teamSlug}
+              groups={groups}
+              onSaved={async (notice) => {
+                setMessage(notice);
+                setShowAdd(false);
+                await refresh();
+              }}
+              onCancel={connections.length > 0 ? () => setShowAdd(false) : undefined}
+            />
+          )}
+          {connections.length > 0 && !showAdd && (
+            <button className="btn secondary" onClick={() => setShowAdd(true)} style={{ marginTop: 14 }}>
+              + Add another GitHub
+            </button>
+          )}
+          {message && <div className="action-note">{message}</div>}
+        </>
+      )}
+
+      <LinearCard teamSlug={teamSlug} groups={groups} />
+      <JiraCard teamSlug={teamSlug} groups={groups} />
+    </section>
+  );
+}
+
+function GithubConnectForm({
+  teamSlug,
+  groups,
+  onSaved,
+  onCancel,
+}: {
+  teamSlug: string;
+  groups: GroupOpt[];
+  onSaved: (message: string) => Promise<void>;
+  onCancel?: () => void;
+}) {
+  const [token, setToken] = useState("");
+  const [label, setLabel] = useState("");
+  const [ownerGroupId, setOwnerGroupId] = useState("");
+  const [repoOptions, setRepoOptions] = useState<RepoOption[] | null>(null);
+  const [repoFilter, setRepoFilter] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const filteredOptions = useMemo(() => {
     if (!repoOptions) return [];
@@ -74,14 +134,13 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
     return q ? repoOptions.filter((r) => r.full_name.toLowerCase().includes(q)) : repoOptions;
   }, [repoOptions, repoFilter]);
 
-  async function listRepos(useStoredToken: boolean) {
+  async function listRepos() {
     setBusy(true);
     setError(null);
-    setMessage(null);
     const res = await fetch(`/api/team/settings/integrations/github/repos?team=${teamSlug}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(useStoredToken ? {} : { token }),
+      body: JSON.stringify({ token }),
     });
     const d = await res.json().catch(() => ({}));
     setBusy(false);
@@ -89,161 +148,42 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
       setError(d.error || `HTTP ${res.status}`);
       return;
     }
-    const existing = new Set((gh?.repos ?? []).map((r) => r.name));
-    setRepoOptions(
-      useStoredToken ? (d.repos as RepoOption[]).filter((r) => !existing.has(r.full_name)) : d.repos,
-    );
+    setRepoOptions(d.repos ?? []);
     setSelected(new Set());
     setRepoFilter("");
   }
 
-  async function saveRepos(repos: { name: string; group_ids: string[] }[], withToken: boolean) {
+  async function connectSelected() {
     setBusy(true);
     setError(null);
-    setMessage(null);
+    const repos = [...selected].map((name) => ({ name, group_ids: [] as string[] }));
     const res = await fetch(`/api/team/settings/integrations/github?team=${teamSlug}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(withToken ? { token, repos } : { repos }),
+      body: JSON.stringify({
+        token,
+        repos,
+        label: label.trim() || undefined,
+        owner_group_id: ownerGroupId || null,
+      }),
     });
-    const d = await res.json().catch(() => ({}));
-    setBusy(false);
-    if (!res.ok) {
-      setError(d.error || `HTTP ${res.status}`);
-      return false;
-    }
-    setToken("");
-    setRepoOptions(null);
-    setAdding(false);
-    setReconnecting(false);
-    setMessage(
-      d.sync
-        ? `Saved — synced ${d.sync.prs} PRs (${d.sync.aiAssisted} AI-assisted). They're live in the insight reports now.`
-        : `Saved, but the first sync failed: ${d.sync_error}. Fix the token or repo access, then press "Sync now".`,
-    );
-    await refresh();
-    return true;
-  }
-
-  async function connectSelected() {
-    const repos = [...selected].map((name) => ({ name, group_ids: [] as string[] }));
-    await saveRepos(repos, true);
-  }
-
-  async function addSelected() {
-    const repos = [...mapping, ...[...selected].map((name) => ({ name, group_ids: [] as string[] }))];
-    await saveRepos(repos, false);
-  }
-
-  async function syncNow() {
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-    const res = await fetch(`/api/team/settings/integrations/github/sync?team=${teamSlug}`, { method: "POST" });
     const d = await res.json().catch(() => ({}));
     setBusy(false);
     if (!res.ok) {
       setError(d.error || `HTTP ${res.status}`);
       return;
     }
-    setMessage(`Synced ${d.prs} PRs (${d.aiAssisted} AI-assisted).`);
-    await refresh();
-  }
-
-  async function disconnect() {
-    setBusy(true);
-    setError(null);
-    await fetch(`/api/team/settings/integrations/github?team=${teamSlug}`, { method: "DELETE" });
-    setBusy(false);
-    setConfirmDisconnect(false);
-    setMessage("Disconnected. Already-synced PRs are kept but stop updating.");
     setToken("");
     setRepoOptions(null);
-    await refresh();
-  }
-
-  function toggleGroup(repoName: string, groupId: string | "all") {
-    setMapping((prev) =>
-      prev.map((r) => {
-        if (r.name !== repoName) return r;
-        if (groupId === "all") return { ...r, group_ids: [] };
-        // Empty group_ids means "all groups", so expand it before toggling —
-        // clicking a checked box must UNCHECK it, not become "only this one".
-        const current = r.group_ids.length === 0 ? groups.map((g) => g.id) : r.group_ids;
-        const next = current.includes(groupId)
-          ? current.filter((g) => g !== groupId)
-          : [...current, groupId];
-        // Everything checked — or nothing left (a repo can't count toward no
-        // report) — collapses back to the all-groups default.
-        const coversAll = groups.every((g) => next.includes(g.id));
-        return { ...r, group_ids: coversAll || next.length === 0 ? [] : next };
-      }),
+    await onSaved(
+      d.sync
+        ? `Saved — synced ${d.sync.prs} PRs (${d.sync.aiAssisted} AI-assisted). They're live in the insight reports now.`
+        : `Saved, but the first sync failed: ${d.sync_error}. Fix the token or repo access, then press "Sync now".`,
     );
-    setMappingDirty(true);
   }
 
-  const repoPicker = (onConfirm: () => void, confirmLabel: string) => (
-    <div style={{ marginTop: 18, maxWidth: 680 }}>
-      <div className="form-group">
-        <label htmlFor="gh-repo-filter">
-          Choose repositories to track
-          <span className="optional" style={{ marginLeft: 8 }}>
-            {selected.size} selected{repoOptions ? ` · ${repoOptions.length} visible to this token` : ""}
-          </span>
-        </label>
-        <input
-          id="gh-repo-filter"
-          value={repoFilter}
-          onChange={(e) => setRepoFilter(e.target.value)}
-          placeholder="Filter by name…"
-        />
-      </div>
-      <div className="picker-list">
-        {filteredOptions.length === 0 && (
-          <p className="help-note" style={{ border: "none", padding: "10px 12px", margin: 0 }}>
-            No repositories match. The token only lists repos it was granted access to.
-          </p>
-        )}
-        {filteredOptions.map((r) => (
-          <PickerRow
-            key={r.full_name}
-            selected={selected.has(r.full_name)}
-            onToggle={() => {
-              const next = new Set(selected);
-              if (next.has(r.full_name)) next.delete(r.full_name);
-              else next.add(r.full_name);
-              setSelected(next);
-            }}
-            name={r.full_name}
-            tag={r.private ? "private" : undefined}
-            meta={r.pushed_at ? `pushed ${new Date(r.pushed_at).toLocaleDateString()}` : undefined}
-          />
-        ))}
-      </div>
-      <p className="help-note">
-        Pick the repos this team ships to — pull requests from these repos feed the delivery metrics. You can add or
-        remove repos later without re-entering a token.
-      </p>
-      <div className="settings-row" style={{ marginTop: 14 }}>
-        <button className="btn" onClick={onConfirm} disabled={busy || selected.size === 0}>
-          {busy ? "Working…" : `${confirmLabel} ${selected.size > 0 ? `(${selected.size})` : ""}`}
-        </button>
-        <button
-          className="btn-link"
-          onClick={() => {
-            setRepoOptions(null);
-            setAdding(false);
-          }}
-          disabled={busy}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-
-  const connectFlow = (
-    <div style={{ maxWidth: 680 }}>
+  return (
+    <div style={{ maxWidth: 680, marginTop: 14 }}>
       <p style={{ marginTop: 0, lineHeight: 1.6, maxWidth: 640 }}>
         Connect GitHub to add <strong>merge-confirmed delivery metrics</strong> to your insight reports: merged PRs
         per week, how many were AI-assisted, and how their cycle time compares with the rest. Without it, reports
@@ -262,6 +202,27 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
         <li><span>Tick the repositories to track — you&rsquo;ll be able to map them to groups afterwards.</span></li>
       </ol>
       <div className="form-group" style={{ maxWidth: 420 }}>
+        <label htmlFor="gh-label">Label <span className="optional">optional</span></label>
+        <input
+          id="gh-label"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="GitHub"
+        />
+      </div>
+      <div className="form-group" style={{ maxWidth: 420 }}>
+        <label htmlFor="gh-owner-group">Owner group</label>
+        <select
+          id="gh-owner-group"
+          value={ownerGroupId}
+          onChange={(e) => setOwnerGroupId(e.target.value)}
+          style={{ padding: "9px 12px", border: "1px solid var(--rule)", background: "var(--bg)", fontSize: 14, fontFamily: "JetBrains Mono, monospace", color: "var(--ink)" }}
+        >
+          <option value="">Org-level</option>
+          {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+        </select>
+      </div>
+      <div className="form-group" style={{ maxWidth: 420 }}>
         <label htmlFor="gh-token">GitHub token</label>
         <input
           id="gh-token"
@@ -273,38 +234,201 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
         />
       </div>
       {!repoOptions && (
-        <button className="btn" onClick={() => listRepos(false)} disabled={busy || !token}>
-          {busy ? "Checking token…" : "Next: choose repositories →"}
-        </button>
+        <div className="settings-row">
+          <button className="btn" onClick={listRepos} disabled={busy || !token}>
+            {busy ? "Checking token…" : "Next: choose repositories →"}
+          </button>
+          {onCancel && <button className="btn-link" onClick={onCancel} disabled={busy}>Cancel</button>}
+        </div>
       )}
-      {repoOptions && repoPicker(connectSelected, "Connect")}
+      {repoOptions && (
+        <RepoPicker
+          repoOptions={filteredOptions}
+          selected={selected}
+          visibleCount={repoOptions.length}
+          filter={repoFilter}
+          setFilter={setRepoFilter}
+          setSelected={setSelected}
+          busy={busy}
+          confirmLabel="Connect"
+          onConfirm={connectSelected}
+          onCancel={() => setRepoOptions(null)}
+        />
+      )}
+      {error && <div className="form-error" style={{ marginTop: 14, maxWidth: 680 }}>{error}</div>}
     </div>
   );
+}
+
+function GithubConnectionCard({
+  teamSlug,
+  groups,
+  connection,
+  onRefresh,
+}: {
+  teamSlug: string;
+  groups: GroupOpt[];
+  connection: GithubConnection;
+  onRefresh: () => Promise<void>;
+}) {
+  const [token, setToken] = useState("");
+  const [repoOptions, setRepoOptions] = useState<RepoOption[] | null>(null);
+  const [repoFilter, setRepoFilter] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [mapping, setMapping] = useState<RepoMapping[]>([]);
+  const [mappingDirty, setMappingDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+
+  useEffect(() => {
+    setMapping((connection.repos ?? []).map((r) => ({ name: r.name, group_ids: r.group_ids })));
+    setMappingDirty(false);
+  }, [connection]);
+
+  const filteredOptions = useMemo(() => {
+    if (!repoOptions) return [];
+    const q = repoFilter.trim().toLowerCase();
+    return q ? repoOptions.filter((r) => r.full_name.toLowerCase().includes(q)) : repoOptions;
+  }, [repoOptions, repoFilter]);
+
+  async function listRepos() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const res = await fetch(`/api/team/settings/integrations/github/repos?team=${teamSlug}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: connection.id }),
+    });
+    const d = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setError(d.error || `HTTP ${res.status}`);
+      return;
+    }
+    const existing = new Set(mapping.map((r) => r.name));
+    setRepoOptions(((d.repos ?? []) as RepoOption[]).filter((r) => !existing.has(r.full_name)));
+    setSelected(new Set());
+    setRepoFilter("");
+  }
+
+  async function saveRepos(repos: RepoMapping[], newToken?: string) {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const res = await fetch(`/api/team/settings/integrations/github?team=${teamSlug}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: connection.id, repos, token: newToken || undefined }),
+    });
+    const d = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setError(d.error || `HTTP ${res.status}`);
+      return false;
+    }
+    setToken("");
+    setRepoOptions(null);
+    setAdding(false);
+    setReconnecting(false);
+    setMessage(
+      d.sync
+        ? `Saved — synced ${d.sync.prs} PRs (${d.sync.aiAssisted} AI-assisted). They're live in the insight reports now.`
+        : `Saved, but the first sync failed: ${d.sync_error}. Fix the token or repo access, then press "Sync now".`,
+    );
+    await onRefresh();
+    return true;
+  }
+
+  async function addSelected() {
+    const repos = [...mapping, ...[...selected].map((name) => ({ name, group_ids: [] as string[] }))];
+    await saveRepos(repos);
+  }
+
+  async function syncNow() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const res = await fetch(`/api/team/settings/integrations/github/sync?team=${teamSlug}&id=${connection.id}`, {
+      method: "POST",
+    });
+    const d = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setError(d.error || `HTTP ${res.status}`);
+      return;
+    }
+    setMessage(`Synced ${d.prs} PRs (${d.aiAssisted} AI-assisted).`);
+    await onRefresh();
+  }
+
+  async function disconnect() {
+    setBusy(true);
+    setError(null);
+    const res = await fetch(`/api/team/settings/integrations/github?team=${teamSlug}&id=${connection.id}`, { method: "DELETE" });
+    const d = await res.json().catch(() => ({}));
+    setBusy(false);
+    if (!res.ok) {
+      setError(d.error || `HTTP ${res.status}`);
+      return;
+    }
+    setConfirmDisconnect(false);
+    setMessage("Disconnected. Already-synced PRs are kept but stop updating.");
+    setToken("");
+    setRepoOptions(null);
+    await onRefresh();
+  }
+
+  function toggleGroup(repoName: string, groupId: string | "all") {
+    setMapping((prev) =>
+      prev.map((r) => {
+        if (r.name !== repoName) return r;
+        if (groupId === "all") return { ...r, group_ids: [] };
+        const current = r.group_ids.length === 0 ? groups.map((g) => g.id) : r.group_ids;
+        const next = current.includes(groupId)
+          ? current.filter((g) => g !== groupId)
+          : [...current, groupId];
+        const coversAll = groups.every((g) => next.includes(g.id));
+        return { ...r, group_ids: coversAll || next.length === 0 ? [] : next };
+      }),
+    );
+    setMappingDirty(true);
+  }
 
   const fmtSync = (iso: string | null | undefined) =>
     iso ? new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "never";
 
-  const connectedView = gh?.connected && (
-    <div>
+  return (
+    <div style={{ border: "1px solid var(--rule)", padding: 16, marginTop: 14 }}>
+      <div className="settings-row" style={{ justifyContent: "space-between", alignItems: "baseline", marginBottom: 10, gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <strong>{connection.label || "GitHub"}</strong>
+          {connection.owner_group_name && <span className="badge-tag">{connection.owner_group_name}</span>}
+        </div>
+      </div>
       <StatusStrip
-        ok={gh.status !== "error"}
+        ok={connection.status !== "error"}
         segments={[
           <span key="who">
-            Connected as <strong>{gh.login ?? "unknown"}</strong>
+            Connected as <strong>{connection.login ?? "unknown"}</strong>
           </span>,
           <span key="cadence" className="mono-meta">syncs hourly</span>,
           <span key="vol" className="mono-meta">
-            {gh.prs_synced ?? 0} PRs · {gh.prs_ai_assisted ?? 0} AI-assisted
+            {connection.prs_synced ?? 0} PRs · {connection.prs_ai_assisted ?? 0} AI-assisted
           </span>,
-          <span key="last" className="mono-meta">last successful sync {fmtSync(gh.last_sync_at)}</span>,
+          <span key="last" className="mono-meta">last successful sync {fmtSync(connection.last_sync_at)}</span>,
         ]}
       />
 
-      {gh.status === "error" &&
-        (isAuthSyncError(gh.last_error) ? (
+      {connection.status === "error" &&
+        (isAuthSyncError(connection.last_error) ? (
           <Callout tone="error">
-            GitHub rejected the stored token on the last sync ({gh.last_error}). It likely expired or lost repo
-            access — reconnect with a fresh one; your repo list and group mapping are kept.
+            GitHub rejected the stored token on the last sync ({connection.last_error}). It likely expired or lost
+            repo access — reconnect with a fresh one; your repo list and group mapping are kept.
             <div style={{ marginTop: 10 }}>
               <button className="btn secondary" onClick={() => setReconnecting(true)} disabled={busy || reconnecting}>
                 Reconnect with a new token
@@ -313,23 +437,23 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
           </Callout>
         ) : (
           <Callout>
-            Couldn&rsquo;t reach GitHub on the last sync attempt ({gh.last_error ?? "network error"}) — usually a
-            dropped connection or the machine being offline. It retries automatically every hour, or press
+            Couldn&rsquo;t reach GitHub on the last sync attempt ({connection.last_error ?? "network error"}) — usually
+            a dropped connection or the machine being offline. It retries automatically every hour, or press
             &ldquo;Sync now&rdquo; to retry immediately.
           </Callout>
         ))}
       {reconnecting && (
         <div className="form-group" style={{ maxWidth: 420, marginTop: 14 }}>
-          <label htmlFor="gh-token-re">New GitHub token</label>
+          <label htmlFor={`gh-token-re-${connection.id}`}>New GitHub token</label>
           <input
-            id="gh-token-re"
+            id={`gh-token-re-${connection.id}`}
             type="password"
             value={token}
             onChange={(e) => setToken(e.target.value)}
             autoComplete="off"
           />
           <div className="settings-row" style={{ marginTop: 8 }}>
-            <button className="btn" onClick={() => saveRepos(mapping, true)} disabled={busy || !token}>
+            <button className="btn" onClick={() => saveRepos(mapping, token)} disabled={busy || !token}>
               Save new token
             </button>
             <button className="btn-link" onClick={() => setReconnecting(false)} disabled={busy}>Cancel</button>
@@ -347,7 +471,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
         </thead>
         <tbody>
           {mapping.map((r) => {
-            const status = gh.repos?.find((x) => x.name === r.name);
+            const status = connection.repos?.find((x) => x.name === r.name);
             const all = r.group_ids.length === 0;
             return (
               <tr key={r.name}>
@@ -408,7 +532,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
 
       <div className="settings-row" style={{ marginTop: 18, flexWrap: "wrap" }}>
         {mappingDirty && (
-          <button className="btn" onClick={() => saveRepos(mapping, false)} disabled={busy}>
+          <button className="btn" onClick={() => saveRepos(mapping)} disabled={busy}>
             {busy ? "Saving…" : "Save group mapping"}
           </button>
         )}
@@ -417,7 +541,7 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
             className="btn secondary"
             onClick={() => {
               setAdding(true);
-              listRepos(true);
+              listRepos();
             }}
             disabled={busy}
           >
@@ -431,35 +555,30 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
           Disconnect
         </button>
       </div>
-      {adding && repoOptions && repoPicker(addSelected, "Add")}
-    </div>
-  );
-
-  return (
-    <section className="settings-section">
-      <div className="subsection-head">
-        <h2>Integrations</h2>
-        <span className="kicker">GitHub + Linear + Jira · delivery signals for insight reports</span>
-      </div>
-
-      <div className="provider-head">GitHub · merge-confirmed delivery</div>
-      {gh === null ? (
-        <p className="help-note" style={{ border: "none", padding: 0 }}>Loading…</p>
-      ) : gh.connected ? (
-        connectedView
-      ) : (
-        connectFlow
+      {adding && repoOptions && (
+        <RepoPicker
+          repoOptions={filteredOptions}
+          selected={selected}
+          visibleCount={repoOptions.length}
+          filter={repoFilter}
+          setFilter={setRepoFilter}
+          setSelected={setSelected}
+          busy={busy}
+          confirmLabel="Add"
+          onConfirm={addSelected}
+          onCancel={() => {
+            setRepoOptions(null);
+            setAdding(false);
+          }}
+        />
       )}
 
       {error && <div className="form-error" style={{ marginTop: 14, maxWidth: 680 }}>{error}</div>}
       {message && <div className="action-note">{message}</div>}
 
-      <LinearCard teamSlug={teamSlug} groups={groups} />
-      <JiraCard teamSlug={teamSlug} groups={groups} />
-
       <ConfirmModal
         open={confirmDisconnect}
-        title="Disconnect GitHub?"
+        title={`Disconnect ${connection.label || "GitHub"}?`}
         body="The stored token is deleted and hourly syncing stops. Already-synced PRs stay in the report history. You can reconnect any time."
         confirmLabel="Disconnect"
         danger
@@ -467,6 +586,83 @@ export function IntegrationsPanel({ teamSlug, groups = [] }: { teamSlug: string;
         onConfirm={disconnect}
         onCancel={() => setConfirmDisconnect(false)}
       />
-    </section>
+    </div>
+  );
+}
+
+function RepoPicker({
+  repoOptions,
+  selected,
+  visibleCount,
+  filter,
+  setFilter,
+  setSelected,
+  busy,
+  confirmLabel,
+  onConfirm,
+  onCancel,
+}: {
+  repoOptions: RepoOption[];
+  selected: Set<string>;
+  visibleCount: number;
+  filter: string;
+  setFilter: (value: string) => void;
+  setSelected: (value: Set<string>) => void;
+  busy: boolean;
+  confirmLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div style={{ marginTop: 18, maxWidth: 680 }}>
+      <div className="form-group">
+        <label htmlFor={`gh-repo-filter-${confirmLabel}`}>
+          Choose repositories to track
+          <span className="optional" style={{ marginLeft: 8 }}>
+            {selected.size} selected · {visibleCount} visible to this token
+          </span>
+        </label>
+        <input
+          id={`gh-repo-filter-${confirmLabel}`}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter by name…"
+        />
+      </div>
+      <div className="picker-list">
+        {repoOptions.length === 0 && (
+          <p className="help-note" style={{ border: "none", padding: "10px 12px", margin: 0 }}>
+            No repositories match. The token only lists repos it was granted access to.
+          </p>
+        )}
+        {repoOptions.map((r) => (
+          <PickerRow
+            key={r.full_name}
+            selected={selected.has(r.full_name)}
+            onToggle={() => {
+              const next = new Set(selected);
+              if (next.has(r.full_name)) next.delete(r.full_name);
+              else next.add(r.full_name);
+              setSelected(next);
+            }}
+            name={r.full_name}
+            tag={r.private ? "private" : undefined}
+            meta={r.pushed_at ? `pushed ${new Date(r.pushed_at).toLocaleDateString()}` : undefined}
+          />
+        ))}
+      </div>
+      <p className="help-note">
+        Pick the repos this team ships to — pull requests from these repos feed the delivery metrics. You can add or
+        remove repos later without re-entering a token.
+      </p>
+      <div className="settings-row" style={{ marginTop: 14 }}>
+        <button className="btn" onClick={onConfirm} disabled={busy || selected.size === 0}>
+          {busy ? "Working…" : `${confirmLabel} ${selected.size > 0 ? `(${selected.size})` : ""}`}
+        </button>
+        <button className="btn-link" onClick={onCancel} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }

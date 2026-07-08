@@ -13,7 +13,6 @@ export function GroupDetailActions({
   members,
   allMembers,
   allGroups,
-  isAdmin,
   autoOpenTab,
 }: {
   teamSlug: string;
@@ -21,7 +20,6 @@ export function GroupDetailActions({
   members: GroupMemberRow[];
   allMembers: Member[];
   allGroups: Group[];
-  isAdmin: boolean;
   autoOpenTab?: SettingsTab | null;
 }) {
   const [open, setOpen] = useState<boolean>(!!autoOpenTab);
@@ -38,7 +36,6 @@ export function GroupDetailActions({
           members={members}
           allMembers={allMembers}
           allGroups={allGroups}
-          isAdmin={isAdmin}
           initialTab={autoOpenTab ?? "members"}
           onClose={() => setOpen(false)}
         />

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type ActiveInvite, formatExpiresIn } from "./invite-shared";
-import { GroupDataSources } from "./group-data-sources";
+import { GroupIntegrationsPanel } from "./group-integrations-panel";
 import {
   addManyMembers,
   initial,
@@ -21,7 +21,7 @@ export type SettingsTab = "members" | "invites" | "sources" | "general";
 const TABS: { key: SettingsTab; label: string }[] = [
   { key: "members", label: "Members" },
   { key: "invites", label: "Invite links" },
-  { key: "sources", label: "Data sources" },
+  { key: "sources", label: "Integrations" },
   { key: "general", label: "General" },
 ];
 
@@ -31,7 +31,6 @@ export function GroupSettingsModal({
   members,
   allMembers,
   allGroups,
-  isAdmin,
   initialTab = "members",
   onClose,
 }: {
@@ -40,7 +39,6 @@ export function GroupSettingsModal({
   members: GroupMemberRow[];
   allMembers: Member[];
   allGroups: Group[];
-  isAdmin: boolean;
   initialTab?: SettingsTab;
   onClose: () => void;
 }) {
@@ -78,7 +76,7 @@ export function GroupSettingsModal({
         <div className="modal-body group-settings-body">
           {tab === "members" && <MembersTab teamSlug={teamSlug} group={group} members={members} allMembers={allMembers} />}
           {tab === "invites" && <InvitesTab teamSlug={teamSlug} group={group} allGroups={allGroups} />}
-          {tab === "sources" && <GroupDataSources teamSlug={teamSlug} groupSlug={group.slug} isAdmin={isAdmin} embedded />}
+          {tab === "sources" && <GroupIntegrationsPanel teamSlug={teamSlug} groupSlug={group.slug} embedded />}
           {tab === "general" && <GeneralTab teamSlug={teamSlug} group={group} memberCount={members.length} />}
         </div>
       </div>

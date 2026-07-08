@@ -93,7 +93,6 @@ export default async function GroupDetailPage({
             members={members}
             allMembers={allMembersRes.rows}
             allGroups={allGroups.map((g) => ({ id: g.id, slug: g.slug, name: g.name }))}
-            isAdmin={isAdminOrStaff}
             autoOpenTab={autoOpenTab}
           />
         </div>
