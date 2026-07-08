@@ -64,10 +64,10 @@ export function ProjectSyncPicker({
           className="flex-1 rounded border border-gray-300 dark:border-gray-700 bg-transparent px-2 py-1 text-sm"
         />
         <button type="button" onClick={() => selectAll(true)} className="text-xs text-gray-500 underline hover:text-gray-700">
-          Select all
+          {query.trim() ? "Select visible" : "Select all"}
         </button>
         <button type="button" onClick={() => selectAll(false)} className="text-xs text-gray-500 underline hover:text-gray-700">
-          Deselect all
+          {query.trim() ? "Deselect visible" : "Deselect all"}
         </button>
       </div>
 

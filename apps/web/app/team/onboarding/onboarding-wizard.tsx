@@ -245,7 +245,10 @@ function Step1({
         <p className="mb-2 font-medium">Shared with {serverHost} every 5 minutes:</p>
         <ul className="list-inside list-disc space-y-1 text-gray-600 dark:text-gray-400">
           <li>Daily aggregate metrics (agent time, sessions, tool calls, turns, tokens)</li>
-          <li>Per-project totals — project name, agent time, session count</li>
+          <li>Per-project totals — project name, agent time, session count, and GitHub repo name when one is detected</li>
+          <li>Daily working style — working-shape mix, concurrency peak and parallel minutes, long-autonomous runs, plan-mode and brainstorm usage, tool-error count</li>
+          <li>Daily tooling and output counts — skills and sub-agents used (names + counts), PRs, commits, pushes</li>
+          <li>Session outcome mixes from AI enrichment (shipped / partial / blocked …)</li>
           <li>Plan-utilization percentages and sync health logs</li>
         </ul>
       </div>

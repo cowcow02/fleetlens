@@ -617,7 +617,32 @@ export async function runTeamSync(
       const retryDay = [...droppedDaysBefore]
         .sort()
         .find((d) => !summary.droppedDays.includes(d));
-      const retryRollup = retryDay ? allRollups.find((r) => r.day === retryDay) : undefined;
+      if (retryDay && summary.pushedDays.includes(retryDay)) {
+        // Main loop already re-pushed this day this run (possibly as a
+        // tombstone after a selection change) — server row is corrected;
+        // just drop it from the list instead of pushing twice.
+        const idx = workingDropped.indexOf(retryDay);
+        if (idx >= 0) workingDropped.splice(idx, 1);
+        summary.recoveredDays = [retryDay];
+      }
+      // A day whose sessions are all excluded since it was dropped has no
+      // filtered rollup — retry it as a tombstone so it still heals instead
+      // of lingering in droppedDays forever.
+      const retryRollup =
+        retryDay && !summary.pushedDays.includes(retryDay)
+          ? (allRollups.find((r) => r.day === retryDay) ??
+            (config.syncProjects
+              ? {
+                  day: retryDay,
+                  agentTimeMs: 0,
+                  sessions: 0,
+                  uniqueSessions: 0,
+                  toolCalls: 0,
+                  turns: 0,
+                  tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                }
+              : undefined))
+          : undefined;
       if (retryDay && retryRollup) {
         const payload = buildDayPayload(retryRollup, { latest: false });
         const result = await pushToTeamServer(config, payload);

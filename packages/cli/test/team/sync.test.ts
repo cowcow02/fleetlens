@@ -379,6 +379,45 @@ describe("runTeamSync", () => {
     expect(advanced).toBe(true);
   });
 
+  it("heals a dropped day whose sessions became excluded by retrying it as a tombstone", async () => {
+    const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue({
+      ...CONFIG,
+      lastSyncedDay: "2026-04-14",
+      droppedDays: ["2026-04-01"],
+      syncProjects: { autoIncludeNew: true, included: [], excluded: ["personal"] },
+    });
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    // The dropped day's only session is now-excluded — no filtered rollup can
+    // be rebuilt for it; without the tombstone retry it would zombie forever.
+    vi.mocked(listSessions).mockResolvedValue([
+      makeSession("2026-04-14", { projectName: "/u/x/Repo/work" }),
+      makeSession("2026-04-01", { id: "sess_p", projectName: "/u/x/Repo/personal" }),
+    ]);
+
+    const { dequeuePayloads } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([]);
+
+    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync();
+    expect(result.error).toBeUndefined();
+
+    const payloads = vi.mocked(fetch).mock.calls
+      .map((c) => JSON.parse((c[1] as RequestInit).body as string))
+      .filter((p) => p.dailyRollup?.day === "2026-04-01");
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0].dailyRollup.sessions).toBe(0);
+    expect(payloads[0].richRollup.projects).toEqual([]);
+    const clearedCall = vi
+      .mocked(writeTeamConfig)
+      .mock.calls.find((c) => Array.isArray((c[0] as TeamConfig).droppedDays));
+    expect(clearedCall).toBeDefined();
+    expect((clearedCall![0] as TeamConfig).droppedDays).toEqual([]);
+  });
+
   it("retries the oldest dropped day and clears it from config on success", async () => {
     const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue({

@@ -54,7 +54,12 @@ export function SyncedProjectsForm({
         for (const frame of frames) {
           const data = frame.split("\n").find((l) => l.startsWith("data: "))?.slice(6);
           if (!data) continue;
-          const ev = JSON.parse(data);
+          let ev;
+          try {
+            ev = JSON.parse(data);
+          } catch {
+            continue;
+          }
           if (ev.type === "phase" && ev.phase === "activity") append(`pushing ${ev.totalDays} day(s), newest first…`);
           else if (ev.type === "day")
             append(
@@ -82,9 +87,11 @@ export function SyncedProjectsForm({
       headers: { "content-type": "application/json" },
       body: JSON.stringify(value),
     });
-    const body = res.ok ? await res.json().catch(() => null) : null;
+    const body = await res.json().catch(() => null);
     setSaving(false);
-    setSavedMsg(res.ok ? (body?.resync ? "Saved — selection changed." : "Saved.") : `Error: ${res.status}`);
+    setSavedMsg(
+      res.ok ? (body?.resync ? "Saved — selection changed." : "Saved.") : (body?.error ?? `Error: ${res.status}`),
+    );
     if (body?.resync) void streamResync();
   }
 
