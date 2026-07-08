@@ -76,7 +76,6 @@ export function PairCliPanel({ teamSlug }: { teamSlug: string }) {
             </p>
             <div style={{ marginTop: 12, fontSize: 12, color: "var(--mute)" }}>
               First time?{" "}
-              <code className="mono">brew install fleetlens</code> or{" "}
               <code className="mono">npm install -g fleetlens</code>, then
               click below.
             </div>
