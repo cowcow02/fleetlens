@@ -95,6 +95,40 @@ describe("migrations", () => {
     expect(idx!.indexdef).toContain("membership_id");
     expect(idx!.indexdef).toMatch(/id DESC/);
   });
+
+  it("0015 creates the integrations table with the expected columns", async () => {
+    const pool = getPool();
+    const { rows } = await pool.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'integrations'`,
+    );
+    const cols = rows.map((r) => r.column_name);
+    for (const expected of [
+      "id", "team_id", "provider", "label", "owner_group_id",
+      "credentials_enc", "config", "status",
+    ]) {
+      expect(cols, `missing integrations.${expected}`).toContain(expected);
+    }
+  });
+
+  it("0015 adds integration_id to github_pull_requests, linear_issues, jira_issues", async () => {
+    const pool = getPool();
+    for (const table of ["github_pull_requests", "linear_issues", "jira_issues"]) {
+      const { rows } = await pool.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = $1 AND column_name = 'integration_id'`,
+        [table],
+      );
+      expect(rows, `missing ${table}.integration_id`).toHaveLength(1);
+    }
+  });
+
+  it("0015 enforces one label per (team, provider) via a unique index", async () => {
+    const { rows } = await getPool().query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE tablename = 'integrations'",
+    );
+    expect(rows.map((r) => r.indexname)).toContain("integrations_team_provider_label_key");
+  });
 });
 
 describe("schema parity with SCHEMA_SQL", () => {

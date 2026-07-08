@@ -8,11 +8,13 @@ import { scopedSourceNames } from "../../src/lib/team-report-aggregate.js";
 let pool: ReturnType<typeof getPool>;
 let teamId: string;
 
+// 0015 moved scopedSourceNames from the legacy singleton team_integrations
+// table onto the new (many-per-provider) integrations table.
 async function addIntegration(provider: "github" | "linear" | "jira", config: unknown) {
   await pool.query(
-    `INSERT INTO team_integrations (team_id, provider, credentials_enc, config, status)
-     VALUES ($1, $2, 'enc', $3::jsonb, 'active')
-     ON CONFLICT (team_id, provider) DO UPDATE SET config = EXCLUDED.config`,
+    `INSERT INTO integrations (team_id, provider, label, credentials_enc, config, status)
+     VALUES ($1, $2, 'Test', 'enc', $3::jsonb, 'active')
+     ON CONFLICT (team_id, provider, label) DO UPDATE SET config = EXCLUDED.config`,
     [teamId, provider, JSON.stringify(config)],
   );
 }

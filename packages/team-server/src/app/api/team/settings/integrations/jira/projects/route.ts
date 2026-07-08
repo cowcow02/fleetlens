@@ -1,33 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireTeamMembership, requireAdmin } from "../../../../../../../lib/route-helpers";
+import { requireTeamMembership, requireAdminOrAnyManager, requireIntegrationManager } from "../../../../../../../lib/route-helpers";
 import { listJiraProjects, normalizeSite } from "../../../../../../../lib/jira";
 import { storedJiraToken, storedJiraConnection } from "../../../../../../../lib/integrations";
 
 // Lists Jira projects visible to the credentials, for the connect-flow picker.
 // Site/email/token come from the request body (pre-save) or fall back to the
-// stored ones. POST because credentials don't belong in URLs.
+// stored ones of an existing integration named by body.id. POST because
+// credentials don't belong in URLs.
 export async function POST(req: NextRequest) {
   const slug = req.nextUrl.searchParams.get("team");
   if (!slug) return NextResponse.json({ error: "team slug required" }, { status: 400 });
   const ctx = await requireTeamMembership(req, slug, { bySlug: true });
   if (ctx instanceof NextResponse) return ctx;
-  const adminErr = requireAdmin(ctx);
-  if (adminErr) return adminErr;
 
-  const body = (await req.json().catch(() => ({}))) as { site?: string; email?: string; apiToken?: string };
+  const body = (await req.json().catch(() => ({}))) as { site?: string; email?: string; apiToken?: string; id?: string };
   let site = body.site?.trim() ? normalizeSite(body.site) : null;
   let email = body.email?.trim() || null;
   let token = body.apiToken?.trim() || null;
 
-  if (!site || !email || !token) {
-    if (!process.env.FLEETLENS_ENCRYPTION_KEY) {
+  if (site && email && token) {
+    const gateErr = await requireAdminOrAnyManager(ctx);
+    if (gateErr) return gateErr;
+  } else {
+    if (!body.id || !process.env.FLEETLENS_ENCRYPTION_KEY) {
       return NextResponse.json({ error: "site, email and API token required" }, { status: 400 });
     }
-    const stored = await storedJiraConnection(ctx.membership.team_id, ctx.pool);
-    const storedToken = await storedJiraToken(ctx.membership.team_id, ctx.pool);
-    site = site ?? stored?.site ?? null;
-    email = email ?? stored?.email ?? null;
-    token = token ?? storedToken;
+    const integ = await requireIntegrationManager(ctx, body.id);
+    if (integ instanceof NextResponse) return integ;
+    // Provider pin + full stored connection only: mixing a caller-supplied
+    // site with the stored token would send the secret to an arbitrary host.
+    if (integ.provider !== "jira") return NextResponse.json({ error: "Not a Jira integration" }, { status: 400 });
+    const stored = await storedJiraConnection(integ.id, ctx.pool);
+    const storedToken = await storedJiraToken(integ.id, ctx.pool);
+    site = stored?.site ?? null;
+    email = stored?.email ?? null;
+    token = storedToken;
     if (!site || !email || !token) {
       return NextResponse.json({ error: "site, email and API token required — no stored credentials yet" }, { status: 400 });
     }
