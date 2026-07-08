@@ -31,6 +31,7 @@ afterEach(() => {
   else process.env.CCLENS_HOME = prevCclensHome;
   rmSync(testHome, { recursive: true, force: true });
   vi.doUnmock("@claude-lens/parser/fs");
+  vi.doUnmock("../../src/team/push.js");
 });
 
 describe("dispatchCommand", () => {
@@ -43,6 +44,39 @@ describe("dispatchCommand", () => {
     expect(result.error).toContain("Unknown command type");
     expect(result.id).toBe("cmd_x");
     expect(typeof result.completedAt).toBe("string");
+  });
+
+  it("backfill-activity respects the member's project selection", async () => {
+    const seen: string[] = [];
+    vi.doMock("@claude-lens/parser/fs", async (orig) => {
+      const actual = (await orig()) as Record<string, unknown>;
+      return {
+        ...actual,
+        listSessions: async () => [
+          { projectName: "/u/x/Repo/work" },
+          { projectName: "/u/x/Repo/personal" },
+        ],
+      };
+    });
+    vi.doMock("../../src/team/push.js", async (orig) => {
+      const actual = (await orig()) as Record<string, unknown>;
+      return {
+        ...actual,
+        buildRollupsForRange: (sessions: Array<{ projectName: string }>) => {
+          seen.push(...sessions.map((s) => s.projectName));
+          return [];
+        },
+      };
+    });
+    const { dispatchCommand } = await import("../../src/team/commands.js");
+    const cmd: ServerCommand = { id: "cmd_f", type: "backfill-activity", params: { days: 30 } };
+    const result = await dispatchCommand(
+      cmd,
+      { ...SAMPLE_CONFIG, syncProjects: { autoIncludeNew: true, included: [], excluded: ["personal"] } },
+      noopLog,
+    );
+    expect(result.ok).toBe(true);
+    expect(seen).toEqual(["/u/x/Repo/work"]);
   });
 
   it("backfill-activity returns ok:true with pushed:0 when no sessions exist", async () => {

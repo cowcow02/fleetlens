@@ -1,5 +1,5 @@
 import type { TeamConfig, ServerCommand, CommandResult } from "@claude-lens/parser/fs";
-import { buildRollupsForRange, buildIngestPayload, buildRichBlocksForDay, sessionTouchesDay, pushToTeamServer } from "./push.js";
+import { buildRollupsForRange, buildIngestPayload, buildRichBlocksForDay, filterSyncedSessions, sessionTouchesDay, pushToTeamServer } from "./push.js";
 import { createRepoResolver } from "./git-remote.js";
 
 export type { ServerCommand, CommandResult };
@@ -47,7 +47,10 @@ async function runActivityBackfill(
 
   let sessions;
   try {
-    sessions = await listSessions({ limit: 10_000 });
+    // Server-commanded backfills must respect the member's project selection
+    // too — an admin's "re-push 30 days" is not consent to resend excluded
+    // projects.
+    sessions = filterSyncedSessions(await listSessions({ limit: 10_000 }), config.syncProjects);
   } catch (err) {
     return {
       id: command.id,
