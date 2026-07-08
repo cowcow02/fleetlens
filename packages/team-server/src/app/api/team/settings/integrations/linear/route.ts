@@ -10,6 +10,7 @@ import {
   deleteIntegration,
   listIntegrations,
   normalizeLinearTeams,
+  preserveGroupMappings,
   runLinearSync,
   saveLinearIntegration,
 } from "../../../../../../lib/integrations";
@@ -29,18 +30,20 @@ export async function GET(req: NextRequest) {
   const connections = await listIntegrations(ctx.membership.team_id, ctx.pool, "linear");
   if (connections.length === 0) return NextResponse.json({ connected: false, connections: [] });
 
-  const counts = await ctx.pool.query<{ linear_team_key: string; total: number; completed: number; started: number }>(
-    `SELECT linear_team_key, COUNT(*)::int AS total,
-            COUNT(*) FILTER (WHERE state_type = 'completed')::int AS completed,
-            COUNT(*) FILTER (WHERE state_type = 'started')::int AS started
-     FROM linear_issues WHERE team_id = $1 GROUP BY linear_team_key`,
-    [ctx.membership.team_id],
-  );
+  const [counts, groupNames] = await Promise.all([
+    ctx.pool.query<{ linear_team_key: string; total: number; completed: number; started: number }>(
+      `SELECT linear_team_key, COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE state_type = 'completed')::int AS completed,
+              COUNT(*) FILTER (WHERE state_type = 'started')::int AS started
+       FROM linear_issues WHERE team_id = $1 GROUP BY linear_team_key`,
+      [ctx.membership.team_id],
+    ),
+    ctx.pool.query<{ id: string; name: string }>(
+      "SELECT id, name FROM groups WHERE team_id = $1",
+      [ctx.membership.team_id],
+    ),
+  ]);
   const byKey = new Map(counts.rows.map((r) => [r.linear_team_key, r]));
-  const groupNames = await ctx.pool.query<{ id: string; name: string }>(
-    "SELECT id, name FROM groups WHERE team_id = $1",
-    [ctx.membership.team_id],
-  );
   const nameByGroup = new Map(groupNames.rows.map((g) => [g.id, g.name]));
 
   return NextResponse.json({
@@ -91,6 +94,7 @@ export async function PUT(req: NextRequest) {
   let integrationId: string | null = null;
   let label: string;
   let ownerGroupId: string | null = null;
+  let teamList = teams;
   if (body.id) {
     const integ = await requireIntegrationManager(ctx, body.id);
     if (integ instanceof NextResponse) return integ;
@@ -98,6 +102,9 @@ export async function PUT(req: NextRequest) {
     integrationId = integ.id;
     label = body.label?.trim() || integ.label;
     ownerGroupId = integ.owner_group_id;
+    if (!ctx.user.is_staff && ctx.membership.role !== "admin") {
+      teamList = preserveGroupMappings(teams, normalizeLinearTeams(integ.config), (t) => t.key, integ.owner_group_id!);
+    }
   } else {
     const adminErr = requireAdmin(ctx);
     if (adminErr) return adminErr;
@@ -119,7 +126,7 @@ export async function PUT(req: NextRequest) {
         label,
         ownerGroupId,
         apiKey: body.apiKey?.trim() || null,
-        teams,
+        teams: teamList,
         createdBy: ctx.user.id,
       },
       ctx.pool,

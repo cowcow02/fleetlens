@@ -3,8 +3,8 @@ import { resetDb } from "../helpers/db.js";
 import { getPool } from "../../src/db/pool.js";
 import { createUserAccount } from "../../src/lib/auth.js";
 import { createTeamWithAdmin } from "../../src/lib/teams.js";
-import { createGroup } from "../../src/lib/groups.js";
-import { listIntegrations, getIntegrationById, deleteIntegration } from "../../src/lib/integrations.js";
+import { createGroup, deleteGroup } from "../../src/lib/groups.js";
+import { listIntegrations, getIntegrationById, deleteIntegration, preserveGroupMappings } from "../../src/lib/integrations.js";
 import { scopedSourceNames } from "../../src/lib/team-report-aggregate.js";
 
 let pool: ReturnType<typeof getPool>;
@@ -106,5 +106,73 @@ describe("deleteIntegration", () => {
       [teamId],
     );
     expect(remaining.rows.map((r) => r.number)).toEqual([2]);
+  });
+
+  it("reassigns shared-source facts to a surviving integration instead of cascading them away", async () => {
+    const a = await insertIntegration("github", "Share A", { repos: [{ name: "acme/shared2", group_ids: [] }, { name: "acme/only-a", group_ids: [] }] });
+    const b = await insertIntegration("github", "Share B", { repos: [{ name: "acme/shared2", group_ids: [] }] });
+
+    // Last sync by A owns both rows.
+    await pool.query(
+      `INSERT INTO github_pull_requests (team_id, repo, number, title, state, created_at, integration_id)
+       VALUES ($1, 'acme/shared2', 10, 'shared repo PR', 'open', now(), $2),
+              ($1, 'acme/only-a', 11, 'exclusive repo PR', 'open', now(), $2)`,
+      [teamId, a],
+    );
+
+    await deleteIntegration(teamId, a, pool);
+
+    const rows = await pool.query<{ repo: string; integration_id: string | null }>(
+      "SELECT repo, integration_id FROM github_pull_requests WHERE team_id = $1 AND number IN (10, 11)",
+      [teamId],
+    );
+    // Shared repo survives, re-attributed to B; A-exclusive repo cascades away.
+    expect(rows.rows).toEqual([{ repo: "acme/shared2", integration_id: b }]);
+  });
+});
+
+describe("preserveGroupMappings", () => {
+  const entry = (name: string, group_ids: string[]) => ({ name, group_ids });
+  it("keeps stored group_ids for existing sources and owner-only for new ones", () => {
+    const stored = [entry("acme/app", ["gB"]), entry("acme/web", [])];
+    const submitted = [entry("acme/app", []), entry("acme/web", ["gB", "gC"]), entry("acme/new", ["gC"])];
+    expect(preserveGroupMappings(submitted, stored, (e) => e.name, "gA")).toEqual([
+      entry("acme/app", ["gB"]),
+      entry("acme/web", []),
+      entry("acme/new", ["gA"]),
+    ]);
+  });
+});
+
+describe("deleteGroup integration-config cleanup", () => {
+  it("strips the group from multi-group mappings, leaves exclusive and all-groups mappings alone", async () => {
+    const admin = await createUserAccount("integ-del-group@example.com", "pass1234", null, {}, pool);
+    const tId = (await createTeamWithAdmin("Del Group Team", admin.id, pool)).team.id;
+    const gA = await createGroup(tId, "del-a", "Del A", admin.id, pool);
+    const gB = await createGroup(tId, "del-b", "Del B", admin.id, pool);
+
+    await pool.query(
+      `INSERT INTO integrations (team_id, provider, label, credentials_enc, config, status)
+       VALUES ($1, 'github', 'GH', 'enc', $2::jsonb, 'active')`,
+      [tId, JSON.stringify({
+        repos: [
+          { name: "acme/both", group_ids: [gA.id, gB.id] },
+          { name: "acme/only-a", group_ids: [gA.id] },
+          { name: "acme/all", group_ids: [] },
+        ],
+      })],
+    );
+
+    await deleteGroup(gA.id, admin.id, pool);
+
+    const cfg = await pool.query<{ config: { repos: { name: string; group_ids: string[] }[] } }>(
+      "SELECT config FROM integrations WHERE team_id = $1", [tId],
+    );
+    const byName = new Map(cfg.rows[0].config.repos.map((r) => [r.name, r.group_ids]));
+    expect(byName.get("acme/both")).toEqual([gB.id]);
+    // Exclusive mapping stays orphaned on purpose — stripping it would expose
+    // a group-private source to every group ([] = all groups).
+    expect(byName.get("acme/only-a")).toEqual([gA.id]);
+    expect(byName.get("acme/all")).toEqual([]);
   });
 });

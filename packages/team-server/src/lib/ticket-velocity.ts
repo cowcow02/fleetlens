@@ -5,7 +5,7 @@ import type {
   LinearWeekVelocity,
 } from "../app/team/[slug]/insights/types";
 import { medianHours } from "./github";
-import { normalizeLinearTeams, normalizeJiraProjects } from "./integrations";
+import { countsTowardGroup, normalizeLinearTeams, normalizeJiraProjects } from "./integrations";
 import {
   previousIsoMonday,
   weekEndExclusive,
@@ -31,6 +31,26 @@ export function latestSyncAt(integs: IntegrationConfigRow[]): string | null {
     (m, i) => (i.last_sync_at && (!m || i.last_sync_at > m) ? i.last_sync_at : m),
     null,
   );
+}
+
+/** Union of source keys across a provider's integrations, filtered to the
+ *  scope's group and deduped (shared sources appear once). */
+export function scopedSourceKeys<T extends { group_ids: string[] }>(
+  integs: IntegrationConfigRow[],
+  normalize: (config: IntegrationConfigRow["config"]) => T[],
+  keyOf: (t: T) => string,
+  scope: InsightsScope,
+): string[] {
+  return [
+    ...new Set(
+      integs.flatMap((i) => {
+        const all = normalize(i.config);
+        const scoped =
+          scope.kind === "group" ? all.filter((x) => countsTowardGroup(x.group_ids, scope.groupId)) : all;
+        return scoped.map(keyOf);
+      }),
+    ),
+  ];
 }
 
 export type LinearIssueAggRow = {
@@ -75,18 +95,7 @@ export async function linearVelocity(
   if (integs.length === 0) return null;
 
   const lastSyncAt = latestSyncAt(integs);
-  const teamKeys = [
-    ...new Set(
-      integs.flatMap((integ) => {
-        const allTeams = normalizeLinearTeams(integ.config);
-        const scoped =
-          scope.kind === "group"
-            ? allTeams.filter((t) => t.group_ids.length === 0 || t.group_ids.includes(scope.groupId))
-            : allTeams;
-        return scoped.map((t) => t.key);
-      }),
-    ),
-  ];
+  const teamKeys = scopedSourceKeys(integs, normalizeLinearTeams, (t) => t.key, scope);
   if (teamKeys.length === 0) {
     return {
       team_keys: [],
@@ -146,18 +155,7 @@ export async function jiraVelocity(
   if (integs.length === 0) return null;
 
   const lastSyncAt = latestSyncAt(integs);
-  const projectKeys = [
-    ...new Set(
-      integs.flatMap((integ) => {
-        const allProjects = normalizeJiraProjects(integ.config);
-        const scoped =
-          scope.kind === "group"
-            ? allProjects.filter((p) => p.group_ids.length === 0 || p.group_ids.includes(scope.groupId))
-            : allProjects;
-        return scoped.map((p) => p.key);
-      }),
-    ),
-  ];
+  const projectKeys = scopedSourceKeys(integs, normalizeJiraProjects, (p) => p.key, scope);
   if (projectKeys.length === 0) {
     return {
       project_keys: [],

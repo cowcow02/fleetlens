@@ -86,6 +86,25 @@ export async function deleteGroup(
       [groupId],
     );
     if (!g.rowCount) throw new Error("group not found");
+    // Strip the group from integration source mappings that also count toward
+    // other groups. Sources mapped ONLY to this group stay as-is on purpose:
+    // rewriting them to [] would silently expose a group-private source to
+    // every group's report; leaving the stale id keeps them orphaned until an
+    // admin/manager remaps them. (integrations.owner_group_id is handled by
+    // its ON DELETE SET NULL FK.)
+    for (const key of ["repos", "teams", "projects"]) {
+      await client.query(
+        `UPDATE integrations SET config = jsonb_set(config, $3::text[], (
+           SELECT COALESCE(jsonb_agg(
+             CASE WHEN elem->'group_ids' ? $2 AND jsonb_array_length(elem->'group_ids') > 1
+                  THEN jsonb_set(elem, '{group_ids}',
+                       (SELECT jsonb_agg(gid) FROM jsonb_array_elements(elem->'group_ids') gid WHERE gid != to_jsonb($2::text)))
+                  ELSE elem END), '[]'::jsonb)
+           FROM jsonb_array_elements(config->$4) elem))
+         WHERE team_id = $1 AND jsonb_typeof(config->$4) = 'array'`,
+        [g.rows[0].team_id, groupId, `{${key}}`, key],
+      );
+    }
     await client.query("DELETE FROM groups WHERE id = $1", [groupId]);
     await client.query(
       "INSERT INTO events (team_id, actor_id, action, payload) VALUES ($1, $2, 'group.deleted', $3)",

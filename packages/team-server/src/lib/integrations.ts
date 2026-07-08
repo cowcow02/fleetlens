@@ -177,9 +177,48 @@ export async function saveGithubIntegration(
   return { id, login };
 }
 
+/** Does this source's mapping count toward the given group? Empty = all groups. */
+export function countsTowardGroup(groupIds: string[], groupId: string): boolean {
+  return groupIds.length === 0 || groupIds.includes(groupId);
+}
+
+// Non-admin managers may edit an integration's source LIST but never the
+// cross-group attribution: stored group_ids win for existing sources, and new
+// sources count toward the owner group only. Without this, a manager could
+// PUT group_ids for groups they don't manage (or [] = every group) through
+// the provider routes, bypassing the group route's applyDesired invariants.
+export function preserveGroupMappings<T extends { group_ids: string[] }>(
+  entries: T[],
+  stored: T[],
+  keyOf: (e: T) => string,
+  ownerGroupId: string,
+): T[] {
+  const storedByKey = new Map(stored.map((s) => [keyOf(s), s.group_ids]));
+  return entries.map((e) => ({ ...e, group_ids: storedByKey.get(keyOf(e)) ?? [ownerGroupId] }));
+}
+
 export async function deleteIntegration(teamId: string, integrationId: string, pool: pg.Pool): Promise<void> {
-  // Synced facts cascade via the integration_id FK; shared sources tracked by
-  // another integration repopulate on its next sync.
+  // Fact rows carry last-writer-wins provenance, so a shared source's rows may
+  // point at the integration being deleted even though another integration
+  // still tracks it. Reassign those to a survivor before the FK cascade so the
+  // other integration's report doesn't gap until its next hourly sync.
+  const integ = await getIntegrationById(teamId, integrationId, pool);
+  if (!integ) return;
+  const survivors = (await listIntegrations(teamId, pool, integ.provider)).filter((i) => i.id !== integrationId);
+  const reassign: Record<string, { table: string; column: string; keys: (i: IntegrationRow) => string[] }> = {
+    github: { table: "github_pull_requests", column: "repo", keys: (i) => normalizeGithubRepos(i.config.repos).map((r) => r.name) },
+    linear: { table: "linear_issues", column: "linear_team_key", keys: (i) => normalizeLinearTeams(i.config).map((t) => t.key) },
+    jira: { table: "jira_issues", column: "jira_project_key", keys: (i) => normalizeJiraProjects(i.config).map((p) => p.key) },
+  };
+  const { table, column, keys } = reassign[integ.provider];
+  for (const survivor of survivors) {
+    const names = keys(survivor);
+    if (names.length === 0) continue;
+    await pool.query(
+      `UPDATE ${table} SET integration_id = $1 WHERE team_id = $2 AND integration_id = $3 AND ${column} = ANY($4::text[])`,
+      [survivor.id, teamId, integrationId, names],
+    );
+  }
   await pool.query("DELETE FROM integrations WHERE team_id = $1 AND id = $2", [teamId, integrationId]);
 }
 

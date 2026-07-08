@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireTeamMembership, requireGroupManager } from "../../../../../../../lib/route-helpers";
 import {
+  countsTowardGroup,
   listIntegrations,
   normalizeGithubRepos,
   normalizeLinearTeams,
@@ -28,7 +29,7 @@ async function groupCtx(req: NextRequest, slug: string, groupSlug: string) {
 
 function countsToward(groupIds: string[], groupId: string) {
   return {
-    counts: groupIds.length === 0 || groupIds.includes(groupId),
+    counts: countsTowardGroup(groupIds, groupId),
     via_all_groups: groupIds.length === 0,
   };
 }

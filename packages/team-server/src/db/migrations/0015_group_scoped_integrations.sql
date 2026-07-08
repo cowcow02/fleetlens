@@ -51,6 +51,10 @@ ALTER TABLE "jira_issues" ADD COLUMN IF NOT EXISTS "integration_id" uuid;
 --> statement-breakpoint
 ALTER TABLE "jira_issues" ADD CONSTRAINT "jira_issues_integration_id_fk" FOREIGN KEY ("integration_id") REFERENCES "public"."integrations"("id") ON DELETE cascade ON UPDATE no action;
 --> statement-breakpoint
+-- Non-concurrent indexes on existing tables: allowed here because these fact
+-- tables are retention-pruned (per-team retention_days, daily job) so they
+-- stay bounded, and CREATE INDEX CONCURRENTLY cannot run inside the
+-- migration transaction the drizzle runner uses.
 CREATE INDEX IF NOT EXISTS "idx_github_prs_integration" ON "github_pull_requests" USING btree ("integration_id");
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_linear_issues_integration" ON "linear_issues" USING btree ("integration_id");

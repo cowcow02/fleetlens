@@ -10,6 +10,7 @@ import {
   deleteIntegration,
   listIntegrations,
   normalizeGithubRepos,
+  preserveGroupMappings,
   runGithubSync,
   saveGithubIntegration,
 } from "../../../../../../lib/integrations";
@@ -29,18 +30,20 @@ export async function GET(req: NextRequest) {
   const connections = await listIntegrations(ctx.membership.team_id, ctx.pool, "github");
   if (connections.length === 0) return NextResponse.json({ connected: false, connections: [] });
 
-  const counts = await ctx.pool.query<{ repo: string; total: number; ai: number; merged: number }>(
-    `SELECT repo, COUNT(*)::int AS total,
-            COUNT(*) FILTER (WHERE ai_assisted)::int AS ai,
-            COUNT(*) FILTER (WHERE state = 'merged')::int AS merged
-     FROM github_pull_requests WHERE team_id = $1 GROUP BY repo`,
-    [ctx.membership.team_id],
-  );
+  const [counts, groupNames] = await Promise.all([
+    ctx.pool.query<{ repo: string; total: number; ai: number; merged: number }>(
+      `SELECT repo, COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE ai_assisted)::int AS ai,
+              COUNT(*) FILTER (WHERE state = 'merged')::int AS merged
+       FROM github_pull_requests WHERE team_id = $1 GROUP BY repo`,
+      [ctx.membership.team_id],
+    ),
+    ctx.pool.query<{ id: string; name: string }>(
+      "SELECT id, name FROM groups WHERE team_id = $1",
+      [ctx.membership.team_id],
+    ),
+  ]);
   const countsByRepo = new Map(counts.rows.map((r) => [r.repo, r]));
-  const groupNames = await ctx.pool.query<{ id: string; name: string }>(
-    "SELECT id, name FROM groups WHERE team_id = $1",
-    [ctx.membership.team_id],
-  );
   const nameByGroup = new Map(groupNames.rows.map((g) => [g.id, g.name]));
 
   return NextResponse.json({
@@ -92,6 +95,7 @@ export async function PUT(req: NextRequest) {
   let integrationId: string | null = null;
   let label: string;
   let ownerGroupId: string | null = null;
+  let repos = repoList;
   if (body.id) {
     const integ = await requireIntegrationManager(ctx, body.id);
     if (integ instanceof NextResponse) return integ;
@@ -99,6 +103,9 @@ export async function PUT(req: NextRequest) {
     integrationId = integ.id;
     label = body.label?.trim() || integ.label;
     ownerGroupId = integ.owner_group_id;
+    if (!ctx.user.is_staff && ctx.membership.role !== "admin") {
+      repos = preserveGroupMappings(repoList, normalizeGithubRepos(integ.config.repos), (r) => r.name, integ.owner_group_id!);
+    }
   } else {
     const adminErr = requireAdmin(ctx);
     if (adminErr) return adminErr;
@@ -120,7 +127,7 @@ export async function PUT(req: NextRequest) {
         label,
         ownerGroupId,
         token: body.token?.trim() || null,
-        repos: repoList,
+        repos,
         createdBy: ctx.user.id,
       },
       ctx.pool,

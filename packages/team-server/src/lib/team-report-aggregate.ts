@@ -36,6 +36,7 @@ import {
   latestSyncAt,
   linearVelocity,
   linearWeekVelocity,
+  scopedSourceKeys,
   type IntegrationConfigRow,
   type LinearIssueAggRow,
 } from "./ticket-velocity";
@@ -240,14 +241,10 @@ export async function scopedSourceNames(
   pool: pg.Pool,
 ): Promise<{ repoNames: string[] | null; teamKeys: string[] | null; projectKeys: string[] | null }> {
   const integ = await loadIntegrationConfigs(teamId, pool);
-  const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
-    scope.kind === "group"
-      ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
-      : xs;
   return {
-    repoNames: [...new Set(integ.github.flatMap((g) => inScope(normalizeGithubRepos(g.config.repos)).map((r) => r.name)))],
-    teamKeys: [...new Set(integ.linear.flatMap((l) => inScope(normalizeLinearTeams(l.config)).map((t) => t.key)))],
-    projectKeys: [...new Set(integ.jira.flatMap((j) => inScope(normalizeJiraProjects(j.config)).map((p) => p.key)))],
+    repoNames: scopedSourceKeys(integ.github, (c) => normalizeGithubRepos(c.repos), (r) => r.name, scope),
+    teamKeys: scopedSourceKeys(integ.linear, normalizeLinearTeams, (t) => t.key, scope),
+    projectKeys: scopedSourceKeys(integ.jira, normalizeJiraProjects, (p) => p.key, scope),
   };
 }
 
@@ -410,13 +407,9 @@ async function workTimeline(
 ): Promise<WorkTimelineStats | null> {
   if (gh.length === 0 || (lin.length === 0 && jira.length === 0)) return null;
 
-  const inScope = <T extends { group_ids: string[] }>(xs: T[]) =>
-    scope.kind === "group"
-      ? xs.filter((x) => x.group_ids.length === 0 || x.group_ids.includes(scope.groupId))
-      : xs;
-  const repoNames = [...new Set(gh.flatMap((g) => inScope(normalizeGithubRepos(g.config.repos)).map((r) => r.name)))];
-  const teamKeys = [...new Set(lin.flatMap((l) => inScope(normalizeLinearTeams(l.config)).map((t) => t.key)))];
-  const projectKeys = [...new Set(jira.flatMap((j) => inScope(normalizeJiraProjects(j.config)).map((p) => p.key)))];
+  const repoNames = scopedSourceKeys(gh, (c) => normalizeGithubRepos(c.repos), (r) => r.name, scope);
+  const teamKeys = scopedSourceKeys(lin, normalizeLinearTeams, (t) => t.key, scope);
+  const projectKeys = scopedSourceKeys(jira, normalizeJiraProjects, (p) => p.key, scope);
   if (repoNames.length === 0 || (teamKeys.length === 0 && projectKeys.length === 0)) return null;
 
   // Shared window params; per-source key arrays are appended and the matching
@@ -483,18 +476,7 @@ async function githubDelivery(
   if (integs.length === 0) return null;
 
   const lastSyncAt = latestSyncAt(integs);
-  const repoNames = [
-    ...new Set(
-      integs.flatMap((integ) => {
-        const allRepos = normalizeGithubRepos(integ.config.repos);
-        const scoped =
-          scope.kind === "group"
-            ? allRepos.filter((r) => r.group_ids.length === 0 || r.group_ids.includes(scope.groupId))
-            : allRepos;
-        return scoped.map((r) => r.name);
-      }),
-    ),
-  ];
+  const repoNames = scopedSourceKeys(integs, (c) => normalizeGithubRepos(c.repos), (r) => r.name, scope);
   if (repoNames.length === 0) {
     return {
       repos: [],
@@ -985,9 +967,11 @@ export async function buildTeamInsightReport(
   ]);
   // Member-reported project names are local clone-directory basenames; with
   // GitHub connected, fold them onto the connected repos' identities.
+  // Scope-filtered like every other block — a group report must not fold its
+  // project rows onto repos mapped exclusively to other groups.
   const projects = canonicalizeProjects(
     rawProjects,
-    [...new Set(integ.github.flatMap((g) => normalizeGithubRepos(g.config.repos).map((r) => r.name)))],
+    scopedSourceKeys(integ.github, (c) => normalizeGithubRepos(c.repos), (r) => r.name, scope),
   );
   const roster = { rows: perMemberRes.rows.map((r) => ({
     id: r.id,

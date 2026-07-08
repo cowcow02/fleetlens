@@ -102,12 +102,16 @@ export async function requireGroupManager(
   );
   if (!g.rowCount) return NextResponse.json({ error: "Group not found" }, { status: 404 });
   if (ctx.user.is_staff || ctx.membership.role === "admin") return g.rows[0];
-  const isMgr = await ctx.pool.query(
-    "SELECT 1 FROM group_members WHERE group_id = $1 AND membership_id = $2 AND is_manager = true",
-    [g.rows[0].id, ctx.membership.id],
-  );
-  if (!isMgr.rowCount) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!(await isGroupManager(ctx, g.rows[0].id))) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return g.rows[0];
+}
+
+async function isGroupManager(ctx: TeamContext, groupId: string): Promise<boolean> {
+  const r = await ctx.pool.query(
+    "SELECT 1 FROM group_members WHERE group_id = $1 AND membership_id = $2 AND is_manager = true",
+    [groupId, ctx.membership.id],
+  );
+  return r.rowCount === 1;
 }
 
 // Validates a client-supplied group id belongs to the caller's team.
@@ -135,13 +139,7 @@ export async function requireIntegrationManager(
   const integ = await getIntegrationById(ctx.membership.team_id, integrationId, ctx.pool);
   if (!integ) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (ctx.user.is_staff || ctx.membership.role === "admin") return integ;
-  if (integ.owner_group_id) {
-    const isMgr = await ctx.pool.query(
-      "SELECT 1 FROM group_members WHERE group_id = $1 AND membership_id = $2 AND is_manager = true",
-      [integ.owner_group_id, ctx.membership.id],
-    );
-    if (isMgr.rowCount) return integ;
-  }
+  if (integ.owner_group_id && (await isGroupManager(ctx, integ.owner_group_id))) return integ;
   return NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 
