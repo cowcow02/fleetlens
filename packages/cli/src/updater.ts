@@ -38,7 +38,10 @@ export async function fetchLatestVersion(): Promise<string | null> {
 /** Run npm install -g to update. Returns true on success. */
 function runNpmInstall(): boolean {
   try {
-    execSync(`npm install -g ${PACKAGE_NAME}@latest`, {
+    // --prefer-online: this code path just proved a newer version exists via a
+    // direct registry fetch; npm's own packument cache (~5 min TTL) may still
+    // resolve `latest` to the old version right after a publish.
+    execSync(`npm install -g ${PACKAGE_NAME}@latest --prefer-online`, {
       stdio: "pipe",
       timeout: 60_000,
     });

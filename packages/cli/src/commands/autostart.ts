@@ -27,6 +27,21 @@ export function isAutostartInstalled(): boolean {
   return isMac() && existsSync(plistPath());
 }
 
+/** Pre-0.15 plists ran `daemon start` (daemon only); 0.15+ runs the full
+ *  stack via `start`. Upgrading npm never rewrites LaunchAgents, so old
+ *  installs keep the daemon-only job until we detect and rewrite it. */
+export function isStalePlistContent(content: string): boolean {
+  return content.includes("<string>daemon</string>");
+}
+
+function installedPlistIsStale(): boolean {
+  try {
+    return isStalePlistContent(readFileSync(plistPath(), "utf8"));
+  } catch {
+    return false;
+  }
+}
+
 /** Absolute path to the running CLI entry (dist/index.js), resolved through
  *  the `fleetlens` bin symlink. launchd runs with no shell PATH, so the plist
  *  must reference absolute paths — never the `fleetlens` command name. */
@@ -131,7 +146,13 @@ async function uninstallAutostart(): Promise<void> {
 export async function ensureTeamAutostart(): Promise<void> {
   try {
     if (!isMac()) return;
-    if (isAutostartInstalled()) return;
+    if (isAutostartInstalled()) {
+      if (installedPlistIsStale()) {
+        console.log("  Updating the Fleetlens login item to launch the full stack (dashboard + daemon).");
+        await installAutostart();
+      }
+      return;
+    }
     if (hasOptedOut()) return;
     console.log("  Team reporting stays on across reboots: enabling Fleetlens auto-start at login (dashboard + daemon).");
     console.log("  (Opt out anytime: fleetlens autostart uninstall — join won't re-enable it.)");
@@ -234,7 +255,13 @@ export async function maybePromptAutostart(opts: { daemonStarted: boolean }): Pr
     }
     if (!opts.daemonStarted) return;
     if (!process.stdin.isTTY) return;
-    if (isAutostartInstalled()) return;
+    if (isAutostartInstalled()) {
+      if (installedPlistIsStale()) {
+        console.log("Updating the Fleetlens login item to launch the full stack (dashboard + daemon).");
+        await installAutostart();
+      }
+      return;
+    }
     if (isPromptDismissed()) return;
 
     console.log("");

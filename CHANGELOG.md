@@ -4,6 +4,14 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.15.1] — 2026-07-08
+
+Two upgrade-path fixes surfaced by the 0.15.0 rollout. Safe upgrade from 0.15.0.
+
+### Fixed
+- **Existing installs now actually get the full-stack login item.** Upgrading npm packages never rewrites `~/Library/LaunchAgents`, so machines paired before 0.15.0 kept the old daemon-only job — after a reboot the daemon returned but the dashboard didn't. `fleetlens start` (and team join/sync paths) now detect the pre-0.15 plist shape and rewrite it to launch the full stack.
+- **Auto-update no longer trusts npm's stale metadata right after a publish.** The updater verifies against the registry directly, but `npm install` resolved `latest` from its own ~5-minute packument cache and could reinstall the old version ("Expected X but got Y"). Install now runs with `--prefer-online`.
+
 ## [0.15.0] — 2026-07-08
 
 Team onboarding, rebuilt around a browser wizard — pairing now explains what leaves the machine, lets you pick which projects sync, and streams first-sync progress live. The Team page becomes the single home for sync management, and paired machines keep reporting across reboots. Safe upgrade from 0.14.x; pairs best with team-server 0.15.0.

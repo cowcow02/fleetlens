@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildPlist, isPromptDismissed, dismissPrompt, hasOptedOut, recordOptOut } from "../src/commands/autostart.js";
+import { buildPlist, isStalePlistContent, isPromptDismissed, dismissPrompt, hasOptedOut, recordOptOut } from "../src/commands/autostart.js";
 
 describe("buildPlist", () => {
   const plist = buildPlist({
@@ -20,6 +20,12 @@ describe("buildPlist", () => {
     expect(plist).toContain("<string>/opt/fleetlens/dist/index.js</string>");
     expect(plist).toContain("<string>start</string>");
     expect(plist).not.toContain("<string>daemon</string>");
+  });
+
+  it("is not flagged stale, while the pre-0.15 daemon-only shape is", () => {
+    expect(isStalePlistContent(plist)).toBe(false);
+    const old = plist.replace("<string>start</string>", "<string>daemon</string>\n    <string>start</string>");
+    expect(isStalePlistContent(old)).toBe(true);
   });
 
   it("runs at load", () => {
