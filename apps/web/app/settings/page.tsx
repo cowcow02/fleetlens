@@ -1,6 +1,7 @@
 import { readSettings } from "@claude-lens/entries/node";
 import { AiFeaturesForm } from "./ai-features-form";
 import { TeamConnectionSection } from "./team-connection-section";
+import { SyncedProjectsSection } from "./synced-projects-section";
 
 export default function SettingsPage() {
   const s = readSettings();
@@ -9,6 +10,8 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-semibold">Fleetlens Settings</h1>
 
       <TeamConnectionSection />
+
+      <SyncedProjectsSection />
 
       <section>
         <h2 className="text-lg font-medium mb-2">AI Features</h2>
