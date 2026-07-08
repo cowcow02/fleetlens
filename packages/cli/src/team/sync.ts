@@ -390,12 +390,34 @@ export async function runTeamSync(
       persistConfig({ lastSyncedUsageSnapshotAt: usageBackfill.lastSnapshotAt });
     }
 
-    const sessions = filterSyncedSessions(await listSessions({ limit: 10_000 }), config.syncProjects);
+    const unfilteredSessions = await listSessions({ limit: 10_000 });
+    const sessions = filterSyncedSessions(unfilteredSessions, config.syncProjects);
     // All day rollups, unfiltered — `rollups` is the new-days slice pushed by
     // the main loop; the full set is also indexed for the dropped-day retry,
     // whose target predates lastSyncedDay.
     const allRollups = buildRollupsForRange(sessions);
-    const rollups = allRollups.filter((r) => !config.lastSyncedDay || r.day >= config.lastSyncedDay);
+    const inWindow = (day: string) => !config.lastSyncedDay || day >= config.lastSyncedDay;
+    const rollups = allRollups.filter((r) => inWindow(r.day));
+    // Tombstones: a day whose ONLY activity is now-excluded projects vanishes
+    // from the filtered rollups, so its previously-pushed server row would
+    // linger forever. Push an explicit empty day to overwrite it.
+    if (config.syncProjects) {
+      const filteredDays = new Set(allRollups.map((r) => r.day));
+      for (const r of buildRollupsForRange(unfilteredSessions)) {
+        if (!filteredDays.has(r.day) && inWindow(r.day)) {
+          rollups.push({
+            day: r.day,
+            agentTimeMs: 0,
+            sessions: 0,
+            uniqueSessions: 0,
+            toolCalls: 0,
+            turns: 0,
+            tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          });
+        }
+      }
+      rollups.sort((a, b) => (a.day < b.day ? -1 : 1));
+    }
     emit({ type: "phase", phase: "activity", totalDays: rollups.length });
 
     // Snapshot represents *current* utilization, not historical days. Attach
@@ -493,6 +515,27 @@ export async function runTeamSync(
     ): IngestPayload => {
       const daySessions = sessions.filter((s) => sessionTouchesDay(s, rollup.day));
       const richBlocks = buildRichBlocksForDay(rollup.day, daySessions, resolveRepo);
+      // Tombstone day (every session excluded): force EMPTY rich/enriched
+      // blocks — the server upsert replaces `projects` wholesale and
+      // COALESCEs the mixes, so absent blocks would leave the stale row.
+      const tombstone = daySessions.length === 0 && !!config.syncProjects;
+      const emptyRich = tombstone
+        ? {
+            projects: [],
+            workingShapes: [],
+            concurrencyPeak: 0,
+            parallelMinutes: 0,
+            longAutonomous: { count: 0, totalMin: 0, maxSingleMin: 0 },
+            toolErrors: 0,
+            skillsLoaded: [],
+            subagentsDispatched: [],
+            brainstormWarmupSessions: 0,
+            planModeUsed: 0,
+            prs: 0,
+            commits: 0,
+            pushes: 0,
+          }
+        : undefined;
       let artifactSignals: ReturnType<typeof probeArtifactSignals> = null;
       try {
         // Probe auto-detects git email from `git config user.email`. cwd may
@@ -505,8 +548,9 @@ export async function runTeamSync(
       }
       return buildIngestPayload({
         rollup,
-        richExtras: richBlocks?.rich,
-        enrichedExtras: richBlocks?.enriched,
+        richExtras: richBlocks?.rich ?? emptyRich,
+        enrichedExtras:
+          richBlocks?.enriched ?? (tombstone ? { outcomeMix: {}, helpfulnessMix: {}, goalMix: {} } : undefined),
         artifactSignals: artifactSignals ?? undefined,
         // Current-cycle data only on the latest day so older days aren't tagged
         // with today's snapshot / peaks.

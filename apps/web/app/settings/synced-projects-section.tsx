@@ -24,8 +24,9 @@ export async function SyncedProjectsSection() {
     <section className="space-y-3">
       <h2 className="text-lg font-medium">Synced projects</h2>
       <p className="text-sm text-gray-500">
-        Choose which projects share metrics with your team. Changes apply
-        within ~5 minutes; already-synced history stays on the server.
+        Choose which projects share metrics with your team. Saving a changed
+        selection re-pushes your full history so the server matches it —
+        excluded projects disappear, newly included ones backfill.
       </p>
       <SyncedProjectsForm
         projects={projects}

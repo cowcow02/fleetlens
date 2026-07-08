@@ -241,6 +241,41 @@ describe("runTeamSync", () => {
     expect(writes.every((w) => w.lastSyncedDay === undefined)).toBe(true);
   });
 
+  it("tombstones a day whose only activity is excluded (empty rollup overwrites stale row)", async () => {
+    const { readTeamConfig } = await import("../../src/team/config.js");
+    vi.mocked(readTeamConfig).mockReturnValue({
+      ...CONFIG,
+      syncProjects: { autoIncludeNew: true, included: [], excluded: ["personal"] },
+    });
+
+    const { listSessions } = await import("@claude-lens/parser/fs");
+    vi.mocked(listSessions).mockResolvedValue([
+      makeSession("2026-04-14", { projectName: "/u/x/Repo/work" }),
+      makeSession("2026-04-15", { id: "sess_p", projectName: "/u/x/Repo/personal" }),
+    ]);
+
+    const { dequeuePayloads } = await import("../../src/team/queue.js");
+    vi.mocked(dequeuePayloads).mockReturnValue([]);
+
+    vi.mocked(fetch).mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as Response);
+
+    const { runTeamSync } = await import("../../src/team/sync.js");
+    const result = await runTeamSync();
+    expect(result.error).toBeUndefined();
+    expect(result.pushed).toBe(2);
+
+    const payloads = vi.mocked(fetch).mock.calls
+      .map((c) => JSON.parse((c[1] as RequestInit).body as string))
+      .filter((p) => p.dailyRollup);
+    const tombstone = payloads.find((p) => p.dailyRollup.day === "2026-04-15");
+    expect(tombstone.dailyRollup.sessions).toBe(0);
+    expect(tombstone.dailyRollup.agentTimeMs).toBe(0);
+    expect(tombstone.richRollup.projects).toEqual([]);
+    expect(tombstone.enrichedExtras.outcomeMix).toEqual({});
+    const workDay = payloads.find((p) => p.dailyRollup.day === "2026-04-14");
+    expect(workDay.dailyRollup.sessions).toBe(1);
+  });
+
   it("advances past a validation-poisoned (4xx) day without queueing it", async () => {
     const { readTeamConfig, writeTeamConfig } = await import("../../src/team/config.js");
     vi.mocked(readTeamConfig).mockReturnValue(CONFIG);
