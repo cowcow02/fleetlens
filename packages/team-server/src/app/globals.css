@@ -8242,7 +8242,10 @@ html:has(.report-shell) body::-webkit-scrollbar { display: none; }
 
 /* ── Group settings modal + read-only list ────────────────────────────────── */
 
-.modal.group-settings { max-width: 720px; width: 92vw; }
+/* Cap to the viewport and scroll inside — the Integrations tab's connect forms
+   can exceed screen height, and a taller-than-viewport flex-centered modal
+   clips both ends with no way to reach Cancel/×. */
+.modal.group-settings { max-width: 720px; width: 92vw; max-height: calc(100vh - 48px); overflow-y: auto; }
 .group-settings-body { min-height: 320px; }
 /* The global `.modal button { width: 100% }` is for the simple CTA modals;
    the settings modal has inline buttons (tabs, toggles, row actions). */

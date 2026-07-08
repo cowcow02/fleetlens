@@ -16,6 +16,9 @@ Group-scoped integrations: teams no longer funnel every GitHub/Jira/Linear conne
 ### Changed
 - Disconnecting an integration now removes only the data it synced (per-connection provenance); sources also tracked by another connection are repopulated on its next hourly sync.
 
+### Fixed
+- The group settings modal scrolls internally when its content is taller than the window — previously a long connect form clipped off-screen with no way to reach Cancel or close.
+
 ## [0.14.0] — 2026-07-08
 
 Sync observability + report accuracy. Pairs best with CLI 0.14.0 (rich `[sync]` lines and complete pair backfills come from the member side). Includes migration `0014` (index on the member daemon-log page query) — applied automatically on boot.
