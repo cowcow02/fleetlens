@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { applyDesired } from "../../src/app/api/team/[slug]/groups/[group]/data-sources/route.js";
+import { applyDesired } from "../../src/lib/integrations.js";
 
 const ALL = ["g1", "g2", "g3"];
 const entry = (name: string, group_ids: string[]) => ({ name, group_ids });

@@ -49,7 +49,7 @@ describe("linearVelocity · ai-linked PR join (word-boundary regex)", () => {
       config: { team_keys: ["KIP"] },
       last_sync_at: "2026-06-23T12:00:00Z",
     };
-    const result = await linearVelocity(teamId, { kind: "team-wide" }, weekMonday, pool, integ);
+    const result = await linearVelocity(teamId, { kind: "team-wide" }, weekMonday, pool, [integ]);
 
     expect(result).not.toBeNull();
     expect(result!.week.completed).toBe(1);
@@ -66,7 +66,7 @@ describe("linearVelocity · ai-linked PR join (word-boundary regex)", () => {
        WHERE team_id = $1 AND title <> 'XKIP-315 unrelated work'`,
       [teamId],
     );
-    const after = await linearVelocity(teamId, { kind: "team-wide" }, weekMonday, pool, integ);
+    const after = await linearVelocity(teamId, { kind: "team-wide" }, weekMonday, pool, [integ]);
     expect(after).not.toBeNull();
     expect(after!.week.completed).toBe(1);
     expect(after!.week.ai_linked).toBe(0); // ← the bug: would be 1 without `\m`

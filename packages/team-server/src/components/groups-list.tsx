@@ -8,7 +8,7 @@ type GroupMembership = { membership_id: string; is_manager: boolean };
 type Group = { id: string; slug: string; name: string };
 type GroupWithMembers = { group: Group; members: GroupMembership[] };
 
-// Read-only overview of all groups. Roster edits, invites, data sources, and
+// Read-only overview of all groups. Roster edits, invites, integrations, and
 // rename/delete all live in the per-group settings modal (reached via the gear
 // or "Settings" link → group detail page). The only mutation here is creating
 // a brand-new group, which has nowhere else to live.
