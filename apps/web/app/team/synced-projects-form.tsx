@@ -121,7 +121,7 @@ export function SyncedProjectsForm({
               <a
                 key={p.name}
                 href={`/projects/${encodeURIComponent(p.projectDir)}`}
-                className="rounded-full border border-gray-200 px-2 py-0.5 font-mono text-xs hover:border-gray-400 hover:underline dark:border-gray-700 dark:hover:border-gray-500"
+                className="af-chip"
               >
                 {p.name}
               </a>
@@ -143,7 +143,7 @@ export function SyncedProjectsForm({
                 setSavedMsg(null);
                 setEditing(true);
               }}
-              className="px-3 py-1 border rounded text-sm"
+              className="af-btn"
             >
               Edit selection
             </button>
@@ -159,7 +159,7 @@ export function SyncedProjectsForm({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="px-3 py-1 border rounded bg-black text-white disabled:opacity-60"
+              className="af-btn-primary"
             >
               {saving ? "Saving…" : "Save"}
             </button>
@@ -171,7 +171,7 @@ export function SyncedProjectsForm({
                 setSavedMsg(null);
               }}
               disabled={saving}
-              className="px-3 py-1 border rounded text-sm disabled:opacity-60"
+              className="af-btn"
             >
               Cancel
             </button>

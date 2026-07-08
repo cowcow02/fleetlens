@@ -49,7 +49,7 @@ export function ForceSyncButton({ cliAvailable }: { cliAvailable: boolean }) {
               ? "Force sync is only available when running via the fleetlens CLI"
               : undefined
           }
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="af-btn disabled:cursor-not-allowed"
         >
           {state === "syncing" ? "Syncing…" : "Sync now"}
         </button>
@@ -60,9 +60,7 @@ export function ForceSyncButton({ cliAvailable }: { cliAvailable: boolean }) {
 
       {result && (
         <pre
-          className={`rounded border p-3 text-xs font-mono whitespace-pre-wrap ${
-            result.ok ? "border-gray-200 bg-gray-50" : "border-red-300 bg-red-50 text-red-700"
-          }`}
+          className={`p-3 text-xs font-mono whitespace-pre-wrap ${result.ok ? "af-panel" : "af-panel-danger"}`}
         >
           {result.lines.length > 0 ? result.lines.join("\n") : ""}
           {result.error ? (result.lines.length > 0 ? "\n" : "") + result.error : ""}

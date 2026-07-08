@@ -41,7 +41,7 @@ export function SyncActivitySection() {
       </dl>
 
       {lastPush.kind === "ok" && (
-        <div className="rounded border border-gray-200 p-4 space-y-3 text-sm">
+        <div className="af-panel p-4 space-y-3 text-sm">
           <div className="text-xs uppercase tracking-wide text-gray-500">
             Last push
             {lastPush.payload.dailyRollup ? ` — ${lastPush.payload.dailyRollup.day}` : ""}
@@ -90,7 +90,7 @@ export function SyncActivitySection() {
             <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
               Show raw JSON payload
             </summary>
-            <pre className="mt-2 rounded border border-gray-200 bg-gray-50 p-3 font-mono text-[11px] whitespace-pre-wrap overflow-x-auto">
+            <pre className="af-panel mt-2 p-3 font-mono text-[11px] whitespace-pre-wrap overflow-x-auto">
               {JSON.stringify(lastPush.payload, null, 2)}
             </pre>
           </details>
@@ -98,7 +98,7 @@ export function SyncActivitySection() {
       )}
 
       {lastPush.kind === "error" && (
-        <div className="rounded border border-red-300 bg-red-50 p-4 text-sm text-red-700">
+        <div className="af-panel-danger p-4 text-sm">
           <div className="font-medium">Last sync failed</div>
           <div>{lastPush.error}</div>
         </div>

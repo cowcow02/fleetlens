@@ -15,7 +15,7 @@ export default function SettingsPage() {
         </p>
       </header>
 
-      <section className="border rounded-lg p-5 space-y-3">
+      <section className="af-card space-y-3">
         <h2 className="text-lg font-medium">Daemon auto-start</h2>
         <p className="text-sm text-gray-500">
           Brings the dashboard, plan-usage polling, and team sync back after a
@@ -24,7 +24,7 @@ export default function SettingsPage() {
         <AutostartToggle initial={readAutostartState()} />
       </section>
 
-      <section className="border rounded-lg p-5 space-y-3">
+      <section className="af-card space-y-3">
         <h2 className="text-lg font-medium">AI Features</h2>
         <p className="text-sm text-gray-500">
           When enabled, Fleetlens synthesizes daily digests and per-entry

@@ -39,7 +39,7 @@ export default function TeamPage() {
     return (
       <main className="mx-auto max-w-3xl p-6 space-y-6">
         <h1 className="text-2xl font-semibold">Team sync</h1>
-        <section className="border border-dashed rounded-lg p-6 text-sm space-y-3">
+        <section className="af-card border-dashed text-sm space-y-3">
           <p className="font-medium">Not paired with any team.</p>
           <p className="text-gray-600">
             To pair this machine with a Fleetlens team server, run from a
@@ -81,7 +81,7 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
         </div>
       )}
 
-      <section className="border rounded-lg p-5 space-y-3">
+      <section className="af-card space-y-3">
         <div className="flex items-baseline justify-between">
           <h2 className="text-lg font-medium">Pairing</h2>
           <span className="text-xs uppercase tracking-wide text-green-700 dark:text-green-400">
@@ -106,15 +106,15 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
         </dl>
       </section>
 
-      <section className="border rounded-lg p-5">
+      <section className="af-card">
         <SyncActivitySection />
       </section>
 
-      <section className="border rounded-lg p-5">
+      <section className="af-card">
         <SyncedProjectsSection />
       </section>
 
-      <section className="border rounded-lg p-5 space-y-3">
+      <section className="af-card space-y-3">
         <h2 className="text-lg font-medium">What gets shared</h2>
         <p className="text-sm text-gray-500">
           {syncSummary ?? "Syncing: all projects (no selection set)."}
@@ -141,7 +141,7 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
             model calls ride along with the push).
           </li>
         </ul>
-        <div className="rounded border border-gray-200 dark:border-gray-800 p-4 text-sm space-y-2">
+        <div className="af-panel p-4 text-sm space-y-2">
           <div className="font-medium">What does NOT leave your machine</div>
           <ul className="list-disc list-inside text-gray-600 space-y-1">
             <li>Session transcripts, prompts, or assistant responses</li>
@@ -152,7 +152,7 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
         </div>
       </section>
 
-      <section className="border rounded-lg p-5 space-y-3">
+      <section className="af-card space-y-3">
         <h2 className="text-lg font-medium">Disconnect</h2>
         <p className="text-sm text-gray-600">
           To leave the team and stop all syncing, run:

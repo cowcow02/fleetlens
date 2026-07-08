@@ -212,7 +212,7 @@ function StepDots({ step }: { step: 1 | 2 | 3 }) {
         <span key={n} className="flex items-center gap-2">
           <span
             className={`flex h-5 w-5 items-center justify-center rounded-full ${
-              n === step ? "bg-black text-white dark:bg-white dark:text-black" : "border border-gray-300 dark:border-gray-700"
+              n === step ? "af-step-active" : "border"
             }`}
           >
             {n}
@@ -241,7 +241,7 @@ function Step1({
       <h1 className="text-2xl font-semibold">You&rsquo;re pairing with &ldquo;{teamName}&rdquo;</h1>
       {setupPending && <p className="text-sm text-gray-500">Nothing syncs until you finish this wizard.</p>}
 
-      <div className="rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-800">
+      <div className="af-panel p-4 text-sm">
         <p className="mb-2 font-medium">Shared with {serverHost} every 5 minutes:</p>
         <ul className="list-inside list-disc space-y-1 text-gray-600 dark:text-gray-400">
           <li>Daily aggregate metrics (agent time, sessions, tool calls, turns, tokens)</li>
@@ -253,7 +253,7 @@ function Step1({
         </ul>
       </div>
 
-      <div className="rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-800">
+      <div className="af-panel p-4 text-sm">
         <p className="mb-2 font-medium">Never leaves this machine:</p>
         <ul className="list-inside list-disc space-y-1 text-gray-600 dark:text-gray-400">
           <li>Transcripts, prompts, and code</li>
@@ -267,7 +267,7 @@ function Step1({
       <button
         type="button"
         onClick={onContinue}
-        className="rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+        className="af-btn-primary"
       >
         Continue
       </button>
@@ -299,14 +299,14 @@ function Step2({
         <button
           type="button"
           onClick={onBack}
-          className="rounded border border-gray-300 px-4 py-2 text-sm dark:border-gray-700"
+          className="af-btn"
         >
           Back
         </button>
         <button
           type="button"
           onClick={onContinue}
-          className="rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+          className="af-btn-primary"
         >
           Continue
         </button>
@@ -399,14 +399,14 @@ function Step3({
           <button
             type="button"
             onClick={onBack}
-            className="rounded border border-gray-300 px-4 py-2 text-sm dark:border-gray-700"
+            className="af-btn"
           >
             Back
           </button>
           <button
             type="button"
             onClick={onStart}
-            className="rounded bg-black px-4 py-2 text-sm font-medium text-white dark:bg-white dark:text-black"
+            className="af-btn-primary"
           >
             Start syncing
           </button>
@@ -445,7 +445,7 @@ function Step3({
                 utilities — button-styled anchors need the ! variants. */}
             <a
               href="/team"
-              className="rounded bg-black px-4 py-2 text-sm font-medium text-white! dark:bg-white dark:text-black!"
+              className="af-btn-primary"
             >
               View your team sync page
             </a>
@@ -453,7 +453,7 @@ function Step3({
               href={teamUrl}
               target="_blank"
               rel="noreferrer"
-              className="rounded border border-gray-300 px-4 py-2 text-sm dark:border-gray-700"
+              className="af-btn"
             >
               Open the team dashboard ↗
             </a>
@@ -492,7 +492,7 @@ function Step3({
             type="button"
             onClick={onStart}
             disabled={streaming}
-            className="rounded bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
+            className="af-btn-primary"
           >
             {streaming ? "Syncing…" : "Start syncing"}
           </button>

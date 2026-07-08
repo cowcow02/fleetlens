@@ -61,7 +61,7 @@ export function ProjectSyncPicker({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter projects…"
-          className="flex-1 rounded border border-gray-300 dark:border-gray-700 bg-transparent px-2 py-1 text-sm"
+          className="flex-1 text-sm"
         />
         <button type="button" onClick={() => selectAll(true)} className="text-xs text-gray-500 underline hover:text-gray-700">
           {query.trim() ? "Select visible" : "Select all"}
@@ -71,14 +71,14 @@ export function ProjectSyncPicker({
         </button>
       </div>
 
-      <div className="max-h-96 divide-y divide-gray-200 overflow-y-auto rounded-lg border border-gray-200 dark:divide-gray-800 dark:border-gray-800">
+      <div className="af-panel max-h-96 divide-y overflow-y-auto">
         {filtered.length === 0 && (
           <div className="p-3 text-sm text-gray-500">No projects match &ldquo;{query}&rdquo;.</div>
         )}
         {filtered.map((p) => (
           <label
             key={p.name}
-            className="flex cursor-pointer items-center gap-3 p-3 text-sm hover:bg-gray-50 dark:hover:bg-gray-900"
+            className="flex cursor-pointer items-center gap-3 p-3 text-sm af-row"
           >
             <input type="checkbox" checked={checked(p.name)} onChange={(e) => toggle(p.name, e.target.checked)} />
             <div className="min-w-0 flex-1">
