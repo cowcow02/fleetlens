@@ -118,12 +118,13 @@ export function SyncedProjectsForm({
           </p>
           <div className="flex flex-wrap gap-1.5">
             {synced.slice(0, 8).map((p) => (
-              <span
+              <a
                 key={p.name}
-                className="rounded-full border border-gray-200 px-2 py-0.5 font-mono text-xs dark:border-gray-700"
+                href={`/projects/${encodeURIComponent(p.projectDir)}`}
+                className="rounded-full border border-gray-200 px-2 py-0.5 font-mono text-xs hover:border-gray-400 hover:underline dark:border-gray-700 dark:hover:border-gray-500"
               >
                 {p.name}
-              </span>
+              </a>
             ))}
             {synced.length > 8 && (
               <span className="px-2 py-0.5 text-xs text-gray-500">+{synced.length - 8} more</span>

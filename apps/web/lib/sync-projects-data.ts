@@ -11,6 +11,8 @@ export const SyncProjectsSchema = z.object({
 
 export type SyncProjectRow = {
   name: string;
+  /** Canonical slug for /projects/<slug> links — same field the dashboard uses. */
+  projectDir: string;
   sessions: number;
   agentTimeMs: number;
   lastActiveMs: number | null;
@@ -21,6 +23,7 @@ export async function listSyncProjectRows(): Promise<SyncProjectRow[]> {
   return groupByProject(await listSessions())
     .map((p) => ({
       name: p.projectName,
+      projectDir: p.projectDir,
       sessions: p.sessions.length,
       agentTimeMs: p.metrics.totalAirTimeMs,
       lastActiveMs: p.lastActiveMs ?? null,
