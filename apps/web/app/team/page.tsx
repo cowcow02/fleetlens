@@ -92,7 +92,11 @@ fleetlens team join &lt;server-url&gt; &lt;invite-token&gt;
           <dt className="text-gray-500">Team slug</dt>
           <dd className="font-mono">{view.teamSlug}</dd>
           <dt className="text-gray-500">Server</dt>
-          <dd className="font-mono break-all">{view.serverUrl}</dd>
+          <dd className="font-mono break-all">
+            <a href={view.serverUrl} target="_blank" rel="noreferrer" className="hover:underline">
+              {view.serverUrl} <span aria-hidden>↗</span>
+            </a>
+          </dd>
           <dt className="text-gray-500">Member ID</dt>
           <dd className="font-mono break-all text-xs">{view.memberId}</dd>
           <dt className="text-gray-500">Bearer token</dt>
