@@ -107,6 +107,8 @@ export async function joinTeam(args: string[]) {
       console.log("  · No new session activity to push.");
     }
     console.log("  Daemon polls every 5 minutes — next push happens automatically.");
+    const { ensureTeamAutostart: ensureNoBrowser } = await import("../commands/autostart.js");
+    await ensureNoBrowser();
     return;
   }
 
@@ -121,6 +123,11 @@ export async function joinTeam(args: string[]) {
   } catch {
     // Daemon collects within its next cycles.
   }
+
+  // Paired machines are opt-OUT for daemon autostart — reporting should
+  // survive reboots without the user remembering to run `fleetlens start`.
+  const { ensureTeamAutostart } = await import("../commands/autostart.js");
+  await ensureTeamAutostart();
 
   console.log("  Opening your browser to finish setup…");
   let url: string;

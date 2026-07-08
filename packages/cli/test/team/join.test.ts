@@ -17,6 +17,12 @@ vi.mock("../../src/team/config.js", async (importOriginal) => {
   };
 });
 
+// Paired machines auto-install daemon autostart (opt-out model). Stub it so
+// tests never write a real LaunchAgent to ~/Library on a dev Mac.
+vi.mock("../../src/commands/autostart.js", () => ({
+  ensureTeamAutostart: vi.fn(),
+}));
+
 // joinTeam fires the unified sync after pairing. Stub it here so tests stay
 // hermetic: no JSONL reads, no extra fetches against the mocked-fetch budget.
 vi.mock("../../src/team/sync.js", () => ({

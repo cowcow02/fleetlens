@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildPlist, isPromptDismissed, dismissPrompt } from "../src/commands/autostart.js";
+import { buildPlist, isPromptDismissed, dismissPrompt, hasOptedOut, recordOptOut } from "../src/commands/autostart.js";
 
 describe("buildPlist", () => {
   const plist = buildPlist({
@@ -70,5 +70,18 @@ describe("autostart prompt dismissal flag", () => {
     dismissPrompt();
     expect(existsSync(join(dir, "autostart.json"))).toBe(true);
     expect(isPromptDismissed()).toBe(true);
+  });
+
+  it("opt-out defaults to false and persists once recorded", () => {
+    expect(hasOptedOut()).toBe(false);
+    recordOptOut();
+    expect(hasOptedOut()).toBe(true);
+  });
+
+  it("keeps both flags when written independently", () => {
+    dismissPrompt();
+    recordOptOut();
+    expect(isPromptDismissed()).toBe(true);
+    expect(hasOptedOut()).toBe(true);
   });
 });
