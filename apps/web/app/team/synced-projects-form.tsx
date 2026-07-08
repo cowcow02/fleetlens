@@ -14,6 +14,10 @@ export function SyncedProjectsForm({
   initial: SyncProjects;
 }) {
   const [value, setValue] = useState<SyncProjects>(initial);
+  // Last-persisted selection — the read-only summary renders from this, so a
+  // cancelled edit or in-flight change never lies about what's syncing.
+  const [saved, setSaved] = useState<SyncProjects>(initial);
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [log, setLog] = useState<{ text: string; tone: "default" | "warn" | "error" }[] | null>(null);
@@ -92,23 +96,88 @@ export function SyncedProjectsForm({
     setSavedMsg(
       res.ok ? (body?.resync ? "Saved — selection changed." : "Saved.") : (body?.error ?? `Error: ${res.status}`),
     );
+    if (res.ok) {
+      setSaved(value);
+      setEditing(false);
+    }
     if (body?.resync) void streamResync();
   }
 
+  const isSynced = (name: string) =>
+    saved.excluded.includes(name) ? false : saved.included.includes(name) ? true : saved.autoIncludeNew;
+  const synced = projects.filter((p) => isSynced(p.name));
+  const privateCount = projects.length - synced.length;
+
   return (
     <div className="space-y-4">
-      <ProjectSyncPicker projects={projects} value={value} onChange={setValue} />
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={saving}
-          className="px-3 py-1 border rounded bg-black text-white disabled:opacity-60"
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-        {savedMsg && <p className="text-sm">{savedMsg}</p>}
-      </div>
+      {!editing && (
+        <div className="space-y-3">
+          <p className="text-sm">
+            Syncing <strong>{synced.length}</strong> of {projects.length} projects
+            {saved.autoIncludeNew ? " — new projects sync automatically." : " — new projects stay private."}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {synced.slice(0, 8).map((p) => (
+              <span
+                key={p.name}
+                className="rounded-full border border-gray-200 px-2 py-0.5 font-mono text-xs dark:border-gray-700"
+              >
+                {p.name}
+              </span>
+            ))}
+            {synced.length > 8 && (
+              <span className="px-2 py-0.5 text-xs text-gray-500">+{synced.length - 8} more</span>
+            )}
+          </div>
+          {privateCount > 0 && (
+            <p className="text-xs text-gray-500">
+              {privateCount} project{privateCount === 1 ? " stays" : "s stay"} private on this machine.
+            </p>
+          )}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setValue(saved);
+                setSavedMsg(null);
+                setEditing(true);
+              }}
+              className="px-3 py-1 border rounded text-sm"
+            >
+              Edit selection
+            </button>
+            {savedMsg && <p className="text-sm">{savedMsg}</p>}
+          </div>
+        </div>
+      )}
+      {editing && (
+        <>
+          <ProjectSyncPicker projects={projects} value={value} onChange={setValue} />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="px-3 py-1 border rounded bg-black text-white disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setValue(saved);
+                setEditing(false);
+                setSavedMsg(null);
+              }}
+              disabled={saving}
+              className="px-3 py-1 border rounded text-sm disabled:opacity-60"
+            >
+              Cancel
+            </button>
+            {savedMsg && <p className="text-sm">{savedMsg}</p>}
+          </div>
+        </>
+      )}
       {log && (
         <div
           ref={logRef}
