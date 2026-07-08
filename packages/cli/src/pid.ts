@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 
 export function writePid(filePath: string, pid: number, port?: number, version?: string): void {
@@ -33,19 +34,32 @@ export function readPid(filePath: string): { pid: number; port?: number; version
   }
 }
 
-export function isProcessAlive(pid: number): boolean {
+/** True when `pid` is alive — and, when `markers` are given, when its ps
+ *  command line contains one of them. PID files survive reboots and PIDs
+ *  restart low, so a bare kill(pid,0) probe yields false positives: an
+ *  unrelated boot process wearing our old PID made the login LaunchAgent
+ *  skip the daemon with "already running" (2026-07-08). */
+export function isProcessAlive(pid: number, markers?: string[]): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+  if (!markers || markers.length === 0) return true;
+  try {
+    const cmd = execFileSync("ps", ["-p", String(pid), "-o", "command="], {
+      encoding: "utf8",
+    }).trim();
+    return markers.some((m) => cmd.includes(m));
+  } catch {
+    return false; // pid vanished between the probe and ps
+  }
 }
 
-export function cleanStalePid(filePath: string): boolean {
+export function cleanStalePid(filePath: string, markers?: string[]): boolean {
   const entry = readPid(filePath);
   if (entry === null) return false;
-  if (isProcessAlive(entry.pid)) return false;
+  if (isProcessAlive(entry.pid, markers)) return false;
   try {
     unlinkSync(filePath);
   } catch {

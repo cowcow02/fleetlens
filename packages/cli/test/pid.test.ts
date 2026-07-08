@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { writePid, readPid, isProcessAlive, cleanStalePid } from "../src/pid.js";
 
 describe("pid", () => {
@@ -71,5 +72,25 @@ describe("pid", () => {
     const result = cleanStalePid(pidFile);
     expect(result).toBe(false);
     expect(readPid(pidFile)).toEqual({ pid: process.pid, port: 3321 });
+  });
+});
+
+describe("isProcessAlive with identity markers", () => {
+  it("accepts a live pid when no markers are given", () => {
+    expect(isProcessAlive(process.pid)).toBe(true);
+  });
+
+  it("rejects a live pid whose command matches no marker (reused-PID trap)", () => {
+    expect(isProcessAlive(process.pid, ["definitely-not-in-any-cmdline-x9z"])).toBe(false);
+  });
+
+  it("accepts a live pid whose command contains a marker", () => {
+    const cmd = execFileSync("ps", ["-p", String(process.pid), "-o", "command="], { encoding: "utf8" }).trim();
+    const marker = cmd.slice(0, 8);
+    expect(isProcessAlive(process.pid, [marker])).toBe(true);
+  });
+
+  it("rejects a dead pid regardless of markers", () => {
+    expect(isProcessAlive(99999999, ["node"])).toBe(false);
   });
 });

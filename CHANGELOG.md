@@ -4,6 +4,13 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.15.2] — 2026-07-08
+
+Safe upgrade from 0.15.1.
+
+### Fixed
+- **Reboot no longer risks skipping the daemon (or server) on login.** PID files survive a reboot and macOS reassigns low PIDs early, so the login LaunchAgent could find an unrelated boot process wearing the old daemon PID and skip startup with "already running". Liveness checks now verify the process identity (ps command line) — a reused PID reads as stale, and stale entries are cleaned instead of trusted or killed.
+
 ## [0.15.1] — 2026-07-08
 
 Two upgrade-path fixes surfaced by the 0.15.0 rollout. Safe upgrade from 0.15.0.

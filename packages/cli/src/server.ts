@@ -22,10 +22,14 @@ export type ServerStatus =
   | { running: true; pid: number; port: number; version?: string }
   | { running: false };
 
+/** ps-identity markers: Next rewrites its title to "next-server (vX)"; a
+ *  pre-title-rewrite process still shows the spawned server.js argv. */
+const SERVER_MARKERS = ["next-server", "server.js"];
+
 export function getServerStatus(): ServerStatus {
-  cleanStalePid(PID_FILE);
+  cleanStalePid(PID_FILE, SERVER_MARKERS);
   const entry = readPid(PID_FILE);
-  if (entry !== null && isProcessAlive(entry.pid)) {
+  if (entry !== null && isProcessAlive(entry.pid, SERVER_MARKERS)) {
     return { running: true, pid: entry.pid, port: entry.port ?? DEFAULT_PORT, version: entry.version };
   }
   return { running: false };
@@ -84,7 +88,7 @@ export async function ensureCurrentServer(
     // Relaunch failed and the old server may still be alive holding the port —
     // re-stamp its pid so `status`/`stop` can still see and kill it instead of
     // leaving an untracked orphan serving the stale bundle.
-    if (isProcessAlive(oldPid)) writePid(PID_FILE, oldPid, port, previousVersion);
+    if (isProcessAlive(oldPid, SERVER_MARKERS)) writePid(PID_FILE, oldPid, port, previousVersion);
     throw err;
   }
 }
@@ -132,7 +136,7 @@ export async function startServer(opts: { port?: number } = {}): Promise<{ pid: 
 }
 
 export function stopServer(): { stopped: boolean; pid?: number } {
-  cleanStalePid(PID_FILE);
+  cleanStalePid(PID_FILE, SERVER_MARKERS);
   const entry = readPid(PID_FILE);
   if (entry === null) {
     return { stopped: false };

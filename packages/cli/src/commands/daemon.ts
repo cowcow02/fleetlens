@@ -15,11 +15,14 @@ export type DaemonLifecycleResult =
   | { started: false; pid: number; alreadyRunning: true }
   | { started: false; pid: null; alreadyRunning: false; error: string };
 
+/** ps-identity markers: dev + prod paths both end in dist/daemon-worker.js. */
+const DAEMON_MARKERS = ["daemon-worker"];
+
 /** Start the daemon if not already running. Pure data, no printing. */
 export function startDaemonSilent(): DaemonLifecycleResult {
-  cleanStalePid(DAEMON_PID);
+  cleanStalePid(DAEMON_PID, DAEMON_MARKERS);
   const existing = readPid(DAEMON_PID);
-  if (existing !== null && isProcessAlive(existing.pid)) {
+  if (existing !== null && isProcessAlive(existing.pid, DAEMON_MARKERS)) {
     return { started: false, pid: existing.pid, alreadyRunning: true };
   }
 
@@ -45,7 +48,7 @@ export function startDaemonSilent(): DaemonLifecycleResult {
 
 /** Stop the daemon if running. Pure data, no printing. */
 export function stopDaemonSilent(): { stopped: boolean; pid: number | null } {
-  cleanStalePid(DAEMON_PID);
+  cleanStalePid(DAEMON_PID, DAEMON_MARKERS);
   const entry = readPid(DAEMON_PID);
   if (entry === null) return { stopped: false, pid: null };
 
@@ -68,9 +71,9 @@ export type DaemonStatusInfo = {
 
 /** Inspect daemon state. Pure data, no printing. */
 export function getDaemonStatusInfo(): DaemonStatusInfo {
-  cleanStalePid(DAEMON_PID);
+  cleanStalePid(DAEMON_PID, DAEMON_MARKERS);
   const entry = readPid(DAEMON_PID);
-  const running = entry !== null && isProcessAlive(entry.pid);
+  const running = entry !== null && isProcessAlive(entry.pid, DAEMON_MARKERS);
   const latest = latestSnapshot(USAGE_LOG);
   const lastSnapshotAgeMs = latest
     ? Date.now() - new Date(latest.captured_at).getTime()
