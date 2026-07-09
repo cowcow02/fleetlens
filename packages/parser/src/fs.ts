@@ -93,7 +93,8 @@ export {
   loadCalibrationEvents,
   loadWorkflowAgentDetail,
 } from "./claude-code.js";
-export { resolveProjectIdentity } from "./git-project.js";
+export { resolveProjectIdentity, readGitFolder } from "./git-project.js";
+export type { GitFolderInfo, GitRemote } from "./git-project.js";
 export type { FileRef, ListOptions, ProjectRefLite } from "./claude-code.js";
 export type { WorkflowAgentDetail, WorkflowAgentStep } from "./claude-code.js";
 

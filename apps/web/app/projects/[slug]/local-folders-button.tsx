@@ -14,6 +14,19 @@ export type ProjectLocalFolder = {
   sessionCount: number;
   lastTimestamp?: string;
   canOpen: boolean;
+  exists: boolean;
+  isWorktree: boolean;
+  branch?: string;
+  defaultBranch?: string;
+  remote?: { host: string; owner: string; name: string; url: string; webUrl: string };
+};
+
+const chip = {
+  border: "1px solid var(--af-border-subtle)",
+  borderRadius: 999,
+  padding: "1px 7px",
+  fontSize: 10,
+  whiteSpace: "nowrap" as const,
 };
 
 type OpenState =
@@ -216,17 +229,38 @@ export function ProjectLocalFoldersButton({
                             {folder.worktreeNames.map((name) => (
                               <span
                                 key={name}
-                                style={{
-                                  border: "1px solid var(--af-border-subtle)",
-                                  borderRadius: 999,
-                                  padding: "1px 7px",
-                                  fontSize: 10,
-                                  color: "var(--af-text-secondary)",
-                                }}
+                                style={{ ...chip, color: "var(--af-text-secondary)" }}
                               >
                                 worktree: {name}
                               </span>
                             ))}
+                            {folder.branch && (
+                              <span
+                                title={
+                                  folder.branch === folder.defaultBranch
+                                    ? "on the default branch"
+                                    : `default branch is ${folder.defaultBranch ?? "unknown"}`
+                                }
+                                style={{
+                                  ...chip,
+                                  fontFamily: "var(--font-mono)",
+                                  color:
+                                    folder.branch === folder.defaultBranch
+                                      ? "var(--af-text-tertiary)"
+                                      : "var(--af-text)",
+                                }}
+                              >
+                                {folder.branch}
+                              </span>
+                            )}
+                            {!folder.exists && (
+                              <span
+                                title="This folder is gone from disk. Its sessions still count toward the project."
+                                style={{ ...chip, color: "var(--af-danger)", borderColor: "var(--af-danger)" }}
+                              >
+                                gone
+                              </span>
+                            )}
                           </div>
                           <div
                             title={folder.path}
@@ -276,6 +310,31 @@ export function ProjectLocalFoldersButton({
                               {folder.agents.join(", ")}
                               {folder.lastTimestamp ? ` | ${formatRelative(folder.lastTimestamp)}` : ""}
                             </span>
+                            {folder.remote && (
+                              <>
+                                <span>Remote</span>
+                                <span
+                                  style={{
+                                    fontFamily: "var(--font-mono)",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  <a
+                                    href={folder.remote.webUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ color: "var(--af-text-secondary)" }}
+                                  >
+                                    {folder.remote.owner}/{folder.remote.name}
+                                  </a>
+                                  <span style={{ color: "var(--af-text-tertiary)" }}>
+                                    {" \u00b7 "}{folder.remote.host}
+                                  </span>
+                                </span>
+                              </>
+                            )}
                             <span>Transcript dir</span>
                             <span
                               title={folder.projectDirs.join(", ")}

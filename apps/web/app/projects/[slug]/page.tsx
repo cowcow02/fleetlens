@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { isAbsolute } from "node:path";
 import { listSessions, getSession } from "@/lib/data";
+import { readGitFolder } from "@claude-lens/parser/fs";
 import {
   buildProjectKeyResolver,
   detectPrMarkers,
@@ -100,17 +101,26 @@ function buildProjectLocalFolders(sessions: SessionMeta[]): ProjectLocalFolder[]
   }
 
   return [...rows.values()]
-    .map((row) => ({
-      path: row.path,
-      canonicalProject: row.canonicalProject,
-      reasons: [...row.reasons].sort(),
-      worktreeNames: [...row.worktreeNames].sort(),
-      agents: [...row.agents].sort(),
-      projectDirs: [...row.projectDirs].sort(),
-      sessionCount: row.sessionCount,
-      lastTimestamp: row.lastTimestamp,
-      canOpen: row.canOpen,
-    }))
+    .map((row) => {
+      const git = readGitFolder(row.path);
+      return {
+        path: row.path,
+        canonicalProject: row.canonicalProject,
+        reasons: [...row.reasons].sort(),
+        worktreeNames: [...row.worktreeNames].sort(),
+        agents: [...row.agents].sort(),
+        projectDirs: [...row.projectDirs].sort(),
+        sessionCount: row.sessionCount,
+        lastTimestamp: row.lastTimestamp,
+        exists: git.exists,
+        isWorktree: git.isWorktree,
+        branch: git.branch,
+        defaultBranch: git.defaultBranch,
+        remote: git.remote,
+        // A pruned worktree still owns history; it just can't be opened.
+        canOpen: git.exists,
+      };
+    })
     .sort((a, b) => {
       const aIsRoot = a.path === a.canonicalProject ? 0 : 1;
       const bIsRoot = b.path === b.canonicalProject ? 0 : 1;
@@ -155,6 +165,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
 
   const recentSessions = projectSessions.slice(0, 12);
   const localFolders = buildProjectLocalFolders(projectSessions);
+  const projectRemote = localFolders.find((f) => f.remote)?.remote;
   const hasPrs = prMarkers.length > 0;
 
   // Build the recent-7-days strip + helpfulness sparkline.
@@ -251,7 +262,21 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
               whiteSpace: "nowrap",
             }}
           >
-            {projectName}
+            {projectRemote ? (
+              <a
+                href={projectRemote.webUrl}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "var(--af-text-secondary)", textDecoration: "none" }}
+              >
+                {projectRemote.host === "github.com"
+                  ? `${projectRemote.owner}/${projectRemote.name}`
+                  : `${projectRemote.host}/${projectRemote.owner}/${projectRemote.name}`}
+                {" \u2197"}
+              </a>
+            ) : (
+              projectName
+            )}
           </p>
         </div>
         <ProjectLocalFoldersButton projectKey={decodedCanonical} folders={localFolders} />
