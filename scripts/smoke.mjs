@@ -16,6 +16,11 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+// Import the real resolver rather than mirroring it — a second copy of project
+// identity silently drifts from the one the server actually uses. Requires a
+// built parser, which the dev server this script targets already depends on.
+import { projectKey } from "../packages/parser/dist/index.js";
+import { resolveProjectIdentity } from "../packages/parser/dist/fs.js";
 
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:3321";
 const TIMEOUT_MS = 30_000;
@@ -154,22 +159,8 @@ async function findTeamLeadSession() {
   return null;
 }
 
-/**
- * Project URL slugs are repo names — the last path segment of the canonical
- * cwd (worktrees rolled up to their parent repo). This mirrors the parser's
- * `projectRepoName`, which the /projects list and [slug] route both key off.
- * To build a valid URL we read a session file, pull its real cwd, strip any
- * `/.worktrees/<name>` suffix, then take the basename.
- */
-function canonicalProjectName(cwd) {
-  const wtIdx = cwd.lastIndexOf("/.worktrees/");
-  return wtIdx >= 0 ? cwd.slice(0, wtIdx) : cwd;
-}
-
-function projectRepoName(cwd) {
-  const canonical = canonicalProjectName(cwd).replace(/\/+$/, "");
-  const segs = canonical.split("/").filter(Boolean);
-  return segs[segs.length - 1] || canonical;
+function projectSlug(cwd) {
+  return projectKey(resolveProjectIdentity(cwd).projectName);
 }
 
 async function pickFirstProjectSlug() {
@@ -189,7 +180,7 @@ async function pickFirstProjectSlug() {
           try {
             const obj = JSON.parse(line);
             if (typeof obj?.cwd === "string") {
-              return projectRepoName(obj.cwd);
+              return projectSlug(obj.cwd);
             }
           } catch {
             // skip malformed line

@@ -1,5 +1,5 @@
 import { listSessions } from "@/lib/data";
-import { projectRepoName, groupByProject } from "@claude-lens/parser";
+import { projectKey, groupByProject } from "@claude-lens/parser";
 import type { DayOutcome } from "@claude-lens/entries";
 import { ProjectsView, type ProjectRow } from "./projects-view";
 import { buildEntriesIndex } from "@/lib/entries-index";
@@ -26,7 +26,7 @@ export default async function ProjectsPage() {
   const days = lastNDays(7);
 
   const rows: ProjectRow[] = projects.map((p) => {
-    const projectEntries = index.byProject.get(projectRepoName(p.projectName)) ?? [];
+    const projectEntries = index.byProject.get(projectKey(p.projectName)) ?? [];
     const byDay = new Map<string, typeof projectEntries>();
     for (const e of projectEntries) {
       const arr = byDay.get(e.local_day);

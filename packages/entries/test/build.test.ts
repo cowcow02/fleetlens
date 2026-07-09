@@ -191,6 +191,16 @@ describe("buildEntries text + model + project fields", () => {
     expect(entry!.project).toBe("/test/project");
   });
 
+  it("project keeps parser canonical project for git-linked worktrees", () => {
+    const sd = {
+      ...load("one-day-session.jsonl"),
+      projectName: "/canonical/main-project",
+      worktreeName: "custom-feature-folder",
+    };
+    const [entry] = buildEntries(sd);
+    expect(entry!.project).toBe("/canonical/main-project");
+  });
+
   it("start_iso and end_iso are ISO8601 strings", () => {
     const sd = load("one-day-session.jsonl");
     const [entry] = buildEntries(sd);

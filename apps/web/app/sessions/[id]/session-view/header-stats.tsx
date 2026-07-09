@@ -15,9 +15,90 @@
  * a component (no hook calls at module load).
  */
 import React, { useRef, useState } from "react";
+import { Github, GitBranch } from "lucide-react";
 import type { SessionEvent } from "@claude-lens/parser";
+import type { GitFolderInfo } from "@claude-lens/parser/fs";
 import { formatTokens } from "@/lib/format";
 import { TooltipRow } from "./tooltip";
+
+const repoChip = {
+  fontFamily: "var(--font-mono)",
+  fontSize: 10.5,
+  padding: "1px 6px",
+  border: "1px solid var(--af-border-subtle)",
+  borderRadius: 999,
+  whiteSpace: "nowrap" as const,
+};
+
+/** The repo a session's cwd belongs to. `branch` is that folder's branch RIGHT
+ *  NOW — git keeps no record of what it was when the session ran — so it is
+ *  labelled as such rather than presented as the session's branch. */
+export function RepoStat({
+  git,
+  worktreeName,
+}: {
+  git: GitFolderInfo;
+  worktreeName?: string;
+}) {
+  const { remote, branch, defaultBranch } = git;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 12,
+        color: "var(--af-text-secondary)",
+        minWidth: 0,
+      }}
+    >
+      {remote && (
+        <a
+          href={remote.webUrl}
+          target="_blank"
+          rel="noreferrer"
+          title={remote.url}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            color: "inherit",
+            textDecoration: "none",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {remote.host === "github.com" ? (
+            <Github size={12} aria-label="GitHub" />
+          ) : (
+            <GitBranch size={12} aria-label={remote.host} />
+          )}
+          {remote.owner}/{remote.name}
+        </a>
+      )}
+      {worktreeName && (
+        <span style={{ ...repoChip, color: "var(--af-text-secondary)" }}>
+          worktree: {worktreeName}
+        </span>
+      )}
+      {branch && (
+        <span
+          title={`This folder is currently on "${branch}"${
+            defaultBranch ? ` (default: ${defaultBranch})` : ""
+          }. Not necessarily the branch this session ran on.`}
+          style={{
+            ...repoChip,
+            color:
+              branch === defaultBranch ? "var(--af-text-tertiary)" : "var(--af-text)",
+          }}
+        >
+          {branch}
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function InlineStat({
   icon,

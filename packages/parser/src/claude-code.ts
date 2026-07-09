@@ -13,7 +13,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseTranscript, type ParseResult } from "./parser.js";
-import { worktreeName, projectRepoName, toLocalDay } from "./analytics.js";
+import { canonicalProjectName, projectKey, toLocalDay, worktreeName } from "./analytics.js";
+import { resolveProjectIdentity } from "./git-project.js";
 import { groupByTeam, type TeamView } from "./team.js";
 import type {
   AgentKind,
@@ -572,12 +573,16 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
 
     // Use the real cwd from the JSONL when available — the decoded dir name
     // is lossy (dashes in folder names become slashes).
+    const cwd = meta.cwd ?? decodeProjectName(f.projectDir);
+    const project = resolveProjectIdentity(cwd);
     const full: SessionMeta = {
       ...meta,
       id: sessionId,
       filePath: f.fullPath,
       projectDir: f.projectDir,
-      projectName: meta.cwd ?? decodeProjectName(f.projectDir),
+      projectName: project.projectName,
+      worktreeName: project.worktreeName,
+      repoName: project.repoName,
       ...(wf.workflowCount > 0
         ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
         : {}),
@@ -608,12 +613,16 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
     // backfills) so opening a session never strips the "N agents" badge that
     // the list path computes.
     const wf = await scanWorkflowAggregate(path.dirname(f.fullPath), sessionId);
+    const cwd = meta.cwd ?? decodeProjectName(f.projectDir);
+    const project = resolveProjectIdentity(cwd);
     const detail: SessionDetail = {
       ...meta,
       id: sessionId,
       filePath: f.fullPath,
       projectDir: f.projectDir,
-      projectName: meta.cwd ?? decodeProjectName(f.projectDir),
+      projectName: project.projectName,
+      worktreeName: project.worktreeName,
+      repoName: project.repoName,
       events,
       ...(wf.workflowCount > 0
         ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
@@ -1381,12 +1390,20 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
     if (f.mtimeMs > cur.lastActiveMs) cur.lastActiveMs = f.mtimeMs;
     byRawDir.set(f.projectDir, cur);
   }
-  // Resolve real cwd from the meta cache — any cached session in this
-  // projectDir has the cwd from the JSONL, avoiding the lossy decode.
-  const cwdForProject = (dir: string): string | undefined => {
+  // Resolve identity from the meta cache — any cached session in this
+  // projectDir has already paid the JSONL parse + Git lookup. When the cache
+  // is cold, keep this lightweight project scan path-only instead of doing a
+  // synchronous Git walk for every project directory.
+  const cachedIdentityForProject = (
+    dir: string,
+  ): { cwd?: string; projectName?: string; worktreeName?: string } | undefined => {
     for (const [, entry] of metaCache.entries()) {
-      if (entry.meta.projectDir === dir && entry.meta.cwd) {
-        return entry.meta.cwd;
+      if (entry.meta.projectDir === dir) {
+        return {
+          cwd: entry.meta.cwd,
+          projectName: entry.meta.projectName,
+          worktreeName: entry.meta.worktreeName,
+        };
       }
     }
     return undefined;
@@ -1400,11 +1417,13 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
   };
   const canonicalMap = new Map<string, Agg>();
   for (const [rawDir, { count, lastActiveMs }] of byRawDir) {
-    const cwdOrDecoded = cwdForProject(rawDir) ?? decodeProjectName(rawDir);
-    // Fold by repo name so the same repo reached via different harnesses
+    const cached = cachedIdentityForProject(rawDir);
+    const cwdOrDecoded = cached?.cwd ?? decodeProjectName(rawDir);
+    const projectName = cached?.projectName ?? canonicalProjectName(cwdOrDecoded);
+    const wt = cached?.worktreeName ?? worktreeName(cwdOrDecoded) ?? undefined;
+    // Fold by Fleetlens project key so the same repo reached via different harnesses
     // collapses into one project — matching groupByProject.
-    const repo = projectRepoName(cwdOrDecoded);
-    const wt = worktreeName(cwdOrDecoded);
+    const repo = projectKey(projectName);
 
     const agg =
       canonicalMap.get(repo) ??

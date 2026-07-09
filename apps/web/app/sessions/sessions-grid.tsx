@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AgentKind, SessionMeta } from "@claude-lens/parser";
-import { getAgentMetadata, isAgentKind } from "@claude-lens/parser";
+import { buildProjectKeyResolver, getAgentMetadata, isAgentKind, projectKey } from "@claude-lens/parser";
 import type { DayOutcome, EntryEnrichmentStatus } from "@claude-lens/entries";
 import {
   formatDuration,
@@ -30,12 +30,20 @@ export type SessionRow = {
   latestLocalDay: string | null;
 };
 
+type DisplaySessionRow = SessionRow & {
+  projectKey: string;
+};
+
 type SortBy = "newest" | "longest" | "most-tokens" | "outcome";
 
 const SORT_VALUES: readonly SortBy[] = ["newest", "longest", "most-tokens", "outcome"] as const;
 
 function isSortBy(s: string | null | undefined): s is SortBy {
   return s !== null && s !== undefined && (SORT_VALUES as readonly string[]).includes(s);
+}
+
+function totalSessionTokens(s: SessionMeta): number {
+  return s.totalUsage.input + s.totalUsage.output + s.totalUsage.cacheRead + s.totalUsage.cacheWrite;
 }
 
 export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
@@ -46,7 +54,22 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
   // Filter state lives in the URL — back/forward replays the same view, and
   // returning from a session detail page restores what the user had picked.
   const query = searchParams.get("q") ?? "";
-  const project = searchParams.get("project") ?? "all";
+  const keyOf = useMemo(
+    () => buildProjectKeyResolver(rows.map((r) => r.session)),
+    [rows],
+  );
+  const displayRows = useMemo<DisplaySessionRow[]>(
+    () => rows.map((row) => ({ ...row, projectKey: keyOf(row.session) })),
+    [rows, keyOf],
+  );
+  // Older links carried the raw projectName path. Resolve those onto the
+  // project key so /sessions?project=… selects the same set as /projects/<key>.
+  const project = useMemo(() => {
+    const raw = searchParams.get("project") ?? "all";
+    if (raw === "all" || !raw.startsWith("/")) return raw;
+    const match = rows.find((r) => r.session.projectName === raw);
+    return match ? keyOf(match.session) : projectKey(raw);
+  }, [searchParams, rows, keyOf]);
   const agentParam = searchParams.get("agent");
   const agent: AgentKind | "all" = isAgentKind(agentParam) ? agentParam : "all";
   const sortBy: SortBy = isSortBy(searchParams.get("sort"))
@@ -72,9 +95,22 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
   const setSortBy = (v: SortBy) => updateParam("sort", v, "newest");
 
   const projects = useMemo(() => {
-    const s = new Set(rows.map((r) => r.session.projectName));
-    return ["all", ...Array.from(s).sort()];
-  }, [rows]);
+    const totals = new Map<string, { tokens: number; sessions: number }>();
+    for (const r of displayRows) {
+      const cur = totals.get(r.projectKey) ?? { tokens: 0, sessions: 0 };
+      cur.tokens += totalSessionTokens(r.session);
+      cur.sessions += 1;
+      totals.set(r.projectKey, cur);
+    }
+    const ordered = Array.from(totals.entries())
+      .sort(([aKey, a], [bKey, b]) => {
+        if (b.tokens !== a.tokens) return b.tokens - a.tokens;
+        if (b.sessions !== a.sessions) return b.sessions - a.sessions;
+        return aKey.localeCompare(bKey);
+      })
+      .map(([key]) => key);
+    return ["all", ...ordered];
+  }, [displayRows]);
 
   const agentOptions = useMemo(() => {
     const counts = new Map<AgentKind, number>();
@@ -86,19 +122,20 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
   }, [rows]);
 
   const filtered = useMemo(() => {
-    let items = rows.slice();
-    if (project !== "all") items = items.filter((r) => r.session.projectName === project);
+    let items = displayRows.slice();
+    if (project !== "all") items = items.filter((r) => r.projectKey === project);
     if (agent !== "all")
       items = items.filter((r) => (r.session.agent ?? "claude-code") === agent);
     if (query) {
       const q = query.toLowerCase();
       items = items.filter(
-        ({ session: s, briefSummary }) =>
+        ({ session: s, briefSummary, projectKey }) =>
           s.id.toLowerCase().includes(q) ||
           (briefSummary ?? "").toLowerCase().includes(q) ||
           (s.firstUserPreview ?? "").toLowerCase().includes(q) ||
           (s.lastAgentPreview ?? "").toLowerCase().includes(q) ||
-          s.projectName.toLowerCase().includes(q),
+          s.projectName.toLowerCase().includes(q) ||
+          projectKey.toLowerCase().includes(q),
       );
     }
     if (sortBy === "newest")
@@ -115,18 +152,12 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
       );
     else if (sortBy === "most-tokens")
       items.sort(
-        (a, b) =>
-          b.session.totalUsage.input +
-          b.session.totalUsage.output +
-          b.session.totalUsage.cacheRead -
-          (a.session.totalUsage.input +
-            a.session.totalUsage.output +
-            a.session.totalUsage.cacheRead),
+        (a, b) => totalSessionTokens(b.session) - totalSessionTokens(a.session),
       );
     else if (sortBy === "outcome")
       items.sort((a, b) => outcomePriority(b.outcome) - outcomePriority(a.outcome));
     return items;
-  }, [rows, project, agent, query, sortBy]);
+  }, [displayRows, project, agent, query, sortBy]);
 
   return (
     <div>
@@ -199,7 +230,7 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
       {filtered.length === 0 ? (
         <div className="af-empty">No sessions found.</div>
       ) : viewMode === "table" ? (
-        <DataTable<SessionRow>
+        <DataTable<DisplaySessionRow>
           rows={filtered}
           getRowKey={(r) => `${r.session.projectDir}/${r.session.id}`}
           onRowClick={(r) => router.push(`/sessions/${r.session.id}`)}
@@ -224,7 +255,7 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
   );
 }
 
-const sessionTableColumns: Column<SessionRow>[] = [
+const sessionTableColumns: Column<DisplaySessionRow>[] = [
   {
     key: "outcome",
     header: "Outcome",
@@ -234,7 +265,7 @@ const sessionTableColumns: Column<SessionRow>[] = [
   {
     key: "project",
     header: "Project",
-    sortValue: (r) => r.session.projectName,
+    sortValue: (r) => r.projectKey,
     render: (r) => (
       <div
         style={{
@@ -243,7 +274,7 @@ const sessionTableColumns: Column<SessionRow>[] = [
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
         }}
-        title={r.session.projectName}
+        title={`${r.projectKey} (${r.session.projectName})`}
       >
         <div style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
           <span
@@ -254,7 +285,7 @@ const sessionTableColumns: Column<SessionRow>[] = [
               minWidth: 0,
             }}
           >
-            {prettyProjectName(r.session.projectName)}
+            {prettyProjectName(r.projectKey)}
           </span>
           <TeamBadge session={r.session} />
           <AgentBadge agent={r.session.agent} />
@@ -399,7 +430,7 @@ function OutcomeCell({ row }: { row: SessionRow }) {
   return <span style={{ color: "var(--af-text-tertiary)", fontSize: 10 }}>—</span>;
 }
 
-function SessionCard({ row }: { row: SessionRow }) {
+function SessionCard({ row }: { row: DisplaySessionRow }) {
   const router = useRouter();
   const { session: s, briefSummary, outcome, latestLocalDay, enrichmentStatus } = row;
   const totalTokens =
@@ -440,13 +471,13 @@ function SessionCard({ row }: { row: SessionRow }) {
             gap: 6,
             minWidth: 0,
           }}
-          title={s.projectName}
+          title={`${row.projectKey} (${s.projectName})`}
         >
           <LiveBadge mtimeIso={s.lastTimestamp} activityMs={s.lastActivityMs} />
           <span
             style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
           >
-            {prettyProjectName(s.projectName)}
+            {prettyProjectName(row.projectKey)}
           </span>
           <TeamBadge session={s} linkable={false} />
           <AgentBadge agent={s.agent} />

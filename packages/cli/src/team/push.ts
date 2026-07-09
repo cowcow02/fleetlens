@@ -7,7 +7,7 @@ declare const CLI_VERSION: string;
 
 import {
   canonicalProjectName,
-  projectRepoName,
+  projectKey,
   computeBurstsFromSessions,
   dailyActivity,
   sessionDay,
@@ -159,7 +159,7 @@ export function filterSyncedSessions(
   syncProjects?: SyncProjects,
 ): SessionMeta[] {
   if (!syncProjects) return sessions;
-  return sessions.filter((s) => shouldSyncProject(projectRepoName(s.projectName), syncProjects));
+  return sessions.filter((s) => shouldSyncProject(projectKey(s.projectName), syncProjects));
 }
 
 export function sessionTouchesDay(s: SessionMeta, day: string): boolean {
@@ -224,10 +224,10 @@ export function buildRichRollupBlocks(
   // repo fold into one row) and by repo-directory basename otherwise.
   const projects = new Map<string, { project: string; agentTimeMs: number; sessions: number; resolved?: string }>();
   for (const s of clippedSessions) {
-    // Group the breakdown by repo name so the team edition never receives
+    // Group the breakdown by Fleetlens project key so the team edition never receives
     // absolute paths and same-repo-different-harness rows fold together.
     const canonical = canonicalProjectName(s.projectName);
-    const name = projectRepoName(s.projectName);
+    const name = projectKey(s.projectName);
     const repo = resolveRepo?.(canonical) ?? sessionRepo.get(s.id);
     const key = repo ?? name;
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
@@ -277,7 +277,7 @@ export function buildRichRollupBlocks(
     pushes += e.numbers.pushes;
     if (e.github_repos?.length) {
       // Same key rule as the projects map so the attachment lands on its row.
-      const key = sessionRepo.get(e.session_id) ?? projectRepoName(e.project);
+      const key = sessionRepo.get(e.session_id) ?? projectKey(e.project);
       const set = projectRepos.get(key) ?? new Set<string>();
       for (const r of e.github_repos) set.add(r);
       projectRepos.set(key, set);

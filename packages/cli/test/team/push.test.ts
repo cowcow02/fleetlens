@@ -570,6 +570,24 @@ describe("buildRichRollupBlocks", () => {
       });
     });
 
+    it("keeps custom worktree sessions under the parser-resolved project key", () => {
+      const custom = makeSession(day, {
+        id: "custom-wt",
+        projectName: "/Users/x/Repo/fleetlens",
+        projectDir: "Users-x-scratch-feature-one",
+        worktreeName: "feature-one",
+        activeSegments: [
+          { startMs: Date.parse(`${day}T12:00:00.000Z`), endMs: Date.parse(`${day}T12:30:00.000Z`) },
+        ],
+      });
+      const blocks = buildRichRollupBlocks(day, [s1, custom], [], () => null);
+      expect(blocks.projects).toHaveLength(1);
+      expect(blocks.projects[0]).toMatchObject({
+        project: "fleetlens",
+        sessions: 2,
+      });
+    });
+
     it("falls back to the entry's edited-dir repos when the cwd isn't a repo", () => {
       const parent = makeSession(day, {
         id: "sp", projectName: "/Users/x/Repo", projectDir: "users-x-Repo",

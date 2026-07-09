@@ -132,16 +132,41 @@ export function worktreeName(projectName: string): string | null {
   return null;
 }
 
-/** Repo identity used to fold one logical repo reached through different
- *  harnesses (direct checkout, Conductor workspace, Superset/ephemeral
- *  worktree) into a single project. Git can't recover this once a worktree is
- *  pruned, so we key on the repo NAME — the leaf of the canonical path. Two
- *  distinct repos that share a name will merge (uncommon on one machine); that
- *  is the accepted tradeoff for collapsing the cross-harness duplicates. */
-export function projectRepoName(projectName: string): string {
+/** Single Fleetlens project key. Used for /projects slugs, sidebar rows,
+ *  team-sync consent, and rich-rollup project rows. Filesystem adapters first
+ *  normalize projectName from Git metadata when possible; this helper then
+ *  gives the stable display/sync key: the canonical path's leaf. */
+export function projectKey(projectName: string): string {
   const canonical = canonicalProjectName(projectName);
   const segs = canonical.replace(/\/+$/, "").split("/").filter(Boolean);
   return segs[segs.length - 1] || canonical;
+}
+
+/** @deprecated Use projectKey. */
+export const projectRepoName = projectKey;
+
+/** The single project key for a session: the GitHub repo name when the
+ *  checkout has an origin remote, else the canonical path leaf. Two clones of
+ *  one repo in differently-named folders collapse; a renamed folder
+ *  (`claude-lens` on disk, `fleetlens` upstream) shows its real name. */
+export function sessionProjectKey(s: { projectName: string; repoName?: string }): string {
+  return s.repoName ?? projectKey(s.projectName);
+}
+
+type KeyableSession = { projectName: string; repoName?: string };
+
+/** Sessions from a pruned worktree or Conductor workspace have no .git left on
+ *  disk, so they can never resolve a remote — they'd split away from the repo
+ *  they belong to. Backfill them from any live checkout that shares their
+ *  canonical folder name. */
+export function buildProjectKeyResolver(
+  sessions: KeyableSession[],
+): (s: KeyableSession) => string {
+  const alias = new Map<string, string>();
+  for (const s of sessions) {
+    if (s.repoName) alias.set(projectKey(s.projectName), s.repoName);
+  }
+  return (s) => s.repoName ?? alias.get(projectKey(s.projectName)) ?? projectKey(s.projectName);
 }
 
 /* ================================================================= */
@@ -967,11 +992,12 @@ export type ProjectRollup = {
 
 export function groupByProject(sessions: SessionMeta[]): ProjectRollup[] {
   const map = new Map<string, ProjectRollup>();
+  const keyOf = buildProjectKeyResolver(sessions);
   for (const s of sessions) {
-    // Group by repo name so the same repo reached via different harnesses
+    // Group by Fleetlens project key so the same repo reached via different harnesses
     // (Repo/foo, conductor/workspaces/foo, .superset worktree of foo) rolls
-    // up into one project. See projectRepoName for the tradeoff.
-    const repo = projectRepoName(s.projectName);
+    // up into one project. See projectKey for the tradeoff.
+    const repo = keyOf(s);
     const key = repo;
     let cur = map.get(key);
     if (!cur) {
@@ -998,11 +1024,11 @@ export function groupByProject(sessions: SessionMeta[]): ProjectRollup[] {
   }
   for (const p of map.values()) {
     p.metrics = highLevelMetrics(p.sessions);
-    // Count distinct worktrees — sessions whose projectName deviates
-    // from the canonical (so has `/.worktrees/<name>`).
+    // Count distinct worktrees. New filesystem adapters stamp Git-derived
+    // worktreeName; fall back to path heuristics for tests and old callers.
     const wtNames = new Set<string>();
     for (const s of p.sessions) {
-      const wt = worktreeName(s.projectName);
+      const wt = s.worktreeName ?? worktreeName(s.projectName) ?? (s.cwd ? worktreeName(s.cwd) : null);
       if (wt) wtNames.add(wt);
     }
     p.worktreeCount = wtNames.size;

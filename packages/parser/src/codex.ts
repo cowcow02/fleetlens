@@ -20,7 +20,8 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { canonicalProjectName, toLocalDay } from "./analytics.js";
+import { toLocalDay } from "./analytics.js";
+import { resolveProjectIdentity } from "./git-project.js";
 import { isFrameworkInjectedUserInput } from "./user-input.js";
 import type {
   ContentBlock,
@@ -329,7 +330,8 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       ? Date.parse(lastTimestamp) - Date.parse(firstTimestamp)
       : undefined;
 
-  const projectName = cwd ? canonicalProjectName(cwd) : "(unknown)";
+  const project = cwd ? resolveProjectIdentity(cwd) : undefined;
+  const projectName = project?.projectName ?? "(unknown)";
   // Codex's projectDir slot mirrors the encoded-cwd convention used by Claude
   // — it's never read from disk, so a synthetic encoding is fine.
   const projectDir = cwd ? cwd.replace(/^\//, "-").replace(/\//g, "-") : "(unknown)";
@@ -339,6 +341,8 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     id: file.sessionId,
     filePath: file.filePath,
     projectName,
+    worktreeName: project?.worktreeName,
+    repoName: project?.repoName,
     projectDir,
     sessionId: file.sessionId,
     firstTimestamp,

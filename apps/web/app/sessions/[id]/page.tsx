@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/data";
-import { loadTeamForSession, findTeamLead } from "@claude-lens/parser/fs";
+import { loadTeamForSession, findTeamLead, readGitFolder } from "@claude-lens/parser/fs";
 import { listEntriesForSession } from "@claude-lens/entries/fs";
 import {
   teamViewToTimelineData,
@@ -54,9 +54,12 @@ export default async function SessionDetailPage({
     events: session.events.map((e) => ({ ...e, raw: undefined })),
   };
 
+  const git = session.cwd ? readGitFolder(session.cwd) : undefined;
+
   return (
     <SessionView
       session={stripped}
+      git={git}
       team={teamProps}
       teamLead={teamLeadInfo}
       entries={entries}

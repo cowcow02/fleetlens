@@ -31,8 +31,8 @@ async function runActivityBackfill(
   config: TeamConfig,
   log: LogFn,
 ): Promise<CommandResult> {
-  const { listSessions, shouldSyncProject } = await import("@claude-lens/parser/fs");
-  const { toLocalDay, projectRepoName } = await import("@claude-lens/parser");
+  const { listSessions, resolveProjectIdentity, shouldSyncProject } = await import("@claude-lens/parser/fs");
+  const { toLocalDay, projectKey } = await import("@claude-lens/parser");
   const { probeArtifactSignals } = await import("../perception/file-probe.js");
 
   const days = command.params.days;
@@ -84,7 +84,7 @@ async function runActivityBackfill(
     try {
       // Same cwd gate as the regular sync — an excluded repo the daemon was
       // launched from must not contribute authoring signals.
-      const cwdAllowed = shouldSyncProject(projectRepoName(process.cwd()), config.syncProjects);
+      const cwdAllowed = shouldSyncProject(projectKey(resolveProjectIdentity(process.cwd()).projectName), config.syncProjects);
       artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: cwdAllowed ? [process.cwd()] : [] });
     } catch {
       // Probe is best-effort; never block the backfill.

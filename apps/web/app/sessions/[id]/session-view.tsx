@@ -55,10 +55,13 @@ import {
   InlineStatDivider,
   EntrypointBadge,
   InlineTokenStat,
+  RepoStat,
   useAnchoredTooltip,
   AnchoredTooltip,
 } from "./session-view/header-stats";
 import { Drawer } from "./session-view/drawer";
+// type-only: erased at build, so node:fs never reaches the client bundle
+import type { GitFolderInfo } from "@claude-lens/parser/fs";
 import {
   WorkflowsPanel,
   WorkflowAgentDrawer,
@@ -128,11 +131,13 @@ const VALID_TABS: TabId[] = ["transcript", "workflows", "team", "debug"];
 
 export function SessionView({
   session,
+  git,
   team,
   teamLead,
   entries = [],
 }: {
   session: SessionDetail;
+  git?: GitFolderInfo;
   team?: (TimelineData & { teamName: string }) | null;
   teamLead?: { leadSessionId: string; teamName: string; agentName: string } | null;
   entries?: Entry[];
@@ -1128,6 +1133,12 @@ export function SessionView({
           )}
           <InlineStatDivider />
           <InlineStat icon={<Folder size={12} />} value={projectName} truncate />
+          {git && (git.remote || git.branch || session.worktreeName) && (
+            <>
+              <InlineStatDivider />
+              <RepoStat git={git} worktreeName={session.worktreeName} />
+            </>
+          )}
           <InlineStatDivider />
           {airTimeMs !== undefined && (
             <InlineStat

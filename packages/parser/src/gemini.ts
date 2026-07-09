@@ -25,7 +25,8 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { canonicalProjectName, toLocalDay } from "./analytics.js";
+import { toLocalDay } from "./analytics.js";
+import { resolveProjectIdentity } from "./git-project.js";
 import { isFrameworkInjectedUserInput } from "./user-input.js";
 import type {
   SessionDetail,
@@ -537,7 +538,8 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
       : undefined;
 
   const sessionId = metaRec.sessionId ?? file.filenameId;
-  const projectName = cwd ? canonicalProjectName(cwd) : file.slug;
+  const project = cwd ? resolveProjectIdentity(cwd) : undefined;
+  const projectName = project?.projectName ?? file.slug;
   const projectDir = cwd
     ? cwd.replace(/^\//, "-").replace(/\//g, "-")
     : file.slug;
@@ -547,6 +549,8 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
     id: sessionId,
     filePath: file.filePath,
     projectName,
+    worktreeName: project?.worktreeName,
+    repoName: project?.repoName,
     projectDir,
     sessionId,
     firstTimestamp,
