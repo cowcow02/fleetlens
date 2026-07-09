@@ -34,6 +34,7 @@ export {
   readCredentialsMasked,
   writeZaiKey,
   deleteZaiKey,
+  deleteZaiKeyAndPrune,
   hasZaiKey,
   fetchZaiUsage,
   validateAndSnapshotZaiKey,

@@ -1,7 +1,7 @@
 import "server-only";
 import { writeFileSync, readFileSync, renameSync, chmodSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
-import { cclensPath, appendUsageSnapshot } from "@claude-lens/parser/fs";
+import { cclensPath, appendUsageSnapshot, pruneUsageAgent } from "@claude-lens/parser/fs";
 
 /**
  * Z.ai (Zhipu AI) GLM Coding Plan usage endpoint. Undocumented but
@@ -100,6 +100,14 @@ export async function validateAndSnapshotZaiKey(key: string): Promise<ZaiSnapsho
   const snap = await fetchZaiUsage(key);
   appendUsageSnapshot(snap);
   return snap;
+}
+
+/** Remove the stored key and immediately prune the zai line from
+ *  usage.jsonl, so the /usage tab + widget drop Z.ai the instant
+ *  the user removes it (no waiting for the daemon's next tick). */
+export function deleteZaiKeyAndPrune(): void {
+  deleteZaiKey();
+  pruneUsageAgent("zai");
 }
 
 /**

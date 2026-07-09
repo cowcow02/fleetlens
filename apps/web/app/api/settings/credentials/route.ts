@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   readCredentialsMasked,
   writeZaiKey,
-  deleteZaiKey,
+  deleteZaiKeyAndPrune,
   validateAndSnapshotZaiKey,
 } from "@claude-lens/entries/node";
 
@@ -36,7 +36,10 @@ export async function PUT(req: Request) {
     }
     writeZaiKey(key);
   } else {
-    deleteZaiKey();
+    // Removal is always allowed — drop the key AND immediately prune
+    // the zai line so the tab/widget disappear the instant the user
+    // removes it, without waiting for the daemon's next 5-min tick.
+    deleteZaiKeyAndPrune();
   }
   return NextResponse.json({ ok: true, ...readCredentialsMasked() });
 }

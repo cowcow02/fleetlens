@@ -12,7 +12,7 @@
  * consumers don't need to update import paths.
  */
 
-import { promises as fs, appendFileSync, mkdirSync } from "node:fs";
+import { promises as fs, existsSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { toLocalDay } from "./analytics.js";
@@ -343,6 +343,28 @@ export function appendUsageSnapshot(snapshot: unknown): void {
   const p = usageLogPath();
   mkdirSync(path.dirname(p), { recursive: true });
   appendFileSync(p, JSON.stringify(snapshot) + "\n", "utf8");
+}
+
+/** Drop every zai (or other) agent line from ~/.cclens/usage.jsonl.
+ *  Used when a source is unconfigured (key removed) so a stale line
+ *  doesn't keep the widget/dashboard showing obsolete usage. The log is
+ *  otherwise append-only; this is the one intentional rewrite, scoped to a
+ *  single agent and safe because the daemon is its only writer. */
+export function pruneUsageAgent(agent: string): void {
+  const p = usageLogPath();
+  if (!existsSync(p)) return;
+  const kept = readFileSync(p, "utf8")
+    .split("\n")
+    .filter((line) => {
+      if (!line.trim()) return false;
+      try {
+        return JSON.parse(line).agent !== agent;
+      } catch {
+        return true;
+      }
+    });
+  mkdirSync(path.dirname(p), { recursive: true });
+  writeFileSync(p, kept.join("\n") + (kept.length ? "\n" : ""), "utf8");
 }
 
 type UsageSnapshot = {
