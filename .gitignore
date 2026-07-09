@@ -19,3 +19,4 @@ pnpm-debug.log*
 .antigravitycli/
 .playwright-mcp/
 .qa/
+.tmp-browsertest/
