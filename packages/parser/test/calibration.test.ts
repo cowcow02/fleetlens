@@ -246,6 +246,53 @@ describe("buildCalibrationCurve overage", () => {
   });
 });
 
+describe("buildCalibrationCurve range", () => {
+  // Claude Code prunes ~/.claude/projects, so transcripts routinely start long
+  // after the daemon's first usage snapshot. The curve is what feeds the
+  // previous-cycles trend, so clipping it to the first event silently hid
+  // months of *real* utilization readings the daemon had already recorded.
+  it("covers real snapshots that predate the first transcript event", () => {
+    const firstSnap = Date.parse("2026-04-13T02:00:00Z");
+    const firstEvent = Date.parse("2026-05-18T03:00:00Z");
+    const snapshots = [
+      {
+        captured_at: new Date(firstSnap).toISOString(),
+        seven_day: { utilization: 30, resets_at: new Date(firstSnap + 3 * DAY).toISOString() },
+      },
+      {
+        captured_at: new Date(firstEvent + DAY).toISOString(),
+        seven_day: { utilization: 60, resets_at: new Date(firstEvent + 5 * DAY).toISOString() },
+      },
+    ];
+    const events = eventsCosting(firstEvent, firstEvent + DAY, 100, 24);
+    const result = buildCalibrationCurve(events, snapshots, "pro-max-20x", 60);
+
+    expect(result).not.toBeNull();
+    expect(Date.parse(result!.curve[0]!.ts)).toBeLessThanOrEqual(firstSnap);
+    expect(result!.curve.some((p) => p.real_7d === 30)).toBe(true);
+  });
+
+  it("still back-fills at most 14 d before the first snapshot when events run earlier", () => {
+    const firstSnap = Date.parse("2026-05-18T00:00:00Z");
+    const firstEvent = firstSnap - 40 * DAY;
+    const snapshots = [
+      {
+        captured_at: new Date(firstSnap).toISOString(),
+        seven_day: { utilization: 20, resets_at: new Date(firstSnap + DAY).toISOString() },
+      },
+      {
+        captured_at: new Date(firstSnap + DAY).toISOString(),
+        seven_day: { utilization: 40, resets_at: new Date(firstSnap + DAY).toISOString() },
+      },
+    ];
+    const events = eventsCosting(firstEvent, firstSnap + DAY, 200, 64);
+    const result = buildCalibrationCurve(events, snapshots, "pro-max-20x", 60);
+
+    expect(result).not.toBeNull();
+    expect(Date.parse(result!.curve[0]!.ts)).toBe(firstSnap - 14 * DAY);
+  });
+});
+
 describe("modelFamily", () => {
   it("maps case variants to canonical families", () => {
     expect(modelFamily("claude-opus-4-7")).toBe("opus");

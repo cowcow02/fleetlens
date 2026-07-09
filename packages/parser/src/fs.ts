@@ -584,7 +584,13 @@ export function buildCalibrationCurve(
   const firstSnapMs = Date.parse(snapshots[0]!.captured_at!);
   const lastSnapMs = Date.parse(snapshots[snapshots.length - 1]!.captured_at!);
   const firstEventMs = Date.parse(events[0]!.ts);
-  const rangeStart = Math.max(firstEventMs, firstSnapMs - 14 * 86_400_000);
+  // Cold-start back-fill reaches at most 14 d before the first snapshot, and no
+  // earlier than the first event (there's no spend to interpolate before that).
+  // But never start *after* the first snapshot: Claude Code prunes
+  // ~/.claude/projects, so transcripts routinely begin months after the daemon's
+  // first snapshot, and clipping there hid real utilization readings entirely.
+  const backfillStart = Math.max(firstEventMs, firstSnapMs - 14 * 86_400_000);
+  const rangeStart = Math.min(firstSnapMs, backfillStart);
   const rangeEnd = lastSnapMs;
   const stepMs = granularityMin * 60_000;
 
