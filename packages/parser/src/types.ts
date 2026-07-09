@@ -125,6 +125,8 @@ export type SessionMeta = {
   projectName: string;
   /** Linked worktree name when this session ran from a secondary checkout. */
   worktreeName?: string;
+  /** GitHub repo name from the origin remote, when the checkout has one. */
+  repoName?: string;
   /** raw dir name under ~/.claude/projects/ */
   projectDir: string;
   sessionId: string;

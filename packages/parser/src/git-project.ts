@@ -6,6 +6,9 @@ import { canonicalProjectName, worktreeName as pathWorktreeName } from "./analyt
 export type ProjectIdentity = {
   projectName: string;
   worktreeName?: string;
+  /** GitHub repo name from the origin remote, when there is one. The repo is
+   *  the project's real identity; the checkout folder is just where it lives. */
+  repoName?: string;
 };
 
 type DotGitInfo = {
@@ -60,6 +63,34 @@ function nearestDotGit(start: string): DotGitInfo | null {
   }
 }
 
+const GITHUB_URL_RE = /github\.com[:/]([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?$/;
+
+function originUrl(configText: string): string | undefined {
+  let inOrigin = false;
+  for (const line of configText.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith("[")) {
+      inOrigin = /^\[remote\s+"origin"\]/.test(t);
+      continue;
+    }
+    if (!inOrigin) continue;
+    const m = t.match(/^url\s*=\s*(.+)$/);
+    if (m) return m[1]!.trim();
+  }
+  return undefined;
+}
+
+/** A linked worktree has no config of its own — the shared one lives at the
+ *  commondir, which is exactly what dotGitInfoFor already resolved. */
+function repoNameFor(git: DotGitInfo): string | undefined {
+  const dir = git.commonDir ?? git.gitDir;
+  if (!dir) return undefined;
+  const config = join(dir, "config");
+  if (!existsSync(config)) return undefined;
+  const m = originUrl(readFileSync(config, "utf8"))?.match(GITHUB_URL_RE);
+  return m ? m[2] : undefined;
+}
+
 function projectRootFromCommonDir(commonDir: string | undefined): string | undefined {
   if (!commonDir) return undefined;
   return basename(commonDir) === ".git" ? dirname(commonDir) : undefined;
@@ -85,9 +116,11 @@ export function resolveProjectIdentity(cwd: string): ProjectIdentity {
       const wt = projectRoot !== gitRoot
         ? pathWorktreeName(normalized) ?? basename(git.root)
         : undefined;
-      return wt
-        ? { projectName: projectRoot, worktreeName: wt }
-        : { projectName: projectRoot };
+      const identity: ProjectIdentity = { projectName: projectRoot };
+      if (wt) identity.worktreeName = wt;
+      const repoName = repoNameFor(git);
+      if (repoName) identity.repoName = repoName;
+      return identity;
     }
   } catch {
     // Fall through to path heuristics when Git metadata is unreadable.

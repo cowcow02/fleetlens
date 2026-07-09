@@ -3,7 +3,7 @@ import Link from "next/link";
 import { isAbsolute } from "node:path";
 import { listSessions, getSession } from "@/lib/data";
 import {
-  projectKey,
+  buildProjectKeyResolver,
   detectPrMarkers,
   sessionAirTimeMs,
 } from "@claude-lens/parser";
@@ -129,8 +129,9 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
   // resolve each session to one canonical project before this page filters.
   const decodedCanonical = decodeURIComponent(slug);
   const all = await listSessions();
+  const keyOf = buildProjectKeyResolver(all);
   const projectSessions = all.filter(
-    (s) => projectKey(s.projectName) === decodedCanonical,
+    (s) => keyOf(s) === decodedCanonical,
   );
   if (projectSessions.length === 0) return notFound();
 

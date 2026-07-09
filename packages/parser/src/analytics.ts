@@ -145,6 +145,30 @@ export function projectKey(projectName: string): string {
 /** @deprecated Use projectKey. */
 export const projectRepoName = projectKey;
 
+/** The single project key for a session: the GitHub repo name when the
+ *  checkout has an origin remote, else the canonical path leaf. Two clones of
+ *  one repo in differently-named folders collapse; a renamed folder
+ *  (`claude-lens` on disk, `fleetlens` upstream) shows its real name. */
+export function sessionProjectKey(s: { projectName: string; repoName?: string }): string {
+  return s.repoName ?? projectKey(s.projectName);
+}
+
+type KeyableSession = { projectName: string; repoName?: string };
+
+/** Sessions from a pruned worktree or Conductor workspace have no .git left on
+ *  disk, so they can never resolve a remote — they'd split away from the repo
+ *  they belong to. Backfill them from any live checkout that shares their
+ *  canonical folder name. */
+export function buildProjectKeyResolver(
+  sessions: KeyableSession[],
+): (s: KeyableSession) => string {
+  const alias = new Map<string, string>();
+  for (const s of sessions) {
+    if (s.repoName) alias.set(projectKey(s.projectName), s.repoName);
+  }
+  return (s) => s.repoName ?? alias.get(projectKey(s.projectName)) ?? projectKey(s.projectName);
+}
+
 /* ================================================================= */
 /*  Daily activity — heatmap + line/bar                              */
 /* ================================================================= */
@@ -968,11 +992,12 @@ export type ProjectRollup = {
 
 export function groupByProject(sessions: SessionMeta[]): ProjectRollup[] {
   const map = new Map<string, ProjectRollup>();
+  const keyOf = buildProjectKeyResolver(sessions);
   for (const s of sessions) {
     // Group by Fleetlens project key so the same repo reached via different harnesses
     // (Repo/foo, conductor/workspaces/foo, .superset worktree of foo) rolls
     // up into one project. See projectKey for the tradeoff.
-    const repo = projectKey(s.projectName);
+    const repo = keyOf(s);
     const key = repo;
     let cur = map.get(key);
     if (!cur) {

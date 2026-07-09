@@ -550,6 +550,7 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
     filePath: file.filePath,
     projectName,
     worktreeName: project?.worktreeName,
+    repoName: project?.repoName,
     projectDir,
     sessionId,
     firstTimestamp,

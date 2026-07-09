@@ -582,6 +582,7 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
       projectDir: f.projectDir,
       projectName: project.projectName,
       worktreeName: project.worktreeName,
+      repoName: project.repoName,
       ...(wf.workflowCount > 0
         ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
         : {}),
@@ -621,6 +622,7 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
       projectDir: f.projectDir,
       projectName: project.projectName,
       worktreeName: project.worktreeName,
+      repoName: project.repoName,
       events,
       ...(wf.workflowCount > 0
         ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }

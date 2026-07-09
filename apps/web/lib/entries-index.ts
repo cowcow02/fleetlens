@@ -8,8 +8,8 @@ import {
   readDayDigest,
 } from "@claude-lens/entries/fs";
 import type { Entry, DayOutcome, DayHelpfulness, DayDigest } from "@claude-lens/entries";
-import { projectKey } from "@claude-lens/parser";
-import { cclensPath } from "@claude-lens/parser/fs";
+import { sessionProjectKey } from "@claude-lens/parser";
+import { cclensPath, resolveProjectIdentity } from "@claude-lens/parser/fs";
 import { outcomePriority } from "@/components/outcome-pill";
 
 export type EntriesIndex = {
@@ -79,7 +79,7 @@ export async function buildEntriesIndex(): Promise<EntriesIndex> {
     if (dlist) dlist.push(e); else byDay.set(e.local_day, [e]);
 
     // Keyed by the same project key used by /projects and team sync.
-    const repo = projectKey(e.project);
+    const repo = sessionProjectKey(resolveProjectIdentity(e.project));
     const plist = byProject.get(repo);
     if (plist) plist.push(e); else byProject.set(repo, [e]);
   }

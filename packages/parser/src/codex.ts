@@ -342,6 +342,7 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     filePath: file.filePath,
     projectName,
     worktreeName: project?.worktreeName,
+    repoName: project?.repoName,
     projectDir,
     sessionId: file.sessionId,
     firstTimestamp,
