@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { cclensPath } from "@claude-lens/parser/fs";
 import type { UsageSnapshot } from "./api.js";
 
 /**
@@ -44,9 +45,25 @@ export class ZaiApiError extends Error {
 }
 
 function resolveApiKey(): string | null {
+  // Primary: Fleetlens credential store (~/.cclens/credentials.json, 0o600),
+  // set via the Settings page. This is the dedicated store the security
+  // policy mandates for third-party API keys.
+  try {
+    const p = cclensPath("credentials.json");
+    if (existsSync(p)) {
+      const store = JSON.parse(readFileSync(p, "utf8")) as {
+        zai?: { apiKey?: string };
+      };
+      if (store.zai?.apiKey) return store.zai.apiKey;
+    }
+  } catch { /* corrupt/missing — fall through */ }
+
+  // Fallback: env vars for dev convenience and existing shell-config users.
   const envKey = process.env.ZAI_API_KEY || process.env.GLM_API_KEY;
   if (envKey) return envKey;
 
+  // Fallback: well-known file locations for users who set up Z.ai before
+  // the Fleetlens credential store shipped.
   const candidates = [
     path.join(os.homedir(), ".config", "zai", "key.json"),
     path.join(os.homedir(), ".config", "openusage", "zai.json"),
