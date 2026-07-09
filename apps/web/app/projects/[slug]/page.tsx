@@ -17,7 +17,7 @@ import { OutcomePill, OUTCOME_STYLES } from "@/components/outcome-pill";
 import { HelpfulnessSparkline } from "@/components/helpfulness-sparkline";
 import { buildEntriesIndex, listCachedDayDigests } from "@/lib/entries-index";
 import { formatDuration, formatRelative, prettyProjectName } from "@/lib/format";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Github } from "lucide-react";
 import { ProjectLocalFoldersButton, type ProjectLocalFolder } from "./local-folders-button";
 
 function lastNDays(n: number): string[] {
@@ -267,8 +267,16 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
                 href={projectRemote.webUrl}
                 target="_blank"
                 rel="noreferrer"
-                style={{ color: "var(--af-text-secondary)", textDecoration: "none" }}
+                title={projectRemote.url}
+                style={{
+                  color: "var(--af-text-secondary)",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
               >
+                {projectRemote.host === "github.com" && <Github size={12} aria-label="GitHub" />}
                 {projectRemote.host === "github.com"
                   ? `${projectRemote.owner}/${projectRemote.name}`
                   : `${projectRemote.host}/${projectRemote.owner}/${projectRemote.name}`}

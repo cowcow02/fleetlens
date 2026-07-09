@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FolderOpen, X } from "lucide-react";
+import { FolderOpen, Github, X } from "lucide-react";
 import { formatRelative } from "@/lib/format";
 
 export type ProjectLocalFolder = {
@@ -325,13 +325,24 @@ export function ProjectLocalFoldersButton({
                                     href={folder.remote.webUrl}
                                     target="_blank"
                                     rel="noreferrer"
-                                    style={{ color: "var(--af-text-secondary)" }}
+                                    title={folder.remote.url}
+                                    style={{
+                                      color: "var(--af-text-secondary)",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 5,
+                                    }}
                                   >
+                                    {folder.remote.host === "github.com" && (
+                                      <Github size={11} aria-label="GitHub" />
+                                    )}
                                     {folder.remote.owner}/{folder.remote.name}
                                   </a>
-                                  <span style={{ color: "var(--af-text-tertiary)" }}>
-                                    {" \u00b7 "}{folder.remote.host}
-                                  </span>
+                                  {folder.remote.host !== "github.com" && (
+                                    <span style={{ color: "var(--af-text-tertiary)" }}>
+                                      {" \u00b7 "}{folder.remote.host}
+                                    </span>
+                                  )}
                                 </span>
                               </>
                             )}
