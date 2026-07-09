@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { groupByProject } from "../src/analytics.js";
 import { clearCaches, listSessions } from "../src/fs.js";
-import { resolveProjectIdentity } from "../src/git-project.js";
+import { parseRemote, readGitFolder, resolveProjectIdentity } from "../src/git-project.js";
 
 let root: string;
 
@@ -33,15 +33,25 @@ function withHome<T>(home: string, fn: () => T): T {
   }
 }
 
-function makeRepo(dir: string): void {
+function makeRepo(dir: string, remoteUrl?: string): void {
   mkdirSync(join(dir, ".git"), { recursive: true });
-  writeFileSync(join(dir, ".git", "config"), "[core]\n\trepositoryformatversion = 0\n");
+  mkdirSync(join(dir, ".git", "refs", "heads"), { recursive: true });
+  mkdirSync(join(dir, ".git", "refs", "remotes", "origin"), { recursive: true });
+  writeFileSync(
+    join(dir, ".git", "config"),
+    "[core]\n\trepositoryformatversion = 0\n" +
+      (remoteUrl ? `[remote "origin"]\n\turl = ${remoteUrl}\n` : ""),
+  );
+  writeFileSync(join(dir, ".git", "HEAD"), "ref: refs/heads/main\n");
+  writeFileSync(join(dir, ".git", "refs", "heads", "main"), "abc123\n");
+  writeFileSync(join(dir, ".git", "refs", "remotes", "origin", "HEAD"), "ref: refs/remotes/origin/main\n");
 }
 
-function makeLinkedWorktree(main: string, wt: string, name: string): void {
+function makeLinkedWorktree(main: string, wt: string, name: string, branch = name): void {
   const wtGitDir = join(main, ".git", "worktrees", name);
   mkdirSync(wtGitDir, { recursive: true });
   writeFileSync(join(wtGitDir, "commondir"), "../..\n");
+  writeFileSync(join(wtGitDir, "HEAD"), `ref: refs/heads/${branch}\n`);
   mkdirSync(wt, { recursive: true });
   writeFileSync(join(wt, ".git"), `gitdir: ${wtGitDir}\n`);
 }
@@ -63,6 +73,90 @@ function writeSession(projectsRoot: string, dir: string, id: string, cwd: string
     }) + "\n",
   );
 }
+
+describe("parseRemote", () => {
+  it("normalizes GitHub HTTPS and SSH origin URLs", () => {
+    expect(parseRemote("https://github.com/cowcow02/fleetlens.git")).toEqual({
+      host: "github.com",
+      owner: "cowcow02",
+      name: "fleetlens",
+      url: "https://github.com/cowcow02/fleetlens.git",
+      webUrl: "https://github.com/cowcow02/fleetlens",
+    });
+    expect(parseRemote("git@github.com:cowcow02/fleetlens.git")).toEqual({
+      host: "github.com",
+      owner: "cowcow02",
+      name: "fleetlens",
+      url: "git@github.com:cowcow02/fleetlens.git",
+      webUrl: "https://github.com/cowcow02/fleetlens",
+    });
+  });
+
+  it("supports nested owners on non-GitHub remotes", () => {
+    expect(parseRemote("ssh://git@example.com/org/platform/repo.git")).toEqual({
+      host: "example.com",
+      owner: "org/platform",
+      name: "repo",
+      url: "ssh://git@example.com/org/platform/repo.git",
+      webUrl: "https://example.com/org/platform/repo",
+    });
+  });
+
+  it("ignores origin URLs without an owner and repo name", () => {
+    expect(parseRemote("github.com/fleetlens")).toBeUndefined();
+  });
+});
+
+describe("readGitFolder", () => {
+  it("reports missing folders without throwing", () => {
+    expect(readGitFolder(join(root, "already-deleted"))).toEqual({
+      exists: false,
+      isWorktree: false,
+    });
+  });
+
+  it("reads branch, default branch, and remote for a live repo checkout", () => {
+    const repo = join(root, "claude-lens");
+    makeRepo(repo, "git@github.com:cowcow02/fleetlens.git");
+    mkdirSync(join(repo, "apps", "web"), { recursive: true });
+
+    expect(readGitFolder(join(repo, "apps", "web"))).toEqual({
+      exists: true,
+      isWorktree: false,
+      branch: "main",
+      defaultBranch: "main",
+      remote: {
+        host: "github.com",
+        owner: "cowcow02",
+        name: "fleetlens",
+        url: "git@github.com:cowcow02/fleetlens.git",
+        webUrl: "https://github.com/cowcow02/fleetlens",
+      },
+    });
+  });
+
+  it("reads branch state from a linked worktree and repo state from the common git dir", () => {
+    const main = join(root, "claude-lens");
+    const wt = join(root, "scratch", "feature-one");
+    makeRepo(main, "https://github.com/cowcow02/fleetlens.git");
+    makeLinkedWorktree(main, wt, "feature-one", "feature/one");
+    mkdirSync(join(wt, "packages", "parser"), { recursive: true });
+
+    expect(readGitFolder(join(wt, "packages", "parser"))).toEqual({
+      exists: true,
+      isWorktree: true,
+      branch: "feature/one",
+      defaultBranch: "main",
+      remote: {
+        host: "github.com",
+        owner: "cowcow02",
+        name: "fleetlens",
+        url: "https://github.com/cowcow02/fleetlens.git",
+        webUrl: "https://github.com/cowcow02/fleetlens",
+      },
+    });
+  });
+});
 
 describe("resolveProjectIdentity", () => {
   it("uses the nearest .git directory as the project root", () => {

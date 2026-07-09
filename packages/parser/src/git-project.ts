@@ -99,7 +99,7 @@ function originUrl(configText: string): string | undefined {
   return undefined;
 }
 
-function parseRemote(url: string): GitRemote | undefined {
+export function parseRemote(url: string): GitRemote | undefined {
   const m = url.match(REMOTE_URL_RE);
   if (!m) return undefined;
   const host = m[1]!;

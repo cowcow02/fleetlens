@@ -7,6 +7,7 @@ import {
   summarizeBursts,
   detectParallelRuns,
   highLevelMetrics,
+  buildProjectKeyResolver,
   groupByProject,
   sessionAirTimeMs,
   sessionDay,
@@ -407,6 +408,43 @@ describe("groupByProject — Conductor workspaces", () => {
   });
 });
 
+describe("buildProjectKeyResolver", () => {
+  it("backfills pruned worktrees from live checkouts that share their folder key", () => {
+    const live = mkMeta("live", "claude-lens", "2026-04-10T10:00:00Z", "2026-04-10T11:00:00Z", {
+      repoName: "fleetlens",
+    });
+    const prunedWorktree = mkMeta("pruned-wt", "claude-lens", "2026-04-10T12:00:00Z", "2026-04-10T13:00:00Z", {
+      projectName: "/Users/me/Repo/claude-lens/.worktrees/deleted-proof",
+      projectDir: "-Users-me-Repo-claude-lens--worktrees-deleted-proof",
+      cwd: "/Users/me/Repo/claude-lens/.worktrees/deleted-proof",
+      worktreeName: "deleted-proof",
+    });
+    const prunedConductor = mkMeta("pruned-cond", "claude-lens", "2026-04-10T14:00:00Z", "2026-04-10T15:00:00Z", {
+      projectName: "/Users/me/conductor/workspaces/claude-lens/asuncion",
+      projectDir: "-Users-me-conductor-workspaces-claude-lens-asuncion",
+      cwd: "/Users/me/conductor/workspaces/claude-lens/asuncion",
+      worktreeName: "asuncion",
+    });
+    const unrelated = mkMeta("unrelated", "scratch", "2026-04-10T16:00:00Z", "2026-04-10T17:00:00Z");
+    const renamedFolder = mkMeta("renamed", "checkout-folder", "2026-04-10T18:00:00Z", "2026-04-10T19:00:00Z", {
+      repoName: "actual-upstream-name",
+    });
+
+    const keyOf = buildProjectKeyResolver([
+      prunedWorktree,
+      prunedConductor,
+      live,
+      unrelated,
+      renamedFolder,
+    ]);
+
+    expect(keyOf(live)).toBe("fleetlens");
+    expect(keyOf(prunedWorktree)).toBe("fleetlens");
+    expect(keyOf(prunedConductor)).toBe("fleetlens");
+    expect(keyOf(unrelated)).toBe("scratch");
+    expect(keyOf(renamedFolder)).toBe("actual-upstream-name");
+  });
+});
 
 describe("sessionDay", () => {
   it("returns the local day for firstTimestamp", () => {

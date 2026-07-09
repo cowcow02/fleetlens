@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useMemo } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { AgentKind, SessionMeta } from "@claude-lens/parser";
-import { getAgentMetadata, isAgentKind } from "@claude-lens/parser";
+import { buildProjectKeyResolver, getAgentMetadata, isAgentKind, projectKey } from "@claude-lens/parser";
 import type { DayOutcome, EntryEnrichmentStatus } from "@claude-lens/entries";
 import {
   formatDuration,
@@ -46,7 +46,18 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
   // Filter state lives in the URL — back/forward replays the same view, and
   // returning from a session detail page restores what the user had picked.
   const query = searchParams.get("q") ?? "";
-  const project = searchParams.get("project") ?? "all";
+  const keyOf = useMemo(
+    () => buildProjectKeyResolver(rows.map((r) => r.session)),
+    [rows],
+  );
+  // Older links carried the raw projectName path. Resolve those onto the
+  // project key so /sessions?project=… selects the same set as /projects/<key>.
+  const project = useMemo(() => {
+    const raw = searchParams.get("project") ?? "all";
+    if (raw === "all" || !raw.startsWith("/")) return raw;
+    const match = rows.find((r) => r.session.projectName === raw);
+    return match ? keyOf(match.session) : projectKey(raw);
+  }, [searchParams, rows, keyOf]);
   const agentParam = searchParams.get("agent");
   const agent: AgentKind | "all" = isAgentKind(agentParam) ? agentParam : "all";
   const sortBy: SortBy = isSortBy(searchParams.get("sort"))
@@ -72,9 +83,9 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
   const setSortBy = (v: SortBy) => updateParam("sort", v, "newest");
 
   const projects = useMemo(() => {
-    const s = new Set(rows.map((r) => r.session.projectName));
+    const s = new Set(rows.map((r) => keyOf(r.session)));
     return ["all", ...Array.from(s).sort()];
-  }, [rows]);
+  }, [rows, keyOf]);
 
   const agentOptions = useMemo(() => {
     const counts = new Map<AgentKind, number>();
@@ -87,7 +98,7 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
 
   const filtered = useMemo(() => {
     let items = rows.slice();
-    if (project !== "all") items = items.filter((r) => r.session.projectName === project);
+    if (project !== "all") items = items.filter((r) => keyOf(r.session) === project);
     if (agent !== "all")
       items = items.filter((r) => (r.session.agent ?? "claude-code") === agent);
     if (query) {
@@ -126,7 +137,7 @@ export function SessionsGrid({ rows }: { rows: SessionRow[] }) {
     else if (sortBy === "outcome")
       items.sort((a, b) => outcomePriority(b.outcome) - outcomePriority(a.outcome));
     return items;
-  }, [rows, project, agent, query, sortBy]);
+  }, [rows, project, agent, query, sortBy, keyOf]);
 
   return (
     <div>
