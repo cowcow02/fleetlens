@@ -49,7 +49,7 @@ function folderPathForSession(s: SessionMeta): string | undefined {
 function aggregationReason(s: SessionMeta, folderPath: string): string {
   if (s.worktreeName) return `worktree "${s.worktreeName}" -> project root`;
   if (folderPath === s.projectName) return "project root";
-  return "session cwd -> project root";
+  return "cwd inside git project -> project root";
 }
 
 function buildProjectLocalFolders(sessions: SessionMeta[]): ProjectLocalFolder[] {

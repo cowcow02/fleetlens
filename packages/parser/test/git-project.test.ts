@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { groupByProject } from "../src/analytics.js";
@@ -69,6 +69,17 @@ describe("resolveProjectIdentity", () => {
     expect(resolveProjectIdentity(join(wt, "apps", "web"))).toEqual({
       projectName: realpathSync(main),
       worktreeName: "feature-one",
+    });
+  });
+
+  it("normalizes symlinked cwd paths before walking Git metadata", () => {
+    const repo = join(root, "main-repo");
+    const link = join(root, "main-repo-link");
+    makeRepo(repo);
+    symlinkSync(repo, link);
+
+    expect(resolveProjectIdentity(join(link, "packages", "web"))).toEqual({
+      projectName: realpathSync(repo),
     });
   });
 

@@ -309,7 +309,7 @@ export function ProjectLocalFoldersButton({
                                 color: "var(--af-accent)",
                               }}
                             >
-                              Asked Finder to open this folder.
+                              Folder opened.
                             </div>
                           )}
                         </div>
@@ -320,7 +320,7 @@ export function ProjectLocalFoldersButton({
                           onClick={() => openFolder(folder.path)}
                           style={{ whiteSpace: "nowrap" }}
                         >
-                          {isBusy ? "Opening..." : "Open in Finder"}
+                          {isBusy ? "Opening..." : "Open folder"}
                         </button>
                       </div>
                     );

@@ -63,12 +63,14 @@ function realpathOrSelf(p: string): string {
 }
 
 export function resolveProjectIdentity(cwd: string): ProjectIdentity {
-  const normalized = cwd.replace(/\/{2,}/g, "/");
+  const normalized = realpathOrSelf(cwd.replace(/\/{2,}/g, "/"));
   try {
     const git = nearestDotGit(normalized);
     if (git) {
       const projectRoot = realpathOrSelf(projectRootFromCommonDir(git.commonDir) ?? git.root);
       const gitRoot = realpathOrSelf(git.root);
+      // nearestDotGit stops at the checkout root, so its basename is the
+      // user-visible worktree folder for arbitrary linked-worktree layouts.
       const wt = projectRoot !== gitRoot
         ? pathWorktreeName(normalized) ?? basename(git.root)
         : undefined;

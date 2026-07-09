@@ -188,9 +188,37 @@ async function realpathOrSelf(p) {
   }
 }
 
+const WORKTREE_MARKERS = [
+  "/.claude/worktrees/",
+  "/.worktrees/",
+  "/claude/worktrees/",
+];
+const CONDUCTOR_RE = /\/conductor\/workspaces\/[^/]+\/([^/]+)(?:\/|$)/;
+const SUPERSET_MARKER = "/.superset/worktrees/";
+const UUID_SEG_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
 function fallbackCanonicalProjectName(cwd) {
-  const wtIdx = cwd.lastIndexOf("/.worktrees/");
-  return wtIdx >= 0 ? cwd.slice(0, wtIdx) : cwd;
+  const normalized = cwd.replace(/\/{2,}/g, "/");
+  for (const marker of WORKTREE_MARKERS) {
+    const idx = normalized.lastIndexOf(marker);
+    if (idx >= 0) return normalized.slice(0, idx);
+  }
+  const conductor = CONDUCTOR_RE.exec(normalized);
+  if (conductor) {
+    const workspaceName = conductor[1];
+    const trailingSlash = conductor[0].endsWith("/") ? 1 : 0;
+    const canonicalEndIdx = conductor.index + conductor[0].length - workspaceName.length - 1 - trailingSlash;
+    return normalized.slice(0, canonicalEndIdx);
+  }
+  const supersetIdx = normalized.indexOf(SUPERSET_MARKER);
+  if (supersetIdx >= 0) {
+    const segs = normalized.slice(supersetIdx + SUPERSET_MARKER.length).split("/").filter(Boolean);
+    if (segs.length > 0) {
+      const workspaceName = UUID_SEG_RE.test(segs[0]) ? (segs[1] ?? segs[0]) : segs[0];
+      return normalized.slice(0, supersetIdx) + SUPERSET_MARKER + workspaceName;
+    }
+  }
+  return normalized;
 }
 
 /** Mirrors parser projectKey: .git-derived project root when possible,
