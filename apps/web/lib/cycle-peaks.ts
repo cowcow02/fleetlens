@@ -69,7 +69,11 @@ export function previousCyclesTrend(
     for (const p of points) {
       const r = p[realKey];
       if (typeof r === "number" && r > peak) { peak = r; source = "real"; }
-      const v = p[predKey] ?? 0;
+      // Predicted is a forward extrapolation with no upper anchor — across a
+      // snapshot gap on a heavy-spend stretch it runs past 100pp and overflows
+      // the bar. Utilization is a share of the plan limit, so cap it. Real
+      // readings are left alone: extra-usage overage can exceed 100.
+      const v = Math.min(p[predKey] ?? 0, 100);
       if (v > peak) { peak = v; source = "predicted"; }
     }
     cycles.push({
