@@ -519,14 +519,25 @@ export async function getLatestCodexUsage(
       const sevenResetUnix = numberOf(secondary?.resets_at);
       const planType =
         typeof rl.plan_type === "string" ? (rl.plan_type as string) : null;
+      // A token_count's used_percent belongs to the window that resets at
+      // resets_at. Once that time has passed the window has rolled and the
+      // percent is stale — Codex only emits a fresh (~0%) event on the
+      // next request, so a quiet post-reset gap would otherwise show the
+      // old value forever (we persist snapshots to a log the UI re-reads).
+      // Treat an expired window as a fresh one: 0% used.
+      const nowMs = Date.now();
+      const fiveExpired =
+        fiveResetUnix !== undefined && nowMs > fiveResetUnix * 1000;
+      const sevenExpired =
+        sevenResetUnix !== undefined && nowMs > sevenResetUnix * 1000;
       return {
         five_hour: {
-          utilization: fivePct ?? null,
+          utilization: fiveExpired ? 0 : (fivePct ?? null),
           resets_at:
             fiveResetUnix !== undefined ? new Date(fiveResetUnix * 1000).toISOString() : null,
         },
         seven_day: {
-          utilization: sevenPct ?? null,
+          utilization: sevenExpired ? 0 : (sevenPct ?? null),
           resets_at:
             sevenResetUnix !== undefined
               ? new Date(sevenResetUnix * 1000).toISOString()
