@@ -33,6 +33,10 @@ export type UsageSnapshot = {
     utilization: number | null;
   } | null;
   plan_type?: string | null;
+  /** Monthly web-search / web-reader / Zread quota. Z.ai-only. A
+   *  percentage meter (used = 0–100, limit = 100), matching Z.ai's
+   *  portal display — NOT a raw usage/remaining split. */
+  web_search_quota?: { used: number | null; limit: number | null } | null;
 };
 
 function usageLogPath(): string {

@@ -14,7 +14,8 @@
   },
   "files": [
     "dist",
-    "app"
+    "app",
+    "menubar"
   ],
   "scripts": {
     "build": "node build.mjs",

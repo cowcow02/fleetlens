@@ -55,6 +55,11 @@ async function main() {
       await autostart(args.slice(1));
       break;
     }
+    case "menubar": {
+      const { menubar } = await import("./commands/menubar.js");
+      await menubar(args.slice(1));
+      break;
+    }
     case "team": {
       const { team } = await import("./commands/team.js");
       await team(args.slice(1));
@@ -95,6 +100,7 @@ Advanced:
   start --no-daemon                 Start only the web server (no daemon)
   daemon <start|stop|status|logs>   Manage the usage daemon by itself
   autostart <install|uninstall|status>   Run the usage daemon at login (macOS launchd)
+  menubar <install|uninstall|open|status>   Native macOS menu bar widget (Claude/Codex/Z.ai usage)
 
 Team:
   team join <url> <token>           Pair with a team server (browser setup)
