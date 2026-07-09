@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { fetchZaiUsage, ZaiApiError } from "./usage/zai.js";
-import { appendSnapshot } from "./usage/storage.js";
+import { appendSnapshot, pruneAgent } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
 import { isUsable, readOAuthCredentials } from "./usage/token.js";
@@ -248,8 +248,10 @@ async function tick(): Promise<PollOutcome> {
     );
   } catch (err) {
     if (err instanceof ZaiApiError && err.code === "no_key") {
-      // Silent skip — user hasn't configured Z.ai; not an error worth logging
-      // every 5 minutes. Other codes (http/network/parse) are real failures.
+      // Not configured (or key removed via Settings): drop any stale zai line
+      // so the widget/dashboard stop showing obsolete usage. Other codes
+      // (http/network/parse) are real failures worth logging.
+      pruneAgent(USAGE_LOG, "zai");
     } else {
       log("warn", `zai poll failed: ${(err as Error).message}`);
     }

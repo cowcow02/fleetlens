@@ -1,6 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { cclensPath } from "@claude-lens/parser/fs";
 import type { UsageSnapshot } from "./api.js";
 
@@ -45,38 +43,22 @@ export class ZaiApiError extends Error {
 }
 
 function resolveApiKey(): string | null {
-  // Primary: Fleetlens credential store (~/.cclens/credentials.json, 0o600),
-  // set via the Settings page. This is the dedicated store the security
-  // policy mandates for third-party API keys.
+  // The Fleetlens credential store (~/.cclens/credentials.json, 0o600) is the
+  // single source of truth, set via the Settings page. Env vars and legacy
+  // ~/.config key files are intentionally not consulted: the security policy
+  // mandates a dedicated store, and an old ZAI_API_KEY or stale config file
+  // must not silently keep Z.ai polling after the user removes it in Settings.
+  // If the store is absent the user simply hasn't configured Z.ai yet.
   try {
     const p = cclensPath("credentials.json");
     if (existsSync(p)) {
       const store = JSON.parse(readFileSync(p, "utf8")) as {
         zai?: { apiKey?: string };
       };
-      if (store.zai?.apiKey) return store.zai.apiKey;
+      return store.zai?.apiKey ?? null;
     }
-  } catch { /* corrupt/missing — fall through */ }
-
-  // Fallback: env vars for dev convenience and existing shell-config users.
-  const envKey = process.env.ZAI_API_KEY || process.env.GLM_API_KEY;
-  if (envKey) return envKey;
-
-  // Fallback: well-known file locations for users who set up Z.ai before
-  // the Fleetlens credential store shipped.
-  const candidates = [
-    path.join(os.homedir(), ".config", "zai", "key.json"),
-    path.join(os.homedir(), ".config", "openusage", "zai.json"),
-  ];
-  for (const p of candidates) {
-    try {
-      if (!existsSync(p)) continue;
-      const raw = JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>;
-      const key = typeof raw.apiKey === "string" ? raw.apiKey : null;
-      if (key) return key;
-    } catch {
-      // Skip unreadable / malformed key files and try the next source.
-    }
+  } catch {
+    // Corrupt store — treat as unconfigured rather than throwing.
   }
   return null;
 }
