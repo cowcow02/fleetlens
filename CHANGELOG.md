@@ -6,7 +6,19 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
 ## [Unreleased]
 
-## [0.15.3] — 2026-07-09
+## [0.15.4] — 2026-07-09
+
+Safe upgrade from 0.15.3.
+
+### Added
+- **Z.ai (GLM Coding Plan) usage tracking.** A new Z.ai API key section in Settings (`/settings`) lets you add your Z.ai key to track GLM Coding Plan utilization alongside Claude Code and Codex. The key is validated live before saving — a bad/expired key is rejected with a clear error — and on success the `/usage` tab and menu-bar widget populate **instantly** (no waiting for the daemon). Removing the key also prunes the stale usage data immediately. The secure credential store at `~/.cclens/credentials.json` (0o600) is the sole key source; lingering `ZAI_API_KEY` env vars and legacy `~/.config/zai/key.json` files are no longer consulted.
+- **Native macOS menu bar widget.** A Swift app (`~/Applications/FleetlensMenubar.app`) shows live Claude Code / Codex / Z.ai plan utilization (5h/7d bars, ideal-pace ticks, reset countdowns, burn-rate, and the monthly web-search meter). Installable via the Settings page or `fleetlens menubar install`.
+
+### Fixed
+- **Codex 5-hour window no longer shows stale usage past reset.** Codex only emits a fresh ~0% `token_count` on the next request after a window resets. Previously a quiet post-reset gap would keep showing the prior window's `used_percent` (e.g. 64%) until a new Codex call happened. Expired windows are now treated as fresh (0%), matching the actual reset.
+- **Z.ai key removed from Settings actually stays removed.** The daemon's `no_key` branch previously skipped silently, leaving the old `zai` line in `usage.jsonl` — the widget kept showing the stale value after removal. The line is now pruned on both removal and the next daemon tick.
+- **Invalid Z.ai keys are no longer saved.** Z.ai returns HTTP 200 even for bad keys (the error lives in the body as `{"code":401,...}`). The Save flow now inspects the response body, not just the HTTP status, so a bogus key is rejected and never persisted.
+- **Error messages in the Z.ai Settings section are now colored red** instead of green, so a rejected key is visually distinct from a successful save.
 
 Safe upgrade from 0.15.2.
 

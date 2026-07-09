@@ -7,6 +7,7 @@ export function ZaiCredentialsForm({ initial }: { initial: CredentialMasked }) {
   const [apiKey, setApiKey] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [savedIsError, setSavedIsError] = useState(false);
   const [configured, setConfigured] = useState(initial.zai?.configured ?? false);
   const [hint, setHint] = useState<string | null>(initial.zai?.hint ?? null);
   const [editing, setEditing] = useState(false);
@@ -15,6 +16,7 @@ export function ZaiCredentialsForm({ initial }: { initial: CredentialMasked }) {
     e.preventDefault();
     setSaving(true);
     setSavedMsg(null);
+    setSavedIsError(false);
     const res = await fetch("/api/settings/credentials", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -23,6 +25,7 @@ export function ZaiCredentialsForm({ initial }: { initial: CredentialMasked }) {
     const json = await res.json().catch(() => null);
     setSaving(false);
     if (!res.ok) {
+      setSavedIsError(true);
       setSavedMsg(json?.error ?? `Error ${res.status}`);
       return;
     }
@@ -36,6 +39,7 @@ export function ZaiCredentialsForm({ initial }: { initial: CredentialMasked }) {
   async function handleRemove() {
     setApiKey("");
     setSavedMsg(null);
+    setSavedIsError(false);
     // Submit an empty key to trigger deleteZaiKey.
     const res = await fetch("/api/settings/credentials", {
       method: "PUT",
@@ -48,6 +52,7 @@ export function ZaiCredentialsForm({ initial }: { initial: CredentialMasked }) {
       setHint(null);
       setSavedMsg("Z.ai API key removed.");
     } else {
+      setSavedIsError(true);
       setSavedMsg(json?.error ?? "Error removing key.");
     }
   }
@@ -102,7 +107,7 @@ export function ZaiCredentialsForm({ initial }: { initial: CredentialMasked }) {
         )}
       </div>
       {savedMsg && (
-        <p className={`text-sm ${savedMsg.includes("Error") || savedMsg.includes("error") ? "text-red-600" : "text-green-600"}`}>
+        <p className={`text-sm ${savedIsError ? "text-red-600" : "text-green-600"}`}>
           {savedMsg}
         </p>
       )}
