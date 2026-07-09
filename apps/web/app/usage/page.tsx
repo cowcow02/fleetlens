@@ -71,7 +71,9 @@ export default async function UsagePage({
   const tier = selected === "claude-code" ? readCachedPlanTier() : null;
   const calibration = selected === "claude-code" ? await readCalibrationDump() : null;
   const predicted = calibration ? predictedSeriesFor(calibration) : null;
-  const cycles7d = calibration ? previousCyclesTrend(calibration, "7d") : [];
+  // A quarter of 7-day cycles. The bars are a grid of equal columns, so a
+  // longer history just narrows them rather than overflowing.
+  const cycles7d = calibration ? previousCyclesTrend(calibration, "7d", 12) : [];
 
   return (
     <div
