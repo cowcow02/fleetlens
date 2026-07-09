@@ -29,3 +29,19 @@ export {
   readMonthDigest, writeMonthDigest, listMonthDigestKeys,
   getCurrentMonthDigestFromCache, setCurrentMonthDigestInCache,
 } from "./digest-fs.js";
+export {
+  readCredentials,
+  readCredentialsMasked,
+  writeZaiKey,
+  deleteZaiKey,
+  deleteZaiKeyAndPrune,
+  hasZaiKey,
+  fetchZaiUsage,
+  validateAndSnapshotZaiKey,
+} from "./credentials.js";
+export type {
+  CredentialStore,
+  ZaiCredentials,
+  CredentialMasked,
+  ZaiMasked,
+} from "./credentials.js";

@@ -2,10 +2,15 @@ import { readSettings } from "@claude-lens/entries/node";
 import { AiFeaturesForm } from "./ai-features-form";
 import { readAutostartState } from "@/lib/autostart-data";
 import { AutostartToggle } from "@/components/autostart-toggle";
+import { readMenubarState } from "@/lib/menubar-data";
+import { MenubarInstall } from "@/components/menubar-install";
+import { readCredentialsMasked } from "@claude-lens/entries/node";
+import { ZaiCredentialsForm } from "@/components/zai-credentials-form";
 
 // Layout mirrors /team: max-w-3xl, header + subtitle, card-style sections.
 export default function SettingsPage() {
   const s = readSettings();
+  const creds = readCredentialsMasked();
   return (
     <main className="mx-auto max-w-3xl p-6 space-y-8">
       <header>
@@ -22,6 +27,27 @@ export default function SettingsPage() {
           reboot. Team pairing turns this on by default.
         </p>
         <AutostartToggle initial={readAutostartState()} />
+      </section>
+
+      <section className="af-card space-y-3">
+        <h2 className="text-lg font-medium">Menu bar widget</h2>
+        <p className="text-sm text-gray-500">
+          Native macOS menu bar widget showing live Claude Code / Codex / Z.ai plan
+          utilization, reset countdowns, and burn-rate. Installs to ~/Applications
+          and updates as the daemon polls.
+        </p>
+        <MenubarInstall initial={readMenubarState()} />
+      </section>
+
+      <section className="af-card space-y-3">
+        <h2 className="text-lg font-medium">Z.ai API key</h2>
+        <p className="text-sm text-gray-500">
+          Optional. Add your Z.ai (GLM Coding Plan) API key so the daemon can track
+          your Z.ai usage alongside Claude Code and Codex. The key is stored in
+          ~/.cclens/credentials.json — nothing leaves your machine except the same
+          API calls Z.ai&apos;s own subscription UI makes.
+        </p>
+        <ZaiCredentialsForm initial={creds} />
       </section>
 
       <section className="af-card space-y-3">

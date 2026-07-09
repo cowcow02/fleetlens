@@ -70,6 +70,14 @@ export const COWORK_METADATA: AgentMetadata = {
   iconChar: "⌘",
 };
 
+export const ZAI_METADATA: AgentMetadata = {
+  kind: "zai",
+  displayName: "Z.ai",
+  shortLabel: "Z.ai",
+  accentColor: "rgb(59, 130, 246)",
+  iconChar: "Z",
+};
+
 /** Ordered list of registered agent metadata. UI iterates this for
  *  badges, tabs, and prompt-template generation. */
 export const agentMetadata: AgentMetadata[] = [
@@ -78,6 +86,7 @@ export const agentMetadata: AgentMetadata[] = [
   GEMINI_METADATA,
   ANTIGRAVITY_METADATA,
   COWORK_METADATA,
+  ZAI_METADATA,
 ];
 
 /** Browser-safe metadata lookup. Returns undefined for unknown kinds. */

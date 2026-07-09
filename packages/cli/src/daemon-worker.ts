@@ -17,7 +17,8 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
-import { appendSnapshot } from "./usage/storage.js";
+import { fetchZaiUsage, ZaiApiError } from "./usage/zai.js";
+import { appendSnapshot, pruneAgent } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
 import { isUsable, readOAuthCredentials } from "./usage/token.js";
@@ -232,6 +233,27 @@ async function tick(): Promise<PollOutcome> {
       );
     } catch (err) {
       log("warn", `${source.kind} poll failed: ${(err as Error).message}`);
+    }
+  }
+  // Z.ai is a third, independent poller branch: like Claude it's a network
+  // API-key call (not a parser agentSource), but unlike Claude its outcome
+  // does NOT drive the daemon's backoff — a bad/missing Z.ai key must not
+  // slow Claude polling, and vice-versa.
+  try {
+    const zaiSnapshot = await fetchZaiUsage();
+    appendSnapshot(USAGE_LOG, zaiSnapshot);
+    log(
+      "info",
+      `zai snapshot 5h=${zaiSnapshot.five_hour.utilization}% 7d=${zaiSnapshot.seven_day.utilization}%`,
+    );
+  } catch (err) {
+    if (err instanceof ZaiApiError && err.code === "no_key") {
+      // Not configured (or key removed via Settings): drop any stale zai line
+      // so the widget/dashboard stop showing obsolete usage. Other codes
+      // (http/network/parse) are real failures worth logging.
+      pruneAgent(USAGE_LOG, "zai");
+    } else {
+      log("warn", `zai poll failed: ${(err as Error).message}`);
     }
   }
   // Claude's poller stays distinct — its return value drives backoff

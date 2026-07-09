@@ -8,6 +8,7 @@ import {
   type LiveEntrySummary,
 } from "@/components/live-sessions-widget";
 import { JobQueueWidget } from "@/components/job-queue-widget";
+import { MenubarInstallBanner } from "@/components/menubar-install-banner";
 import { groupByProject } from "@claude-lens/parser";
 import { listSessions } from "@/lib/data";
 import { latestUsageSnapshot } from "@/lib/usage-data";
@@ -131,6 +132,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               overflow: "auto",
             }}
           >
+            <MenubarInstallBanner />
             {children}
           </main>
         </div>

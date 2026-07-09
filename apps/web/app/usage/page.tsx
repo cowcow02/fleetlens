@@ -149,6 +149,26 @@ export default async function UsagePage({
             </span>
           </span>
         )}
+        {selected === "zai" && latest?.plan_type && (
+          <span
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              padding: "4px 10px",
+              border: "1px solid var(--af-border-subtle)",
+              borderRadius: 999,
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            <span style={{ color: "var(--af-text-tertiary)" }}>plan</span>
+            <span style={{ color: "var(--af-text)", fontWeight: 600 }}>
+              {latest.plan_type}
+            </span>
+          </span>
+        )}
       </header>
 
       {/* Agent tab strip — one Link per agent that has snapshots. */}
@@ -162,6 +182,9 @@ export default async function UsagePage({
             <PreviousCyclesTrend windowLabel="7d" cycles={cycles7d} />
           )}
           <UsageChartsDashboard snapshots={snapshots} predicted={predicted ?? undefined} />
+          {selected === "zai" && latest?.web_search_quota && (
+            <WebSearchQuotaCard quota={latest.web_search_quota} />
+          )}
           <div
             style={{
               fontSize: 11,
@@ -175,6 +198,63 @@ export default async function UsagePage({
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function WebSearchQuotaCard({
+  quota,
+}: {
+  quota: { used: number | null; limit: number | null };
+}) {
+  // web_search_quota is a percentage meter (used = 0–100, limit = 100),
+  // matching Z.ai's portal display — not a raw usage/remaining split.
+  const pct = quota.used ?? 0;
+  return (
+    <div className="af-card" style={{ padding: "16px 18px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 600,
+        }}
+      >
+        Monthly web search
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          marginTop: 8,
+          letterSpacing: "-0.02em",
+          lineHeight: 1.1,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {Math.round(pct)}%
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          height: 6,
+          width: "100%",
+          background: "var(--af-border-subtle)",
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${Math.min(100, pct)}%`,
+            background: "rgb(59, 130, 246)",
+            borderRadius: 999,
+            transition: "width 0.24s ease",
+          }}
+        />
+      </div>
     </div>
   );
 }

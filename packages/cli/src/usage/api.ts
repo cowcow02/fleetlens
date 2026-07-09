@@ -42,8 +42,12 @@ export type UsageSnapshot = {
   seven_day_cowork: UsageWindow | null;
   extra_usage: ExtraUsage | null;
   /** Plan label from the source ("plus", "pro", …). Codex emits this
-   *  on each rate_limits payload; Claude doesn't, so left null there. */
+   *  on each rate_limits payload; Claude doesn't, so left null there.
+   *  Also used by Z.ai for the GLM Coding Plan name. */
   plan_type?: string | null;
+  /** Monthly web-search / web-reader / Zread quota. Z.ai-only (its
+   *  TIME_LIMIT entry); null for all other agents. */
+  web_search_quota?: { used: number | null; limit: number | null } | null;
 };
 
 export class UsageApiError extends Error {
