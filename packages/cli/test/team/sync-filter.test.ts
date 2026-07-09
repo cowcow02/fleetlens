@@ -9,7 +9,7 @@ describe("filterSyncedSessions", () => {
   it("passes everything through without a selection", () => {
     expect(filterSyncedSessions([session("/u/x/Repo/personal")], undefined)).toHaveLength(1);
   });
-  it("filters by repo name, worktree paths collapse to the parent repo", () => {
+  it("filters by project key, worktree paths collapse to the parent repo", () => {
     const kept = filterSyncedSessions(
       [
         session("/u/x/Repo/work"),
@@ -23,5 +23,16 @@ describe("filterSyncedSessions", () => {
       "/u/x/Repo/work",
       "/u/x/Repo/work/.worktrees/feat-1",
     ]);
+  });
+
+  it("filters custom worktree sessions by their parser-resolved project", () => {
+    const kept = filterSyncedSessions(
+      [
+        { ...session("/u/x/scratch/feature-one"), projectName: "/u/x/Repo/work", worktreeName: "feature-one" },
+        { ...session("/u/x/scratch/personal-feature"), projectName: "/u/x/Repo/personal", worktreeName: "personal-feature" },
+      ],
+      sp,
+    );
+    expect(kept.map((s) => s.worktreeName)).toEqual(["feature-one"]);
   });
 });

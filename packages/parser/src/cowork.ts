@@ -17,8 +17,9 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { canonicalProjectName, toLocalDay } from "./analytics.js";
+import { toLocalDay } from "./analytics.js";
 import { summarizeSubagentLines } from "./claude-code.js";
+import { resolveProjectIdentity } from "./git-project.js";
 import { parseTranscript } from "./parser.js";
 import type { SessionDetail, SessionMeta, SubagentRun } from "./types.js";
 
@@ -163,7 +164,7 @@ async function readCoworkMeta(metaPath: string): Promise<CoworkMeta> {
 function resolveProject(
   meta: CoworkMeta,
   spaceIdToPath: Map<string, string>,
-): { projectName: string; projectDir: string; cwd?: string } {
+): { projectName: string; worktreeName?: string; projectDir: string; cwd?: string } {
   let projectPath: string | undefined;
   if (meta.spaceId) projectPath = spaceIdToPath.get(meta.spaceId);
   if (!projectPath && meta.userSelectedFolders && meta.userSelectedFolders.length > 0) {
@@ -172,8 +173,10 @@ function resolveProject(
   if (!projectPath) {
     return { projectName: "cowork:unspaced", projectDir: "cowork-unspaced" };
   }
+  const project = resolveProjectIdentity(projectPath);
   return {
-    projectName: canonicalProjectName(projectPath),
+    projectName: project.projectName,
+    worktreeName: project.worktreeName,
     projectDir: projectPath.replace(/^\//, "-").replace(/\//g, "-"),
     cwd: projectPath,
   };

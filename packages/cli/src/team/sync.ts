@@ -21,7 +21,8 @@ import { readPendingSyncLog, type SyncLogLine } from "./sync-log.js";
 import { writeLastPushSuccess, writeLastPushFailure } from "./last-push.js";
 import { dispatchCommand, type ServerCommand, type CommandResult } from "./commands.js";
 import { getPlanTier } from "../usage/profile.js";
-import { cclensPath, shouldSyncProject } from "@claude-lens/parser/fs";
+import { projectKey } from "@claude-lens/parser";
+import { cclensPath, resolveProjectIdentity, shouldSyncProject } from "@claude-lens/parser/fs";
 
 // Process-scoped to prevent the same command from being dispatched twice
 // when a long backfill spans multiple sync ticks (sync N+1 fires before
@@ -265,7 +266,7 @@ export async function runTeamSync(
     // 5-min tick retries. Within-run dedupe across a multi-day backfill stands.
     resetEnsuredSessions();
     const { listSessions, loadCalibrationCurve } = await import("@claude-lens/parser/fs");
-    const { toLocalDay, projectRepoName } = await import("@claude-lens/parser");
+    const { toLocalDay } = await import("@claude-lens/parser");
     const today = toLocalDay(Date.now());
     // Watermark patches accumulate across the run and merge onto a FRESH disk
     // read at each write — this run only owns watermark keys, so a concurrent
@@ -541,7 +542,7 @@ export async function runTeamSync(
         // Probe auto-detects git email from `git config user.email`. cwd may
         // itself be an excluded repo (daemon launched from it) — don't let its
         // .claude/CLAUDE.md authoring signals ride along.
-        const cwdAllowed = shouldSyncProject(projectRepoName(process.cwd()), config.syncProjects);
+        const cwdAllowed = shouldSyncProject(projectKey(resolveProjectIdentity(process.cwd()).projectName), config.syncProjects);
         artifactSignals = probeArtifactSignals({ day: rollup.day, extraRoots: cwdAllowed ? [process.cwd()] : [] });
       } catch {
         // Probe is best-effort; never block the push path.

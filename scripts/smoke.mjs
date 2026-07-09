@@ -13,9 +13,9 @@
  */
 
 import { setTimeout as sleep } from "node:timers/promises";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:3321";
 const TIMEOUT_MS = 30_000;
@@ -154,22 +154,52 @@ async function findTeamLeadSession() {
   return null;
 }
 
-/**
- * Project URL slugs are repo names — the last path segment of the canonical
- * cwd (worktrees rolled up to their parent repo). This mirrors the parser's
- * `projectRepoName`, which the /projects list and [slug] route both key off.
- * To build a valid URL we read a session file, pull its real cwd, strip any
- * `/.worktrees/<name>` suffix, then take the basename.
- */
-function canonicalProjectName(cwd) {
+async function nearestGitProject(cwd) {
+  if (!cwd || !isAbsolute(cwd)) return null;
+  for (let dir = cwd.replace(/\/+$/, "") || cwd; ; dir = dirname(dir)) {
+    const dotGit = join(dir, ".git");
+    try {
+      const st = await stat(dotGit);
+      if (st.isDirectory()) return await realpathOrSelf(dir);
+      const m = (await readFile(dotGit, "utf8")).match(/^gitdir:\s*(.+)\s*$/m);
+      if (m) {
+        const gitDir = isAbsolute(m[1]) ? m[1] : resolve(dir, m[1]);
+        try {
+          const common = (await readFile(join(gitDir, "commondir"), "utf8")).trim();
+          const commonDir = isAbsolute(common) ? common : resolve(gitDir, common);
+          return await realpathOrSelf(basename(commonDir) === ".git" ? dirname(commonDir) : dir);
+        } catch {
+          return await realpathOrSelf(dir);
+        }
+      }
+    } catch {
+      // keep walking up
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+  }
+}
+
+async function realpathOrSelf(p) {
+  try {
+    return await realpath(p);
+  } catch {
+    return p;
+  }
+}
+
+function fallbackCanonicalProjectName(cwd) {
   const wtIdx = cwd.lastIndexOf("/.worktrees/");
   return wtIdx >= 0 ? cwd.slice(0, wtIdx) : cwd;
 }
 
-function projectRepoName(cwd) {
-  const canonical = canonicalProjectName(cwd).replace(/\/+$/, "");
-  const segs = canonical.split("/").filter(Boolean);
-  return segs[segs.length - 1] || canonical;
+/** Mirrors parser projectKey: .git-derived project root when possible,
+ *  then the canonical path leaf used by /projects and team sync. */
+async function projectKey(cwd) {
+  const canonical = (await nearestGitProject(cwd)) ?? fallbackCanonicalProjectName(cwd);
+  const normalized = canonical.replace(/\/+$/, "");
+  const segs = normalized.split("/").filter(Boolean);
+  return segs[segs.length - 1] || normalized;
 }
 
 async function pickFirstProjectSlug() {
@@ -189,7 +219,7 @@ async function pickFirstProjectSlug() {
           try {
             const obj = JSON.parse(line);
             if (typeof obj?.cwd === "string") {
-              return projectRepoName(obj.cwd);
+              return await projectKey(obj.cwd);
             }
           } catch {
             // skip malformed line

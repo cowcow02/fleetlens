@@ -123,6 +123,8 @@ export type SessionMeta = {
   filePath: string;
   /** human-readable project path (/Users/me/Repo/agentfleet) */
   projectName: string;
+  /** Linked worktree name when this session ran from a secondary checkout. */
+  worktreeName?: string;
   /** raw dir name under ~/.claude/projects/ */
   projectDir: string;
   sessionId: string;

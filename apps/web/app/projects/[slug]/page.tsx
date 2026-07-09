@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { isAbsolute } from "node:path";
 import { listSessions, getSession } from "@/lib/data";
 import {
-  projectRepoName,
+  projectKey,
   detectPrMarkers,
   sessionAirTimeMs,
 } from "@claude-lens/parser";
+import type { SessionMeta } from "@claude-lens/parser";
 import type { DayOutcome, DayHelpfulness } from "@claude-lens/entries";
 import { DashboardView } from "@/components/dashboard-view";
 import { LiveBadge } from "@/components/live-badge";
@@ -15,6 +17,7 @@ import { HelpfulnessSparkline } from "@/components/helpfulness-sparkline";
 import { buildEntriesIndex, listCachedDayDigests } from "@/lib/entries-index";
 import { formatDuration, formatRelative, prettyProjectName } from "@/lib/format";
 import { ArrowLeft } from "lucide-react";
+import { ProjectLocalFoldersButton, type ProjectLocalFolder } from "./local-folders-button";
 
 function lastNDays(n: number): string[] {
   const out: string[] = [];
@@ -34,17 +37,100 @@ const OUTCOME_PRI: Record<DayOutcome, number> = {
   shipped: 6, partial: 5, blocked: 4, exploratory: 3, trivial: 2, idle: 1,
 };
 
+function agentLabel(agent: SessionMeta["agent"]): string {
+  return agent ?? "claude-code";
+}
+
+function folderPathForSession(s: SessionMeta): string | undefined {
+  if (s.cwd) return s.cwd;
+  return isAbsolute(s.projectName) ? s.projectName : undefined;
+}
+
+function aggregationReason(s: SessionMeta, folderPath: string): string {
+  if (s.worktreeName) return `worktree "${s.worktreeName}" -> project root`;
+  if (folderPath === s.projectName) return "project root";
+  return "session cwd -> project root";
+}
+
+function buildProjectLocalFolders(sessions: SessionMeta[]): ProjectLocalFolder[] {
+  const rows = new Map<string, {
+    path: string;
+    canonicalProject: string;
+    reasons: Set<string>;
+    worktreeNames: Set<string>;
+    agents: Set<string>;
+    projectDirs: Set<string>;
+    sessionCount: number;
+    lastActivityMs: number;
+    lastTimestamp?: string;
+    canOpen: boolean;
+  }>();
+
+  for (const s of sessions) {
+    const folderPath = folderPathForSession(s);
+    if (!folderPath) continue;
+    const timestampMs = s.lastTimestamp ? Date.parse(s.lastTimestamp) : 0;
+    const lastActivityMs = s.lastActivityMs
+      ?? (Number.isFinite(timestampMs) ? timestampMs : 0);
+    const existing = rows.get(folderPath);
+    if (existing) {
+      existing.reasons.add(aggregationReason(s, folderPath));
+      if (s.worktreeName) existing.worktreeNames.add(s.worktreeName);
+      existing.agents.add(agentLabel(s.agent));
+      existing.projectDirs.add(s.projectDir);
+      existing.sessionCount += 1;
+      if (lastActivityMs > existing.lastActivityMs) {
+        existing.lastActivityMs = lastActivityMs;
+        existing.lastTimestamp = s.lastTimestamp;
+      }
+      continue;
+    }
+    rows.set(folderPath, {
+      path: folderPath,
+      canonicalProject: s.projectName,
+      reasons: new Set([aggregationReason(s, folderPath)]),
+      worktreeNames: new Set(s.worktreeName ? [s.worktreeName] : []),
+      agents: new Set([agentLabel(s.agent)]),
+      projectDirs: new Set([s.projectDir]),
+      sessionCount: 1,
+      lastActivityMs,
+      lastTimestamp: s.lastTimestamp,
+      canOpen: isAbsolute(folderPath),
+    });
+  }
+
+  return [...rows.values()]
+    .map((row) => ({
+      path: row.path,
+      canonicalProject: row.canonicalProject,
+      reasons: [...row.reasons].sort(),
+      worktreeNames: [...row.worktreeNames].sort(),
+      agents: [...row.agents].sort(),
+      projectDirs: [...row.projectDirs].sort(),
+      sessionCount: row.sessionCount,
+      lastTimestamp: row.lastTimestamp,
+      canOpen: row.canOpen,
+    }))
+    .sort((a, b) => {
+      const aIsRoot = a.path === a.canonicalProject ? 0 : 1;
+      const bIsRoot = b.path === b.canonicalProject ? 0 : 1;
+      if (aIsRoot !== bIsRoot) return aIsRoot - bIsRoot;
+      const aLast = a.lastTimestamp ? Date.parse(a.lastTimestamp) : 0;
+      const bLast = b.lastTimestamp ? Date.parse(b.lastTimestamp) : 0;
+      return bLast - aLast || a.path.localeCompare(b.path);
+    });
+}
+
 export const dynamic = "force-dynamic";
 
 export default async function ProjectDetail({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  // Slugs are repo names (e.g. `claude-lens`) — see projectRepoName. Match any
-  // session in that repo, which folds the parent repo, every `/.worktrees/<name>`
-  // subdir, and the same repo reached via Conductor / Superset into one view.
+  // Slugs are Fleetlens project keys (e.g. `claude-lens`). Parser adapters
+  // resolve each session to one canonical project before this page filters.
   const decodedCanonical = decodeURIComponent(slug);
   const all = await listSessions();
   const projectSessions = all.filter(
-    (s) => projectRepoName(s.projectName) === decodedCanonical,
+    (s) => projectKey(s.projectName) === decodedCanonical,
   );
   if (projectSessions.length === 0) return notFound();
 
@@ -67,6 +153,7 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
     .reduce((a, d) => a + sessionAirTimeMs(d.events), 0);
 
   const recentSessions = projectSessions.slice(0, 12);
+  const localFolders = buildProjectLocalFolders(projectSessions);
   const hasPrs = prMarkers.length > 0;
 
   // Build the recent-7-days strip + helpfulness sparkline.
@@ -139,20 +226,34 @@ export default async function ProjectDetail({ params }: { params: Promise<{ slug
       </div>
 
       {/* Header */}
-      <header>
-        <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>
-          {prettyProjectName(projectName)}
-        </h1>
-        <p
-          style={{
-            fontSize: 12,
-            color: "var(--af-text-tertiary)",
-            marginTop: 4,
-            fontFamily: "var(--font-mono)",
-          }}
-        >
-          {projectName}
-        </p>
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 16,
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 }}>
+            {prettyProjectName(projectName)}
+          </h1>
+          <p
+            style={{
+              fontSize: 12,
+              color: "var(--af-text-tertiary)",
+              marginTop: 4,
+              fontFamily: "var(--font-mono)",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {projectName}
+          </p>
+        </div>
+        <ProjectLocalFoldersButton projectKey={decodedCanonical} folders={localFolders} />
       </header>
 
       <DashboardView

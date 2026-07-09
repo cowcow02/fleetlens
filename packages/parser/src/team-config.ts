@@ -41,10 +41,10 @@ export type SyncProjects = {
   excluded: string[];
 };
 
-export function shouldSyncProject(repoName: string, sp?: SyncProjects): boolean {
+export function shouldSyncProject(projectKey: string, sp?: SyncProjects): boolean {
   if (!sp) return true;
-  if (sp.excluded.includes(repoName)) return false;
-  if (sp.included.includes(repoName)) return true;
+  if (sp.excluded.includes(projectKey)) return false;
+  if (sp.included.includes(projectKey)) return true;
   return sp.autoIncludeNew;
 }
 

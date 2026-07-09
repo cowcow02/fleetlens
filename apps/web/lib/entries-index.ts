@@ -8,7 +8,7 @@ import {
   readDayDigest,
 } from "@claude-lens/entries/fs";
 import type { Entry, DayOutcome, DayHelpfulness, DayDigest } from "@claude-lens/entries";
-import { projectRepoName } from "@claude-lens/parser";
+import { projectKey } from "@claude-lens/parser";
 import { cclensPath } from "@claude-lens/parser/fs";
 import { outcomePriority } from "@/components/outcome-pill";
 
@@ -78,8 +78,8 @@ export async function buildEntriesIndex(): Promise<EntriesIndex> {
     const dlist = byDay.get(e.local_day);
     if (dlist) dlist.push(e); else byDay.set(e.local_day, [e]);
 
-    // Keyed by repo name to match groupByProject's cross-harness folding.
-    const repo = projectRepoName(e.project);
+    // Keyed by the same project key used by /projects and team sync.
+    const repo = projectKey(e.project);
     const plist = byProject.get(repo);
     if (plist) plist.push(e); else byProject.set(repo, [e]);
   }

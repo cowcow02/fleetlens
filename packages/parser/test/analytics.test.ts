@@ -12,7 +12,7 @@ import {
   sessionDay,
   canonicalProjectName,
   worktreeName,
-  projectRepoName,
+  projectKey,
 } from "../src/analytics.js";
 import type { SessionMeta, SessionEvent } from "../src/types.js";
 
@@ -336,13 +336,13 @@ describe("canonicalProjectName + worktreeName", () => {
     expect(worktreeName(p)).toBe("agentic-knowledge-system");
   });
 
-  it("projectRepoName folds the same repo across harnesses by repo name", () => {
+  it("projectKey folds the same repo across harnesses by repo name", () => {
     // Same repo reached directly, via a Conductor workspace, and via a
     // (now-deleted) Superset worktree all collapse to the repo name.
-    expect(projectRepoName("/Users/me/Repo/claude-lens")).toBe("claude-lens");
-    expect(projectRepoName("/Users/me/conductor/workspaces/claude-lens")).toBe("claude-lens");
-    expect(projectRepoName("/Users/me/Repo/claude-lens/.worktrees/feat-x")).toBe("claude-lens");
-    expect(projectRepoName("/Users/me/conductor/workspaces/claude-lens/yangon")).toBe("claude-lens");
+    expect(projectKey("/Users/me/Repo/claude-lens")).toBe("claude-lens");
+    expect(projectKey("/Users/me/conductor/workspaces/claude-lens")).toBe("claude-lens");
+    expect(projectKey("/Users/me/Repo/claude-lens/.worktrees/feat-x")).toBe("claude-lens");
+    expect(projectKey("/Users/me/conductor/workspaces/claude-lens/yangon")).toBe("claude-lens");
   });
 
   it("handles repos whose name starts with the workspace name (offset bug regression)", () => {
@@ -491,4 +491,3 @@ describe("computeBurstsFromSessions (collapse rules)", () => {
     expect(sum.crossProjectBurstCount).toBeGreaterThanOrEqual(1);
   });
 });
-

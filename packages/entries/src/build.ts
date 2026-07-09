@@ -496,6 +496,7 @@ export function buildEntries(sessionDetail: SessionDetail): Entry[] {
   const entries: Entry[] = [];
   const generatedAt = new Date().toISOString();
   const sessionFallbackProject = canonicalProjectName(sessionDetail.projectName ?? "");
+  const trustSessionProject = !!sessionDetail.worktreeName;
 
   for (const [local_day, dayEvents] of byDay) {
     if (dayEvents.length === 0) continue;
@@ -564,7 +565,7 @@ export function buildEntries(sessionDetail: SessionDetail): Entry[] {
 
     // project — dominant cwd across tool-using events; fallback to session
     let project = sessionFallbackProject;
-    if (agg.cwdCounts.size > 0) {
+    if (!trustSessionProject && agg.cwdCounts.size > 0) {
       const best = [...agg.cwdCounts.entries()].sort((a, b) => b[1] - a[1])[0]!;
       project = canonicalProjectName(best[0]);
     }

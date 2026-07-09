@@ -132,17 +132,18 @@ export function worktreeName(projectName: string): string | null {
   return null;
 }
 
-/** Repo identity used to fold one logical repo reached through different
- *  harnesses (direct checkout, Conductor workspace, Superset/ephemeral
- *  worktree) into a single project. Git can't recover this once a worktree is
- *  pruned, so we key on the repo NAME — the leaf of the canonical path. Two
- *  distinct repos that share a name will merge (uncommon on one machine); that
- *  is the accepted tradeoff for collapsing the cross-harness duplicates. */
-export function projectRepoName(projectName: string): string {
+/** Single Fleetlens project key. Used for /projects slugs, sidebar rows,
+ *  team-sync consent, and rich-rollup project rows. Filesystem adapters first
+ *  normalize projectName from Git metadata when possible; this helper then
+ *  gives the stable display/sync key: the canonical path's leaf. */
+export function projectKey(projectName: string): string {
   const canonical = canonicalProjectName(projectName);
   const segs = canonical.replace(/\/+$/, "").split("/").filter(Boolean);
   return segs[segs.length - 1] || canonical;
 }
+
+/** @deprecated Use projectKey. */
+export const projectRepoName = projectKey;
 
 /* ================================================================= */
 /*  Daily activity — heatmap + line/bar                              */
@@ -968,10 +969,10 @@ export type ProjectRollup = {
 export function groupByProject(sessions: SessionMeta[]): ProjectRollup[] {
   const map = new Map<string, ProjectRollup>();
   for (const s of sessions) {
-    // Group by repo name so the same repo reached via different harnesses
+    // Group by Fleetlens project key so the same repo reached via different harnesses
     // (Repo/foo, conductor/workspaces/foo, .superset worktree of foo) rolls
-    // up into one project. See projectRepoName for the tradeoff.
-    const repo = projectRepoName(s.projectName);
+    // up into one project. See projectKey for the tradeoff.
+    const repo = projectKey(s.projectName);
     const key = repo;
     let cur = map.get(key);
     if (!cur) {
@@ -998,11 +999,11 @@ export function groupByProject(sessions: SessionMeta[]): ProjectRollup[] {
   }
   for (const p of map.values()) {
     p.metrics = highLevelMetrics(p.sessions);
-    // Count distinct worktrees — sessions whose projectName deviates
-    // from the canonical (so has `/.worktrees/<name>`).
+    // Count distinct worktrees. New filesystem adapters stamp Git-derived
+    // worktreeName; fall back to path heuristics for tests and old callers.
     const wtNames = new Set<string>();
     for (const s of p.sessions) {
-      const wt = worktreeName(s.projectName);
+      const wt = s.worktreeName ?? worktreeName(s.projectName) ?? (s.cwd ? worktreeName(s.cwd) : null);
       if (wt) wtNames.add(wt);
     }
     p.worktreeCount = wtNames.size;

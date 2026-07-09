@@ -13,7 +13,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseTranscript, type ParseResult } from "./parser.js";
-import { worktreeName, projectRepoName, toLocalDay } from "./analytics.js";
+import { projectKey, toLocalDay } from "./analytics.js";
+import { resolveProjectIdentity } from "./git-project.js";
 import { groupByTeam, type TeamView } from "./team.js";
 import type {
   AgentKind,
@@ -572,12 +573,15 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
 
     // Use the real cwd from the JSONL when available — the decoded dir name
     // is lossy (dashes in folder names become slashes).
+    const cwd = meta.cwd ?? decodeProjectName(f.projectDir);
+    const project = resolveProjectIdentity(cwd);
     const full: SessionMeta = {
       ...meta,
       id: sessionId,
       filePath: f.fullPath,
       projectDir: f.projectDir,
-      projectName: meta.cwd ?? decodeProjectName(f.projectDir),
+      projectName: project.projectName,
+      worktreeName: project.worktreeName,
       ...(wf.workflowCount > 0
         ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
         : {}),
@@ -608,12 +612,15 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
     // backfills) so opening a session never strips the "N agents" badge that
     // the list path computes.
     const wf = await scanWorkflowAggregate(path.dirname(f.fullPath), sessionId);
+    const cwd = meta.cwd ?? decodeProjectName(f.projectDir);
+    const project = resolveProjectIdentity(cwd);
     const detail: SessionDetail = {
       ...meta,
       id: sessionId,
       filePath: f.fullPath,
       projectDir: f.projectDir,
-      projectName: meta.cwd ?? decodeProjectName(f.projectDir),
+      projectName: project.projectName,
+      worktreeName: project.worktreeName,
       events,
       ...(wf.workflowCount > 0
         ? { workflowCount: wf.workflowCount, spawnedAgentCount: wf.spawnedAgentCount }
@@ -1401,10 +1408,11 @@ export async function listProjects(root: string = DEFAULT_ROOT): Promise<Project
   const canonicalMap = new Map<string, Agg>();
   for (const [rawDir, { count, lastActiveMs }] of byRawDir) {
     const cwdOrDecoded = cwdForProject(rawDir) ?? decodeProjectName(rawDir);
-    // Fold by repo name so the same repo reached via different harnesses
+    const project = resolveProjectIdentity(cwdOrDecoded);
+    // Fold by Fleetlens project key so the same repo reached via different harnesses
     // collapses into one project — matching groupByProject.
-    const repo = projectRepoName(cwdOrDecoded);
-    const wt = worktreeName(cwdOrDecoded);
+    const repo = projectKey(project.projectName);
+    const wt = project.worktreeName;
 
     const agg =
       canonicalMap.get(repo) ??
