@@ -12,7 +12,7 @@
  * consumers don't need to update import paths.
  */
 
-import { promises as fs } from "node:fs";
+import { promises as fs, appendFileSync, mkdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { toLocalDay } from "./analytics.js";
@@ -332,6 +332,17 @@ export async function getAnySession(id: string): Promise<SessionDetail | null> {
 
 function usageLogPath(): string {
   return cclensPath("usage.jsonl");
+}
+
+/** Append a single usage snapshot line to ~/.cclens/usage.jsonl.
+ *  Shared by the CLI daemon (per-5-min poll) and the web Settings
+ *  route (immediate write on a freshly-validated Z.ai key, so the
+ *  /usage tab + menu-bar widget are populated the instant the user saves,
+ *  without waiting for the daemon's next tick). */
+export function appendUsageSnapshot(snapshot: unknown): void {
+  const p = usageLogPath();
+  mkdirSync(path.dirname(p), { recursive: true });
+  appendFileSync(p, JSON.stringify(snapshot) + "\n", "utf8");
 }
 
 type UsageSnapshot = {

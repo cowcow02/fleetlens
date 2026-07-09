@@ -9,5 +9,11 @@ export default defineConfig({
     env: {
       TZ: "UTC",
     },
+    // `credentials.ts` imports "server-only" (a Next.js guard that throws
+    // outside a server component). Under vitest the module just needs to be
+    // a no-op so we can unit-test the fetch/validate logic in Node.
+    alias: {
+      "server-only": new URL("./test/server-only-mock.js", import.meta.url).pathname,
+    },
   },
 });

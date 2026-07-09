@@ -1,7 +1,106 @@
 import "server-only";
 import { writeFileSync, readFileSync, renameSync, chmodSync, mkdirSync, existsSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
-import { cclensPath } from "@claude-lens/parser/fs";
+import { cclensPath, appendUsageSnapshot } from "@claude-lens/parser/fs";
+
+/**
+ * Z.ai (Zhipu AI) GLM Coding Plan usage endpoint. Undocumented but
+ * stable — the same one Z.ai's own subscription UI calls. The credential
+ * store holds the raw key; we send it without a Bearer prefix per
+ * Z.ai's contract. Returns the parsed snapshot (5h/7d/web-search
+ * meters + plan label) so the caller can persist it immediately.
+ */
+const ZAI_QUOTA_ENDPOINT = "https://api.z.ai/api/monitor/usage/quota/limit";
+
+export type WebSearchQuota = { used: number | null; limit: number | null };
+
+export type ZaiSnapshot = {
+  captured_at: string;
+  agent: "zai";
+  five_hour: { utilization: number | null; resets_at: string | null };
+  seven_day: { utilization: number | null; resets_at: string | null };
+  seven_day_opus: null;
+  seven_day_sonnet: null;
+  seven_day_oauth_apps: null;
+  seven_day_cowork: null;
+  extra_usage: null;
+  plan_type: string | null;
+  web_search_quota: WebSearchQuota | null;
+};
+
+/** Fetch + parse a Z.ai usage snapshot for a candidate key.
+ *  Throws on any failure (bad/expired key, network, unparseable) so
+ *  the caller can reject a key that can't actually fetch usage. */
+export async function fetchZaiUsage(candidate: string): Promise<ZaiSnapshot> {
+  const key = candidate.trim();
+  if (!key) throw new Error("empty key");
+  const res = await fetch(ZAI_QUOTA_ENDPOINT, {
+    headers: { Authorization: key, "Accept-Language": "en-US,en" },
+  });
+  if (!res.ok) {
+    throw new Error(`Z.ai rejected the key (${res.status} ${res.statusText})`);
+  }
+  const body = (await res.json().catch(() => {
+    throw new Error("Z.ai returned an unparseable response");
+  })) as { code?: number; success?: boolean; data?: { limits?: Array<Record<string, unknown>>; level?: string } };
+  // Z.ai returns HTTP 200 even for a bad/expired key — the error
+  // lives in the body ({"code":401,"msg":"token expired or
+  // incorrect"}). Without this check a bogus key would validate.
+  if (body.code !== undefined && body.code !== 200) {
+    throw new Error(`Z.ai rejected the key (code ${body.code})`);
+  }
+  if (body.success === false) {
+    throw new Error("Z.ai rejected the key");
+  }
+  const limits = body.data?.limits ?? [];
+
+  let fiveHour: { utilization: number | null; resets_at: string | null } | null = null;
+  let sevenDay: { utilization: number | null; resets_at: string | null } | null = null;
+  let webSearch: WebSearchQuota | null = null;
+
+  for (const limit of limits) {
+    const type = limit.type as string | undefined;
+    if (type === "TIME_LIMIT") {
+      const pct = typeof limit.percentage === "number" ? limit.percentage : null;
+      webSearch = { used: pct, limit: pct !== null ? 100 : null };
+      continue;
+    }
+    if (type !== "TOKENS_LIMIT") continue;
+    const unit = limit.unit as number | undefined;
+    const pct = typeof limit.percentage === "number" ? limit.percentage : null;
+    const resetsAt =
+      typeof limit.nextResetTime === "number"
+        ? new Date(limit.nextResetTime).toISOString()
+        : null;
+    const window = { utilization: pct, resets_at: resetsAt };
+    if (unit === 6) sevenDay = sevenDay ?? window;
+    else fiveHour = fiveHour ?? window;
+  }
+
+  return {
+    captured_at: new Date().toISOString(),
+    agent: "zai",
+    five_hour: fiveHour ?? { utilization: null, resets_at: null },
+    seven_day: sevenDay ?? { utilization: null, resets_at: null },
+    seven_day_opus: null,
+    seven_day_sonnet: null,
+    seven_day_oauth_apps: null,
+    seven_day_cowork: null,
+    extra_usage: null,
+    plan_type: (body.data?.level as string | undefined) ?? null,
+    web_search_quota: webSearch ?? null,
+  };
+}
+
+/** Validate a candidate key: can it actually fetch usage? On success,
+ *  persist the fetched snapshot so the /usage tab + menu-bar widget are
+ *  populated the instant the user saves — independent of the daemon's
+ *  next 5-min tick. Throws on any failure so the route can reject. */
+export async function validateAndSnapshotZaiKey(key: string): Promise<ZaiSnapshot> {
+  const snap = await fetchZaiUsage(key);
+  appendUsageSnapshot(snap);
+  return snap;
+}
 
 /**
  * Fleetlens-managed credential store at ~/.cclens/credentials.json.

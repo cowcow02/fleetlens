@@ -35,6 +35,8 @@ export {
   writeZaiKey,
   deleteZaiKey,
   hasZaiKey,
+  fetchZaiUsage,
+  validateAndSnapshotZaiKey,
 } from "./credentials.js";
 export type {
   CredentialStore,
