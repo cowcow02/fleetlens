@@ -13,9 +13,14 @@
  */
 
 import { setTimeout as sleep } from "node:timers/promises";
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { join } from "node:path";
+// Import the real resolver rather than mirroring it — a second copy of project
+// identity silently drifts from the one the server actually uses. Requires a
+// built parser, which the dev server this script targets already depends on.
+import { projectKey } from "../packages/parser/dist/index.js";
+import { resolveProjectIdentity } from "../packages/parser/dist/fs.js";
 
 const BASE = process.env.SMOKE_BASE ?? "http://localhost:3321";
 const TIMEOUT_MS = 30_000;
@@ -154,80 +159,8 @@ async function findTeamLeadSession() {
   return null;
 }
 
-async function nearestGitProject(cwd) {
-  if (!cwd || !isAbsolute(cwd)) return null;
-  for (let dir = cwd.replace(/\/+$/, "") || cwd; ; dir = dirname(dir)) {
-    const dotGit = join(dir, ".git");
-    try {
-      const st = await stat(dotGit);
-      if (st.isDirectory()) return await realpathOrSelf(dir);
-      const m = (await readFile(dotGit, "utf8")).match(/^gitdir:\s*(.+)\s*$/m);
-      if (m) {
-        const gitDir = isAbsolute(m[1]) ? m[1] : resolve(dir, m[1]);
-        try {
-          const common = (await readFile(join(gitDir, "commondir"), "utf8")).trim();
-          const commonDir = isAbsolute(common) ? common : resolve(gitDir, common);
-          return await realpathOrSelf(basename(commonDir) === ".git" ? dirname(commonDir) : dir);
-        } catch {
-          return await realpathOrSelf(dir);
-        }
-      }
-    } catch {
-      // keep walking up
-    }
-    const parent = dirname(dir);
-    if (parent === dir) return null;
-  }
-}
-
-async function realpathOrSelf(p) {
-  try {
-    return await realpath(p);
-  } catch {
-    return p;
-  }
-}
-
-const WORKTREE_MARKERS = [
-  "/.claude/worktrees/",
-  "/.worktrees/",
-  "/claude/worktrees/",
-];
-const CONDUCTOR_RE = /\/conductor\/workspaces\/[^/]+\/([^/]+)(?:\/|$)/;
-const SUPERSET_MARKER = "/.superset/worktrees/";
-const UUID_SEG_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-function fallbackCanonicalProjectName(cwd) {
-  const normalized = cwd.replace(/\/{2,}/g, "/");
-  for (const marker of WORKTREE_MARKERS) {
-    const idx = normalized.lastIndexOf(marker);
-    if (idx >= 0) return normalized.slice(0, idx);
-  }
-  const conductor = CONDUCTOR_RE.exec(normalized);
-  if (conductor) {
-    const workspaceName = conductor[1];
-    const trailingSlash = conductor[0].endsWith("/") ? 1 : 0;
-    const canonicalEndIdx = conductor.index + conductor[0].length - workspaceName.length - 1 - trailingSlash;
-    return normalized.slice(0, canonicalEndIdx);
-  }
-  const supersetIdx = normalized.indexOf(SUPERSET_MARKER);
-  if (supersetIdx >= 0) {
-    const segs = normalized.slice(supersetIdx + SUPERSET_MARKER.length).split("/").filter(Boolean);
-    if (segs.length > 0) {
-      const workspaceName = UUID_SEG_RE.test(segs[0]) ? (segs[1] ?? segs[0]) : segs[0];
-      return normalized.slice(0, supersetIdx) + SUPERSET_MARKER + workspaceName;
-    }
-  }
-  return normalized;
-}
-
-/** Mirrors parser projectKey: .git-derived project root when possible,
- *  then the canonical path leaf used by /projects and team sync. */
-async function projectKey(cwd) {
-  const canonical = (await nearestGitProject(cwd)) ?? fallbackCanonicalProjectName(cwd);
-  const normalized = canonical.replace(/\/+$/, "");
-  const segs = normalized.split("/").filter(Boolean);
-  return segs[segs.length - 1] || normalized;
+function projectSlug(cwd) {
+  return projectKey(resolveProjectIdentity(cwd).projectName);
 }
 
 async function pickFirstProjectSlug() {
@@ -247,7 +180,7 @@ async function pickFirstProjectSlug() {
           try {
             const obj = JSON.parse(line);
             if (typeof obj?.cwd === "string") {
-              return await projectKey(obj.cwd);
+              return projectSlug(obj.cwd);
             }
           } catch {
             // skip malformed line

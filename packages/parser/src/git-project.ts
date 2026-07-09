@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { canonicalProjectName, worktreeName as pathWorktreeName } from "./analytics.js";
 
@@ -39,9 +40,19 @@ function dotGitInfoFor(root: string): DotGitInfo | null {
   return { root, gitDir, commonDir: resolveCommonDir(gitDir) };
 }
 
+/** A dotfiles repo at $HOME would otherwise make every non-git folder beneath
+ *  it resolve to one project. Stop before testing $HOME itself. Paths outside
+ *  the home directory keep walking to the filesystem root. */
+function walkBoundary(start: string): string | undefined {
+  const home = realpathOrSelf(homedir());
+  return start === home || start.startsWith(`${home}/`) ? home : undefined;
+}
+
 function nearestDotGit(start: string): DotGitInfo | null {
   if (!start || !isAbsolute(start)) return null;
+  const boundary = walkBoundary(start);
   for (let dir = start.replace(/\/+$/, "") || start; ; dir = dirname(dir)) {
+    if (dir === boundary) return null;
     const info = dotGitInfoFor(dir);
     if (info) return info;
     const parent = dirname(dir);

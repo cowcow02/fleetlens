@@ -12,12 +12,26 @@ beforeEach(() => {
   clearCaches();
   root = join(tmpdir(), `fleetlens-git-project-${process.pid}-${Date.now()}`);
   mkdirSync(root, { recursive: true });
+  // macOS /var -> /private/var: canonicalize up front so the home boundary
+  // compares equal against realpath'd walk segments.
+  root = realpathSync(root);
 });
 
 afterEach(() => {
   clearCaches();
   rmSync(root, { recursive: true, force: true });
 });
+
+function withHome<T>(home: string, fn: () => T): T {
+  const prev = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    return fn();
+  } finally {
+    if (prev === undefined) delete process.env.HOME;
+    else process.env.HOME = prev;
+  }
+}
 
 function makeRepo(dir: string): void {
   mkdirSync(join(dir, ".git"), { recursive: true });
@@ -87,6 +101,70 @@ describe("resolveProjectIdentity", () => {
     expect(resolveProjectIdentity("/Users/me/Repo/foo/.worktrees/feat-x/src")).toEqual({
       projectName: "/Users/me/Repo/foo",
       worktreeName: "feat-x",
+    });
+  });
+
+  it("never adopts a git'd home directory as the project root", () => {
+    const home = join(root, "fakehome");
+    const scratch = join(home, "scratch-project");
+    makeRepo(home);
+    mkdirSync(scratch, { recursive: true });
+
+    withHome(home, () => {
+      expect(resolveProjectIdentity(scratch)).toEqual({
+        projectName: realpathSync(scratch),
+      });
+    });
+  });
+
+  it("keeps unrelated non-git folders under a git'd home separate", () => {
+    const home = join(root, "fakehome");
+    const a = join(home, "project-a");
+    const b = join(home, "project-b");
+    makeRepo(home);
+    mkdirSync(a, { recursive: true });
+    mkdirSync(b, { recursive: true });
+
+    withHome(home, () => {
+      expect(resolveProjectIdentity(a).projectName).not.toBe(
+        resolveProjectIdentity(b).projectName,
+      );
+    });
+  });
+
+  it("does not attribute a deleted checkout to a git'd home", () => {
+    const home = join(root, "fakehome");
+    makeRepo(home);
+    const gone = join(home, "repo-deleted-last-year", "src");
+
+    withHome(home, () => {
+      expect(resolveProjectIdentity(gone)).toEqual({ projectName: gone });
+    });
+  });
+
+  it("still resolves a real repo nested under a git'd home", () => {
+    const home = join(root, "fakehome");
+    const repo = join(home, "code", "myapp");
+    makeRepo(home);
+    makeRepo(repo);
+
+    withHome(home, () => {
+      expect(resolveProjectIdentity(join(repo, "packages", "web"))).toEqual({
+        projectName: realpathSync(repo),
+      });
+    });
+  });
+
+  it("still walks past the boundary for paths outside the home directory", () => {
+    const home = join(root, "fakehome");
+    const repo = join(root, "elsewhere", "myapp");
+    mkdirSync(home, { recursive: true });
+    makeRepo(repo);
+
+    withHome(home, () => {
+      expect(resolveProjectIdentity(join(repo, "src"))).toEqual({
+        projectName: realpathSync(repo),
+      });
     });
   });
 });

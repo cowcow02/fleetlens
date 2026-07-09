@@ -4,6 +4,12 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Changed
+- **Projects now aggregate by Git repo root.** Project identity resolves from the nearest `.git` metadata instead of path patterns, so a linked worktree checked out anywhere on disk — not just under `.worktrees/` — rolls up into its main repo, and a session started in a subdirectory (`<repo>/packages/cli`) stops appearing as its own project named `cli`. The walk stops at your home directory, so a dotfiles repo at `$HOME` can't swallow unrelated folders into one project. A project is still *named* by its repo folder, not its Git remote — two different repos checked out into same-named folders continue to share one row.
+- **Team-sync project keys move with that definition.** Sessions now key to the repo their folder belongs to. If you previously excluded a folder from team sync by a name that was really a worktree or a subdirectory (rather than the repo itself), that entry no longer matches anything and the folder now syncs under its repo's key. Check Settings → Team sync after upgrading if you rely on per-project exclusions.
+
 ## [0.15.2] — 2026-07-08
 
 Safe upgrade from 0.15.1.
