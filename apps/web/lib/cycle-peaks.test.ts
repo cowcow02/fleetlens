@@ -104,6 +104,38 @@ describe("previousCyclesTrend (7d)", () => {
     expect(result[0].source).toBe("predicted");
   });
 
+  it("clamps a runaway predicted peak to 100 but never clamps a real reading", () => {
+    // Predicted utilization is a forward extrapolation with no upper anchor:
+    // once the daemon stops recording, a heavy-spend stretch drives it past
+    // 100pp (observed: 149% for the Jun-2026 gap). Utilization is a share of
+    // the plan limit, so a predicted peak above 100 is a rendering bug — the
+    // bar overflows the axis. Real readings stay untouched: extra-usage
+    // overage can legitimately exceed 100.
+    const clamped = previousCyclesTrend(
+      dump([
+        point({ cycle_end_7d: "2026-05-07T08:00:00.000Z", pred_7d: 42 }),
+        point({ cycle_end_7d: "2026-05-07T08:00:00.000Z", pred_7d: 148.9 }),
+      ]),
+      "7d",
+      6,
+      NOW,
+    );
+    expect(clamped[0]!.peakPct).toBe(100);
+    expect(clamped[0]!.source).toBe("predicted");
+
+    const real = previousCyclesTrend(
+      dump([
+        point({ cycle_end_7d: "2026-05-07T08:00:00.000Z", real_7d: 12 }),
+        point({ cycle_end_7d: "2026-05-07T08:00:00.000Z", real_7d: 118 }),
+      ]),
+      "7d",
+      6,
+      NOW,
+    );
+    expect(real[0]!.peakPct).toBe(118);
+    expect(real[0]!.source).toBe("real");
+  });
+
   it("respects maxCycles by returning the most recent N", () => {
     const result = previousCyclesTrend(
       dump([

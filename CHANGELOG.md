@@ -6,6 +6,10 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
 ## [Unreleased]
 
+### Fixed
+- **`pnpm test` destroyed your real usage history.** `packages/entries/test/credentials.test.ts` (shipped in 0.15.4) called `rmSync(cclensPath("usage.jsonl"))` in an `afterEach` without setting `CCLENS_HOME`, so running the test suite deleted `~/.cclens/usage.jsonl` — every plan-utilization snapshot the daemon had ever recorded. It also appended a fake `zai` snapshot to the real log. The entries vitest config now pins `CCLENS_HOME` to a temp dir, and a regression test asserts `cclensHome()` never resolves to the real `~/.cclens`. Contributors only — this never affected installed CLIs.
+- **Impossible `>100%` utilization on the previous-cycles trend.** Predicted utilization is a forward extrapolation with no upper anchor, so a heavy-spend stretch with no daemon snapshots drove a cycle's estimated peak past 100% (observed: 149%), overflowing the bar. Estimated peaks are now capped at 100%; real readings are untouched, since extra-usage overage can legitimately exceed 100%.
+
 ## [0.15.4] — 2026-07-09
 
 Safe upgrade from 0.15.3.
