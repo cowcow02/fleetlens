@@ -70,8 +70,9 @@ jobs:
         run: pnpm -F fleetlens build
 
       # OIDC trusted publishing needs npm >= 11.5.1; Node 20 ships npm 10.x.
+      # Pin npm 11 because npm 12 requires a newer Node than this workflow uses.
       - name: Upgrade npm for OIDC trusted publishing
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
 
       # Auth via OIDC trusted publisher (configured on npmjs.com), not a token.
       - name: Publish to npm
