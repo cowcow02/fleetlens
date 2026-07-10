@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium, type BrowserContextOptions, type LaunchOptions } from "playwright";
+import type { Browser, BrowserContextOptions, LaunchOptions } from "playwright";
 import { requireTeamMembership, requireGroupManager } from "../../../../../../lib/route-helpers";
 import { mintRenderToken } from "../../../../../../lib/render-token";
 
@@ -72,14 +72,19 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>) {
     deviceScaleFactor: 2,
   };
 
-  let browser;
+  // Dynamic import so a missing/broken playwright package surfaces as a
+  // handled 500 with a useful body, not Next's generic "Internal Server Error"
+  // from a failed top-level module load (what production showed when NFT
+  // omitted playwright-core/browsers.json).
+  let browser: Browser | undefined;
   try {
+    const { chromium } = await import("playwright");
     browser = await chromium.launch(chromiumLaunchOptions());
   } catch (err) {
     console.error("[pdf] chromium launch failed", err);
     return new Response(
       `PDF generation failed: Chromium could not start (${err instanceof Error ? err.message : String(err)}). ` +
-        `Ensure Playwright Chromium is installed in the image (see Dockerfile).`,
+        `Ensure the image ships a complete playwright-core package (browsers.json) and Chromium binaries.`,
       { status: 500 },
     );
   }
