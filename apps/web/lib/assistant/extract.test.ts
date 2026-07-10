@@ -60,6 +60,7 @@ describe("extractIndexDoc", () => {
     expect(doc.sessionId).toBe("abc-123");
     expect(doc.agent).toBe("claude-code");
     expect(doc.project).toBe("/Users/me/Repo/foo");
+    expect(doc.repoName).toBeUndefined();
     expect(doc.day).toBe("2026-07-01");
     expect(doc.title).toBe("hello world");
     expect(doc.mtimeMs).toBe(1000);
@@ -120,6 +121,14 @@ describe("extractIndexDoc", () => {
       FILE,
     );
     expect(doc.chunks).toEqual([]);
+  });
+
+  test("carries the git repo name when the session has one", () => {
+    const doc = extractIndexDoc(
+      session([ev({ index: 0, role: "user", blocks: [{ type: "text", text: "hi" }] })], { repoName: "fleetlens" }),
+      FILE,
+    );
+    expect(doc.repoName).toBe("fleetlens");
   });
 
   test("title falls back to first user chunk when firstUserPreview is absent", () => {

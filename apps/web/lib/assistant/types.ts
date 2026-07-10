@@ -1,4 +1,4 @@
-export const INDEX_VERSION = 1;
+export const INDEX_VERSION = 2;
 
 export type IndexChunk = {
   role: "user" | "agent" | "summary";
@@ -14,6 +14,9 @@ export type IndexDoc = {
   agent: string;
   /** canonical project name (worktrees rolled up) */
   project: string;
+  /** GitHub repo name from the origin remote — the display name the rest of
+   *  the UI uses when the folder is named something else. */
+  repoName?: string;
   /** local day of session start, YYYY-MM-DD */
   day: string;
   startIso?: string;

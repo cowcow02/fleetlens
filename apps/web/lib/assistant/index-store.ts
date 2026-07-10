@@ -18,9 +18,20 @@ function docPath(sessionId: string): string {
   return join(indexDir(), `${sessionId}.json`);
 }
 
-const memory = new Map<string, IndexDoc>();
-let lastRefreshMs: number | null = null;
-let inflight: Promise<IndexDoc[]> | null = null;
+/** Next compiles each route into its own module graph, so plain module
+ *  state would give every API route a private copy of the index (and its
+ *  own inflight latch → concurrent full rebuilds). globalThis is the one
+ *  store they all share — same trick as the canonical dev-safe singleton. */
+type Store = {
+  memory: Map<string, IndexDoc>;
+  lastRefreshMs: number | null;
+  inflight: Promise<IndexDoc[]> | null;
+};
+const store: Store = ((globalThis as Record<string, unknown>).__fleetlensAssistantIndex ??= {
+  memory: new Map<string, IndexDoc>(),
+  lastRefreshMs: null,
+  inflight: null,
+}) as Store;
 
 function readDiskDoc(sessionId: string): IndexDoc | null {
   try {
@@ -74,9 +85,11 @@ async function refresh(onProgress?: (p: IndexProgress) => void): Promise<IndexDo
       } catch {
         continue;
       }
-      const cached = memory.get(meta.id) ?? readDiskDoc(meta.id);
-      if (cached && cached.mtimeMs === st.mtimeMs && cached.sizeBytes === st.size) {
-        memory.set(meta.id, cached);
+      // Version check matters for memory hits too: the globalThis store
+      // outlives hot reloads, so a bumped INDEX_VERSION must evict them.
+      const cached = store.memory.get(meta.id) ?? readDiskDoc(meta.id);
+      if (cached && cached.version === INDEX_VERSION && cached.mtimeMs === st.mtimeMs && cached.sizeBytes === st.size) {
+        store.memory.set(meta.id, cached);
         reused++;
         continue;
       }
@@ -85,8 +98,8 @@ async function refresh(onProgress?: (p: IndexProgress) => void): Promise<IndexDo
   }
 
   // Drop sessions whose transcripts were pruned so search can't surface ghosts.
-  for (const id of memory.keys()) {
-    if (!alive.has(id)) memory.delete(id);
+  for (const id of store.memory.keys()) {
+    if (!alive.has(id)) store.memory.delete(id);
   }
 
   const total = pending.length + reused;
@@ -103,7 +116,7 @@ async function refresh(onProgress?: (p: IndexProgress) => void): Promise<IndexDo
         doc.chunks.unshift({ role: "summary", text: brief });
       }
       writeDiskDoc(doc);
-      memory.set(meta.id, doc);
+      store.memory.set(meta.id, doc);
       // Keep the parser's unbounded detail cache from ballooning during a
       // full first build over hundreds of transcripts.
       invalidateFile(meta.filePath);
@@ -114,22 +127,28 @@ async function refresh(onProgress?: (p: IndexProgress) => void): Promise<IndexDo
     if (built % 20 === 0 || built === pending.length) onProgress?.({ built, reused, total });
   }
 
-  lastRefreshMs = Date.now();
-  return Array.from(memory.values());
+  store.lastRefreshMs = Date.now();
+  return Array.from(store.memory.values());
 }
 
 /** Incrementally refresh and return every IndexDoc. Fast when nothing
  *  changed (one stat per transcript); first-ever call parses everything. */
 export function ensureIndex(onProgress?: (p: IndexProgress) => void): Promise<IndexDoc[]> {
-  if (inflight) return inflight;
-  inflight = refresh(onProgress).finally(() => {
-    inflight = null;
+  if (store.inflight) return store.inflight;
+  store.inflight = refresh(onProgress).finally(() => {
+    store.inflight = null;
   });
-  return inflight;
+  return store.inflight;
+}
+
+/** Whatever is in memory right now — no refresh, no blocking. Empty until
+ *  the first ensureIndex() of this server process completes. */
+export function peekDocs(): IndexDoc[] {
+  return Array.from(store.memory.values());
 }
 
 export function indexStats(): IndexStats {
-  let sessions = memory.size;
+  let sessions = store.memory.size;
   if (sessions === 0) {
     try {
       sessions = readdirSync(indexDir()).filter((f) => f.endsWith(".json")).length;
@@ -137,9 +156,9 @@ export function indexStats(): IndexStats {
       sessions = 0;
     }
   }
-  return { sessions, lastRefreshMs, building: inflight !== null };
+  return { sessions, lastRefreshMs: store.lastRefreshMs, building: store.inflight !== null };
 }
 
 export function indexIsEmpty(): boolean {
-  return memory.size === 0 && !existsSync(indexDir());
+  return store.memory.size === 0 && !existsSync(indexDir());
 }

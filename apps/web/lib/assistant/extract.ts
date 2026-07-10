@@ -63,6 +63,7 @@ export function extractIndexDoc(
     sessionId: session.id,
     agent: session.agent ?? "claude-code",
     project: canonicalProjectName(session.projectName),
+    ...(session.repoName ? { repoName: session.repoName } : {}),
     day: Number.isNaN(startMs) ? "" : toLocalDay(startMs),
     startIso: session.firstTimestamp,
     endIso: session.lastTimestamp,

@@ -13,15 +13,18 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
+  CalendarDays,
   Check,
   ClipboardCopy,
   FileText,
   FolderGit2,
+  Layers,
   List,
   Loader2,
   RefreshCw,
   Search,
   Send,
+  SendHorizonal,
   Sparkles,
   Square,
 } from "lucide-react";
@@ -48,12 +51,23 @@ type IndexState = {
   progress?: { built: number; total: number };
 };
 
-const SUGGESTIONS = [
-  "What did I work on yesterday?",
-  "Find the sessions where I dealt with the usage daemon",
-  "Which projects did I touch this week, and what happened in each?",
-  "Draft a prompt to continue my most recent feature work, with full context",
+type Suggestion = { label: string; category: "recap" | "find" | "synthesize" | "handoff" };
+
+const FALLBACK_SUGGESTIONS: Suggestion[] = [
+  { label: "What did I work on yesterday?", category: "recap" },
+  { label: "Find the sessions behind my most recent fix", category: "find" },
+  { label: "Which projects did I touch this week, and what happened in each?", category: "synthesize" },
+  { label: "Draft a prompt to continue my most recent feature work, with full context", category: "handoff" },
 ];
+
+const SUGGESTION_ICONS: Record<Suggestion["category"], React.ReactNode> = {
+  recap: <CalendarDays size={13} />,
+  find: <Search size={13} />,
+  synthesize: <Layers size={13} />,
+  handoff: <SendHorizonal size={13} />,
+};
+
+const SUGGESTION_REFETCH_MS = 25_000;
 
 const TOOL_ICONS: Record<string, React.ReactNode> = {
   search_sessions: <Search size={12} />,
@@ -220,9 +234,36 @@ export function AssistantChat() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [index, setIndex] = useState<IndexState | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>(FALLBACK_SUGGESTIONS);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
+
+  // Personalized chips: take whatever the server has now; if a background
+  // regeneration is running, poll once more so fresh chips land mid-visit.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = (attempt: number) => {
+      fetch("/api/assistant/suggestions")
+        .then((r) => r.json())
+        .then((data: { suggestions?: Suggestion[]; refreshing?: boolean }) => {
+          if (cancelled) return;
+          if (Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+            setSuggestions(data.suggestions);
+          }
+          if (data.refreshing && attempt < 2) {
+            timer = setTimeout(() => load(attempt + 1), SUGGESTION_REFETCH_MS);
+          }
+        })
+        .catch(() => {});
+    };
+    load(0);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, []);
 
   const refreshIndex = useCallback(async () => {
     setIndex((prev) => ({ sessions: prev?.sessions ?? 0, building: true }));
@@ -504,13 +545,16 @@ export function AssistantChat() {
                 Find past work, get it synthesized, or turn it into a prompt for your next agent run.
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 520, margin: "0 auto" }}>
-                {SUGGESTIONS.map((s) => (
+                {suggestions.map((s) => (
                   <button
-                    key={s}
+                    key={s.category}
                     type="button"
-                    onClick={() => void send(s)}
+                    onClick={() => void send(s.label)}
                     disabled={streaming}
                     style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
                       padding: "10px 14px",
                       border: "1px solid var(--af-border-subtle)",
                       borderRadius: 8,
@@ -531,7 +575,10 @@ export function AssistantChat() {
                       e.currentTarget.style.background = "var(--af-surface)";
                     }}
                   >
-                    {s}
+                    <span style={{ color: "var(--af-accent)", flexShrink: 0, display: "inline-flex" }}>
+                      {SUGGESTION_ICONS[s.category]}
+                    </span>
+                    {s.label}
                   </button>
                 ))}
               </div>
