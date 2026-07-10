@@ -365,7 +365,7 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
       if (abandoned) return;
       lineBuf += chunk.toString("utf8");
       const lines = lineBuf.split("\n");
-      lineBuf = lines.pop()!;
+      lineBuf = lines.pop() ?? "";
       for (const line of lines) {
         const t = line.trim();
         if (t && !abandoned) handleLine(t);

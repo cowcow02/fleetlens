@@ -285,7 +285,7 @@ export function AgentChat() {
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
-            buffer = lines.pop()!;
+            buffer = lines.pop() ?? "";
             for (const line of lines) {
               if (!line.startsWith("data: ")) continue;
               let event: RunEvent | { type: "sync"; status: string };
@@ -371,7 +371,7 @@ export function AgentChat() {
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
-        buffer = lines.pop()!;
+        buffer = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           try {
