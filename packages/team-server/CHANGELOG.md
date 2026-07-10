@@ -4,6 +4,11 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.15.6] — 2026-07-10
+
+### Fixed
+- **Docker image build (retry).** Stage Playwright packages by filesystem walk (`find …/playwright-core/package.json`) instead of `require.resolve`, which kept failing under pnpm isolation in CI. Ships as **0.15.6**.
+
 ## [0.15.5] — 2026-07-10
 
 ### Fixed
