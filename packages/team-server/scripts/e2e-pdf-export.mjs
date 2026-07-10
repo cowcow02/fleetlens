@@ -13,7 +13,12 @@ const PASSWORD = process.env.E2E_PASSWORD || "password1234";
 const GROUP = process.env.E2E_GROUP || "platform";
 const TEAM = process.env.E2E_TEAM || "acme";
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+  headless: true,
+  // Match the PDF route's container-safe flags so this script also works
+  // under root/CI sandboxes.
+  args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+});
 const context = await browser.newContext({ acceptDownloads: true });
 const page = await context.newPage();
 
