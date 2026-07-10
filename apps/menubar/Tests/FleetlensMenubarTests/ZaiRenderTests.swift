@@ -77,10 +77,20 @@ final class ZaiRenderTests: XCTestCase {
     XCTAssertTrue(perAgent.keys.contains(.zai))
     XCTAssertTrue(perAgent.keys.contains(.codex))
     XCTAssertFalse(perAgent.keys.contains(.claudeCode)) // not in the fixture
-    // AgentKind is exhaustive over claude-code/codex/zai — compiles & switches.
+    // AgentKind is exhaustive over claude-code/codex/zai/grok — compiles & switches.
     for kind in AgentKind.allCases {
       XCTAssertFalse(kind.displayName.isEmpty)
       XCTAssertFalse(kind.symbol.isEmpty)
     }
+    XCTAssertEqual(AgentKind.grok.displayName, "Grok Build")
+    XCTAssertEqual(AgentKind.grok.rawValue, "grok")
+  }
+
+  func testGrokAgentKindDecodesFromSnapshotLine() {
+    let line =
+      #"{"captured_at":"2026-07-10T02:52:12.489Z","agent":"grok","five_hour":{"utilization":null,"resets_at":null},"seven_day":{"utilization":null,"resets_at":null},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null}"#
+    let snap = SnapshotIO.decode(line)
+    XCTAssertNotNil(snap)
+    XCTAssertEqual(snap?.agentKind, .grok)
   }
 }

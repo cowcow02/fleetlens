@@ -44,6 +44,7 @@ extension UsageSnapshot {
     switch (agent ?? "claude-code").lowercased() {
     case "codex": return .codex
     case "zai": return .zai
+    case "grok": return .grok
     default: return .claudeCode
     }
   }
@@ -57,12 +58,16 @@ enum AgentKind: String, Codable, CaseIterable {
   case claudeCode = "claude-code"
   case codex
   case zai
+  /// Grok Build sessions are viewed on the dashboard; plan-window snapshots
+  /// are not polled today. Kept so a future usage line decodes cleanly.
+  case grok
 
   var displayName: String {
     switch self {
     case .claudeCode: return "Claude Code"
     case .codex: return "Codex"
     case .zai: return "Z.ai"
+    case .grok: return "Grok Build"
     }
   }
 
@@ -71,6 +76,7 @@ enum AgentKind: String, Codable, CaseIterable {
     case .claudeCode: return "c.circle.fill"
     case .codex: return "x.circle.fill"
     case .zai: return "z.circle.fill"
+    case .grok: return "g.circle.fill"
     }
   }
 
@@ -79,6 +85,7 @@ enum AgentKind: String, Codable, CaseIterable {
     case .claudeCode: return .orange
     case .codex: return .blue
     case .zai: return .blue
+    case .grok: return .primary
     }
   }
 }

@@ -58,7 +58,9 @@ struct ContentView: View {
       }
       Spacer()
       Button {
-        NSWorkspace.shared.open(URL(string: "http://localhost:3321/usage")!)
+        // Overview lists every agent (incl. Grok sessions). Usage is for
+        // Claude/Codex/Z.ai plan windows only.
+        NSWorkspace.shared.open(URL(string: "http://localhost:3321/")!)
       } label: {
         Label("Dashboard", systemImage: "chart.bar.xaxis")
       }
