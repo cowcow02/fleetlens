@@ -17,6 +17,7 @@ import remarkGfm from "remark-gfm";
 import { classifyHref } from "@/lib/agent/links";
 import {
   applyRunEvent,
+  chatTitle,
   type Chat,
   type ChatListItem,
   type RunEvent,
@@ -239,6 +240,9 @@ export function AgentChat() {
   const [index, setIndex] = useState<IndexState | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>(FALLBACK_SUGGESTIONS);
   const subscriptionRef = useRef<AbortController | null>(null);
+  /** The chat the user currently intends to view. Fetches resolve out of
+   *  order (click A then quickly B), so every async setChat checks it. */
+  const selectedIdRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinnedToBottom = useRef(true);
 
@@ -263,14 +267,19 @@ export function AgentChat() {
 
   /** Follow the active run over SSE, folding events in with the shared
    *  reducer. The persisted snapshot we already rendered carries lastSeq,
-   *  so ?after= resumes exactly where it left off. */
+   *  so ?after= resumes exactly where it left off. If the stream dies
+   *  without a terminal event (server restart, dropped connection), re-open
+   *  the chat after a beat — otherwise the view is stuck on "running" with
+   *  nothing left to update it. */
   const subscribe = useCallback(
     (target: Chat) => {
       subscriptionRef.current?.abort();
       if (target.status !== "running") return;
       const ctrl = new AbortController();
       subscriptionRef.current = ctrl;
+      const stale = () => ctrl.signal.aborted || selectedIdRef.current !== target.id;
       void (async () => {
+        let terminal = false;
         try {
           const res = await fetch(`/api/agent/chats/${target.id}/events?after=${target.lastSeq}`, {
             signal: ctrl.signal,
@@ -279,7 +288,6 @@ export function AgentChat() {
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buffer = "";
-          let terminal = false;
           while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -297,7 +305,7 @@ export function AgentChat() {
               if (event.type === "sync") {
                 // No live run — re-fetch the authoritative snapshot.
                 const fresh = await fetch(`/api/agent/chats/${target.id}`);
-                if (fresh.ok) setChat((await fresh.json()) as Chat);
+                if (fresh.ok && !stale()) setChat((await fresh.json()) as Chat);
                 terminal = true;
                 continue;
               }
@@ -308,7 +316,12 @@ export function AgentChat() {
           }
           if (terminal) void refreshList();
         } catch {
-          /* aborted on chat switch/unmount, or transient — restore covers it */
+          /* aborted on chat switch/unmount, or the connection died */
+        }
+        if (!terminal && !stale()) {
+          setTimeout(() => {
+            if (!stale()) void openChatRef.current(target.id, false);
+          }, 2000);
         }
       })();
     },
@@ -318,6 +331,7 @@ export function AgentChat() {
   const openChat = useCallback(
     async (id: string | null, pushUrl = true) => {
       subscriptionRef.current?.abort();
+      selectedIdRef.current = id;
       if (pushUrl) window.history.replaceState(null, "", chatUrl(id));
       if (!id) {
         setChat(null);
@@ -325,21 +339,28 @@ export function AgentChat() {
       }
       try {
         const res = await fetch(`/api/agent/chats/${id}`);
+        if (selectedIdRef.current !== id) return; // user moved on mid-fetch
         if (!res.ok) {
           setChat(null);
           return;
         }
         const fresh = (await res.json()) as Chat;
+        if (selectedIdRef.current !== id) return;
         setChat(fresh);
         pinnedToBottom.current = true;
         autoScroll();
         subscribe(fresh);
       } catch {
-        setChat(null);
+        if (selectedIdRef.current === id) setChat(null);
       }
     },
     [autoScroll, subscribe],
   );
+
+  /** subscribe's dead-stream recovery calls openChat; a ref breaks the
+   *  otherwise-circular useCallback dependency. */
+  const openChatRef = useRef(openChat);
+  openChatRef.current = openChat;
 
   useEffect(() => {
     void refreshList();
@@ -350,13 +371,21 @@ export function AgentChat() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // While any listed chat is running in the background, poll the list so
-  // its badge flips when the run lands.
+  // While any listed chat is running, poll the list so badges flip when
+  // runs land — including the open chat, whose SSE stream can die silently.
   useEffect(() => {
-    if (!chats.some((c) => c.status === "running" && c.id !== chat?.id)) return;
+    if (!chats.some((c) => c.status === "running")) return;
     const t = setInterval(() => void refreshList(), 5000);
     return () => clearInterval(t);
-  }, [chats, chat?.id, refreshList]);
+  }, [chats, refreshList]);
+
+  // If the open chat says "running" but the list disagrees, its SSE feed
+  // missed the terminal event — re-fetch the authoritative state.
+  useEffect(() => {
+    if (!chat || chat.status !== "running") return;
+    const listed = chats.find((c) => c.id === chat.id);
+    if (listed && listed.status !== "running") void openChat(chat.id, false);
+  }, [chats, chat, openChat]);
 
   const refreshIndex = useCallback(async () => {
     setIndex((prev) => ({ sessions: prev?.sessions ?? 0, building: true }));
@@ -438,6 +467,7 @@ export function AgentChat() {
         if (!id) {
           const created = await fetch("/api/agent/chats", { method: "POST" });
           id = ((await created.json()) as { id: string }).id;
+          selectedIdRef.current = id;
           window.history.replaceState(null, "", chatUrl(id));
         }
         const res = await fetch(`/api/agent/chats/${id}/messages`, {
@@ -445,20 +475,32 @@ export function AgentChat() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text }),
         });
+        if (selectedIdRef.current !== id) return; // user switched chats mid-send
         if (!res.ok) {
           const err = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${res.status}`;
-          setChat((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  messages: [
-                    ...prev.messages,
-                    { role: "user", text },
-                    { role: "assistant", segments: [{ kind: "text", text: `**Error:** ${err}` }] },
-                  ],
-                }
-              : prev,
-          );
+          // A brand-new conversation has no chat state yet — fetch what the
+          // create call persisted so the error has somewhere to render.
+          const base: Chat =
+            chat ??
+            ((await fetch(`/api/agent/chats/${id}`).then((r) => (r.ok ? r.json() : null)).catch(() => null)) as Chat | null) ?? {
+              version: 1,
+              id,
+              title: chatTitle(text),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              status: "idle",
+              lastSeq: 0,
+              messages: [],
+            };
+          setChat({
+            ...base,
+            messages: [
+              ...base.messages,
+              { role: "user", text },
+              { role: "assistant", segments: [{ kind: "text", text: `**Error:** ${err}` }] },
+            ],
+          });
+          void refreshList();
           return;
         }
         const fresh = (await res.json()) as Chat;
@@ -470,7 +512,7 @@ export function AgentChat() {
         setSending(false);
       }
     },
-    [chat?.id, sending, running, autoScroll, subscribe, refreshList],
+    [chat, sending, running, autoScroll, subscribe, refreshList],
   );
 
   const stop = useCallback(() => {

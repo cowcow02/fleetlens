@@ -141,20 +141,27 @@ const suggestionSchema = z
       category: z.enum(["recap", "find", "synthesize", "handoff"]),
     }),
   )
-  .length(4);
+  .length(4)
+  // One chip per capability — the UI keys rows by category, and a model
+  // that doubles up (two "find"s) would collide.
+  .refine((arr) => new Set(arr.map((s) => s.category)).size === 4);
 
 /** Pull the first JSON array out of the response — smaller models wrap it
  *  in preambles and fences no matter what the prompt says — then validate.
  *  Returns null on any mismatch; callers fall back to deterministic. */
 export function parseSuggestions(content: string): Suggestion[] | null {
   const start = content.indexOf("[");
-  const end = content.lastIndexOf("]");
-  if (start === -1 || end <= start) return null;
-  try {
-    const result = suggestionSchema.safeParse(JSON.parse(content.slice(start, end + 1)));
-    if (!result.success) return null;
-    return result.data.map((s) => ({ ...s, label: s.label.slice(0, LABEL_MAX) }));
-  } catch {
-    return null;
+  if (start === -1) return null;
+  // Try every closing bracket from the end inward: trailing prose that
+  // happens to contain "]" must not poison an otherwise valid array.
+  for (let end = content.lastIndexOf("]"); end > start; end = content.lastIndexOf("]", end - 1)) {
+    try {
+      const result = suggestionSchema.safeParse(JSON.parse(content.slice(start, end + 1)));
+      if (!result.success) return null;
+      return result.data.map((s) => ({ ...s, label: s.label.slice(0, LABEL_MAX) }));
+    } catch {
+      /* unbalanced slice — try the next candidate bracket */
+    }
   }
+  return null;
 }

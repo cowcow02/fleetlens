@@ -1,15 +1,7 @@
-/**
- * MCP tool server for the Agent's claude subprocess.
- *
- * The messages route spawns `claude -p --mcp-config` pointing back at this
- * endpoint (streamable-HTTP transport), so the agent loop runs inside the
- * local claude CLI while tools execute in-process here, sharing the web
- * server's session index and caches.
- *
- * Unauthenticated by design: same localhost-only threat model as every
- * other dashboard route. Do NOT port to team-server without adding auth —
- * it exposes full session text.
- */
+/** MCP tool server the spawned claude subprocess calls back into
+ *  (streamable-HTTP), so tools run in-process sharing the session index.
+ *  Unauthenticated by design — localhost-only threat model like the rest
+ *  of the dashboard; do NOT port to team-server without adding auth. */
 
 import { handleMcpMessage } from "@/lib/agent/mcp";
 import { agentTools } from "@/lib/agent/tools";

@@ -29,7 +29,9 @@ export async function POST() {
       };
       void (async () => {
         try {
-          const docs = await ensureIndex((p) => send({ type: "progress", ...p }));
+          // Explicit refresh always rescans — the 15s freshness window is
+          // for tool calls piggybacking mid-turn, not the refresh button.
+          const docs = await ensureIndex((p) => send({ type: "progress", ...p }), { force: true });
           send({ type: "done", sessions: docs.length });
         } catch (err) {
           send({ type: "error", message: (err as Error).message });

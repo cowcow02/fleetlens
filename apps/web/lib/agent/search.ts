@@ -7,7 +7,7 @@ const TITLE_WEIGHT = 4;
 /** Recency half-life: a hit ages to half its score every 60 days. */
 const HALF_LIFE_MS = 60 * 86_400_000;
 
-export type ParsedQuery = { terms: string[]; phrases: string[] };
+type ParsedQuery = { terms: string[]; phrases: string[] };
 
 export function parseQuery(q: string): ParsedQuery {
   const phrases: string[] = [];

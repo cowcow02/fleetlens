@@ -20,18 +20,20 @@ const MCP_RETRY_DELAY_MS = 750;
 const DELTA_FLUSH_MS = 750;
 const TOOL_INPUT_PREVIEW_MAX = 300;
 
-export type RunListener = (event: RunEvent) => void;
+type RunListener = (event: RunEvent) => void;
 
 type ActiveRun = {
   chatId: string;
   events: RunEvent[];
   subscribers: Set<RunListener>;
   stoppedByUser: boolean;
+  /** Chat was deleted while running: never write its file again. */
+  discarded: boolean;
   kill: () => void;
 };
 
 type Registry = { runs: Map<string, ActiveRun> };
-const registry: Registry = ((globalThis as Record<string, unknown>).__fleetlensAssistantRuns ??= {
+const registry: Registry = ((globalThis as Record<string, unknown>).__fleetlensAgentRuns ??= {
   runs: new Map<string, ActiveRun>(),
 }) as Registry;
 
@@ -47,6 +49,18 @@ export function killRun(chatId: string): void {
   const run = registry.runs.get(chatId);
   if (!run) return;
   run.stoppedByUser = true;
+  run.kill();
+}
+
+/** Kill + forget: for chat deletion. The close handler must not re-persist
+ *  the file (that would resurrect the deleted chat), and the concurrency
+ *  slot frees immediately rather than when the subprocess finishes dying. */
+export function discardRun(chatId: string): void {
+  const run = registry.runs.get(chatId);
+  if (!run) return;
+  run.stoppedByUser = true;
+  run.discarded = true;
+  registry.runs.delete(chatId);
   run.kill();
 }
 
@@ -159,11 +173,13 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
     events: [],
     subscribers: new Set(),
     stoppedByUser: false,
+    discarded: false,
     kill: () => {}, // rebound to the live subprocess by each launch()
   };
   registry.runs.set(chat.id, run);
 
   const persist = (force: boolean) => {
+    if (run.discarded) return; // deleted mid-run — don't resurrect the file
     const now = Date.now();
     if (!force && now - lastFlushMs < DELTA_FLUSH_MS) return;
     lastFlushMs = now;
@@ -258,10 +274,12 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
     let lineBuf = "";
     let sawTerminal = false;
     let usage: { input_tokens?: number; output_tokens?: number } | undefined;
-    /** text_delta chars streamed for the in-flight assistant message — when
-     *  the CLI predates --include-partial-messages we fall back to emitting
-     *  the complete message's text blocks instead. */
-    let partialChars = 0;
+    /** Content-block indices that streamed text deltas for the in-flight
+     *  assistant message. The complete-message frame only re-emits a text
+     *  block if ITS deltas never arrived (CLI without partial messages, or
+     *  a dropped delta line) — a per-message flag would drop a block whose
+     *  deltas were lost whenever any other block streamed. */
+    let deltaBlocks = new Set<number>();
     const toolNames = new Map<string, string>();
 
     const handleLine = (t: string) => {
@@ -300,7 +318,7 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
         if (event?.type === "content_block_delta") {
           const delta = event.delta as Record<string, unknown> | undefined;
           if (delta?.type === "text_delta" && typeof delta.text === "string") {
-            partialChars += delta.text.length;
+            if (typeof event.index === "number") deltaBlocks.add(event.index);
             emit({ type: "delta", text: delta.text });
           }
         }
@@ -310,8 +328,8 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
         const msg = obj.message as Record<string, unknown> | undefined;
         const content = msg?.content as Array<Record<string, unknown>> | undefined;
         if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === "text" && typeof block.text === "string" && partialChars === 0) {
+          content.forEach((block, i) => {
+            if (block.type === "text" && typeof block.text === "string" && !deltaBlocks.has(i)) {
               emit({ type: "delta", text: block.text });
             }
             if (block.type === "tool_use" && typeof block.name === "string") {
@@ -320,9 +338,9 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
               toolNames.set(id, name);
               emit({ type: "tool", id, name, input: pruneInput(block.input) });
             }
-          }
+          });
         }
-        partialChars = 0;
+        deltaBlocks = new Set();
         return;
       }
       if (obj.type === "user") {
@@ -361,9 +379,12 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
       }
     };
 
+    // Streaming decoder: chunk.toString("utf8") would mangle a multi-byte
+    // character split across stdout reads, corrupting that JSON line.
+    const decoder = new TextDecoder("utf-8");
     proc.stdout.on("data", (chunk: Buffer) => {
       if (abandoned) return;
-      lineBuf += chunk.toString("utf8");
+      lineBuf += decoder.decode(chunk, { stream: true });
       const lines = lineBuf.split("\n");
       lineBuf = lines.pop() ?? "";
       for (const line of lines) {

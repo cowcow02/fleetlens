@@ -1,13 +1,7 @@
-/**
- * Personalized empty-state suggestion chips.
- *
- * GET returns the best available set immediately and, when the cache is
- * stale, fires one background haiku call (traced via the entries LLM runner)
- * to regenerate — the client re-fetches while `refreshing` is true.
- *
- * Tiers: cached LLM chips → deterministic template-fill from the search
- * index → static fallback (index empty). AI off ⇒ deterministic only.
- */
+/** Personalized empty-state suggestion chips. GET answers immediately from
+ *  the best tier (cached LLM chips → deterministic template-fill → static
+ *  fallback; AI off ⇒ deterministic) and, when stale, fires one background
+ *  haiku regeneration — the client re-fetches while `refreshing` is true. */
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -60,7 +54,7 @@ function writeCache(c: Cache): void {
 
 // Cross-route/cross-compile latch — see the globalThis note in index-store.
 type Latch = { refreshing: Promise<void> | null; lastAttemptMs: number };
-const latch: Latch = ((globalThis as Record<string, unknown>).__fleetlensAssistantSuggestions ??= {
+const latch: Latch = ((globalThis as Record<string, unknown>).__fleetlensAgentSuggestions ??= {
   refreshing: null,
   lastAttemptMs: 0,
 }) as Latch;

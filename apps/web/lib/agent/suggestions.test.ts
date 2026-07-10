@@ -128,6 +128,20 @@ describe("parseSuggestions", () => {
     expect(parseSuggestions("not json at all")).toBeNull();
   });
 
+  test("survives trailing prose containing a stray closing bracket", () => {
+    expect(parseSuggestions(`${good}\n\nThese cover [recap] and more!`)).toHaveLength(4);
+  });
+
+  test("rejects duplicate categories", () => {
+    const dup = JSON.stringify([
+      { label: "a", category: "find" },
+      { label: "b", category: "find" },
+      { label: "c", category: "synthesize" },
+      { label: "d", category: "handoff" },
+    ]);
+    expect(parseSuggestions(dup)).toBeNull();
+  });
+
   test("clamps overlong labels", () => {
     const long = JSON.stringify([
       { label: "x".repeat(300), category: "recap" },

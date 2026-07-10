@@ -7,6 +7,6 @@ export const metadata: Metadata = {
   title: "Agent — Fleetlens",
 };
 
-export default function AssistantPage() {
+export default function AgentPage() {
   return <AgentChat />;
 }

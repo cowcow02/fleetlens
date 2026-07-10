@@ -1,5 +1,5 @@
 import { deleteChat, readChat } from "@/lib/agent/chat-store";
-import { killRun, reconcileChat } from "@/lib/agent/run";
+import { discardRun, reconcileChat } from "@/lib/agent/run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,7 +13,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  killRun(id);
+  discardRun(id);
   deleteChat(id);
   return new Response(null, { status: 204 });
 }

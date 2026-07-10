@@ -26,11 +26,13 @@ type Store = {
   memory: Map<string, IndexDoc>;
   lastRefreshMs: number | null;
   inflight: Promise<IndexDoc[]> | null;
+  progressListeners: Set<(p: IndexProgress) => void>;
 };
-const store: Store = ((globalThis as Record<string, unknown>).__fleetlensAssistantIndex ??= {
+const store: Store = ((globalThis as Record<string, unknown>).__fleetlensAgentIndex ??= {
   memory: new Map<string, IndexDoc>(),
   lastRefreshMs: null,
   inflight: null,
+  progressListeners: new Set(),
 }) as Store;
 
 function readDiskDoc(sessionId: string): IndexDoc | null {
@@ -142,12 +144,41 @@ async function refresh(onProgress?: (p: IndexProgress) => void): Promise<IndexDo
   return Array.from(store.memory.values());
 }
 
+/** A refresh is stat-cheap but still lists + stats every transcript; one
+ *  agent turn calls several tools back-to-back, so results this fresh are
+ *  served from memory. */
+const FRESH_MS = 15_000;
+
 /** Incrementally refresh and return every IndexDoc. Fast when nothing
  *  changed (one stat per transcript); first-ever call parses everything. */
-export function ensureIndex(onProgress?: (p: IndexProgress) => void): Promise<IndexDoc[]> {
+export function ensureIndex(
+  onProgress?: (p: IndexProgress) => void,
+  opts?: { force?: boolean },
+): Promise<IndexDoc[]> {
+  // Join the inflight refresh rather than returning its bare promise — a
+  // joiner's onProgress must still fire or its progress stream sits silent.
+  if (onProgress) store.progressListeners.add(onProgress);
   if (store.inflight) return store.inflight;
-  store.inflight = refresh(onProgress).finally(() => {
+  if (
+    !opts?.force &&
+    store.memory.size > 0 &&
+    store.lastRefreshMs !== null &&
+    Date.now() - store.lastRefreshMs < FRESH_MS
+  ) {
+    if (onProgress) store.progressListeners.delete(onProgress);
+    return Promise.resolve(Array.from(store.memory.values()));
+  }
+  store.inflight = refresh((p) => {
+    for (const fn of store.progressListeners) {
+      try {
+        fn(p);
+      } catch {
+        /* one broken listener must not stall the build */
+      }
+    }
+  }).finally(() => {
     store.inflight = null;
+    store.progressListeners.clear();
   });
   return store.inflight;
 }
