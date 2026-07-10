@@ -10,7 +10,40 @@ permissions:
   id-token: write
 
 jobs:
+  # The .app must be built on macOS; packages/cli/menubar/ is gitignored, so
+  # without this job npm publish silently ships without the widget (npm skips
+  # missing `files` entries) — that's exactly what happened in 0.15.4.
+  build-menubar:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift tests
+        run: swift test --package-path apps/menubar
+
+      - name: Build universal .app
+        run: bash apps/menubar/build-app.sh --universal
+
+      - name: Assert universal binary
+        run: |
+          ARCHS=$(lipo -archs apps/menubar/dist/FleetlensMenubar.app/Contents/MacOS/FleetlensMenubar)
+          echo "archs: $ARCHS"
+          echo "$ARCHS" | grep -q arm64
+          echo "$ARCHS" | grep -q x86_64
+
+      # tar, not a bare upload — upload-artifact drops the executable bit,
+      # which would break the bundle.
+      - name: Archive bundle
+        run: tar -C apps/menubar/dist -czf menubar-app.tgz FleetlensMenubar.app
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: menubar-app
+          path: menubar-app.tgz
+          if-no-files-found: error
+
   release:
+    needs: build-menubar
     runs-on: ubuntu-latest
 
     # Mirror CI's Postgres service so team-server integration tests pass
@@ -68,6 +101,21 @@ jobs:
 
       - name: Build CLI
         run: pnpm -F fleetlens build
+
+      - name: Download menubar bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: menubar-app
+          path: .
+
+      - name: Unpack menubar bundle into CLI package
+        run: |
+          mkdir -p packages/cli/menubar
+          tar -C packages/cli/menubar -xzf menubar-app.tgz
+
+      # Guard against a repeat of 0.15.4: never publish without the widget.
+      - name: Assert menubar bundle present
+        run: test -x packages/cli/menubar/FleetlensMenubar.app/Contents/MacOS/FleetlensMenubar
 
       # OIDC trusted publishing needs npm >= 11.5.1; Node 20 ships npm 10.x.
       # Pin npm 11 because npm 12 requires a newer Node than this workflow uses.

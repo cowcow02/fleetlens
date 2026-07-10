@@ -11,10 +11,19 @@ BUNDLE_ID="ai.fleetlens.menubar"
 VERSION="${MENUBAR_VERSION:-$(node -p "require('../../package.json').version" 2>/dev/null || echo 0.1.0)}"
 DIST="dist"
 
-echo "→ swift build -c release"
-swift build -c release
+# --universal: fat arm64+x86_64 binary. Release builds must use this — a
+# host-arch-only binary gives Intel users "bad CPU type in executable".
+# Plain string (not array): macOS ships bash 3.2 where "${a[@]}" under
+# `set -u` dies on empty arrays. Unquoted expansion is intentional.
+ARCH_FLAGS=""
+if [[ "${1:-}" == "--universal" ]]; then
+  ARCH_FLAGS="--arch arm64 --arch x86_64"
+fi
 
-BIN_PATH="$(swift build -c release --show-bin-path)/$APP_NAME"
+echo "→ swift build -c release $ARCH_FLAGS"
+swift build -c release $ARCH_FLAGS
+
+BIN_PATH="$(swift build -c release $ARCH_FLAGS --show-bin-path)/$APP_NAME"
 if [[ ! -f "$BIN_PATH" ]]; then
   echo "fatal: built binary not found at $BIN_PATH" >&2
   exit 1

@@ -84,10 +84,20 @@ enum AgentKind: String, Codable, CaseIterable {
 }
 
 enum SnapshotIO {
-  static func usageLogURL() -> URL {
-    FileManager.default
+  /// Mirrors the CLI's cclensHome(): CCLENS_HOME overrides ~/.cclens. getenv,
+  /// not ProcessInfo.environment — the latter snapshots at first access, which
+  /// would defeat setenv-based test fixtures.
+  static func cclensDir() -> URL {
+    if let raw = getenv("CCLENS_HOME"), raw.pointee != 0 {
+      return URL(fileURLWithPath: String(cString: raw))
+    }
+    return FileManager.default
       .homeDirectoryForCurrentUser
-      .appendingPathComponent(".cclens/usage.jsonl")
+      .appendingPathComponent(".cclens")
+  }
+
+  static func usageLogURL() -> URL {
+    cclensDir().appendingPathComponent("usage.jsonl")
   }
 
   static func decode(_ line: String) -> UsageSnapshot? {
