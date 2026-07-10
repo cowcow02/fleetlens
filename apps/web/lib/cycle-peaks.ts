@@ -64,9 +64,17 @@ export function previousCyclesTrend(
 
   const cycles: CyclePeak[] = [];
   for (const { endMs, points } of merged) {
+    const isCurrent = endMs > nowMs;
+    // For an in-progress cycle, a mid-cycle limit reset (manual grant,
+    // overnight reset, rolling-window slide) drops utilization sharply —
+    // e.g. 88% → 20%. The pre-reset points belong to a now-superseded limit
+    // and must not anchor the ongoing bar, so re-baseline to the segment
+    // after the last detected reset. Completed cycles keep the all-time max
+    // — that's the truthful historical peak.
+    const scoped = isCurrent ? pointsAfterLastReset(points, realKey) : points;
     let peak = 0;
     let source: "real" | "predicted" = "predicted";
-    for (const p of points) {
+    for (const p of scoped) {
       const r = p[realKey];
       if (typeof r === "number" && r > peak) { peak = r; source = "real"; }
       // Predicted is a forward extrapolation with no upper anchor — across a
@@ -80,10 +88,40 @@ export function previousCyclesTrend(
       endsAt: new Date(endMs).toISOString(),
       peakPct: Math.round(peak * 10) / 10,
       source,
-      current: endMs > nowMs,
+      current: isCurrent,
     });
   }
   return cycles.slice(-maxCycles);
+}
+
+/** For an in-progress cycle, find the last mid-cycle reset discontinuity — a
+ *  large drop in consecutive real readings (e.g. a limit grant 88% → 20%) —
+ *  and return only the points after it. Normal polling spend only ever
+ *  increases utilization within a cycle, so any drop ≥ RESET_DROP_PP between
+ *  adjacent real readings is unambiguously a reset/grant, not noise. The 5h
+ *  fixed window never decreases on its own; the rolling 7-day window can
+ *  slide a little between polls but never tens of pp in 5 minutes.
+ *  Chronologically sorted to be robust to unsorted input. */
+const RESET_DROP_PP = 30;
+function pointsAfterLastReset<P extends CalibrationCurvePoint>(
+  points: P[],
+  realKey: "real_5h" | "real_7d",
+): P[] {
+  if (points.length < 2) return points;
+  const ordered = [...points].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+  let cutIdx = 0;
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = ordered[i - 1][realKey];
+    const curr = ordered[i][realKey];
+    if (
+      typeof prev === "number" &&
+      typeof curr === "number" &&
+      prev - curr >= RESET_DROP_PP
+    ) {
+      cutIdx = i;
+    }
+  }
+  return cutIdx === 0 ? ordered : ordered.slice(cutIdx);
 }
 
 /** Merge buckets whose end-times are within `toleranceMs` of each other.
