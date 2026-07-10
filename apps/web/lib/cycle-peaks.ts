@@ -94,14 +94,10 @@ export function previousCyclesTrend(
   return cycles.slice(-maxCycles);
 }
 
-/** For an in-progress cycle, find the last mid-cycle reset discontinuity — a
- *  large drop in consecutive real readings (e.g. a limit grant 88% → 20%) —
- *  and return only the points after it. Normal polling spend only ever
- *  increases utilization within a cycle, so any drop ≥ RESET_DROP_PP between
- *  adjacent real readings is unambiguously a reset/grant, not noise. The 5h
- *  fixed window never decreases on its own; the rolling 7-day window can
- *  slide a little between polls but never tens of pp in 5 minutes.
- *  Chronologically sorted to be robust to unsorted input. */
+/** In-progress cycle: drop points before the last mid-cycle reset (a ≥30pp
+ *  real-reading drop, e.g. a grant 88% → 20%). Valid because utilization only
+ *  ever rises within a cycle — the rolling 7d window slides a little between
+ *  polls but never tens of pp in 5 min. */
 const RESET_DROP_PP = 30;
 function pointsAfterLastReset<P extends CalibrationCurvePoint>(
   points: P[],

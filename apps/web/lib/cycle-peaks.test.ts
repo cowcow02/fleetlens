@@ -279,4 +279,22 @@ describe("previousCyclesTrend (5h)", () => {
     ]);
     expect(result.map((r) => r.peakPct)).toEqual([30, 70]);
   });
+
+  it("re-baselines the ongoing 5h cycle after a mid-cycle reset", () => {
+    // Symmetry guard for the 5h path (realKey dispatch). A grant drops the
+    // in-progress cycle 70 → 5; the post-reset peak (25) wins, not 70.
+    const result = previousCyclesTrend(
+      dump([
+        point({ ts: "2026-05-08T00:00:00.000Z", cycle_end_5h: "2026-05-08T05:00:00.000Z", real_5h: 70 }),
+        point({ ts: "2026-05-08T01:00:00.000Z", cycle_end_5h: "2026-05-08T05:00:00.000Z", real_5h: 5 }),
+        point({ ts: "2026-05-08T04:00:00.000Z", cycle_end_5h: "2026-05-08T05:00:00.000Z", real_5h: 25 }),
+      ]),
+      "5h",
+      6,
+      NOW,
+    );
+    const ongoing = result.find((r) => r.current);
+    expect(ongoing).toBeDefined();
+    expect(ongoing!.peakPct).toBe(25);
+  });
 });

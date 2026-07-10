@@ -713,12 +713,10 @@ export async function runTeamSync(
   }
 }
 
-/** For an in-progress cycle, find the last mid-cycle reset discontinuity — a
- *  large drop in consecutive real readings (e.g. a limit grant 88% → 20%) —
- *  and return only the points after it. Normal spend only ever raises
- *  utilization within a cycle, so any drop ≥ RESET_DROP_PP between adjacent
- *  real readings is unambiguously a reset/grant, not noise. Mirrors
- *  pointsAfterLastReset in apps/web/lib/cycle-peaks.ts — keep them aligned. */
+/** In-progress cycle: drop points before the last mid-cycle reset (a ≥30pp
+ *  real-reading drop, e.g. a grant 88% → 20%). Valid because utilization only
+ *  ever rises within a cycle. Mirrors pointsAfterLastReset in
+ *  apps/web/lib/cycle-peaks.ts — keep them aligned. */
 const RESET_DROP_PP = 30;
 function pointsAfterLastReset<P extends { ts: string; real_5h: number | null; real_7d: number | null }>(
   points: P[],
