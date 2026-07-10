@@ -1,10 +1,12 @@
 import AppKit
 import SwiftUI
 
-// Brand glyphs sourced from OpenUsage (MIT) and converted to PNG. Loaded from
-// the app bundle's Contents/Resources so they ship inside the .app. Each is a
-// single-shape template that we tint to the provider's brand color so it reads
-// cleanly on the dark menu bar and inside the popover.
+// Brand glyphs sourced from OpenUsage (MIT) ProviderIcons:
+//   https://github.com/robinebers/openusage
+//   Sources/OpenUsage/Resources/ProviderIcons/{claude,codex,zai,grok}.svg
+// Loaded from the app bundle's Contents/Resources so they ship inside the
+// .app. Each is a single-shape template that we tint to the provider's brand
+// color so it reads cleanly on the dark menu bar and inside the popover.
 
 enum BrandIcon {
   static func baseImage(for kind: AgentKind) -> NSImage? {
