@@ -232,6 +232,8 @@ describe("grok parser", () => {
     expect(meta.model).toBe("grok-4.5");
     expect(meta.cwd).toBe(CWD);
     expect(meta.projectName).toContain("fleetlens");
+    // Raw URL-encoded group dir — matches Grok's on-disk layout under sessions/.
+    expect(meta.projectDir).toBe(encodeURIComponent(CWD));
     expect(meta.firstUserPreview).toContain("menu bar widget");
     expect(meta.toolCallCount).toBeGreaterThanOrEqual(1);
     expect(meta.turnCount).toBeGreaterThanOrEqual(1);
@@ -309,9 +311,9 @@ describe("grok parser", () => {
 });
 
 describe("grok multi-agent registry integration", () => {
-  it("listAllSessions surfaces agent=grok from a fixture root via listGrokSessions twice", async () => {
-    // listAllSessions uses default roots; exercise the public list surface
-    // that the registry wraps, then double-run for stability.
+  it("listGrokSessions is stable across two runs and is wired into the registry", async () => {
+    // Registry listAllSessions uses default roots; exercise the public list
+    // surface that the registry wraps, then double-run for stability.
     const { root, sessionId } = await makeFixture();
     const a = await listGrokSessions({ root });
     const b = await listGrokSessions({ root });

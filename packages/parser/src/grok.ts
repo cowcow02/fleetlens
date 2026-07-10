@@ -37,13 +37,18 @@ import type {
   Usage,
 } from "./types.js";
 
-function resolveGrokHome(): string {
-  return process.env.GROK_HOME || path.join(os.homedir(), ".grok");
+/** Resolve at call time so GROK_HOME overrides are not frozen at import. */
+export function resolveDefaultGrokRoot(): string {
+  const home = process.env.GROK_HOME || path.join(os.homedir(), ".grok");
+  return path.join(home, "sessions");
 }
 
-export const DEFAULT_GROK_ROOT = path.join(resolveGrokHome(), "sessions");
+/** Default display path (~/.grok/sessions). Prefer resolveDefaultGrokRoot()
+ *  for actual reads so GROK_HOME is honored at call time. */
+export const DEFAULT_GROK_ROOT = path.join(os.homedir(), ".grok", "sessions");
 
-/** Same idle threshold as Claude / Codex / Gemini parsers. */
+/** Same idle threshold as Claude / Codex / Gemini parsers (agent-time).
+ *  Keep in lockstep with those copies if the gap ever changes. */
 const IDLE_GAP_MS = 3 * 60 * 1000;
 
 type SessionDir = {
@@ -56,8 +61,10 @@ type SessionDir = {
   /** Absolute path to signals.json if present. */
   signalsPath: string | null;
   sessionId: string;
-  /** URL-encoded project group dir name (or decoded cwd when available). */
-  encodedCwd: string;
+  /** Raw group directory name under sessions/ (URL-encoded cwd, filesystem form). */
+  groupName: string;
+  /** Decoded absolute cwd for the project group (from summary or group name). */
+  decodedCwd: string;
   mtimeMs: number;
   sizeBytes: number;
 };
@@ -154,7 +161,7 @@ async function listSessionDirs(root: string): Promise<SessionDir[]> {
     const groupStat = await fs.stat(groupDir).catch(() => null);
     if (!groupStat?.isDirectory()) continue;
 
-    const encodedCwd = await resolveEncodedCwd(groupDir, group);
+    const decodedCwd = await resolveEncodedCwd(groupDir, group);
     const entries = await safeReaddir(groupDir);
     for (const entry of entries) {
       // Skip project-level logs and non-session dirs.
@@ -181,7 +188,8 @@ async function listSessionDirs(root: string): Promise<SessionDir[]> {
         summaryPath,
         signalsPath: signalsStat?.isFile() ? signalsCandidate : null,
         sessionId: entry,
-        encodedCwd,
+        groupName: group,
+        decodedCwd,
         mtimeMs,
         sizeBytes,
       });
@@ -348,7 +356,7 @@ async function parseSession(dir: SessionDir): Promise<ParsedSession> {
   ]);
 
   const sessionId = summary?.info?.id ?? dir.sessionId;
-  const cwd = summary?.info?.cwd ?? dir.encodedCwd;
+  const cwd = summary?.info?.cwd ?? dir.decodedCwd;
   let model =
     summary?.current_model_id ??
     signals?.primaryModelId ??
@@ -631,10 +639,10 @@ async function parseSession(dir: SessionDir): Promise<ParsedSession> {
       : undefined;
 
   const project = cwd ? resolveProjectIdentity(cwd) : undefined;
-  const projectName = project?.projectName ?? cwd ?? dir.encodedCwd;
-  const projectDir = cwd
-    ? cwd.replace(/^\//, "-").replace(/\//g, "-")
-    : dir.encodedCwd;
+  const projectName = project?.projectName ?? cwd ?? dir.decodedCwd;
+  // Raw filesystem group name under ~/.grok/sessions/ (URL-encoded cwd).
+  // Matches CLAUDE.md: projectDir is the encoded form, not slash-to-dash.
+  const projectDir = dir.groupName || (cwd ? encodeURIComponent(cwd) : "(unknown)");
 
   // Previews from summary when the stream had no user text (edge case).
   if (!firstUserPreview) {
@@ -693,7 +701,7 @@ export function clearGrokCaches(): void {
 export type ListGrokOptions = { root?: string; limit?: number };
 
 export async function listGrokSessions(opts: ListGrokOptions = {}): Promise<SessionMeta[]> {
-  const root = opts.root ?? DEFAULT_GROK_ROOT;
+  const root = opts.root ?? resolveDefaultGrokRoot();
   const dirs = await listSessionDirs(root);
   const out: SessionMeta[] = [];
   for (const dir of dirs) {
@@ -725,7 +733,7 @@ export async function getGrokSession(
   id: string,
   opts: GetGrokOptions = {},
 ): Promise<SessionDetail | null> {
-  const root = opts.root ?? DEFAULT_GROK_ROOT;
+  const root = opts.root ?? resolveDefaultGrokRoot();
   const dirs = await listSessionDirs(root);
   const chosen = dirs.find((d) => d.sessionId === id);
   if (!chosen) {

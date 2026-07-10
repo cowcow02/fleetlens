@@ -50,8 +50,8 @@ enum BrandIcon {
     case .zai:
       return NSColor(calibratedRed: 0.23, green: 0.51, blue: 0.96, alpha: 1)
     case .grok:
-      // Near-black slate — matches web GROK_METADATA accent.
-      return NSColor(calibratedRed: 0.12, green: 0.16, blue: 0.23, alpha: 1)
+      // Slate-400 — matches web GROK_METADATA accent (visible on dark chrome).
+      return NSColor(calibratedRed: 100 / 255, green: 116 / 255, blue: 139 / 255, alpha: 1)
     }
   }
 }

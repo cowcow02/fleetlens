@@ -82,8 +82,8 @@ export const GROK_METADATA: AgentMetadata = {
   kind: "grok",
   displayName: "Grok Build",
   shortLabel: "Grok",
-  // Near-black slate — readable on light UI; pairs with Grok's monochrome brand.
-  accentColor: "rgb(30, 41, 59)",
+  // Slate-400 — visible on dark Fleetlens chrome and still fine on light.
+  accentColor: "rgb(100, 116, 139)",
   iconChar: "◈",
 };
 

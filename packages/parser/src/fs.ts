@@ -153,6 +153,7 @@ export type {
 
 export {
   DEFAULT_GROK_ROOT,
+  resolveDefaultGrokRoot,
   listGrokSessions,
   getGrokSession,
   grokSessionLocalDay,
@@ -321,6 +322,7 @@ const coworkSource: AgentSource = {
 // rate-limit windows — no usagePoller until that telemetry exists upstream.
 const grokSource: AgentSource = {
   ...GROK_METADATA,
+  // Display default; list/get re-resolve GROK_HOME at call time internally.
   defaultRoot: _DEFAULT_GROK_ROOT,
   async listSessions(opts) {
     return _listGrokSessions(opts);
