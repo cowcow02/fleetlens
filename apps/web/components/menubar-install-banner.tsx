@@ -29,7 +29,9 @@ export function MenubarInstallBanner() {
         setState(s);
         const dismissed = window.localStorage.getItem(DISMISS_KEY);
         // Show only on macOS, when not installed, and not previously dismissed.
-        if (s.supported && !s.installed && !dismissed) setHidden(false);
+        // bundled=false (a build shipped without the .app, or `pnpm dev`) →
+        // install can only 500; don't invite the click.
+        if (s.supported && s.bundled && !s.installed && !dismissed) setHidden(false);
       })
       .catch(() => {});
     return () => {

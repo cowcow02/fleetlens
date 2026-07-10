@@ -81,8 +81,7 @@ final class UsageStore: ObservableObject {
   }
 
   private static nonisolated func runUsageSave() -> Bool {
-    let url = FileManager.default.homeDirectoryForCurrentUser
-      .appendingPathComponent(".cclens/cli-launch.json")
+    let url = SnapshotIO.cclensDir().appendingPathComponent("cli-launch.json")
     guard let data = try? Data(contentsOf: url),
           let launch = try? JSONDecoder().decode(CliLaunch.self, from: data) else {
       return false

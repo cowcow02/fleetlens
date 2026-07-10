@@ -6,6 +6,26 @@ on:
     branches: [master]
 
 jobs:
+  # Same steps as release.yml's build-menubar job — run on every PR so a
+  # Swift breakage surfaces here, not at tag time.
+  menubar:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Swift tests
+        run: swift test --package-path apps/menubar
+
+      - name: Build universal .app
+        run: bash apps/menubar/build-app.sh --universal
+
+      - name: Assert universal binary
+        run: |
+          ARCHS=$(lipo -archs apps/menubar/dist/FleetlensMenubar.app/Contents/MacOS/FleetlensMenubar)
+          echo "archs: $ARCHS"
+          echo "$ARCHS" | grep -q arm64
+          echo "$ARCHS" | grep -q x86_64
+
   checks:
     runs-on: ubuntu-latest
 
