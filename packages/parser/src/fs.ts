@@ -81,6 +81,7 @@ import {
   DEFAULT_GROK_ROOT as _DEFAULT_GROK_ROOT,
   listGrokSessions as _listGrokSessions,
   getGrokSession as _getGrokSession,
+  getLatestGrokUsage,
   clearGrokCaches,
 } from "./grok.js";
 
@@ -156,12 +157,14 @@ export {
   resolveDefaultGrokRoot,
   listGrokSessions,
   getGrokSession,
+  getLatestGrokUsage,
   grokSessionLocalDay,
   clearGrokCaches,
 } from "./grok.js";
 export type {
   ListGrokOptions,
   GetGrokOptions,
+  GrokUsageWindows,
 } from "./grok.js";
 
 export {
@@ -256,6 +259,7 @@ type UsageSnapshotLike = {
   agent?: AgentKind;
   five_hour: { utilization: number | null; resets_at: string | null };
   seven_day: { utilization: number | null; resets_at: string | null };
+  plan_type?: string | null;
 };
 
 const codexSource: AgentSource = {
@@ -318,8 +322,9 @@ const coworkSource: AgentSource = {
   },
 };
 
-// Grok Build exposes context-window signals, not Claude/Codex-style 5h/7d
-// rate-limit windows — no usagePoller until that telemetry exists upstream.
+// Grok has no Claude/Codex 5h/7d rate-limit envelopes. We poll the latest
+// main session's context-window fill % and store it on five_hour.utilization
+// so the shared usage.jsonl + UI pipeline work (label as "Context window").
 const grokSource: AgentSource = {
   ...GROK_METADATA,
   // Display default; list/get re-resolve GROK_HOME at call time internally.
@@ -329,6 +334,17 @@ const grokSource: AgentSource = {
   },
   async getSession(id, opts) {
     return _getGrokSession(id, opts);
+  },
+  async usagePoller() {
+    const w = await getLatestGrokUsage();
+    if (!w) return null;
+    return {
+      captured_at: new Date().toISOString(),
+      agent: "grok",
+      five_hour: w.five_hour,
+      seven_day: w.seven_day,
+      plan_type: w.plan_type,
+    };
   },
 };
 

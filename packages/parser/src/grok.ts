@@ -34,6 +34,7 @@ import type {
   SessionDetail,
   SessionEvent,
   SessionMeta,
+  SubagentRun,
   Usage,
 } from "./types.js";
 
@@ -89,10 +90,22 @@ type GrokSignals = {
   toolCallCount?: number;
   contextTokensUsed?: number;
   contextWindowTokens?: number;
+  /** 0–100 percent of context window used (preferred utilization signal). */
+  contextWindowUsage?: number;
   agentLinesAdded?: number;
   agentLinesRemoved?: number;
   primaryModelId?: string;
   modelsUsed?: string[];
+};
+
+/** Sidecar under <parent>/subagents/<child-id>/meta.json */
+type GrokSubagentMeta = {
+  subagent_id?: string;
+  parent_session_id?: string;
+  child_session_id?: string;
+  subagent_type?: string;
+  description?: string;
+  prompt?: string;
 };
 
 type ContentPart = { type?: string; text?: string };
@@ -346,6 +359,8 @@ type ChunkBuf = {
 type ParsedSession = {
   meta: SessionMeta;
   events: SessionEvent[];
+  /** From summary.session_kind — "subagent" for spawned children. */
+  sessionKind?: string;
 };
 
 async function parseSession(dir: SessionDir): Promise<ParsedSession> {
@@ -650,6 +665,8 @@ async function parseSession(dir: SessionDir): Promise<ParsedSession> {
     if (title) firstUserPreview = previewOf(title);
   }
 
+  const spawnedAgentCount = await countSubagentChildren(dir.dirPath);
+
   const meta: SessionMeta = {
     agent: "grok",
     id: sessionId,
@@ -679,9 +696,90 @@ async function parseSession(dir: SessionDir): Promise<ParsedSession> {
     linesRemoved: signals?.agentLinesRemoved,
     airTimeMs,
     activeSegments,
+    ...(spawnedAgentCount > 0 ? { spawnedAgentCount } : {}),
   };
 
-  return { meta, events };
+  return { meta, events, sessionKind: summary?.session_kind };
+}
+
+async function countSubagentChildren(dirPath: string): Promise<number> {
+  const subRoot = path.join(dirPath, "subagents");
+  const entries = await safeReaddir(subRoot);
+  let n = 0;
+  for (const e of entries) {
+    const st = await fs.stat(path.join(subRoot, e)).catch(() => null);
+    if (st?.isDirectory()) n += 1;
+  }
+  return n;
+}
+
+/**
+ * Grok stores child agents as sibling session dirs (`session_kind: "subagent"`)
+ * and indexes them under `<parent>/subagents/<child-id>/meta.json`. Load the
+ * index + child summary/signals so the parent session page can show a
+ * subagent rail like Claude Code.
+ */
+async function loadGrokSubagents(
+  parentDir: SessionDir,
+  parentStartMs: number | undefined,
+): Promise<SubagentRun[]> {
+  const subRoot = path.join(parentDir.dirPath, "subagents");
+  const entries = await safeReaddir(subRoot);
+  const groupDir = path.dirname(parentDir.dirPath);
+  const runs: SubagentRun[] = [];
+
+  for (const entry of entries) {
+    const metaPath = path.join(subRoot, entry, "meta.json");
+    const meta = await safeReadJson<GrokSubagentMeta>(metaPath);
+    if (!meta) continue;
+    const childId = meta.child_session_id ?? meta.subagent_id ?? entry;
+    const childDir = path.join(groupDir, childId);
+    const [childSummary, childSignals] = await Promise.all([
+      safeReadJson<GrokSummary>(path.join(childDir, "summary.json")),
+      safeReadJson<GrokSignals>(path.join(childDir, "signals.json")),
+    ]);
+    const startMs = childSummary?.created_at
+      ? Date.parse(childSummary.created_at)
+      : undefined;
+    const endIso = childSummary?.last_active_at ?? childSummary?.updated_at;
+    const endMs = endIso ? Date.parse(endIso) : undefined;
+    const startOk = startMs !== undefined && Number.isFinite(startMs) ? startMs : undefined;
+    const endOk = endMs !== undefined && Number.isFinite(endMs) ? endMs : undefined;
+    const usage = emptyUsage();
+    if (childSignals?.contextTokensUsed) usage.input = childSignals.contextTokensUsed;
+
+    runs.push({
+      agentId: childId,
+      agentType: meta.subagent_type ?? childSummary?.agent_name ?? "subagent",
+      description:
+        (meta.description && meta.description.trim()) ||
+        childSummary?.generated_title ||
+        childSummary?.session_summary ||
+        childId,
+      startMs: startOk,
+      endMs: endOk,
+      durationMs:
+        startOk !== undefined && endOk !== undefined
+          ? Math.max(0, endOk - startOk)
+          : undefined,
+      startTOffsetMs:
+        parentStartMs !== undefined && startOk !== undefined
+          ? Math.max(0, startOk - parentStartMs)
+          : undefined,
+      endTOffsetMs:
+        parentStartMs !== undefined && endOk !== undefined
+          ? Math.max(0, endOk - parentStartMs)
+          : undefined,
+      eventCount: childSummary?.num_messages ?? childSummary?.num_chat_messages ?? 0,
+      totalUsage: usage,
+      prompt: typeof meta.prompt === "string" ? meta.prompt : undefined,
+      model: childSummary?.current_model_id ?? childSignals?.primaryModelId,
+      toolCallCount: childSignals?.toolCallCount,
+    });
+  }
+
+  runs.sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0));
+  return runs;
 }
 
 /* ================================================================= */
@@ -705,13 +803,20 @@ export async function listGrokSessions(opts: ListGrokOptions = {}): Promise<Sess
   const dirs = await listSessionDirs(root);
   const out: SessionMeta[] = [];
   for (const dir of dirs) {
+    // Cheap pre-filter: subagents are full session dirs with
+    // summary.session_kind === "subagent". They are linked from the parent
+    // under subagents/<id>/meta.json and must NOT appear as top-level rows.
+    const summaryPeek = await safeReadJson<GrokSummary>(dir.summaryPath);
+    if (summaryPeek?.session_kind === "subagent") continue;
+
     const cached = metaCache.get(dir.dirPath);
     if (cached && cached.mtimeMs === dir.mtimeMs && cached.sizeBytes === dir.sizeBytes) {
       out.push(cached.meta);
       continue;
     }
     try {
-      const { meta } = await parseSession(dir);
+      const { meta, sessionKind } = await parseSession(dir);
+      if (sessionKind === "subagent") continue;
       metaCache.set(dir.dirPath, {
         meta,
         mtimeMs: dir.mtimeMs,
@@ -762,7 +867,18 @@ export async function getGrokSession(
     return cached.detail;
   }
   const { meta, events } = await parseSession(chosen);
-  const detail: SessionDetail = { ...meta, events };
+  const parentStartMs = meta.firstTimestamp ? Date.parse(meta.firstTimestamp) : undefined;
+  const subagents = await loadGrokSubagents(
+    chosen,
+    parentStartMs !== undefined && Number.isFinite(parentStartMs) ? parentStartMs : undefined,
+  );
+  const detail: SessionDetail = {
+    ...meta,
+    events,
+    ...(subagents.length > 0
+      ? { subagents, spawnedAgentCount: subagents.length }
+      : {}),
+  };
   detailCache.set(chosen.dirPath, {
     detail,
     mtimeMs: chosen.mtimeMs,
@@ -770,7 +886,10 @@ export async function getGrokSession(
   });
   // Keep list cache warm with the same parse.
   metaCache.set(chosen.dirPath, {
-    meta,
+    meta: {
+      ...meta,
+      ...(subagents.length > 0 ? { spawnedAgentCount: subagents.length } : {}),
+    },
     mtimeMs: chosen.mtimeMs,
     sizeBytes: chosen.sizeBytes,
   });
@@ -781,4 +900,92 @@ export function grokSessionLocalDay(meta: SessionMeta): string | undefined {
   if (!meta.firstTimestamp) return undefined;
   const ms = Date.parse(meta.firstTimestamp);
   return Number.isFinite(ms) ? toLocalDay(ms) : undefined;
+}
+
+/* ================================================================= */
+/*  Context-window usage (daemon poller)                             */
+/* ================================================================= */
+
+export type GrokUsageWindows = {
+  five_hour: { utilization: number | null; resets_at: string | null };
+  seven_day: { utilization: number | null; resets_at: string | null };
+  plan_type: string | null;
+  source_path: string;
+  context_tokens_used: number | null;
+  context_window_tokens: number | null;
+};
+
+/**
+ * Latest context-window fill % across main Grok sessions.
+ *
+ * Grok has no Claude/Codex 5h/7d rate-limit envelopes. We map
+ * `signals.contextWindowUsage` (0–100) onto the shared snapshot's
+ * `five_hour.utilization` so the existing usage log + UI pipeline works;
+ * consumers should label it "Context window" for agent=grok.
+ */
+export async function getLatestGrokUsage(
+  opts: { root?: string } = {},
+): Promise<GrokUsageWindows | null> {
+  const root = opts.root ?? resolveDefaultGrokRoot();
+  const dirs = await listSessionDirs(root);
+  let best: {
+    ms: number;
+    signals: GrokSignals;
+    path: string;
+    model?: string;
+  } | null = null;
+
+  for (const dir of dirs) {
+    const summary = await safeReadJson<GrokSummary>(dir.summaryPath);
+    if (!summary || summary.session_kind === "subagent") continue;
+    if (!dir.signalsPath) continue;
+    const signals = await safeReadJson<GrokSignals>(dir.signalsPath);
+    if (!signals) continue;
+    const hasSignal =
+      typeof signals.contextWindowUsage === "number" ||
+      (typeof signals.contextTokensUsed === "number" &&
+        typeof signals.contextWindowTokens === "number" &&
+        signals.contextWindowTokens > 0);
+    if (!hasSignal) continue;
+    const ts = summary.last_active_at ?? summary.updated_at ?? summary.created_at;
+    const ms = ts ? Date.parse(ts) : dir.mtimeMs;
+    if (!Number.isFinite(ms)) continue;
+    if (!best || ms > best.ms) {
+      best = {
+        ms,
+        signals,
+        path: dir.signalsPath,
+        model: summary.current_model_id ?? signals.primaryModelId,
+      };
+    }
+  }
+  if (!best) return null;
+
+  let util: number | null =
+    typeof best.signals.contextWindowUsage === "number"
+      ? best.signals.contextWindowUsage
+      : null;
+  if (
+    util == null &&
+    typeof best.signals.contextTokensUsed === "number" &&
+    typeof best.signals.contextWindowTokens === "number" &&
+    best.signals.contextWindowTokens > 0
+  ) {
+    util = (best.signals.contextTokensUsed / best.signals.contextWindowTokens) * 100;
+  }
+
+  return {
+    five_hour: { utilization: util, resets_at: null },
+    seven_day: { utilization: null, resets_at: null },
+    plan_type: best.model ?? null,
+    source_path: best.path,
+    context_tokens_used:
+      typeof best.signals.contextTokensUsed === "number"
+        ? best.signals.contextTokensUsed
+        : null,
+    context_window_tokens:
+      typeof best.signals.contextWindowTokens === "number"
+        ? best.signals.contextWindowTokens
+        : null,
+  };
 }
