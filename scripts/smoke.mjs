@@ -220,6 +220,8 @@ async function main() {
   results.push(await hit("/projects", "Projects grid"));
   results.push(await hit("/settings", "Settings"));
   results.push(await hit("/insights", "Insights (V2 hero)"));
+  results.push(await hit("/agent", "Agent chat"));
+  results.push(await hit("/api/agent/index", "Agent index stats API"));
   results.push(await hit("/team", "Team sync"));
   // Unpaired dev servers redirect this to /team (200 via fetch's default
   // follow) — still exercises the onboarding page's server component.
