@@ -78,6 +78,15 @@ export const ZAI_METADATA: AgentMetadata = {
   iconChar: "Z",
 };
 
+export const GROK_METADATA: AgentMetadata = {
+  kind: "grok",
+  displayName: "Grok Build",
+  shortLabel: "Grok",
+  // Near-black slate — readable on light UI; pairs with Grok's monochrome brand.
+  accentColor: "rgb(30, 41, 59)",
+  iconChar: "◈",
+};
+
 /** Ordered list of registered agent metadata. UI iterates this for
  *  badges, tabs, and prompt-template generation. */
 export const agentMetadata: AgentMetadata[] = [
@@ -87,6 +96,7 @@ export const agentMetadata: AgentMetadata[] = [
   ANTIGRAVITY_METADATA,
   COWORK_METADATA,
   ZAI_METADATA,
+  GROK_METADATA,
 ];
 
 /** Browser-safe metadata lookup. Returns undefined for unknown kinds. */
