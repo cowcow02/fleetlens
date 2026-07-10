@@ -169,6 +169,71 @@ describe("previousCyclesTrend (7d)", () => {
     expect(result.find((r) => r.endsAt.startsWith("2026-05-09"))?.current).toBe(true);
   });
 
+  it("re-baselines the ongoing cycle after a mid-cycle limit reset", () => {
+    // Regression: Claude reset the usage limit overnight — utilization
+    // dropped 88% → 20% within the SAME cycle. The pre-reset 88% belongs
+    // to the superseded limit and must not anchor the ongoing bar, which
+    // should reflect the post-reset reality (~20%). Completed cycles keep
+    // their all-time max.
+    const result = previousCyclesTrend(
+      dump([
+        point({
+          ts: "2026-05-07T00:00:00.000Z",
+          cycle_end_7d: "2026-05-08T00:00:00.000Z",
+          real_7d: 40,
+        }),
+        point({
+          ts: "2026-05-07T12:00:00.000Z",
+          cycle_end_7d: "2026-05-14T00:00:00.000Z",
+          real_7d: 88,
+        }),
+        point({
+          ts: "2026-05-07T13:00:00.000Z",
+          cycle_end_7d: "2026-05-14T00:00:00.000Z",
+          real_7d: 20,
+        }),
+        point({
+          ts: "2026-05-07T18:00:00.000Z",
+          cycle_end_7d: "2026-05-14T00:00:00.000Z",
+          real_7d: 33,
+        }),
+      ]),
+      "7d",
+      6,
+      NOW,
+    );
+    // The 7d-tolerance merge collapses the two completed-cycle points into
+    // one bar (peak 40); the post-reset ongoing cycle bar is separate.
+    const ongoing = result.find((r) => r.current);
+    expect(ongoing).toBeDefined();
+    expect(ongoing!.peakPct).toBe(33);
+    expect(ongoing!.source).toBe("real");
+  });
+
+  it("keeps the completed cycle peak at its all-time max even when it had a reset", () => {
+    // Completed cycles are historical records — a mid-cycle reset there
+    // doesn't get rebaselined; the truthful peak is the max reading.
+    const result = previousCyclesTrend(
+      dump([
+        point({
+          ts: "2026-05-01T00:00:00.000Z",
+          cycle_end_7d: "2026-05-06T00:00:00.000Z",
+          real_7d: 75,
+        }),
+        point({
+          ts: "2026-05-02T00:00:00.000Z",
+          cycle_end_7d: "2026-05-06T00:00:00.000Z",
+          real_7d: 25,
+        }),
+      ]),
+      "7d",
+      6,
+      NOW,
+    );
+    const completed = result.find((r) => !r.current);
+    expect(completed!.peakPct).toBe(75);
+  });
+
   it("returns empty when the dump is null or has fewer than two points", () => {
     expect(previousCyclesTrend(null, "7d", 6, NOW)).toEqual([]);
     expect(
@@ -213,5 +278,23 @@ describe("previousCyclesTrend (5h)", () => {
       "2026-05-07T15:00:00.000Z",
     ]);
     expect(result.map((r) => r.peakPct)).toEqual([30, 70]);
+  });
+
+  it("re-baselines the ongoing 5h cycle after a mid-cycle reset", () => {
+    // Symmetry guard for the 5h path (realKey dispatch). A grant drops the
+    // in-progress cycle 70 → 5; the post-reset peak (25) wins, not 70.
+    const result = previousCyclesTrend(
+      dump([
+        point({ ts: "2026-05-08T00:00:00.000Z", cycle_end_5h: "2026-05-08T05:00:00.000Z", real_5h: 70 }),
+        point({ ts: "2026-05-08T01:00:00.000Z", cycle_end_5h: "2026-05-08T05:00:00.000Z", real_5h: 5 }),
+        point({ ts: "2026-05-08T04:00:00.000Z", cycle_end_5h: "2026-05-08T05:00:00.000Z", real_5h: 25 }),
+      ]),
+      "5h",
+      6,
+      NOW,
+    );
+    const ongoing = result.find((r) => r.current);
+    expect(ongoing).toBeDefined();
+    expect(ongoing!.peakPct).toBe(25);
   });
 });

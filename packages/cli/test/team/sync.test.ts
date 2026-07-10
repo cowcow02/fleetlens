@@ -3,6 +3,10 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "no
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { SessionMeta } from "@claude-lens/parser";
+import type {
+  CalibrationCurve,
+  CalibrationCurvePoint,
+} from "@claude-lens/parser/fs";
 import { __setEntriesDirForTest } from "@claude-lens/entries/fs";
 import type { TeamConfig } from "../../src/team/config.js";
 import type { LastPushRecord } from "../../src/team/last-push.js";
@@ -1044,5 +1048,88 @@ describe("runTeamSync", () => {
     expect(dayPush.richRollup.day).toBe(day);
     expect(dayPush.richRollup.projects.length).toBeGreaterThanOrEqual(1);
     expect(dayPush.enrichedExtras).toBeDefined();
+  });
+});
+
+describe("buildCyclePeaksForPush — ongoing-cycle reset rebaselining", () => {
+  // The team sync pushes pre-computed cycle peaks; the server stores them
+  // as-is. This is the parallel copy of previousCyclesTrend, so the same
+  // mid-cycle-reset bug would push a stale 88% peak to the team dashboard.
+  // These tests pin the rebaselining behavior that keeps the two copies
+  // aligned (there is no shared lib — the web copy pulls `server-only`).
+
+  function fakeCurve(
+    curve: CalibrationCurvePoint[],
+  ): typeof import("@claude-lens/parser/fs").loadCalibrationCurve {
+    const dump: CalibrationCurve = {
+      model: "test",
+      tier: "pro-max-20x",
+      rate_per_pct: 0,
+      rate_per_pct_5h: 0,
+      rate_per_pct_7d: 0,
+      rate_source_5h: "tier_default",
+      rate_source_7d: "tier_default",
+      cycles_used_5h: 0,
+      cycles_used_7d: 0,
+      granularity_min: 30,
+      curve,
+      first_snapshot_ts: null,
+      real_count: curve.length,
+      total_count: curve.length,
+    };
+    return async () => dump;
+  }
+
+  function pt(ts: string, real7d: number | null, cycleEnd: string, pred7d = 0): CalibrationCurvePoint {
+    return { ts, real_5h: null, pred_5h: 0, real_7d: real7d, pred_7d: pred7d, cycle_end_5h: null, cycle_end_7d: cycleEnd };
+  }
+
+  it("re-baselines the ongoing cycle past a mid-cycle limit reset", async () => {
+    // Mirror of the live bug: same resets_at window, util 88 → 0 (reset) →
+    // climbing back. The pushed peak must reflect post-reset reality.
+    const past = "2024-06-01T00:00:00.000Z"; // completed (before real now)
+    const future = "2099-01-10T00:00:00.000Z"; // ongoing (after real now)
+    const { buildCyclePeaksForPush } = await import("../../src/team/sync.js");
+    const result = await buildCyclePeaksForPush(
+      "pro-max-20x",
+      fakeCurve([
+        pt("2024-05-20T00:00:00.000Z", 55, past),
+        pt("2099-01-05T12:00:00.000Z", 88, future),
+        pt("2099-01-05T13:00:00.000Z", 0, future),
+        pt("2099-01-05T18:00:00.000Z", 30, future),
+      ]),
+    );
+    expect(result).toBeDefined();
+    const ongoing = result!.sevenDay.find((c) => c.current);
+    expect(ongoing).toBeDefined();
+    expect(ongoing!.peakPct).toBe(30);
+    expect(ongoing!.source).toBe("real");
+    // Completed cycle keeps its all-time max.
+    const completed = result!.sevenDay.find((c) => !c.current);
+    expect(completed!.peakPct).toBe(55);
+  });
+
+  it("does not cap a >100 predicted peak (team wire path passes overage through)", async () => {
+    // Predicted overage is intentionally forwarded >100 (legit extra-usage)
+    // — the team schema allows it. Regression guard that we did NOT port
+    // the web copy's Math.min(...,100) cap.
+    const past = "2024-06-01T00:00:00.000Z";
+    const { buildCyclePeaksForPush } = await import("../../src/team/sync.js");
+    const result = await buildCyclePeaksForPush(
+      "pro-max-20x",
+      fakeCurve([pt("2024-05-20T00:00:00.000Z", null, past, 148)]),
+    );
+    const completed = result!.sevenDay.find((c) => !c.current);
+    expect(completed!.peakPct).toBe(148);
+    expect(completed!.source).toBe("predicted");
+  });
+
+  it("returns undefined when the calibration curve is empty", async () => {
+    const { buildCyclePeaksForPush } = await import("../../src/team/sync.js");
+    const result = await buildCyclePeaksForPush(
+      "pro-max-20x",
+      (async () => null) as typeof import("@claude-lens/parser/fs").loadCalibrationCurve,
+    );
+    expect(result).toBeUndefined();
   });
 });
