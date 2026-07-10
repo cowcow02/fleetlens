@@ -57,8 +57,8 @@ export default async function UsagePage({
   // Always show Claude in the tab strip even if empty — it's the canonical
   // source. Codex appears only once it has at least one snapshot.
   agentsWithData.add("claude-code");
-  // Grok Build is a registered session agent but has no 5h/7d plan windows.
-  // Still list the tab so users can discover where Grok activity lives.
+  // Always list Grok once registered — context-window snapshots appear after
+  // the daemon's first poll; the tab still works empty.
   if (getAgentMetadata("grok")) agentsWithData.add("grok");
 
   const requested: AgentKind | undefined = isAgentKind(params.agent) ? params.agent : undefined;
@@ -77,6 +77,7 @@ export default async function UsagePage({
   // A quarter of 7-day cycles. The bars are a grid of equal columns, so a
   // longer history just narrows them rather than overflowing.
   const cycles7d = calibration ? previousCyclesTrend(calibration, "7d", 12) : [];
+  const isGrok = selected === "grok";
 
   return (
     <div
@@ -183,10 +184,32 @@ export default async function UsagePage({
         <EmptyState agent={selected} />
       ) : (
         <>
+          {isGrok && latest.five_hour?.utilization != null && (
+            <GrokContextCard
+              utilization={latest.five_hour.utilization}
+              planType={latest.plan_type}
+            />
+          )}
           {cycles7d.length > 0 && (
             <PreviousCyclesTrend windowLabel="7d" cycles={cycles7d} />
           )}
-          <UsageChartsDashboard snapshots={snapshots} predicted={predicted ?? undefined} />
+          <UsageChartsDashboard
+            snapshots={snapshots}
+            predicted={predicted ?? undefined}
+            windows={
+              isGrok
+                ? [
+                    {
+                      key: "five_hour",
+                      label: "Context window fill",
+                      windowMs: 24 * 60 * 60 * 1000,
+                      colorVar: "var(--af-success)",
+                    },
+                  ]
+                : undefined
+            }
+            hideSonnet={isGrok}
+          />
           {selected === "zai" && latest?.web_search_quota && (
             <WebSearchQuotaCard quota={latest.web_search_quota} />
           )}
@@ -200,6 +223,7 @@ export default async function UsagePage({
           >
             Last {agentLabel(selected)} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
+            {isGrok ? " · context-window % from latest main session signals" : ""}
           </div>
         </>
       )}
@@ -325,6 +349,70 @@ function AgentTabs({ agents, selected }: { agents: AgentKind[]; selected: AgentK
   );
 }
 
+function GrokContextCard({
+  utilization,
+  planType,
+}: {
+  utilization: number;
+  planType?: string | null;
+}) {
+  const pct = Math.round(Math.min(100, Math.max(0, utilization)));
+  return (
+    <div className="af-card" style={{ padding: "16px 18px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 600,
+        }}
+      >
+        Context window
+        {planType ? (
+          <span style={{ marginLeft: 8, fontWeight: 500, textTransform: "none" }}>
+            · {planType}
+          </span>
+        ) : null}
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          marginTop: 8,
+          letterSpacing: "-0.02em",
+          lineHeight: 1.1,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {pct}%
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          height: 8,
+          borderRadius: 999,
+          background: "var(--af-border-subtle)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${pct}%`,
+            height: "100%",
+            borderRadius: 999,
+            background: agentAccent("grok"),
+          }}
+        />
+      </div>
+      <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
+        Fill of the latest main Grok session&apos;s context window (from{" "}
+        <code style={{ fontSize: 11 }}>signals.json</code>). Not a 5h/7d plan limit.
+      </p>
+    </div>
+  );
+}
+
 function EmptyState({ agent }: { agent: AgentKind }) {
   if (agent === "grok") {
     return (
@@ -342,7 +430,7 @@ function EmptyState({ agent }: { agent: AgentKind }) {
             color: "var(--af-text)",
           }}
         >
-          Grok Build has no plan-utilization windows
+          No Grok context-window samples yet
         </div>
         <p
           style={{
@@ -355,17 +443,33 @@ function EmptyState({ agent }: { agent: AgentKind }) {
             lineHeight: 1.5,
           }}
         >
-          Grok exposes context-window signals on each session, not Claude/Codex-style
-          5h/7d rate limits. Open Sessions to browse Grok conversations and tool
-          calls from this machine.
+          The daemon records each main session&apos;s context-window fill % every poll cycle.
+          Start the daemon (or run a Grok session and save usage) to populate this tab.
         </p>
-        <Link
-          href="/sessions?agent=grok"
-          className="af-btn af-btn-primary"
-          style={{ display: "inline-flex", marginTop: 16, fontSize: 12, padding: "6px 14px" }}
-        >
-          View Grok sessions
-        </Link>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 16 }}>
+          <pre
+            style={{
+              display: "inline-block",
+              background: "var(--background)",
+              border: "1px solid var(--af-border-subtle)",
+              padding: "8px 16px",
+              borderRadius: 6,
+              fontSize: 13,
+              fontFamily: "var(--font-mono)",
+              color: "var(--af-text)",
+              margin: 0,
+            }}
+          >
+            fleetlens daemon start
+          </pre>
+          <Link
+            href="/sessions?agent=grok"
+            className="af-btn af-btn-primary"
+            style={{ display: "inline-flex", alignItems: "center", fontSize: 12, padding: "6px 14px" }}
+          >
+            View Grok sessions
+          </Link>
+        </div>
       </div>
     );
   }
