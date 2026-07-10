@@ -11,7 +11,7 @@ export type IndexProgress = { built: number; reused: number; total: number };
 export type IndexStats = { sessions: number; lastRefreshMs: number | null; building: boolean };
 
 function indexDir(): string {
-  return cclensPath("assistant-index");
+  return cclensPath("agent-index");
 }
 
 function docPath(sessionId: string): string {

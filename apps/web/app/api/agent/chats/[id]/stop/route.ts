@@ -1,4 +1,4 @@
-import { killRun } from "@/lib/assistant/run";
+import { killRun } from "@/lib/agent/run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

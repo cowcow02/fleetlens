@@ -119,7 +119,7 @@ export function buildSuggestionContext(docs: IndexDoc[], nowMs: number): string 
   return lines.join("\n");
 }
 
-export const SUGGESTION_SYSTEM_PROMPT = `You write the four suggestion chips shown on the empty state of a chat assistant that searches the user's local coding-agent session history (their own past Claude Code / Codex / Gemini conversations).
+export const SUGGESTION_SYSTEM_PROMPT = `You write the four suggestion chips shown on the empty state of an agent that searches the user's local coding-agent session history (their own past Claude Code / Codex / Gemini conversations).
 
 You will receive a digest of their recent activity. Produce EXACTLY four chips, one per category:
 - "recap"      — a time-scoped "what happened" question (yesterday / this week)

@@ -1,5 +1,5 @@
-import { createChat, listChats, readChat, writeChat } from "@/lib/assistant/chat-store";
-import { getRun, reconcileChat } from "@/lib/assistant/run";
+import { createChat, listChats, readChat, writeChat } from "@/lib/agent/chat-store";
+import { getRun, reconcileChat } from "@/lib/agent/run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

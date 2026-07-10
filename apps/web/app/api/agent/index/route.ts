@@ -5,7 +5,7 @@
  * POST → run an incremental refresh, streaming progress as SSE
  */
 
-import { ensureIndex, indexStats } from "@/lib/assistant/index-store";
+import { ensureIndex, indexStats } from "@/lib/agent/index-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

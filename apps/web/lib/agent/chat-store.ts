@@ -8,7 +8,7 @@ export * from "./chat-model";
 /* ── persistence: one JSON file per conversation ───────────────────── */
 
 function chatsDir(): string {
-  return cclensPath("assistant-chats");
+  return cclensPath("agent-chats");
 }
 
 function chatPath(id: string): string {

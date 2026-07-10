@@ -8,8 +8,8 @@
  * that snapshot and this subscription.
  */
 
-import { readChat } from "@/lib/assistant/chat-store";
-import { getRun, reconcileChat } from "@/lib/assistant/run";
+import { readChat } from "@/lib/agent/chat-store";
+import { getRun, reconcileChat } from "@/lib/agent/run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

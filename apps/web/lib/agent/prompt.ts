@@ -3,11 +3,11 @@ export type ChatMessage = { role: "user" | "assistant"; text: string };
 const HISTORY_MAX_MESSAGES = 12;
 const HISTORY_MSG_MAX_CHARS = 4000;
 
-export function assistantSystemPrompt(): string {
+export function agentSystemPrompt(): string {
   const today = new Date();
   const day = today.toLocaleDateString("en-CA"); // YYYY-MM-DD in local tz
   const weekday = today.toLocaleDateString("en-US", { weekday: "long" });
-  return `You are the Fleetlens Assistant. Fleetlens is a local, privacy-first dashboard over the user's coding-agent history: every Claude Code, Codex, Gemini (and other) session recorded on this machine. You have tools that search and read those sessions.
+  return `You are the Fleetlens Agent. Fleetlens is a local, privacy-first dashboard over the user's coding-agent history: every Claude Code, Codex, Gemini (and other) session recorded on this machine. You have tools that search and read those sessions.
 
 Today is ${weekday}, ${day}. All session data is local; nothing you do leaves this machine.
 

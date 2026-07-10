@@ -13,7 +13,7 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { cclensPath } from "@claude-lens/parser/fs";
 import { interactiveLockFresh, readSettings, runClaudeSubprocess } from "@claude-lens/entries/node";
-import { ensureIndex, indexIsEmpty, indexStats, peekDocs } from "@/lib/assistant/index-store";
+import { ensureIndex, indexIsEmpty, indexStats, peekDocs } from "@/lib/agent/index-store";
 import {
   FALLBACK_SUGGESTIONS,
   SUGGESTION_SYSTEM_PROMPT,
@@ -22,7 +22,7 @@ import {
   parseSuggestions,
   suggestionInputKey,
   type Suggestion,
-} from "@/lib/assistant/suggestions";
+} from "@/lib/agent/suggestions";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ type Cache = {
 };
 
 function cachePath(): string {
-  return cclensPath("assistant-suggestions.json");
+  return cclensPath("agent-suggestions.json");
 }
 
 function readCache(): Cache | null {

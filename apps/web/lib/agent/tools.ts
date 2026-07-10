@@ -157,7 +157,7 @@ async function listProjects(): Promise<string> {
   return JSON.stringify({ projects });
 }
 
-export const assistantTools: McpTools = {
+export const agentTools: McpTools = {
   defs: DEFS,
   call: async (name, args) => {
     switch (name) {

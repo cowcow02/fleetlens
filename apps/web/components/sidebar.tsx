@@ -210,14 +210,14 @@ export function Sidebar({
           Insights
         </NavLink>
         {/* Usage and Team live in the sidebar widgets below (both already
-            link to their pages); Runs is reachable from the Assistant
+            link to their pages); Runs is reachable from the Agent
             header. Keeping the nav to the primary destinations. */}
         <NavLink
-          href="/assistant"
-          active={pathname === "/assistant" || pathname === "/runs" || pathname.startsWith("/runs/")}
+          href="/agent"
+          active={pathname === "/agent" || pathname === "/runs" || pathname.startsWith("/runs/")}
           icon={<Sparkles size={15} />}
         >
-          Assistant
+          Agent
         </NavLink>
       </nav>
 

@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Assistant — full-page chat over the local session history.
+ * Agent — full-page chat over the local session history.
  *
- * Conversations are server-persisted (~/.cclens/assistant-chats) and runs
+ * Conversations are server-persisted (~/.cclens/agent-chats) and runs
  * are detached from the page: send a message, navigate away, and the agent
  * keeps working — the conversation list shows it running, and reopening
  * replays everything you missed. Live updates arrive over SSE and are
@@ -14,7 +14,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { classifyHref } from "@/lib/assistant/links";
+import { classifyHref } from "@/lib/agent/links";
 import {
   applyRunEvent,
   type Chat,
@@ -22,7 +22,7 @@ import {
   type RunEvent,
   type Segment,
   type ToolSegment,
-} from "@/lib/assistant/chat-model";
+} from "@/lib/agent/chat-model";
 import { formatRelative } from "@/lib/format";
 import {
   CalendarDays,
@@ -228,10 +228,10 @@ function ToolChip({ seg }: { seg: ToolSegment }) {
 }
 
 function chatUrl(id: string | null): string {
-  return id ? `/assistant?chat=${id}` : "/assistant";
+  return id ? `/agent?chat=${id}` : "/agent";
 }
 
-export function AssistantChat() {
+export function AgentChat() {
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [chat, setChat] = useState<Chat | null>(null);
   const [input, setInput] = useState("");
@@ -246,7 +246,7 @@ export function AssistantChat() {
 
   const refreshList = useCallback(async () => {
     try {
-      const res = await fetch("/api/assistant/chats");
+      const res = await fetch("/api/agent/chats");
       const data = (await res.json()) as { chats: ChatListItem[] };
       setChats(data.chats);
     } catch {
@@ -272,7 +272,7 @@ export function AssistantChat() {
       subscriptionRef.current = ctrl;
       void (async () => {
         try {
-          const res = await fetch(`/api/assistant/chats/${target.id}/events?after=${target.lastSeq}`, {
+          const res = await fetch(`/api/agent/chats/${target.id}/events?after=${target.lastSeq}`, {
             signal: ctrl.signal,
           });
           if (!res.body) return;
@@ -296,7 +296,7 @@ export function AssistantChat() {
               }
               if (event.type === "sync") {
                 // No live run — re-fetch the authoritative snapshot.
-                const fresh = await fetch(`/api/assistant/chats/${target.id}`);
+                const fresh = await fetch(`/api/agent/chats/${target.id}`);
                 if (fresh.ok) setChat((await fresh.json()) as Chat);
                 terminal = true;
                 continue;
@@ -324,7 +324,7 @@ export function AssistantChat() {
         return;
       }
       try {
-        const res = await fetch(`/api/assistant/chats/${id}`);
+        const res = await fetch(`/api/agent/chats/${id}`);
         if (!res.ok) {
           setChat(null);
           return;
@@ -361,7 +361,7 @@ export function AssistantChat() {
   const refreshIndex = useCallback(async () => {
     setIndex((prev) => ({ sessions: prev?.sessions ?? 0, building: true }));
     try {
-      const res = await fetch("/api/assistant/index", { method: "POST" });
+      const res = await fetch("/api/agent/index", { method: "POST" });
       if (!res.body) return;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -393,7 +393,7 @@ export function AssistantChat() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/assistant/index")
+    fetch("/api/agent/index")
       .then((r) => r.json())
       .then((stats: { sessions: number; building: boolean }) => {
         if (cancelled) return;
@@ -410,7 +410,7 @@ export function AssistantChat() {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = (attempt: number) => {
-      fetch("/api/assistant/suggestions")
+      fetch("/api/agent/suggestions")
         .then((r) => r.json())
         .then((data: { suggestions?: Suggestion[]; refreshing?: boolean }) => {
           if (cancelled) return;
@@ -436,11 +436,11 @@ export function AssistantChat() {
       try {
         let id = chat?.id;
         if (!id) {
-          const created = await fetch("/api/assistant/chats", { method: "POST" });
+          const created = await fetch("/api/agent/chats", { method: "POST" });
           id = ((await created.json()) as { id: string }).id;
           window.history.replaceState(null, "", chatUrl(id));
         }
-        const res = await fetch(`/api/assistant/chats/${id}/messages`, {
+        const res = await fetch(`/api/agent/chats/${id}/messages`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text }),
@@ -475,12 +475,12 @@ export function AssistantChat() {
 
   const stop = useCallback(() => {
     if (!chat) return;
-    void fetch(`/api/assistant/chats/${chat.id}/stop`, { method: "POST" });
+    void fetch(`/api/agent/chats/${chat.id}/stop`, { method: "POST" });
   }, [chat]);
 
   const removeChat = useCallback(
     async (id: string) => {
-      await fetch(`/api/assistant/chats/${id}`, { method: "DELETE" });
+      await fetch(`/api/agent/chats/${id}`, { method: "DELETE" });
       if (chat?.id === id) void openChat(null);
       void refreshList();
     },
@@ -648,7 +648,7 @@ export function AssistantChat() {
         >
           <Sparkles size={16} color="var(--af-accent)" />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--af-text)" }}>Assistant</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--af-text)" }}>Agent</div>
             <div style={{ fontSize: 11, color: "var(--af-text-tertiary)" }}>
               Search, synthesize, and hand off your local session history
             </div>

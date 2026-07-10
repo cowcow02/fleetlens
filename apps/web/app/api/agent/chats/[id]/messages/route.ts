@@ -1,6 +1,6 @@
 import { readSettings } from "@claude-lens/entries/node";
-import { chatTitle, newAssistantMessage, readChat, writeChat } from "@/lib/assistant/chat-store";
-import { MAX_CONCURRENT_RUNS, activeRunCount, getRun, reconcileChat, startRun } from "@/lib/assistant/run";
+import { chatTitle, newAssistantMessage, readChat, writeChat } from "@/lib/agent/chat-store";
+import { MAX_CONCURRENT_RUNS, activeRunCount, getRun, reconcileChat, startRun } from "@/lib/agent/run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -38,7 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   startRun(chat, {
     model: body.model || readSettings().ai_features.model || "sonnet",
-    mcpUrl: new URL("/api/assistant/mcp", request.url).toString(),
+    mcpUrl: new URL("/api/agent/mcp", request.url).toString(),
   });
 
   // The persisted chat (with the user message + run anchor) so the client

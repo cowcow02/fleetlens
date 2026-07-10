@@ -7,8 +7,8 @@
  * server's session index and caches.
  */
 
-import { handleMcpMessage } from "@/lib/assistant/mcp";
-import { assistantTools } from "@/lib/assistant/tools";
+import { handleMcpMessage } from "@/lib/agent/mcp";
+import { agentTools } from "@/lib/agent/tools";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  const res = await handleMcpMessage(body, assistantTools);
+  const res = await handleMcpMessage(body, agentTools);
   if (res === null) return new Response(null, { status: 202 });
   return Response.json(res);
 }

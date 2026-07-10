@@ -1,5 +1,5 @@
-import { deleteChat, readChat } from "@/lib/assistant/chat-store";
-import { killRun, reconcileChat } from "@/lib/assistant/run";
+import { deleteChat, readChat } from "@/lib/agent/chat-store";
+import { killRun, reconcileChat } from "@/lib/agent/run";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
