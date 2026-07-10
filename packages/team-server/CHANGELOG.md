@@ -4,6 +4,11 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.15.7] — 2026-07-10
+
+### Fixed
+- **Docker image build (retry).** Staging must prefer the *complete* Playwright install and skip `.next/standalone` (the incomplete NFT copy that lacks `browsers.json`). Ships as **0.15.7**.
+
 ## [0.15.6] — 2026-07-10
 
 ### Fixed

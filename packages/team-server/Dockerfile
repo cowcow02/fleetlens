@@ -15,16 +15,26 @@ RUN pnpm -F @claude-lens/team-server build
 
 # Stage complete playwright packages (Next standalone NFT omits non-JS assets
 # like browsers.json, which makes require("playwright") fail at runtime).
-# Locate via filesystem walk — more reliable than require.resolve under pnpm.
+# Skip .next/standalone — that tree is the incomplete NFT copy that caused
+# the production 500. Prefer any package.json sibling that already has
+# browsers.json (the real install).
 RUN set -eux; \
-  CORE_PKG=$(find /app -path '*/node_modules/playwright-core/package.json' | head -1); \
-  PW_PKG=$(find /app -path '*/node_modules/playwright/package.json' \
-    ! -path '*/playwright-core/*' | head -1); \
-  test -n "$CORE_PKG"; test -n "$PW_PKG"; \
-  cp -a "$(dirname "$CORE_PKG")" /tmp/playwright-core-full; \
-  cp -a "$(dirname "$PW_PKG")" /tmp/playwright-full; \
+  CORE_DIR=""; \
+  for pkg in $(find /app -path '*/node_modules/playwright-core/package.json' ! -path '*/.next/*'); do \
+    d=$(dirname "$pkg"); \
+    if [ -f "$d/browsers.json" ]; then CORE_DIR=$d; break; fi; \
+  done; \
+  PW_DIR=""; \
+  for pkg in $(find /app -path '*/node_modules/playwright/package.json' \
+      ! -path '*/playwright-core/*' ! -path '*/.next/*'); do \
+    d=$(dirname "$pkg"); \
+    if [ -f "$d/package.json" ]; then PW_DIR=$d; break; fi; \
+  done; \
+  test -n "$CORE_DIR"; test -n "$PW_DIR"; \
+  cp -a "$CORE_DIR" /tmp/playwright-core-full; \
+  cp -a "$PW_DIR" /tmp/playwright-full; \
   test -f /tmp/playwright-core-full/browsers.json; \
-  echo "staged core=$(dirname "$CORE_PKG") pw=$(dirname "$PW_PKG")"
+  echo "staged core=$CORE_DIR pw=$PW_DIR"
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
