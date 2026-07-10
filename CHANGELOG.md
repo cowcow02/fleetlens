@@ -4,7 +4,9 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.15.5] — 2026-07-10
+
+Safe upgrade from 0.15.4. First release that actually ships the menu bar widget.
 
 ### Fixed
 - **The menu bar widget couldn't be installed from an npm install.** 0.15.4 shipped without `menubar/FleetlensMenubar.app`: the bundle is a gitignored build artifact and the release workflow (ubuntu) never built it, so npm silently skipped the `files` entry. `fleetlens menubar install` exited 1 and the web UI's install banner returned a 500. The release pipeline now builds the widget on a macOS runner — as a universal arm64 + x86_64 binary, so Intel Macs work too — runs its Swift tests, and refuses to publish if the bundle is missing from the package. The install banner also no longer offers a one-way trip: on builds without the bundle it stays hidden (the Settings card already explained the state).
