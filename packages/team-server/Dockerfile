@@ -15,11 +15,13 @@ RUN pnpm -F @claude-lens/team-server build
 
 # Stage complete playwright packages (Next standalone NFT omits non-JS assets
 # like browsers.json, which makes require("playwright") fail at runtime).
+# Resolve from the team-server package dir — pnpm may not hoist to /app/node_modules.
 RUN node -e "\
   const fs = require('fs'); \
   const path = require('path'); \
-  const core = path.dirname(require.resolve('playwright-core/package.json')); \
-  const pw = path.dirname(require.resolve('playwright/package.json')); \
+  const roots = [path.join(process.cwd(), 'packages/team-server'), process.cwd()]; \
+  const core = path.dirname(require.resolve('playwright-core/package.json', { paths: roots })); \
+  const pw = path.dirname(require.resolve('playwright/package.json', { paths: roots })); \
   fs.cpSync(core, '/tmp/playwright-core-full', { recursive: true }); \
   fs.cpSync(pw, '/tmp/playwright-full', { recursive: true }); \
   console.log('staged', core, pw); \
