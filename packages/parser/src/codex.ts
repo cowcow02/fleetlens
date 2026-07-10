@@ -477,9 +477,11 @@ export async function getCodexSession(
  * event's `rate_limits.{primary,secondary}` — primary is the 5h window
  * (window_minutes=300), secondary is the 7d window (window_minutes=10080).
  *
- * Returns null when no Codex sessions exist yet, or when the latest
- * rollout never reached a token_count event (e.g. a freshly-started
- * session that hasn't logged usage yet).
+ * Returns null when no Codex sessions exist yet, when no rollout has a
+ * usable token_count.rate_limits payload, or when every rate_limits shell
+ * is empty (e.g. limit_id "premium" with null primary/secondary — common
+ * on short Desktop turns). Empty shells are skipped so a newer Desktop
+ * session does not blank usage that an older CLI rollout still holds.
  */
 export type CodexUsageWindows = {
   /** 5h window — `rate_limits.primary` */
@@ -492,6 +494,22 @@ export type CodexUsageWindows = {
   source_path: string;
 };
 
+/**
+ * Some Codex clients (Desktop alpha, SDK) emit token_count.rate_limits with
+ * limit_id "premium" (or a mid-session empty "codex" shell) where primary and
+ * secondary are both null. Those share the envelope but carry no 5h/7d
+ * windows — treating them as authoritative blanks the menubar/usage UI.
+ */
+function hasUsableRateLimitWindows(
+  primary: Record<string, unknown> | null,
+  secondary: Record<string, unknown> | null,
+): boolean {
+  return (
+    numberOf(primary?.used_percent) !== undefined ||
+    numberOf(secondary?.used_percent) !== undefined
+  );
+}
+
 export async function getLatestCodexUsage(
   opts: { root?: string } = {},
 ): Promise<CodexUsageWindows | null> {
@@ -501,7 +519,7 @@ export async function getLatestCodexUsage(
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
   for (const file of files) {
     const lines = await readJsonl(file.filePath);
-    // Walk backwards for the newest token_count event.
+    // Walk backwards for the newest *usable* token_count event.
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i];
       if (typeof line !== "object" || line === null) continue;
@@ -513,6 +531,9 @@ export async function getLatestCodexUsage(
       if (!rl) continue;
       const primary = (rl.primary ?? null) as Record<string, unknown> | null;
       const secondary = (rl.secondary ?? null) as Record<string, unknown> | null;
+      // Skip empty premium / null-window shells; keep scanning older events
+      // and older rollouts until we find real 5h/7d numbers.
+      if (!hasUsableRateLimitWindows(primary, secondary)) continue;
       const fivePct = numberOf(primary?.used_percent);
       const sevenPct = numberOf(secondary?.used_percent);
       const fiveResetUnix = numberOf(primary?.resets_at);
