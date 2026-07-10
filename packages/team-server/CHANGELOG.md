@@ -4,6 +4,11 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.15.3] — 2026-07-10
+
+### Fixed
+- **Group insight PDF still 500'd after 0.15.2** with `Cannot find module '.../playwright-core/browsers.json'`. Next standalone NFT only copies a partial `playwright-core` (no `browsers.json` / other non-JS assets), so `import "playwright"` failed at route-module load and surfaced as a bare "Internal Server Error". The Docker image now overlays the complete `playwright` + `playwright-core` packages (flat + pnpm nest paths), and the PDF route loads Playwright via dynamic `import()` so packaging failures return a readable 500 body into `/admin/logs`.
+
 ## [0.15.2] — 2026-07-10
 
 ### Fixed
