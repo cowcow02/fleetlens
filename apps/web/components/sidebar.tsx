@@ -17,6 +17,7 @@ import {
   Radio,
   Settings,
   CalendarDays,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { formatRelative, prettyProjectName } from "@/lib/format";
@@ -217,6 +218,13 @@ export function Sidebar({
           icon={<Lightbulb size={15} />}
         >
           Insights
+        </NavLink>
+        <NavLink
+          href="/assistant"
+          active={pathname === "/assistant"}
+          icon={<Sparkles size={15} />}
+        >
+          Assistant
         </NavLink>
         <NavLink
           href="/runs"
