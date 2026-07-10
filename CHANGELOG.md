@@ -4,7 +4,9 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.15.6] — 2026-07-10
+
+Safe upgrade from 0.15.5. Completes the menu bar widget rollout: the dashboard now actually offers the install.
 
 ### Fixed
 - **Web UI reported "this build doesn't include the widget" on normal installs.** The dashboard derives the widget-bundle location from the CLI path the server was started with — but starting via the `fleetlens` command passes the npm **bin symlink** (`<prefix>/bin/fleetlens`), whose sibling `menubar/` doesn't exist, so `/api/menubar` said `bundled:false` and the install banner/button never appeared even though 0.15.5 ships the bundle. The server now resolves the real path before handing it to the web app. (Found by driving the real update path end-to-end; direct `node dist/index.js` invocations — how the sims ran — masked it.)
