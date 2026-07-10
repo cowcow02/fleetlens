@@ -4,6 +4,11 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.15.2] — 2026-07-10
+
+### Fixed
+- **Group insight PDF export returned 500 in production.** The headless capture navigated to the public `BASE_URL` (HTTPS hostname) and set a Secure session cookie for that host — from inside the container that routinely fails DNS hairpin / TLS / reachability, so Playwright timed out and the route returned 500. Capture now always hits loopback (`http://127.0.0.1:$PORT`) with a cookie scoped to that origin. Chromium launch also uses container-safe flags (`--no-sandbox`, `--disable-dev-shm-usage`) and a clearer error when the browser binary is missing. The Docker image installs Playwright Chromium (+ system deps) and runs on Debian slim instead of Alpine so the binary is actually present at runtime.
+
 ## [0.15.1] — 2026-07-08
 
 ### Fixed
