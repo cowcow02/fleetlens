@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { writePid, readPid, isProcessAlive, cleanStalePid, removePid } from "./pid.js";
 import { homedir } from "node:os";
 import { cclensHome, cclensPath } from "@claude-lens/parser/fs";
@@ -16,6 +16,37 @@ function appDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   // Standalone preserves monorepo structure: app/apps/web/server.js
   return join(here, "..", "app", "apps", "web");
+}
+
+/** The CLI entry as an on-disk real path. argv[1] is normally the npm bin
+ *  symlink (<prefix>/bin/fleetlens); web routes derive sibling paths from
+ *  FLEETLENS_CLI_BIN (…/menubar/FleetlensMenubar.app) which only resolve
+ *  from the real package location — via the symlink the widget read as
+ *  "not bundled" on every normal invocation. */
+function cliBinRealPath(): string {
+  const argv1 = process.argv[1] ?? "";
+  try {
+    return realpathSync(argv1);
+  } catch {
+    return argv1;
+  }
+}
+
+/** Version of the CLI package on disk, not the compiled CLI_VERSION.
+ *  Identical for a plain start — but `fleetlens update` restarts services
+ *  from the OLD process after npm has replaced the package, and the spawned
+ *  server.js is the new code. Stamping the compiled constant left the pid
+ *  file one version behind, so `status` warned "serving stale" forever. */
+function onDiskVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(readFileSync(join(here, "..", "package.json"), "utf8")) as {
+      version?: string;
+    };
+    return pkg.version ?? CLI_VERSION;
+  } catch {
+    return CLI_VERSION;
+  }
 }
 
 export type ServerStatus =
@@ -117,14 +148,14 @@ export async function startServer(opts: { port?: number } = {}): Promise<{ pid: 
       PORT: String(port),
       HOSTNAME: "localhost",
       CCLENS_DATA_DIR: dataDir,
-      FLEETLENS_CLI_BIN: process.argv[1],
+      FLEETLENS_CLI_BIN: cliBinRealPath(),
     },
     cwd: appDir(),
   });
 
   child.unref();
   const pid = child.pid!;
-  writePid(PID_FILE, pid, port, CLI_VERSION);
+  writePid(PID_FILE, pid, port, onDiskVersion());
 
   // Wait for server to be healthy. 30s, not 10: `team join` cold-starts this
   // on brand-new installs (first-ever Next boot, nothing cached) and a slow
