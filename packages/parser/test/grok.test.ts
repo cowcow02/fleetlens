@@ -5,7 +5,6 @@ import path from "node:path";
 import {
   listGrokSessions,
   getGrokSession,
-  getLatestGrokUsage,
   clearGrokCaches,
   DEFAULT_GROK_ROOT,
 } from "../src/grok.js";
@@ -213,12 +212,13 @@ describe("grok metadata", () => {
     expect(agentMetadata.some((m) => m.kind === "grok")).toBe(true);
   });
 
-  it("exposes grok on the multi-agent registry with a usage poller", () => {
+  it("exposes grok on the multi-agent registry (usage polled by CLI daemon)", () => {
     const src = agentSources.find((s) => s.kind === "grok");
     expect(src).toBeDefined();
     expect(src!.displayName).toBe("Grok Build");
     expect(src!.defaultRoot).toBe(DEFAULT_GROK_ROOT);
-    expect(typeof src!.usagePoller).toBe("function");
+    // Weekly billing is network I/O in packages/cli — not a parser usagePoller.
+    expect(src!.usagePoller).toBeUndefined();
   });
 });
 
@@ -364,49 +364,6 @@ describe("grok parser", () => {
     expect(detail!.spawnedAgentCount).toBe(1);
   });
 
-  it("getLatestGrokUsage reads context window from main session signals", async () => {
-    const { root } = await makeFixture();
-    // Enrich signals with an explicit contextWindowUsage percent.
-    const encoded = encodeURIComponent(CWD);
-    const signalsPath = path.join(root, encoded, SESSION_ID, "signals.json");
-    await fs.writeFile(
-      signalsPath,
-      JSON.stringify({
-        contextWindowUsage: 34,
-        contextTokensUsed: 170000,
-        contextWindowTokens: 500000,
-        primaryModelId: "grok-4.5",
-      }),
-    );
-    clearGrokCaches();
-    const u = await getLatestGrokUsage({ root });
-    expect(u).not.toBeNull();
-    expect(u!.five_hour.utilization).toBe(34);
-    expect(u!.seven_day.utilization).toBeNull();
-    expect(u!.plan_type).toBe("grok-4.5");
-
-    // Subagent signals must not win over the main session.
-    const childId = "019f4a00-subagent-usage-only";
-    const childDir = path.join(root, encoded, childId);
-    await fs.mkdir(childDir, { recursive: true });
-    await fs.writeFile(
-      path.join(childDir, "summary.json"),
-      JSON.stringify({
-        info: { id: childId, cwd: CWD },
-        session_kind: "subagent",
-        last_active_at: "2099-01-01T00:00:00.000Z",
-        current_model_id: "grok-sub",
-      }),
-    );
-    await fs.writeFile(
-      path.join(childDir, "signals.json"),
-      JSON.stringify({ contextWindowUsage: 99, primaryModelId: "grok-sub" }),
-    );
-    clearGrokCaches();
-    const u2 = await getLatestGrokUsage({ root });
-    expect(u2!.five_hour.utilization).toBe(34);
-    expect(u2!.plan_type).toBe("grok-4.5");
-  });
 });
 
 describe("grok multi-agent registry integration", () => {

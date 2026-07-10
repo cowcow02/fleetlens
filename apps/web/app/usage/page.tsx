@@ -57,7 +57,7 @@ export default async function UsagePage({
   // Always show Claude in the tab strip even if empty — it's the canonical
   // source. Codex appears only once it has at least one snapshot.
   agentsWithData.add("claude-code");
-  // Always list Grok once registered — context-window snapshots appear after
+  // Always list Grok once registered — weekly pool snapshots appear after
   // the daemon's first poll; the tab still works empty.
   if (getAgentMetadata("grok")) agentsWithData.add("grok");
 
@@ -184,9 +184,10 @@ export default async function UsagePage({
         <EmptyState agent={selected} />
       ) : (
         <>
-          {isGrok && latest.five_hour?.utilization != null && (
-            <GrokContextCard
-              utilization={latest.five_hour.utilization}
+          {isGrok && latest.seven_day?.utilization != null && (
+            <GrokWeeklyCard
+              utilization={latest.seven_day.utilization}
+              resetsAt={latest.seven_day.resets_at}
               planType={latest.plan_type}
             />
           )}
@@ -200,10 +201,11 @@ export default async function UsagePage({
               isGrok
                 ? [
                     {
-                      key: "five_hour",
-                      label: "Context window fill",
-                      windowMs: 24 * 60 * 60 * 1000,
-                      colorVar: "var(--af-success)",
+                      // Grok has no 5h window — chart only the weekly pool.
+                      key: "seven_day",
+                      label: "7d utilization (weekly pool)",
+                      windowMs: 7 * 24 * 60 * 60 * 1000,
+                      colorVar: "var(--af-accent)",
                     },
                   ]
                 : undefined
@@ -223,7 +225,7 @@ export default async function UsagePage({
           >
             Last {agentLabel(selected)} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
-            {isGrok ? " · context-window % from latest main session signals" : ""}
+            {isGrok ? " · weekly shared-pool % (no 5h window)" : ""}
           </div>
         </>
       )}
@@ -349,11 +351,13 @@ function AgentTabs({ agents, selected }: { agents: AgentKind[]; selected: AgentK
   );
 }
 
-function GrokContextCard({
+function GrokWeeklyCard({
   utilization,
+  resetsAt,
   planType,
 }: {
   utilization: number;
+  resetsAt?: string | null;
   planType?: string | null;
 }) {
   const pct = Math.round(Math.min(100, Math.max(0, utilization)));
@@ -368,7 +372,7 @@ function GrokContextCard({
           fontWeight: 600,
         }}
       >
-        Context window
+        7-day weekly pool
         {planType ? (
           <span style={{ marginLeft: 8, fontWeight: 500, textTransform: "none" }}>
             · {planType}
@@ -406,8 +410,14 @@ function GrokContextCard({
         />
       </div>
       <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
-        Fill of the latest main Grok session&apos;s context window (from{" "}
-        <code style={{ fontSize: 11 }}>signals.json</code>). Not a 5h/7d plan limit.
+        Grok unified-billing shared weekly pool (same source as the Grok CLI).
+        There is no 5-hour window — only this 7-day limit.
+        {resetsAt ? (
+          <>
+            {" "}
+            Resets {new Date(resetsAt).toLocaleString()}.
+          </>
+        ) : null}
       </p>
     </div>
   );
@@ -430,7 +440,7 @@ function EmptyState({ agent }: { agent: AgentKind }) {
             color: "var(--af-text)",
           }}
         >
-          No Grok context-window samples yet
+          No Grok weekly usage samples yet
         </div>
         <p
           style={{
@@ -443,10 +453,11 @@ function EmptyState({ agent }: { agent: AgentKind }) {
             lineHeight: 1.5,
           }}
         >
-          The daemon records each main session&apos;s context-window fill % every poll cycle.
-          Start the daemon (or run a Grok session and save usage) to populate this tab.
+          The daemon polls Grok&apos;s weekly shared-pool % (via the same billing API as
+          the Grok CLI). Run <code style={{ fontSize: 11 }}>grok login</code> if needed,
+          then start the daemon.
         </p>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 16 }}>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 16, flexWrap: "wrap" }}>
           <pre
             style={{
               display: "inline-block",

@@ -1,7 +1,8 @@
 import { fetchUsage, UsageApiError } from "../usage/api.js";
+import { fetchGrokUsage, GrokApiError } from "../usage/grok.js";
 import { formatUsage } from "../usage/format.js";
 import { appendSnapshot } from "../usage/storage.js";
-import { cclensPath } from "@claude-lens/parser/fs";
+import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 
 const USAGE_LOG = cclensPath("usage.jsonl");
 
@@ -27,6 +28,33 @@ Usage:
     const snapshot = await fetchUsage();
     if (save) appendSnapshot(USAGE_LOG, snapshot);
     process.stdout.write(formatUsage(snapshot));
+    // Also poll disk/network agents so menubar force-refresh stays multi-agent.
+    if (save) {
+      for (const source of agentSources) {
+        if (source.kind === "claude-code" || !source.usagePoller) continue;
+        try {
+          const partial = await source.usagePoller();
+          if (!partial) continue;
+          appendSnapshot(USAGE_LOG, {
+            ...partial,
+            seven_day_opus: null,
+            seven_day_sonnet: null,
+            seven_day_oauth_apps: null,
+            seven_day_cowork: null,
+            extra_usage: null,
+          });
+        } catch {
+          // Non-fatal for manual --save.
+        }
+      }
+      try {
+        appendSnapshot(USAGE_LOG, await fetchGrokUsage());
+      } catch (err) {
+        if (!(err instanceof GrokApiError && err.code === "no_auth")) {
+          // Quiet when Grok isn't logged in.
+        }
+      }
+    }
     process.stdout.write("\n  (tip: run with --history for the daily token/cost table)\n");
   } catch (err) {
     if (err instanceof UsageApiError) {

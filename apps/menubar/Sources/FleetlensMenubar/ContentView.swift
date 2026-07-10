@@ -124,19 +124,15 @@ struct AgentSection: View {
         Text(kind.displayName).font(.subheadline.weight(.semibold))
       }
 
-      if kind == .grok {
-        // Grok reports context-window fill on fiveHour; no 7d plan window.
-        WindowRow(label: "Context window", window: snapshot.fiveHour,
-                  color: thresholdColor(snapshot.fiveHour.utilization),
-                  totalDuration: 0)
-      } else {
-        WindowRow(label: "5-hour window", window: snapshot.fiveHour,
-                  color: thresholdColor(snapshot.fiveHour.utilization),
-                  totalDuration: 5 * 3_600)
-        WindowRow(label: "7-day window", window: snapshot.sevenDay,
-                  color: thresholdColor(snapshot.sevenDay.utilization),
-                  totalDuration: 7 * 86_400)
-      }
+      // Grok has no 5h window (fiveHour.utilization is null → "—"); weekly
+      // shared-pool % lands on sevenDay so both lines align with other agents.
+      WindowRow(label: "5-hour window", window: snapshot.fiveHour,
+                color: thresholdColor(snapshot.fiveHour.utilization),
+                totalDuration: 5 * 3_600)
+      WindowRow(label: kind == .grok ? "7-day window (weekly)" : "7-day window",
+                window: snapshot.sevenDay,
+                color: thresholdColor(snapshot.sevenDay.utilization),
+                totalDuration: 7 * 86_400)
 
       if let opus = snapshot.sevenDayOpus?.utilization,
          let sonnet = snapshot.sevenDaySonnet?.utilization,
