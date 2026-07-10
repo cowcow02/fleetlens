@@ -15,16 +15,16 @@ RUN pnpm -F @claude-lens/team-server build
 
 # Stage complete playwright packages (Next standalone NFT omits non-JS assets
 # like browsers.json, which makes require("playwright") fail at runtime).
-# Use `pnpm -F … exec` so resolution happens inside the package graph.
-RUN pnpm -F @claude-lens/team-server exec node -e "\
-  const fs = require('fs'); \
-  const path = require('path'); \
-  const core = path.dirname(require.resolve('playwright-core/package.json')); \
-  const pw = path.dirname(require.resolve('playwright/package.json')); \
-  fs.cpSync(core, '/tmp/playwright-core-full', { recursive: true }); \
-  fs.cpSync(pw, '/tmp/playwright-full', { recursive: true }); \
-  console.log('staged', core, pw); \
-"
+# Locate via filesystem walk — more reliable than require.resolve under pnpm.
+RUN set -eux; \
+  CORE_PKG=$(find /app -path '*/node_modules/playwright-core/package.json' | head -1); \
+  PW_PKG=$(find /app -path '*/node_modules/playwright/package.json' \
+    ! -path '*/playwright-core/*' | head -1); \
+  test -n "$CORE_PKG"; test -n "$PW_PKG"; \
+  cp -a "$(dirname "$CORE_PKG")" /tmp/playwright-core-full; \
+  cp -a "$(dirname "$PW_PKG")" /tmp/playwright-full; \
+  test -f /tmp/playwright-core-full/browsers.json; \
+  echo "staged core=$(dirname "$CORE_PKG") pw=$(dirname "$PW_PKG")"
 
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
