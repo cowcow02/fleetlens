@@ -122,10 +122,13 @@ function PromptCard({ text }: { text: string }) {
         <button
           type="button"
           onClick={() => {
-            navigator.clipboard?.writeText(text).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
+            navigator.clipboard
+              ?.writeText(text)
+              .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              })
+              .catch(() => {});
           }}
           style={{
             display: "inline-flex",

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { agentSources, cclensPath, invalidateFile } from "@claude-lens/parser/fs";
 import type { SessionMeta } from "@claude-lens/parser";
@@ -97,9 +97,20 @@ async function refresh(onProgress?: (p: IndexProgress) => void): Promise<IndexDo
     }
   }
 
-  // Drop sessions whose transcripts were pruned so search can't surface ghosts.
+  // Drop sessions whose transcripts were pruned so search can't surface
+  // ghosts — from memory AND disk (a stale disk doc would re-inflate the
+  // indexStats readdir count on the next cold boot).
   for (const id of store.memory.keys()) {
     if (!alive.has(id)) store.memory.delete(id);
+  }
+  try {
+    for (const f of readdirSync(indexDir())) {
+      if (!f.endsWith(".json")) continue;
+      const id = f.slice(0, -".json".length);
+      if (!alive.has(id)) rmSync(join(indexDir(), f), { force: true });
+    }
+  } catch {
+    /* index dir may not exist yet */
   }
 
   const total = pending.length + reused;

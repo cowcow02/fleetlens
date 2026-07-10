@@ -1,9 +1,10 @@
 /**
- * Minimal MCP (Model Context Protocol) message handler — just enough of the
- * streamable-HTTP transport for `claude -p --mcp-config` to use this app as
- * a tool server: initialize / tools/list / tools/call over plain JSON-RPC.
- * No SDK dependency; the claude CLI is the only client we serve.
+ * MCP (Model Context Protocol) message handler: initialize / tools/list /
+ * tools/call over plain JSON-RPC (streamable-HTTP transport). No SDK
+ * dependency — the claude CLI is the only client this will ever serve.
  */
+
+import pkg from "../../package.json" with { type: "json" };
 
 export type McpToolDef = {
   name: string;
@@ -55,7 +56,7 @@ export async function handleMcpMessage(body: unknown, tools: McpTools): Promise<
       return result(id, {
         protocolVersion: typeof requested === "string" ? requested : PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: "fleetlens", version: "1.0.0" },
+        serverInfo: { name: "fleetlens", version: pkg.version },
       });
     }
     case "ping":

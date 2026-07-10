@@ -19,9 +19,8 @@ function cleanText(text: string): string {
   return text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "").trimEnd();
 }
 
-/** Extract the searchable conversational text of one session. Tool calls,
- *  tool results, and thinking are deliberately excluded — search should find
- *  what was said, not every file path a tool ever printed. */
+/** Tool calls, tool results, and thinking are deliberately excluded —
+ *  search should find what was said, not every file path a tool printed. */
 export function extractIndexDoc(
   session: SessionDetail,
   file: { mtimeMs: number; sizeBytes: number },

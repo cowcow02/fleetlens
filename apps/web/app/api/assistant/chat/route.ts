@@ -207,7 +207,9 @@ export async function POST(request: Request) {
         }
       });
       proc.stderr.on("data", (c: Buffer) => {
-        stderr += c.toString("utf8");
+        // Only the first 400 chars ever reach the client; cap the buffer so a
+        // chatty subprocess can't grow it unbounded before the kill timer.
+        if (stderr.length < 4000) stderr += c.toString("utf8");
       });
       proc.on("close", (code) => {
         clearTimeout(killTimer);

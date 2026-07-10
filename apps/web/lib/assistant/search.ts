@@ -19,7 +19,7 @@ export function parseQuery(q: string): ParsedQuery {
     new Set(
       rest
         .toLowerCase()
-        .split(/[^\p{L}\p{N}_.\/-]+/u)
+        .split(/[^\p{L}\p{N}_./-]+/u)
         .filter((t) => t.length >= 2),
     ),
   );
