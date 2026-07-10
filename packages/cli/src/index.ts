@@ -100,7 +100,7 @@ Advanced:
   start --no-daemon                 Start only the web server (no daemon)
   daemon <start|stop|status|logs>   Manage the usage daemon by itself
   autostart <install|uninstall|status>   Run the usage daemon at login (macOS launchd)
-  menubar <install|uninstall|open|status>   Native macOS menu bar widget (Claude/Codex/Z.ai usage)
+  menubar <install|uninstall|open|status>   Native macOS menu bar widget (Claude/Codex/Z.ai plan usage; Grok sessions on the dashboard)
 
 Team:
   team join <url> <token>           Pair with a team server (browser setup)

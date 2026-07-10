@@ -57,6 +57,9 @@ export default async function UsagePage({
   // Always show Claude in the tab strip even if empty — it's the canonical
   // source. Codex appears only once it has at least one snapshot.
   agentsWithData.add("claude-code");
+  // Grok Build is a registered session agent but has no 5h/7d plan windows.
+  // Still list the tab so users can discover where Grok activity lives.
+  if (getAgentMetadata("grok")) agentsWithData.add("grok");
 
   const requested: AgentKind | undefined = isAgentKind(params.agent) ? params.agent : undefined;
   const selected: AgentKind =
@@ -323,6 +326,50 @@ function AgentTabs({ agents, selected }: { agents: AgentKind[]; selected: AgentK
 }
 
 function EmptyState({ agent }: { agent: AgentKind }) {
+  if (agent === "grok") {
+    return (
+      <div
+        className="af-card"
+        style={{
+          padding: "48px 32px",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: "var(--af-text)",
+          }}
+        >
+          Grok Build has no plan-utilization windows
+        </div>
+        <p
+          style={{
+            fontSize: 12,
+            color: "var(--af-text-tertiary)",
+            marginTop: 8,
+            maxWidth: 440,
+            marginLeft: "auto",
+            marginRight: "auto",
+            lineHeight: 1.5,
+          }}
+        >
+          Grok exposes context-window signals on each session, not Claude/Codex-style
+          5h/7d rate limits. Open Sessions to browse Grok conversations and tool
+          calls from this machine.
+        </p>
+        <Link
+          href="/sessions?agent=grok"
+          className="af-btn af-btn-primary"
+          style={{ display: "inline-flex", marginTop: 16, fontSize: 12, padding: "6px 14px" }}
+        >
+          View Grok sessions
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div
       className="af-card"
@@ -349,7 +396,9 @@ function EmptyState({ agent }: { agent: AgentKind }) {
       >
         {agent === "claude-code"
           ? "Start the polling daemon to begin collecting metrics every 5 minutes:"
-          : "The daemon picks up Codex usage from disk on every poll cycle. Run a Codex session and the data will appear here within minutes."}
+          : agent === "zai"
+            ? "Save a Z.ai API key in Settings; the daemon (or a settings save) writes utilization snapshots here."
+            : "The daemon picks up this agent's rate-limit windows from disk on every poll cycle. Run a session and the data will appear here within minutes."}
       </p>
       {agent === "claude-code" && (
         <pre
