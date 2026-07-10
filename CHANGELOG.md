@@ -4,6 +4,13 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.15.7] — 2026-07-10
+
+Safe upgrade from 0.15.6. Usage trend reflects the current cycle's actual state after a limit reset.
+
+### Fixed
+- **Ongoing usage cycle stuck at its pre-reset peak.** When Claude Code reset the usage limit mid-cycle (overnight reset, manual grant, or rolling-window slide), utilization dropped sharply (e.g. 88% → 20%) within the same `resets_at` window — but the "Previous 7d cycles" bar for the in-progress cycle stayed anchored to the pre-reset all-time high instead of the post-reset reality. The in-progress cycle now re-baselines past a mid-cycle reset (a ≥30pp drop between consecutive readings), while completed cycles keep their true historical peak. The same fix is applied to the team-sync push path, so the team dashboard's per-member cycle strip self-corrects on each member's next sync (the server stores pushed peaks as-is and never re-derives, so no team-server release is required).
+
 ## [0.15.6] — 2026-07-10
 
 Safe upgrade from 0.15.5. Completes the menu bar widget rollout: the dashboard now actually offers the install.
