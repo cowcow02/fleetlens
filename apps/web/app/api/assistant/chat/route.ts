@@ -16,6 +16,8 @@
  */
 
 import { spawn } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import { cclensPath } from "@claude-lens/parser/fs";
 import { readSettings } from "@claude-lens/entries/node";
 import { assistantSystemPrompt, buildUserPrompt, type ChatMessage } from "@/lib/assistant/prompt";
 
@@ -104,7 +106,16 @@ export async function POST(request: Request) {
         "--append-system-prompt", systemPrompt,
       ];
 
-      const proc = spawn("claude", args, { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env } });
+      // Neutral cwd: spawned from inside a repo, Claude Code would load that
+      // project's CLAUDE.md and auto-memory into context — the model then
+      // cites memory files as if they were linkable pages.
+      const runtimeDir = cclensPath("assistant-runtime");
+      mkdirSync(runtimeDir, { recursive: true });
+      const proc = spawn("claude", args, {
+        stdio: ["pipe", "pipe", "pipe"],
+        env: { ...process.env },
+        cwd: runtimeDir,
+      });
       proc.stdin.write(userPrompt);
       proc.stdin.end();
 

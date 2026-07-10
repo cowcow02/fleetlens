@@ -12,13 +12,10 @@ import {
   PinOff,
   Search,
   Activity,
-  Gauge,
   Lightbulb,
-  Radio,
   Settings,
   CalendarDays,
   Sparkles,
-  Users,
 } from "lucide-react";
 import { formatRelative, prettyProjectName } from "@/lib/format";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -206,39 +203,21 @@ export function Sidebar({
           Day
         </NavLink>
         <NavLink
-          href="/usage"
-          active={pathname === "/usage"}
-          icon={<Gauge size={15} />}
-        >
-          Usage
-        </NavLink>
-        <NavLink
           href="/insights"
           active={pathname === "/insights"}
           icon={<Lightbulb size={15} />}
         >
           Insights
         </NavLink>
+        {/* Usage and Team live in the sidebar widgets below (both already
+            link to their pages); Runs is reachable from the Assistant
+            header. Keeping the nav to the primary destinations. */}
         <NavLink
           href="/assistant"
-          active={pathname === "/assistant"}
+          active={pathname === "/assistant" || pathname === "/runs" || pathname.startsWith("/runs/")}
           icon={<Sparkles size={15} />}
         >
           Assistant
-        </NavLink>
-        <NavLink
-          href="/runs"
-          active={pathname === "/runs" || pathname.startsWith("/runs/")}
-          icon={<Radio size={15} />}
-        >
-          Runs
-        </NavLink>
-        <NavLink
-          href="/team"
-          active={pathname === "/team" || pathname.startsWith("/team/")}
-          icon={<Users size={15} />}
-        >
-          Team
         </NavLink>
       </nav>
 

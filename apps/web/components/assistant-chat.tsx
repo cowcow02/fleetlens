@@ -12,6 +12,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { classifyHref } from "@/lib/assistant/links";
 import {
   CalendarDays,
   Check,
@@ -21,6 +22,7 @@ import {
   Layers,
   List,
   Loader2,
+  Radio,
   RefreshCw,
   Search,
   Send,
@@ -175,14 +177,17 @@ function Markdown({ text }: { text: string }) {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        a: (props) => (
-          <a
-            {...props}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: "var(--af-accent)", textDecoration: "underline" }}
-          />
-        ),
+        a: (props) => {
+          if (classifyHref(props.href) === "text") return <>{props.children}</>;
+          return (
+            <a
+              {...props}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "var(--af-accent)", textDecoration: "underline" }}
+            />
+          );
+        },
         pre: (props) => {
           const child = props.children as React.ReactElement<{ className?: string; children?: unknown }> | undefined;
           const cls = child?.props?.className ?? "";
@@ -505,6 +510,25 @@ export function AssistantChat() {
           </div>
         </div>
         {indexChip}
+        <a
+          href="/runs"
+          title="LLM runs — inspect every local model call"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "6px 10px",
+            borderRadius: 6,
+            border: "1px solid var(--af-border-subtle)",
+            background: "transparent",
+            color: "var(--af-text-tertiary)",
+            fontSize: 11.5,
+            textDecoration: "none",
+          }}
+        >
+          <Radio size={13} />
+          Runs
+        </a>
         <button
           type="button"
           title="Refresh search index"
