@@ -4,6 +4,21 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.16.0] — 2026-07-10
+
+Safe upgrade from 0.15.7. New Agent page; no changes to existing data or config.
+
+### Added
+- **Agent** (`/agent`, personal edition): a chat agent over your local session history. Ask what you worked on, get answers grounded in your actual transcripts with links to the sessions behind them, and turn any thread into a copyable handoff prompt for your next agent run. Powered by your local `claude` CLI through an in-app MCP bridge — nothing leaves the machine.
+  - Full-text search index over every recorded session (Claude Code, Codex, Gemini, and other registered sources), built incrementally at `~/.cclens/agent-index/`.
+  - Persistent conversations (`~/.cclens/agent-chats/`): runs continue in the background if you leave the page; the conversation list restores any chat, and reopening a running one resumes its live stream where it left off. Stop button, delete, and `?chat=<id>` deep links included.
+  - Personalized empty-state suggestions: four capability chips (recap / find / synthesize / handoff) worded from your recent activity by a background haiku task, with deterministic fallback.
+  - Agent runs are traced to `~/.cclens/llm-runs/` and appear on the `/runs` page like every other local model call.
+- Sidebar navigation slimmed: Usage and Team entries removed (their sidebar widgets already link to the pages); Runs moved behind the Agent header.
+
+### Fixed
+- Agent runs whose MCP tool server was still connecting at subprocess init ran with zero tools and "narrated" tool calls as text; such runs are now respawned until the handshake wins.
+
 ## [0.15.7] — 2026-07-10
 
 Safe upgrade from 0.15.6. Usage trend reflects the current cycle's actual state after a limit reset.
