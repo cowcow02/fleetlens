@@ -713,11 +713,42 @@ export async function runTeamSync(
   }
 }
 
+/** For an in-progress cycle, find the last mid-cycle reset discontinuity — a
+ *  large drop in consecutive real readings (e.g. a limit grant 88% → 20%) —
+ *  and return only the points after it. Normal spend only ever raises
+ *  utilization within a cycle, so any drop ≥ RESET_DROP_PP between adjacent
+ *  real readings is unambiguously a reset/grant, not noise. Mirrors
+ *  pointsAfterLastReset in apps/web/lib/cycle-peaks.ts — keep them aligned. */
+const RESET_DROP_PP = 30;
+function pointsAfterLastReset<P extends { ts: string; real_5h: number | null; real_7d: number | null }>(
+  points: P[],
+  realKey: "real_5h" | "real_7d",
+): P[] {
+  if (points.length < 2) return points;
+  const ordered = [...points].sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
+  let cutIdx = 0;
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = ordered[i - 1][realKey];
+    const curr = ordered[i][realKey];
+    if (
+      typeof prev === "number" &&
+      typeof curr === "number" &&
+      prev - curr >= RESET_DROP_PP
+    ) {
+      cutIdx = i;
+    }
+  }
+  return cutIdx === 0 ? ordered : ordered.slice(cutIdx);
+}
+
 // Build the cycle-peaks block in the same shape the server expects. Wraps
 // loadCalibrationCurve so the import stays in one place; tier-aware so the
 // rate constants match the user's actual subscription. Returns undefined
 // when no JSONL data is available (cold-start before any session exists).
-async function buildCyclePeaksForPush(
+// Exported so the rebaselining logic can be unit-tested directly — there is
+// no shared lib with the web copy (it pulls `server-only`), so this is a
+// parallel implementation that must stay in lock-step by test.
+export async function buildCyclePeaksForPush(
   planTier: string | undefined,
   loadCurve: typeof import("@claude-lens/parser/fs").loadCalibrationCurve,
 ): Promise<import("./push.js").WireCyclePeaks | undefined> {
@@ -764,13 +795,20 @@ async function buildCyclePeaksForPush(
     }
     const out: import("./push.js").WireCyclePeak[] = [];
     for (const { endMs, points } of merged) {
+      const isCurrent = endMs > nowMs;
+      // Re-baseline an in-progress cycle past a mid-cycle limit reset
+      // (grant / overnight reset drops utilization e.g. 88% → 20%): the
+      // pre-reset points belong to a superseded limit and must not anchor
+      // the pushed peak. Completed cycles keep the all-time max.
+      const scoped = isCurrent ? pointsAfterLastReset(points, realKey) : points;
       // Take the max across BOTH real and predicted — when the daemon goes
       // dark before cycle close, the cycle's true peak is the predicted
-      // close, not the last poll. Mirrors previousCyclesTrend in the
-      // personal /usage chart.
+      // close, not the last poll. Predicted is deliberately NOT capped at
+      // 100 here (unlike the web copy): the team wire schema allows >100 to
+      // report legitimate extra-usage overage.
       let peak = 0;
       let source: "real" | "predicted" = "predicted";
-      for (const p of points) {
+      for (const p of scoped) {
         const r = p[realKey];
         if (typeof r === "number" && r > peak) { peak = r; source = "real"; }
         const v = p[predKey] ?? 0;
@@ -780,7 +818,7 @@ async function buildCyclePeaksForPush(
         endsAt: new Date(endMs).toISOString(),
         peakPct: Math.round(peak * 10) / 10,
         source,
-        current: endMs > nowMs,
+        current: isCurrent,
       });
     }
     return out.slice(-maxCycles);
