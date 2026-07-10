@@ -124,12 +124,19 @@ struct AgentSection: View {
         Text(kind.displayName).font(.subheadline.weight(.semibold))
       }
 
-      WindowRow(label: "5-hour window", window: snapshot.fiveHour,
-                color: thresholdColor(snapshot.fiveHour.utilization),
-                totalDuration: 5 * 3_600)
-      WindowRow(label: "7-day window", window: snapshot.sevenDay,
-                color: thresholdColor(snapshot.sevenDay.utilization),
-                totalDuration: 7 * 86_400)
+      if kind == .grok {
+        // Grok reports context-window fill on fiveHour; no 7d plan window.
+        WindowRow(label: "Context window", window: snapshot.fiveHour,
+                  color: thresholdColor(snapshot.fiveHour.utilization),
+                  totalDuration: 0)
+      } else {
+        WindowRow(label: "5-hour window", window: snapshot.fiveHour,
+                  color: thresholdColor(snapshot.fiveHour.utilization),
+                  totalDuration: 5 * 3_600)
+        WindowRow(label: "7-day window", window: snapshot.sevenDay,
+                  color: thresholdColor(snapshot.sevenDay.utilization),
+                  totalDuration: 7 * 86_400)
+      }
 
       if let opus = snapshot.sevenDayOpus?.utilization,
          let sonnet = snapshot.sevenDaySonnet?.utilization,
