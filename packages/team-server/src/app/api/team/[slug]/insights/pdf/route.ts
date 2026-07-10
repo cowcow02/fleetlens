@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { chromium, type BrowserContextOptions } from "playwright";
+import { chromium, type BrowserContextOptions, type LaunchOptions } from "playwright";
 import { requireTeamMembership, requireGroupManager } from "../../../../../../lib/route-helpers";
 import { mintRenderToken } from "../../../../../../lib/render-token";
 
@@ -8,12 +8,33 @@ export const dynamic = "force-dynamic";
 
 const SESSION_COOKIE = "fleetlens_session";
 
-function baseUrl(req: NextRequest): string {
-  const env = process.env.BASE_URL;
-  if (env) return env.replace(/\/$/, "");
-  const host = req.headers.get("host") ?? "localhost";
-  const proto = req.headers.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}`;
+/**
+ * Loopback base URL for the headless PDF capture.
+ *
+ * Never use the public BASE_URL / Host here. Production sets BASE_URL to the
+ * external HTTPS origin (Caddy / Cloud Run). Navigating Playwright at that
+ * address from inside the container routinely fails (DNS hairpin, TLS,
+ * firewall) and Secure cookies for the public host don't attach to an
+ * internal render. Hitting the process on 127.0.0.1 keeps capture self-contained.
+ */
+type EnvLike = Record<string, string | undefined>;
+
+export function internalRenderBaseUrl(env: EnvLike = process.env): string {
+  const port = env.PORT || "3322";
+  return `http://127.0.0.1:${port}`;
+}
+
+export function chromiumLaunchOptions(env: EnvLike = process.env): LaunchOptions {
+  const executablePath = env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined;
+  // Container images run as root without a user namespace; Chromium refuses
+  // that without --no-sandbox. --disable-dev-shm-usage avoids /dev/shm OOMs
+  // common in small Docker/Cloud Run instances.
+  const args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"];
+  return {
+    headless: true,
+    executablePath,
+    args,
+  };
 }
 
 async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>) {
@@ -41,9 +62,8 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>) {
   if (week) qs.set("week", week);
   qs.set("render", mintRenderToken({ slug, group, coaching, mock, week: week ?? undefined }));
   const reportPath = `/report/${encodeURIComponent(slug)}?${qs}`;
-  const dashUrl = `${baseUrl(req)}${reportPath}`;
-  const cookieDomain = new URL(baseUrl(req)).hostname;
-  const cookieSecure = baseUrl(req).startsWith("https:");
+  const origin = internalRenderBaseUrl();
+  const dashUrl = `${origin}${reportPath}`;
 
   // A4 portrait at 96dpi: 794 × 1123 px (210 × 297 mm). Match the viewport
   // exactly so there's no mismatch between layout width and PDF page width.
@@ -52,15 +72,39 @@ async function handle(req: NextRequest, slugParam: Promise<{ slug: string }>) {
     deviceScaleFactor: 2,
   };
 
-  const browser = await chromium.launch({ headless: true });
+  let browser;
+  try {
+    browser = await chromium.launch(chromiumLaunchOptions());
+  } catch (err) {
+    console.error("[pdf] chromium launch failed", err);
+    return new Response(
+      `PDF generation failed: Chromium could not start (${err instanceof Error ? err.message : String(err)}). ` +
+        `Ensure Playwright Chromium is installed in the image (see Dockerfile).`,
+      { status: 500 },
+    );
+  }
+
   try {
     const context = await browser.newContext(ctxOpts);
+    // Prefer `url` over domain/secure so the session cookie is scoped to the
+    // loopback origin we actually navigate — not the public BASE_URL host.
     await context.addCookies([
-      { name: SESSION_COOKIE, value: token, domain: cookieDomain, path: "/", httpOnly: true, secure: cookieSecure, sameSite: "Lax" },
+      {
+        name: SESSION_COOKIE,
+        value: token,
+        url: origin,
+        httpOnly: true,
+        secure: false,
+        sameSite: "Lax",
+      },
     ]);
 
     const page = await context.newPage();
-    await page.goto(dashUrl, { waitUntil: "networkidle", timeout: 30_000 });
+    const response = await page.goto(dashUrl, { waitUntil: "networkidle", timeout: 30_000 });
+    if (!response || !response.ok()) {
+      const status = response?.status() ?? "no-response";
+      throw new Error(`report page returned ${status} for ${reportPath}`);
+    }
     await page.waitForSelector(".builder-grid", { timeout: 15_000 });
     await page.waitForFunction(
       () => {
