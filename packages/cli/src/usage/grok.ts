@@ -229,7 +229,9 @@ async function fetchJson(
  * seven_day carries the weekly shared-pool utilization.
  */
 export async function fetchGrokUsage(): Promise<UsageSnapshot> {
-  let { token, entry } = loadAuthEntry();
+  const loaded = loadAuthEntry();
+  const entry = loaded.entry;
+  let token = loaded.token;
   if (needsRefresh(entry)) {
     const refreshed = await refreshAccessToken(entry);
     if (refreshed) token = refreshed;
