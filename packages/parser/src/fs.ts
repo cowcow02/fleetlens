@@ -23,6 +23,7 @@ import {
   GEMINI_METADATA,
   ANTIGRAVITY_METADATA,
   COWORK_METADATA,
+  GROK_METADATA,
 } from "./agent-metadata.js";
 import {
   type CalibrationEvent,
@@ -75,6 +76,13 @@ import {
   getCoworkSession as _getCoworkSession,
   clearCoworkCaches,
 } from "./cowork.js";
+
+import {
+  DEFAULT_GROK_ROOT as _DEFAULT_GROK_ROOT,
+  listGrokSessions as _listGrokSessions,
+  getGrokSession as _getGrokSession,
+  clearGrokCaches,
+} from "./grok.js";
 
 // ─── Re-exports (preserve the public @claude-lens/parser/fs surface) ───
 
@@ -144,6 +152,19 @@ export type {
 } from "./cowork.js";
 
 export {
+  DEFAULT_GROK_ROOT,
+  resolveDefaultGrokRoot,
+  listGrokSessions,
+  getGrokSession,
+  grokSessionLocalDay,
+  clearGrokCaches,
+} from "./grok.js";
+export type {
+  ListGrokOptions,
+  GetGrokOptions,
+} from "./grok.js";
+
+export {
   type TeamConfig,
   type SyncProjects,
   readTeamConfig,
@@ -206,6 +227,7 @@ export function clearCaches(): void {
   clearGeminiCaches();
   clearAntigravityCaches();
   clearCoworkCaches();
+  clearGrokCaches();
 }
 
 /** Drop cached entries for a Claude Code file path. Called by the SSE
@@ -234,6 +256,7 @@ type UsageSnapshotLike = {
   agent?: AgentKind;
   five_hour: { utilization: number | null; resets_at: string | null };
   seven_day: { utilization: number | null; resets_at: string | null };
+  plan_type?: string | null;
 };
 
 const codexSource: AgentSource = {
@@ -296,12 +319,27 @@ const coworkSource: AgentSource = {
   },
 };
 
+// Grok weekly plan usage is polled by the CLI daemon (network billing API,
+// same path as OpenUsage) — not from session signals. No usagePoller here.
+const grokSource: AgentSource = {
+  ...GROK_METADATA,
+  // Display default; list/get re-resolve GROK_HOME at call time internally.
+  defaultRoot: _DEFAULT_GROK_ROOT,
+  async listSessions(opts) {
+    return _listGrokSessions(opts);
+  },
+  async getSession(id, opts) {
+    return _getGrokSession(id, opts);
+  },
+};
+
 export const agentSources: AgentSource[] = [
   claudeCodeSource,
   codexSource,
   geminiSource,
   antigravitySource,
   coworkSource,
+  grokSource,
 ];
 
 export function getAgentSource(kind: AgentKind): AgentSource | undefined {

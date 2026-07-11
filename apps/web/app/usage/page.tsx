@@ -57,6 +57,9 @@ export default async function UsagePage({
   // Always show Claude in the tab strip even if empty — it's the canonical
   // source. Codex appears only once it has at least one snapshot.
   agentsWithData.add("claude-code");
+  // Always list Grok once registered — weekly pool snapshots appear after
+  // the daemon's first poll; the tab still works empty.
+  if (getAgentMetadata("grok")) agentsWithData.add("grok");
 
   const requested: AgentKind | undefined = isAgentKind(params.agent) ? params.agent : undefined;
   const selected: AgentKind =
@@ -74,6 +77,7 @@ export default async function UsagePage({
   // A quarter of 7-day cycles. The bars are a grid of equal columns, so a
   // longer history just narrows them rather than overflowing.
   const cycles7d = calibration ? previousCyclesTrend(calibration, "7d", 12) : [];
+  const isGrok = selected === "grok";
 
   return (
     <div
@@ -180,10 +184,34 @@ export default async function UsagePage({
         <EmptyState agent={selected} />
       ) : (
         <>
+          {isGrok && latest.seven_day?.utilization != null && (
+            <GrokWeeklyCard
+              utilization={latest.seven_day.utilization}
+              resetsAt={latest.seven_day.resets_at}
+              planType={latest.plan_type}
+            />
+          )}
           {cycles7d.length > 0 && (
             <PreviousCyclesTrend windowLabel="7d" cycles={cycles7d} />
           )}
-          <UsageChartsDashboard snapshots={snapshots} predicted={predicted ?? undefined} />
+          <UsageChartsDashboard
+            snapshots={snapshots}
+            predicted={predicted ?? undefined}
+            windows={
+              isGrok
+                ? [
+                    {
+                      // Grok has no 5h window — chart only the weekly pool.
+                      key: "seven_day",
+                      label: "7d utilization (weekly pool)",
+                      windowMs: 7 * 24 * 60 * 60 * 1000,
+                      colorVar: "var(--af-accent)",
+                    },
+                  ]
+                : undefined
+            }
+            hideSonnet={isGrok}
+          />
           {selected === "zai" && latest?.web_search_quota && (
             <WebSearchQuotaCard quota={latest.web_search_quota} />
           )}
@@ -197,6 +225,7 @@ export default async function UsagePage({
           >
             Last {agentLabel(selected)} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
+            {isGrok ? " · weekly shared-pool % (no 5h window)" : ""}
           </div>
         </>
       )}
@@ -322,7 +351,140 @@ function AgentTabs({ agents, selected }: { agents: AgentKind[]; selected: AgentK
   );
 }
 
+function GrokWeeklyCard({
+  utilization,
+  resetsAt,
+  planType,
+}: {
+  utilization: number;
+  resetsAt?: string | null;
+  planType?: string | null;
+}) {
+  const pct = Math.round(Math.min(100, Math.max(0, utilization)));
+  return (
+    <div className="af-card" style={{ padding: "16px 18px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 600,
+        }}
+      >
+        7-day weekly pool
+        {planType ? (
+          <span style={{ marginLeft: 8, fontWeight: 500, textTransform: "none" }}>
+            · {planType}
+          </span>
+        ) : null}
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          marginTop: 8,
+          letterSpacing: "-0.02em",
+          lineHeight: 1.1,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {pct}%
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          height: 8,
+          borderRadius: 999,
+          background: "var(--af-border-subtle)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${pct}%`,
+            height: "100%",
+            borderRadius: 999,
+            background: agentAccent("grok"),
+          }}
+        />
+      </div>
+      <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
+        Grok unified-billing shared weekly pool (same source as the Grok CLI).
+        There is no 5-hour window — only this 7-day limit.
+        {resetsAt ? (
+          <>
+            {" "}
+            Resets {new Date(resetsAt).toLocaleString()}.
+          </>
+        ) : null}
+      </p>
+    </div>
+  );
+}
+
 function EmptyState({ agent }: { agent: AgentKind }) {
+  if (agent === "grok") {
+    return (
+      <div
+        className="af-card"
+        style={{
+          padding: "48px 32px",
+          textAlign: "center",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 600,
+            color: "var(--af-text)",
+          }}
+        >
+          No Grok weekly usage samples yet
+        </div>
+        <p
+          style={{
+            fontSize: 12,
+            color: "var(--af-text-tertiary)",
+            marginTop: 8,
+            maxWidth: 440,
+            marginLeft: "auto",
+            marginRight: "auto",
+            lineHeight: 1.5,
+          }}
+        >
+          The daemon polls Grok&apos;s weekly shared-pool % (via the same billing API as
+          the Grok CLI). Run <code style={{ fontSize: 11 }}>grok login</code> if needed,
+          then start the daemon.
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 16, flexWrap: "wrap" }}>
+          <pre
+            style={{
+              display: "inline-block",
+              background: "var(--background)",
+              border: "1px solid var(--af-border-subtle)",
+              padding: "8px 16px",
+              borderRadius: 6,
+              fontSize: 13,
+              fontFamily: "var(--font-mono)",
+              color: "var(--af-text)",
+              margin: 0,
+            }}
+          >
+            fleetlens daemon start
+          </pre>
+          <Link
+            href="/sessions?agent=grok"
+            className="af-btn af-btn-primary"
+            style={{ display: "inline-flex", alignItems: "center", fontSize: 12, padding: "6px 14px" }}
+          >
+            View Grok sessions
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="af-card"
@@ -349,7 +511,9 @@ function EmptyState({ agent }: { agent: AgentKind }) {
       >
         {agent === "claude-code"
           ? "Start the polling daemon to begin collecting metrics every 5 minutes:"
-          : "The daemon picks up Codex usage from disk on every poll cycle. Run a Codex session and the data will appear here within minutes."}
+          : agent === "zai"
+            ? "Save a Z.ai API key in Settings; the daemon (or a settings save) writes utilization snapshots here."
+            : "The daemon picks up this agent's rate-limit windows from disk on every poll cycle. Run a session and the data will appear here within minutes."}
       </p>
       {agent === "claude-code" && (
         <pre

@@ -1,14 +1,22 @@
 import AppKit
 import SwiftUI
 
-// Brand glyphs sourced from OpenUsage (MIT) and converted to PNG. Loaded from
-// the app bundle's Contents/Resources so they ship inside the .app. Each is a
-// single-shape template that we tint to the provider's brand color so it reads
-// cleanly on the dark menu bar and inside the popover.
+// Brand glyphs sourced from OpenUsage (MIT) ProviderIcons:
+//   https://github.com/robinebers/openusage
+//   Sources/OpenUsage/Resources/ProviderIcons/{claude,codex,zai,grok}.svg
+// Loaded from the app bundle's Contents/Resources so they ship inside the
+// .app. Each is a single-shape template that we tint to the provider's brand
+// color so it reads cleanly on the dark menu bar and inside the popover.
 
 enum BrandIcon {
   static func baseImage(for kind: AgentKind) -> NSImage? {
-    let name = kind == .claudeCode ? "claude" : kind == .codex ? "codex" : "zai"
+    let name: String
+    switch kind {
+    case .claudeCode: name = "claude"
+    case .codex: name = "codex"
+    case .zai: name = "zai"
+    case .grok: name = "grok"
+    }
     // Load the SVG directly — NSImage rasterizes it on draw with true
     // transparency. (PNG-converted via qlmanage came out as a fully-opaque
     // square, which broke source-atop tinting.)
@@ -43,6 +51,9 @@ enum BrandIcon {
       return NSColor(calibratedRed: 0.30, green: 0.62, blue: 0.95, alpha: 1)
     case .zai:
       return NSColor(calibratedRed: 0.23, green: 0.51, blue: 0.96, alpha: 1)
+    case .grok:
+      // Slate-400 — matches web GROK_METADATA accent (visible on dark chrome).
+      return NSColor(calibratedRed: 100 / 255, green: 116 / 255, blue: 139 / 255, alpha: 1)
     }
   }
 }

@@ -48,9 +48,14 @@ const SONNET_WINDOW: WindowConfig = {
 export function UsageChartsDashboard({
   snapshots,
   predicted,
+  /** Override default 5h/7d window labels (e.g. Grok context window). */
+  windows,
+  hideSonnet,
 }: {
   snapshots: UsageSnapshot[];
   predicted?: PredictedSeriesByKey;
+  windows?: WindowConfig[];
+  hideSonnet?: boolean;
 }) {
   const [expanded, setExpanded] = useState<WindowConfig | null>(null);
   const emptyPredicted: PredictedSeriesByKey = {
@@ -59,6 +64,7 @@ export function UsageChartsDashboard({
     seven_day_sonnet: [],
   };
   const pred = predicted ?? emptyPredicted;
+  const mainWindows = windows ?? MAIN_WINDOWS;
 
   // Close on Escape.
   useEffect(() => {
@@ -82,7 +88,7 @@ export function UsageChartsDashboard({
 
   return (
     <>
-      {MAIN_WINDOWS.map((w) => (
+      {mainWindows.map((w) => (
         <section
           key={w.key}
           style={{ display: "flex", flexDirection: "column", gap: 6 }}
@@ -99,6 +105,7 @@ export function UsageChartsDashboard({
         </section>
       ))}
 
+      {!hideSonnet && (
       <OptionalChart storageKey="cclens:usage:show-sonnet" label="Sonnet 7d utilization">
         <section style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <SectionLabel>{SONNET_WINDOW.label}</SectionLabel>
@@ -112,6 +119,7 @@ export function UsageChartsDashboard({
           />
         </section>
       </OptionalChart>
+      )}
 
       {expanded && (
         <ExpandedModal

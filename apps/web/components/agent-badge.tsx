@@ -1,5 +1,6 @@
 import type { AgentKind } from "@claude-lens/parser";
 import { getAgentMetadata } from "@claude-lens/parser";
+import { AgentIcon } from "@/components/agent-icon";
 
 type AgentBadgeProps = {
   /** Source agent. Undefined is treated as legacy claude-code (no badge). */
@@ -24,6 +25,7 @@ export function AgentBadge({ agent }: AgentBadgeProps) {
       style={{
         display: "inline-flex",
         alignItems: "center",
+        gap: 4,
         borderRadius: 4,
         padding: "2px 6px",
         fontSize: 10,
@@ -37,6 +39,7 @@ export function AgentBadge({ agent }: AgentBadgeProps) {
       }}
       title={`Source: ${meta.displayName}`}
     >
+      <AgentIcon agent={agent} size={9} title={meta.displayName} />
       {meta.shortLabel}
     </span>
   );

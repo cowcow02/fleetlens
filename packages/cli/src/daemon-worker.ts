@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { fetchZaiUsage, ZaiApiError } from "./usage/zai.js";
+import { fetchGrokUsage, GrokApiError } from "./usage/grok.js";
 import { appendSnapshot, pruneAgent } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
@@ -254,6 +255,28 @@ async function tick(): Promise<PollOutcome> {
       pruneAgent(USAGE_LOG, "zai");
     } else {
       log("warn", `zai poll failed: ${(err as Error).message}`);
+    }
+  }
+  // Grok weekly credit pool — same endpoint as the Grok CLI / OpenUsage.
+  // No 5h window; seven_day carries the weekly shared-pool %. Independent
+  // of Claude backoff (missing auth must not stall other agents).
+  try {
+    const grokSnapshot = await fetchGrokUsage();
+    appendSnapshot(USAGE_LOG, grokSnapshot);
+    log(
+      "info",
+      `grok snapshot 5h=— 7d=${grokSnapshot.seven_day.utilization}%`,
+    );
+  } catch (err) {
+    if (err instanceof GrokApiError && (err.code === "no_auth" || err.code === "not_weekly")) {
+      pruneAgent(USAGE_LOG, "grok");
+      if (err.code === "no_auth") {
+        // Quiet when Grok simply isn't logged in on this machine.
+      } else {
+        log("warn", `grok poll skipped: ${err.message}`);
+      }
+    } else {
+      log("warn", `grok poll failed: ${(err as Error).message}`);
     }
   }
   // Claude's poller stays distinct — its return value drives backoff

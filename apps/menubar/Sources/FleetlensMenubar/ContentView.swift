@@ -58,7 +58,9 @@ struct ContentView: View {
       }
       Spacer()
       Button {
-        NSWorkspace.shared.open(URL(string: "http://localhost:3321/usage")!)
+        // Overview lists every agent (incl. Grok sessions). Usage is for
+        // Claude/Codex/Z.ai plan windows only.
+        NSWorkspace.shared.open(URL(string: "http://localhost:3321/")!)
       } label: {
         Label("Dashboard", systemImage: "chart.bar.xaxis")
       }
@@ -122,10 +124,13 @@ struct AgentSection: View {
         Text(kind.displayName).font(.subheadline.weight(.semibold))
       }
 
+      // Grok has no 5h window (fiveHour.utilization is null → "—"); weekly
+      // shared-pool % lands on sevenDay so both lines align with other agents.
       WindowRow(label: "5-hour window", window: snapshot.fiveHour,
                 color: thresholdColor(snapshot.fiveHour.utilization),
                 totalDuration: 5 * 3_600)
-      WindowRow(label: "7-day window", window: snapshot.sevenDay,
+      WindowRow(label: kind == .grok ? "7-day window (weekly)" : "7-day window",
+                window: snapshot.sevenDay,
                 color: thresholdColor(snapshot.sevenDay.utilization),
                 totalDuration: 7 * 86_400)
 
