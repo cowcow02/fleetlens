@@ -4,6 +4,15 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.16.1] — 2026-07-11
+
+Safe upgrade from 0.16.0. Grok Build joins the multi-agent dashboard; no breaking changes.
+
+### Added
+- **Grok Build as a first-class agent source.** Sessions under `~/.grok/sessions` (or `$GROK_HOME/sessions`) are discovered and shown alongside Claude Code, Codex, Gemini, and the rest — overview counts, `/sessions?agent=grok`, session detail, and the OpenUsage Grok mark on badges and the menu bar widget.
+- **Grok weekly plan usage.** The daemon polls the same billing API as the Grok CLI / OpenUsage (`/v1/billing?format=credits`) and records the unified **7-day weekly pool** on `seven_day`. There is no 5-hour window, so the menubar strip and popover show `—` on the top line and the weekly % on the second. Usage page: Grok tab with weekly pool card + 7d chart.
+- Subagent sessions (`session_kind: "subagent"`) stay off the main sessions list and attach under the parent session (same idea as Claude Code sidechains).
+
 ## [0.16.0] — 2026-07-10
 
 Safe upgrade from 0.15.7. New Agent page; no changes to existing data or config.
