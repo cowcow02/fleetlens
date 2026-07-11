@@ -206,6 +206,29 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
     }
   };
 
+  // Neutral cwd: spawned from inside a repo, Claude Code would load that
+  // project's CLAUDE.md and auto-memory into context — the model then
+  // cites memory files as if they were linkable pages.
+  const runtimeDir = cclensPath("agent-runtime");
+  mkdirSync(runtimeDir, { recursive: true });
+
+  // Empirical (claude 2.1.204–207, -p mode): the CLI completes the HTTP MCP
+  // handshake within ~25ms yet still starts the first turn with the server
+  // "pending" and ZERO tools — unless something delays the turn. A
+  // SessionStart hook that just sleeps reliably flips it to connected
+  // (verified against the standalone server where every raceless attempt
+  // failed). --setting-sources stays "" so no user config leaks in; this
+  // file is the only settings source.
+  const settingsPath = join(runtimeDir, "settings.json");
+  writeFileSync(
+    settingsPath,
+    JSON.stringify({
+      hooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: 'node -e "setTimeout(()=>{},2000)"' }] }],
+      },
+    }),
+  );
+
   const args = [
     "-p",
     "--output-format", "stream-json",
@@ -217,6 +240,7 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
     "--disable-slash-commands",
     "--no-session-persistence",
     "--setting-sources", "",
+    "--settings", settingsPath,
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers: { fleetlens: { type: "http", url: opts.mcpUrl } } }),
     "--allowedTools",
@@ -228,11 +252,6 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
     "--append-system-prompt", agentSystemPrompt(),
   ];
 
-  // Neutral cwd: spawned from inside a repo, Claude Code would load that
-  // project's CLAUDE.md and auto-memory into context — the model then
-  // cites memory files as if they were linkable pages.
-  const runtimeDir = cclensPath("agent-runtime");
-  mkdirSync(runtimeDir, { recursive: true });
   const userPrompt = buildUserPrompt(toChatMessages(chat.messages));
 
   const killTimer = setTimeout(() => {

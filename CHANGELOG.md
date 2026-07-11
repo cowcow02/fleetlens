@@ -4,6 +4,13 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.16.2] — 2026-07-11
+
+Safe upgrade from 0.16.1. Fixes the Agent page failing on every message for installed (non-dev) servers.
+
+### Fixed
+- **Agent chats always failed with "session tools failed to connect" on the production server.** In `claude -p` mode the CLI completes the HTTP MCP handshake in milliseconds but can still start the first turn with the tool server marked "pending" and zero tools — the model then has nothing to search sessions with. Dev-server timing masked this; against the installed standalone server every attempt lost the race, so each message burned its three spawn retries and errored. Agent runs now install a minimal SessionStart delay hook (via their own settings file — user settings still never load), which reliably lets the tool server finish connecting before the first turn.
+
 ## [0.16.1] — 2026-07-11
 
 Safe upgrade from 0.16.0. Grok Build joins the multi-agent dashboard; no breaking changes.

@@ -1162,12 +1162,16 @@ export function SessionView({
             )}
           <InlineStatDivider />
           <InlineStat value={`${eventCount} events`} />
-          {(session.workflowCount ?? 0) > 0 && (
+          {((session.workflowCount ?? 0) > 0 || (session.spawnedAgentCount ?? 0) > 0) && (
             <>
               <InlineStatDivider />
               <InlineStat
                 icon={<WorkflowIcon size={12} />}
-                value={`${session.workflowCount} workflow${session.workflowCount === 1 ? "" : "s"} · ${(session.spawnedAgentCount ?? 0).toLocaleString()} agents`}
+                value={
+                  (session.workflowCount ?? 0) > 0
+                    ? `${session.workflowCount} workflow${session.workflowCount === 1 ? "" : "s"} · ${(session.spawnedAgentCount ?? 0).toLocaleString()} agents`
+                    : `${(session.spawnedAgentCount ?? 0).toLocaleString()} sub-agent${(session.spawnedAgentCount ?? 0) === 1 ? "" : "s"}`
+                }
               />
             </>
           )}

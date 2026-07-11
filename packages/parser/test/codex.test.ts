@@ -8,6 +8,13 @@ import {
   getLatestCodexUsage,
 } from "../src/codex.js";
 
+import {
+  listCodexSessions,
+  getCodexSession,
+  getLatestCodexUsage,
+  clearCodexCaches,
+} from "../src/codex.js";
+
 async function makeFixture(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-fixture-"));
   const dir = path.join(root, "2026", "05", "04");
@@ -130,6 +137,253 @@ describe("codex parser", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-empty-"));
     const list = await listCodexSessions({ root });
     expect(list).toEqual([]);
+  });
+});
+
+describe("codex multi-agent v2 subagent grouping", () => {
+  async function makeMultiAgentFixture(): Promise<string> {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-ma-"));
+    const dir = path.join(root, "2026", "07", "10");
+    await fs.mkdir(dir, { recursive: true });
+
+    const rootId = "019f4b76-28e5-7e23-bfe3-7ad7824c30fd";
+    const sub1Id = "019f4b7d-f0c1-7ae2-902e-30ca11267774";
+    const sub2Id = "019f4b7e-1091-70c3-a89b-9a6be61d8972";
+
+    const rootLines = [
+      {
+        timestamp: "2026-07-10T09:57:42.000Z",
+        type: "session_meta",
+        payload: {
+          id: rootId,
+          session_id: rootId,
+          timestamp: "2026-07-10T09:57:42.000Z",
+          cwd: "/Users/me/Repo/vinuage",
+          originator: "codex-tui",
+          source: "cli",
+          thread_source: "user",
+          cli_version: "0.144.1",
+          model_provider: "openai",
+        },
+      },
+      {
+        timestamp: "2026-07-10T09:57:43.000Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "audit the codebase" },
+      },
+      {
+        timestamp: "2026-07-10T09:58:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            total_token_usage: {
+              input_tokens: 5000,
+              output_tokens: 200,
+              cached_input_tokens: 1000,
+              total_tokens: 5200,
+            },
+          },
+        },
+      },
+      {
+        timestamp: "2026-07-10T09:58:05.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "exec_command",
+          call_id: "root-c1",
+          arguments: "{\"cmd\":\"rg TODO\"}",
+        },
+      },
+      {
+        timestamp: "2026-07-10T09:58:06.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call_output",
+          call_id: "root-c1",
+          output: "no results",
+        },
+      },
+      {
+        timestamp: "2026-07-10T09:58:10.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Done auditing." },
+      },
+    ];
+
+    const sub1Lines = [
+      {
+        timestamp: "2026-07-10T10:06:12.000Z",
+        type: "session_meta",
+        payload: {
+          id: sub1Id,
+          session_id: rootId,
+          parent_thread_id: rootId,
+          thread_source: "subagent",
+          agent_nickname: "Jason",
+          agent_path: "/root/audit_w1",
+          cwd: "/Users/me/Repo/vinuage",
+          multi_agent_version: "v2",
+          cli_version: "0.144.1",
+          model_provider: "openai",
+        },
+      },
+      {
+        timestamp: "2026-07-10T10:06:13.000Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "audit week 1" },
+      },
+      {
+        timestamp: "2026-07-10T10:06:14.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "read_file",
+          call_id: "sub1-c1",
+          arguments: "{\"path\":\"src/w1.ts\"}",
+        },
+      },
+      {
+        timestamp: "2026-07-10T10:07:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            total_token_usage: {
+              input_tokens: 3000,
+              output_tokens: 100,
+              cached_input_tokens: 500,
+              total_tokens: 3100,
+            },
+          },
+        },
+      },
+      {
+        timestamp: "2026-07-10T10:07:05.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Week 1 looks clean." },
+      },
+    ];
+
+    const sub2Lines = [
+      {
+        timestamp: "2026-07-10T10:06:20.000Z",
+        type: "session_meta",
+        payload: {
+          id: sub2Id,
+          session_id: rootId,
+          parent_thread_id: rootId,
+          thread_source: "subagent",
+          agent_nickname: "Carson",
+          agent_path: "/root/audit_w4_w7",
+          cwd: "/Users/me/Repo/vinuage",
+          multi_agent_version: "v2",
+          cli_version: "0.144.1",
+          model_provider: "openai",
+        },
+      },
+      {
+        timestamp: "2026-07-10T10:06:21.000Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "audit weeks 4-7" },
+      },
+      {
+        timestamp: "2026-07-10T10:06:22.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "read_file",
+          call_id: "sub2-c1",
+          arguments: "{\"path\":\"src/w4.ts\"}",
+        },
+      },
+      {
+        timestamp: "2026-07-10T10:06:23.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "read_file",
+          call_id: "sub2-c2",
+          arguments: "{\"path\":\"src/w5.ts\"}",
+        },
+      },
+      {
+        timestamp: "2026-07-10T10:08:00.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            total_token_usage: {
+              input_tokens: 2000,
+              output_tokens: 150,
+              cached_input_tokens: 0,
+              total_tokens: 2150,
+            },
+          },
+        },
+      },
+      {
+        timestamp: "2026-07-10T10:08:05.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Found 3 issues in weeks 4-7." },
+      },
+    ];
+
+    await fs.writeFile(
+      path.join(dir, `rollout-2026-07-10T17-57-42-${rootId}.jsonl`),
+      rootLines.map((l) => JSON.stringify(l)).join("\n") + "\n",
+    );
+    await fs.writeFile(
+      path.join(dir, `rollout-2026-07-10T18-06-12-${sub1Id}.jsonl`),
+      sub1Lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
+    );
+    await fs.writeFile(
+      path.join(dir, `rollout-2026-07-10T18-06-20-${sub2Id}.jsonl`),
+      sub2Lines.map((l) => JSON.stringify(l)).join("\n") + "\n",
+    );
+    return root;
+  }
+
+  it("groups subagent rollouts under the parent and hides them from the list", async () => {
+    const root = await makeMultiAgentFixture();
+    clearCodexCaches();
+    const list = await listCodexSessions({ root });
+
+    expect(list).toHaveLength(1);
+    const meta = list[0];
+    expect(meta.id).toBe("019f4b76-28e5-7e23-bfe3-7ad7824c30fd");
+    expect(meta.spawnedAgentCount).toBe(2);
+
+    // Merged usage: parent 5000 + sub1 3000 + sub2 2000 = 10000 input
+    expect(meta.totalUsage.input).toBe(10000);
+    // Merged tool calls: parent 1 + sub1 1 + sub2 2 = 4
+    expect(meta.toolCallCount).toBe(4);
+    // lastTimestamp extended to the latest subagent event
+    expect(meta.lastTimestamp).toBe("2026-07-10T10:08:05.000Z");
+  });
+
+  it("attaches subagents on the session detail", async () => {
+    const root = await makeMultiAgentFixture();
+    clearCodexCaches();
+    const detail = await getCodexSession(
+      "019f4b76-28e5-7e23-bfe3-7ad7824c30fd",
+      { root },
+    );
+    expect(detail).not.toBeNull();
+    expect(detail!.subagents).toHaveLength(2);
+    expect(detail!.spawnedAgentCount).toBe(2);
+
+    const jason = detail!.subagents!.find((s) => s.agentType === "Jason");
+    expect(jason).toBeDefined();
+    expect(jason!.description).toBe("/root/audit_w1");
+    expect(jason!.toolCallCount).toBe(1);
+    expect(jason!.totalUsage.input).toBe(3000);
+
+    const carson = detail!.subagents!.find((s) => s.agentType === "Carson");
+    expect(carson).toBeDefined();
+    expect(carson!.toolCallCount).toBe(2);
+    expect(carson!.totalUsage.input).toBe(2000);
   });
 });
 

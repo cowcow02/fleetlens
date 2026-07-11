@@ -28,6 +28,7 @@ import type {
   SessionDetail,
   SessionEvent,
   SessionMeta,
+  SubagentRun,
   Usage,
 } from "./types.js";
 
@@ -100,6 +101,11 @@ async function readJsonl(filePath: string): Promise<unknown[]> {
 type Parsed = {
   meta: SessionMeta;
   events: SessionEvent[];
+  threadSource?: string;
+  rootSessionId?: string;
+  parentThreadId?: string;
+  agentNickname?: string;
+  agentPath?: string;
 };
 
 function emptyUsage(): Usage {
@@ -123,6 +129,11 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
   let lastUserPreview: string | undefined;
   let lastAgentPreview: string | undefined;
   const tsMs: number[] = [];
+  let threadSource: string | undefined;
+  let rootSessionId: string | undefined;
+  let parentThreadId: string | undefined;
+  let agentNickname: string | undefined;
+  let agentPath: string | undefined;
 
   let idx = 0;
   for (const line of lines) {
@@ -140,7 +151,16 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     const subtype = typeof payload.type === "string" ? payload.type : "";
 
     if (type === "session_meta") {
+      // Only the first session_meta line is authoritative for thread identity.
+      // Codex can emit additional session_meta lines mid-file (compaction,
+      // context reset) that carry the root thread's source — those must not
+      // overwrite the original thread_source classification.
       if (typeof payload.cwd === "string") cwd = payload.cwd;
+      if (threadSource === undefined && typeof payload.thread_source === "string") threadSource = payload.thread_source;
+      if (rootSessionId === undefined && typeof payload.session_id === "string") rootSessionId = payload.session_id;
+      if (parentThreadId === undefined && typeof payload.parent_thread_id === "string") parentThreadId = payload.parent_thread_id;
+      if (agentNickname === undefined && typeof payload.agent_nickname === "string") agentNickname = payload.agent_nickname;
+      if (agentPath === undefined && typeof payload.agent_path === "string") agentPath = payload.agent_path;
       continue;
     }
     if (type === "turn_context") {
@@ -362,7 +382,7 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     activeSegments,
   };
 
-  return { meta, events };
+  return { meta, events, threadSource, rootSessionId, parentThreadId, agentNickname, agentPath };
 }
 
 function numberOf(v: unknown): number | undefined {
@@ -403,7 +423,16 @@ function computeActiveSegments(tsMs: number[]): { startMs: number; endMs: number
 /*  Caching                                                          */
 /* ================================================================= */
 
-type MetaEntry = { meta: SessionMeta; mtimeMs: number; sizeBytes: number };
+type MetaEntry = {
+  meta: SessionMeta;
+  mtimeMs: number;
+  sizeBytes: number;
+  threadSource?: string;
+  rootSessionId?: string;
+  parentThreadId?: string;
+  agentNickname?: string;
+  agentPath?: string;
+};
 type DetailEntry = { detail: SessionDetail; mtimeMs: number; sizeBytes: number };
 const metaCache = new Map<string, MetaEntry>();
 const detailCache = new Map<string, DetailEntry>();
@@ -415,31 +444,141 @@ export function clearCodexCaches(): void {
   detailCache.clear();
 }
 
-export type ListCodexOptions = { root?: string; limit?: number };
+type ScannedFile = {
+  file: RolloutFile;
+  meta: SessionMeta;
+  threadSource?: string;
+  rootSessionId?: string;
+  parentThreadId?: string;
+  agentNickname?: string;
+  agentPath?: string;
+};
 
-export async function listCodexSessions(opts: ListCodexOptions = {}): Promise<SessionMeta[]> {
-  const root = opts.root ?? DEFAULT_CODEX_ROOT;
+/** Parse every rollout under root, populating the meta cache. Returns both
+ *  root sessions and subagent threads so callers can filter/group as needed. */
+async function scanAllCodex(root: string): Promise<ScannedFile[]> {
   const files = await listRolloutFiles(root);
-  const out: SessionMeta[] = [];
+  const out: ScannedFile[] = [];
   for (const file of files) {
     const cached = metaCache.get(file.filePath);
     if (cached && cached.mtimeMs === file.mtimeMs && cached.sizeBytes === file.sizeBytes) {
-      out.push(cached.meta);
+      out.push({
+        file,
+        meta: cached.meta,
+        threadSource: cached.threadSource,
+        rootSessionId: cached.rootSessionId,
+        parentThreadId: cached.parentThreadId,
+        agentNickname: cached.agentNickname,
+        agentPath: cached.agentPath,
+      });
       continue;
     }
     try {
       const lines = await readJsonl(file.filePath);
-      const { meta } = parseRollout(file, lines);
+      const parsed = parseRollout(file, lines);
       metaCache.set(file.filePath, {
-        meta,
+        meta: parsed.meta,
         mtimeMs: file.mtimeMs,
         sizeBytes: file.sizeBytes,
+        threadSource: parsed.threadSource,
+        rootSessionId: parsed.rootSessionId,
+        parentThreadId: parsed.parentThreadId,
+        agentNickname: parsed.agentNickname,
+        agentPath: parsed.agentPath,
       });
-      out.push(meta);
+      out.push({
+        file,
+        meta: parsed.meta,
+        threadSource: parsed.threadSource,
+        rootSessionId: parsed.rootSessionId,
+        parentThreadId: parsed.parentThreadId,
+        agentNickname: parsed.agentNickname,
+        agentPath: parsed.agentPath,
+      });
     } catch {
       // Skip files that fail to parse — keep listing the rest.
     }
   }
+  return out;
+}
+
+/** Build a SubagentRun from a parsed subagent rollout's meta + thread info. */
+function buildSubagentRun(
+  entry: ScannedFile,
+  parentStartMs: number | undefined,
+): SubagentRun {
+  const meta = entry.meta;
+  const startMs = meta.firstTimestamp ? Date.parse(meta.firstTimestamp) : undefined;
+  const endMs = meta.lastTimestamp ? Date.parse(meta.lastTimestamp) : undefined;
+  const startOk = startMs !== undefined && Number.isFinite(startMs) ? startMs : undefined;
+  const endOk = endMs !== undefined && Number.isFinite(endMs) ? endMs : undefined;
+
+  return {
+    agentId: meta.id,
+    agentType: entry.agentNickname ?? entry.agentPath ?? "subagent",
+    description: entry.agentPath ?? entry.agentNickname ?? meta.id,
+    startMs: startOk,
+    endMs: endOk,
+    durationMs: meta.durationMs,
+    startTOffsetMs:
+      parentStartMs !== undefined && startOk !== undefined
+        ? Math.max(0, startOk - parentStartMs)
+        : undefined,
+    endTOffsetMs:
+      parentStartMs !== undefined && endOk !== undefined
+        ? Math.max(0, endOk - parentStartMs)
+        : undefined,
+    eventCount: meta.eventCount,
+    totalUsage: meta.totalUsage,
+    model: meta.model,
+    toolCallCount: meta.toolCallCount,
+    finalPreview: meta.lastAgentPreview,
+  };
+}
+
+export type ListCodexOptions = { root?: string; limit?: number };
+
+export async function listCodexSessions(opts: ListCodexOptions = {}): Promise<SessionMeta[]> {
+  const root = opts.root ?? DEFAULT_CODEX_ROOT;
+  const all = await scanAllCodex(root);
+
+  const subagentsByRoot = new Map<string, ScannedFile[]>();
+  for (const entry of all) {
+    if (entry.threadSource !== "subagent" || !entry.rootSessionId) continue;
+    const list = subagentsByRoot.get(entry.rootSessionId);
+    if (list) list.push(entry);
+    else subagentsByRoot.set(entry.rootSessionId, [entry]);
+  }
+
+  const out: SessionMeta[] = [];
+  for (const entry of all) {
+    if (entry.threadSource === "subagent") continue;
+    const children = subagentsByRoot.get(entry.meta.id);
+    if (!children || children.length === 0) {
+      out.push(entry.meta);
+      continue;
+    }
+    const merged: SessionMeta = {
+      ...entry.meta,
+      spawnedAgentCount: children.length,
+      totalUsage: {
+        input: entry.meta.totalUsage.input + children.reduce((s, c) => s + c.meta.totalUsage.input, 0),
+        output: entry.meta.totalUsage.output + children.reduce((s, c) => s + c.meta.totalUsage.output, 0),
+        cacheRead: entry.meta.totalUsage.cacheRead + children.reduce((s, c) => s + c.meta.totalUsage.cacheRead, 0),
+        cacheWrite: entry.meta.totalUsage.cacheWrite + children.reduce((s, c) => s + c.meta.totalUsage.cacheWrite, 0),
+      },
+      toolCallCount:
+        (entry.meta.toolCallCount ?? 0) +
+        children.reduce((s, c) => s + (c.meta.toolCallCount ?? 0), 0),
+    };
+    for (const c of children) {
+      if (c.meta.lastTimestamp && (!merged.lastTimestamp || c.meta.lastTimestamp > merged.lastTimestamp)) {
+        merged.lastTimestamp = c.meta.lastTimestamp;
+      }
+    }
+    out.push(merged);
+  }
+
   out.sort((a, b) => (b.firstTimestamp ?? "").localeCompare(a.firstTimestamp ?? ""));
   if (opts.limit !== undefined) return out.slice(0, opts.limit);
   return out;
@@ -452,17 +591,53 @@ export async function getCodexSession(
   opts: GetCodexOptions = {},
 ): Promise<SessionDetail | null> {
   const root = opts.root ?? DEFAULT_CODEX_ROOT;
-  // Find the file by walking the tree — sessions are sparse, this is fast.
-  const files = await listRolloutFiles(root);
-  const file = files.find((f) => f.sessionId === id);
-  if (!file) return null;
+  const all = await scanAllCodex(root);
+
+  const rootEntry = all.find((a) => a.meta.id === id && a.threadSource !== "subagent");
+
+  // Backward compat: a subagent thread id matched directly (old bookmark).
+  // Return it as a standalone SessionDetail without parent grouping.
+  if (!rootEntry) {
+    const direct = all.find((a) => a.meta.id === id);
+    if (!direct) return null;
+    const cached = detailCache.get(direct.file.filePath);
+    if (cached && cached.mtimeMs === direct.file.mtimeMs && cached.sizeBytes === direct.file.sizeBytes) {
+      return cached.detail;
+    }
+    const lines = await readJsonl(direct.file.filePath);
+    const { meta, events } = parseRollout(direct.file, lines);
+    const detail: SessionDetail = { ...meta, events };
+    detailCache.set(direct.file.filePath, {
+      detail,
+      mtimeMs: direct.file.mtimeMs,
+      sizeBytes: direct.file.sizeBytes,
+    });
+    return detail;
+  }
+
+  const file = rootEntry.file;
   const cached = detailCache.get(file.filePath);
   if (cached && cached.mtimeMs === file.mtimeMs && cached.sizeBytes === file.sizeBytes) {
     return cached.detail;
   }
+
   const lines = await readJsonl(file.filePath);
   const { meta, events } = parseRollout(file, lines);
-  const detail: SessionDetail = { ...meta, events };
+
+  const children = all.filter(
+    (a) => a.threadSource === "subagent" && a.rootSessionId === id,
+  );
+  const parentStartMs = meta.firstTimestamp ? Date.parse(meta.firstTimestamp) : undefined;
+  const subagents = children
+    .map((c) => buildSubagentRun(c, parentStartMs))
+    .sort((a, b) => (a.startMs ?? 0) - (b.startMs ?? 0));
+
+  const detail: SessionDetail = {
+    ...meta,
+    events,
+    ...(subagents.length > 0 ? { subagents, spawnedAgentCount: subagents.length } : {}),
+  };
+
   detailCache.set(file.filePath, {
     detail,
     mtimeMs: file.mtimeMs,

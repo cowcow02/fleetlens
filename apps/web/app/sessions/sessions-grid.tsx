@@ -591,7 +591,11 @@ function SessionCard({ row }: { row: DisplaySessionRow }) {
         {(s.spawnedAgentCount ?? 0) > 0 && (
           <span
             style={{ display: "flex", alignItems: "center", gap: 4, color: "#EA580C", fontWeight: 600 }}
-            title={`${s.workflowCount} workflow${s.workflowCount === 1 ? "" : "s"} spawned ${s.spawnedAgentCount} agents`}
+            title={
+              (s.workflowCount ?? 0) > 0
+                ? `${s.workflowCount} workflow${s.workflowCount === 1 ? "" : "s"} spawned ${s.spawnedAgentCount} agents`
+                : `${s.spawnedAgentCount} sub-agent${s.spawnedAgentCount === 1 ? "" : "s"} spawned`
+            }
           >
             <WorkflowIcon size={11} />
             {s.spawnedAgentCount} agents
