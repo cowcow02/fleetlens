@@ -19,7 +19,7 @@ final class ZaiRenderTests: XCTestCase {
   // per-agent split.
   private let fixture = """
     {"captured_at":"2026-07-10T02:00:00.000Z","agent":"zai","five_hour":{"utilization":10,"resets_at":"2026-07-10T05:00:00.000Z"},"seven_day":{"utilization":9,"resets_at":"2026-07-12T01:40:10.997Z"},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null,"plan_type":"GLM Coding Lite","web_search_quota":{"used":90,"limit":200}}
-    {"captured_at":"2026-07-10T02:52:11.745Z","agent":"codex","five_hour":{"utilization":0,"resets_at":"2026-07-09T10:52:01.000Z"},"seven_day":{"utilization":40,"resets_at":"2026-07-15T00:31:06.000Z"},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null}
+    {"captured_at":"2026-07-10T02:52:11.745Z","agent":"codex","five_hour":{"utilization":null,"resets_at":null},"seven_day":{"utilization":40,"resets_at":"2026-07-15T00:31:06.000Z"},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null,"plan_type":"plus"}
     {"captured_at":"2026-07-10T02:52:12.489Z","agent":"zai","five_hour":{"utilization":100,"resets_at":"2026-07-10T05:00:00.000Z"},"seven_day":{"utilization":24,"resets_at":"2026-07-12T01:40:10.997Z"},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null,"plan_type":"GLM Coding Lite","web_search_quota":{"used":100,"limit":200}}
     """
 
@@ -77,6 +77,10 @@ final class ZaiRenderTests: XCTestCase {
     XCTAssertTrue(perAgent.keys.contains(.zai))
     XCTAssertTrue(perAgent.keys.contains(.codex))
     XCTAssertFalse(perAgent.keys.contains(.claudeCode)) // not in the fixture
+    let codex = perAgent[.codex]
+    XCTAssertNil(codex?.fiveHour.utilization)
+    XCTAssertEqual(codex?.sevenDay.utilization, 40)
+    XCTAssertEqual(codex?.planType, "plus")
     // AgentKind is exhaustive over claude-code/codex/zai/grok — compiles & switches.
     for kind in AgentKind.allCases {
       XCTAssertFalse(kind.displayName.isEmpty)

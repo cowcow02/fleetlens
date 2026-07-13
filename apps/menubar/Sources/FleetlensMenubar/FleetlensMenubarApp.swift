@@ -70,8 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 }
 
-/// The menu-bar strip. Every present provider renders as a "detailed" pin
-/// (brand icon with 5h% stacked over 7d%) so each agent shows both windows.
+/// The menu-bar strip. Every present provider renders as a "detailed" pin;
+/// providers without a 5h window (current Codex and Grok) show only 7d%.
 /// Text and icons are white — the strip is a baked-color image on the dark
 /// menu bar (isTemplate=false), so white reads cleanly there.
 private struct StripLabel: View {
@@ -107,10 +107,12 @@ private struct DetailedPin: View {
     HStack(spacing: 3) {
       ProviderIcon(kind: kind, size: 20, tint: .white)
       VStack(alignment: .trailing, spacing: 0) {
-        Text(UsageStore.percentLabel(snap.fiveHour.utilization))
-          .font(.system(size: 9))
-          .monospacedDigit()
-          .foregroundStyle(.white)
+        if snap.fiveHour.utilization != nil {
+          Text(UsageStore.percentLabel(snap.fiveHour.utilization))
+            .font(.system(size: 9))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+        }
         Text(UsageStore.percentLabel(snap.sevenDay.utilization))
           .font(.system(size: 9))
           .monospacedDigit()

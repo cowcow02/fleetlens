@@ -78,6 +78,8 @@ export default async function UsagePage({
   // longer history just narrows them rather than overflowing.
   const cycles7d = calibration ? previousCyclesTrend(calibration, "7d", 12) : [];
   const isGrok = selected === "grok";
+  const codexWeeklyOnly =
+    selected === "codex" && latest?.five_hour?.utilization == null;
 
   return (
     <div
@@ -180,6 +182,20 @@ export default async function UsagePage({
       {/* Agent tab strip — one Link per agent that has snapshots. */}
       <AgentTabs agents={Array.from(agentsWithData)} selected={selected} />
 
+      {codexWeeklyOnly && (
+        <div
+          className="af-card"
+          style={{
+            padding: "12px 16px",
+            fontSize: 12,
+            color: "var(--af-text-secondary)",
+          }}
+        >
+          <strong style={{ color: "var(--af-text)" }}>Codex 5-hour limit removed.</strong>{" "}
+          This account is reporting a single 7-day usage window, so Fleetlens hides the retired 5-hour meter.
+        </div>
+      )}
+
       {!latest ? (
         <EmptyState agent={selected} />
       ) : (
@@ -208,9 +224,18 @@ export default async function UsagePage({
                       colorVar: "var(--af-accent)",
                     },
                   ]
+                : codexWeeklyOnly
+                  ? [
+                      {
+                        key: "seven_day",
+                        label: "7d utilization (current limit)",
+                        windowMs: 7 * 24 * 60 * 60 * 1000,
+                        colorVar: "var(--af-accent)",
+                      },
+                    ]
                 : undefined
             }
-            hideSonnet={isGrok}
+            hideSonnet={isGrok || selected === "codex"}
           />
           {selected === "zai" && latest?.web_search_quota && (
             <WebSearchQuotaCard quota={latest.web_search_quota} />
@@ -226,6 +251,7 @@ export default async function UsagePage({
             Last {agentLabel(selected)} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
             {isGrok ? " · weekly shared-pool % (no 5h window)" : ""}
+            {codexWeeklyOnly ? " · weekly-only Codex limit" : ""}
           </div>
         </>
       )}

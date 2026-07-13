@@ -418,6 +418,21 @@ const usableCodexLimits = {
   rate_limit_reached_type: null,
 };
 
+const weeklyOnlyCodexLimits = {
+  limit_id: "codex",
+  plan_type: "plus",
+  primary: {
+    used_percent: 2,
+    window_minutes: 10080,
+    resets_at: 4_000_100_000,
+  },
+  secondary: null,
+  credits: null,
+  individual_limit: null,
+  limit_name: null,
+  rate_limit_reached_type: null,
+};
+
 const emptyPremiumLimits = {
   limit_id: "premium",
   plan_type: null,
@@ -461,6 +476,24 @@ describe("getLatestCodexUsage", () => {
     expect(w).not.toBeNull();
     expect(w!.five_hour.utilization).toBe(54);
     expect(w!.seven_day.utilization).toBe(17);
+    expect(w!.plan_type).toBe("plus");
+  });
+
+  it("maps a weekly-only primary window to 7d after the 5h limit is removed", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-usage-"));
+    await writeRollout(
+      root,
+      "2026-07-13",
+      "11111111-1111-1111-1111-111111111111",
+      [tokenCount(weeklyOnlyCodexLimits)],
+      Date.now(),
+    );
+    const w = await getLatestCodexUsage({ root });
+    expect(w).not.toBeNull();
+    expect(w!.five_hour.utilization).toBeNull();
+    expect(w!.five_hour.resets_at).toBeNull();
+    expect(w!.seven_day.utilization).toBe(2);
+    expect(w!.seven_day.resets_at).toBe(new Date(4_000_100_000 * 1000).toISOString());
     expect(w!.plan_type).toBe("plus");
   });
 
