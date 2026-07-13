@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Fixed
+- **The /team "Synced projects" picker couldn't scroll** — only the first ~6 project checkboxes were reachable. `.af-panel`'s `overflow: hidden` was un-layered CSS, which under cascade-layer rules beats every Tailwind utility, so the picker's `overflow-y-auto` (and the Sync activity log's horizontal scroll) never applied. The `.af-panel` rules now live in `@layer components`, restoring the normal "component class defaults, utilities override" contract. Panels without overflow utilities are unaffected.
+
 ## [0.16.3] — 2026-07-13
 
 Safe upgrade from 0.16.2. Codex weekly-only usage now maps to its current 7-day limit.

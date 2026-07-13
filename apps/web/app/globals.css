@@ -184,11 +184,17 @@ input::placeholder {
    Component styles (af-* and sl-*)
    ============================================= */
 
-.af-panel {
-  background: var(--af-surface);
-  border: 1px solid var(--af-border-subtle);
-  border-radius: 12px;
-  overflow: hidden;
+/* @layer components so Tailwind utilities can override — un-layered CSS
+   beats every layered rule regardless of specificity, which made the
+   overflow: hidden below silently kill overflow-y-auto on panel elements
+   (e.g. the /team project picker couldn't scroll). */
+@layer components {
+  .af-panel {
+    background: var(--af-surface);
+    border: 1px solid var(--af-border-subtle);
+    border-radius: 12px;
+    overflow: hidden;
+  }
 }
 
 .af-panel-header {
@@ -349,10 +355,14 @@ input::placeholder {
   opacity: 0.55;
   cursor: default;
 }
-.af-panel {
-  background: var(--af-surface-elevated);
-  border: 1px solid var(--af-border-subtle);
-  border-radius: 8px;
+/* Layered with (and after) the first .af-panel block above so these values
+   keep winning within the layer, while utilities still override both. */
+@layer components {
+  .af-panel {
+    background: var(--af-surface-elevated);
+    border: 1px solid var(--af-border-subtle);
+    border-radius: 8px;
+  }
 }
 .af-panel-danger {
   background: var(--af-danger-subtle);
