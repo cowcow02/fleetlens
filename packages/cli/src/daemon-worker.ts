@@ -228,9 +228,15 @@ async function tick(): Promise<PollOutcome> {
         extra_usage: null,
       };
       appendSnapshot(USAGE_LOG, snapshot);
+      const fiveHour = snapshot.five_hour.utilization === null
+        ? "—"
+        : `${snapshot.five_hour.utilization}%`;
+      const sevenDay = snapshot.seven_day.utilization === null
+        ? "—"
+        : `${snapshot.seven_day.utilization}%`;
       log(
         "info",
-        `${source.kind} snapshot 5h=${snapshot.five_hour.utilization}% 7d=${snapshot.seven_day.utilization}%`,
+        `${source.kind} snapshot 5h=${fiveHour} 7d=${sevenDay}`,
       );
     } catch (err) {
       log("warn", `${source.kind} poll failed: ${(err as Error).message}`);

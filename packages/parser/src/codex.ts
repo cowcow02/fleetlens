@@ -649,8 +649,10 @@ export async function getCodexSession(
 /**
  * Read the *latest* Codex rollout's most recent `token_count` event and
  * extract the rate-limit windows. Codex stores these in every token_count
- * event's `rate_limits.{primary,secondary}` — primary is the 5h window
- * (window_minutes=300), secondary is the 7d window (window_minutes=10080).
+ * event's `rate_limits.{primary,secondary}`. The slots are not stable:
+ * after the 5-hour limit was removed, a weekly-only response puts the
+ * 7-day window in `primary` and leaves `secondary` null. Classify by
+ * `window_minutes`, then fall back to the old slot order for legacy payloads.
  *
  * Returns null when no Codex sessions exist yet, when no rollout has a
  * usable token_count.rate_limits payload, or when every rate_limits shell
@@ -659,9 +661,9 @@ export async function getCodexSession(
  * session does not blank usage that an older CLI rollout still holds.
  */
 export type CodexUsageWindows = {
-  /** 5h window — `rate_limits.primary` */
+  /** 5h window — null utilization when the account has no 5h limit */
   five_hour: { utilization: number | null; resets_at: string | null };
-  /** 7d window — `rate_limits.secondary` */
+  /** 7d window — the current Codex weekly limit */
   seven_day: { utilization: number | null; resets_at: string | null };
   /** Plan label as Codex reports it ("plus", "pro", "free", …) */
   plan_type: string | null;
@@ -683,6 +685,28 @@ function hasUsableRateLimitWindows(
     numberOf(primary?.used_percent) !== undefined ||
     numberOf(secondary?.used_percent) !== undefined
   );
+}
+
+const FIVE_HOUR_WINDOW_MINUTES = 5 * 60;
+const SEVEN_DAY_WINDOW_MINUTES = 7 * 24 * 60;
+
+type CodexUsageWindow = {
+  utilization: number | null;
+  resets_at: string | null;
+};
+
+function normalizeCodexWindow(
+  raw: Record<string, unknown> | null,
+  nowMs: number,
+): CodexUsageWindow {
+  const usedPercent = numberOf(raw?.used_percent);
+  const resetUnix = numberOf(raw?.resets_at);
+  const expired = resetUnix !== undefined && nowMs > resetUnix * 1000;
+  return {
+    utilization:
+      usedPercent === undefined ? null : expired ? 0 : usedPercent,
+    resets_at: resetUnix !== undefined ? new Date(resetUnix * 1000).toISOString() : null,
+  };
 }
 
 export async function getLatestCodexUsage(
@@ -709,36 +733,45 @@ export async function getLatestCodexUsage(
       // Skip empty premium / null-window shells; keep scanning older events
       // and older rollouts until we find real 5h/7d numbers.
       if (!hasUsableRateLimitWindows(primary, secondary)) continue;
-      const fivePct = numberOf(primary?.used_percent);
-      const sevenPct = numberOf(secondary?.used_percent);
-      const fiveResetUnix = numberOf(primary?.resets_at);
-      const sevenResetUnix = numberOf(secondary?.resets_at);
       const planType =
         typeof rl.plan_type === "string" ? (rl.plan_type as string) : null;
-      // A token_count's used_percent belongs to the window that resets at
-      // resets_at. Once that time has passed the window has rolled and the
-      // percent is stale — Codex only emits a fresh (~0%) event on the
-      // next request, so a quiet post-reset gap would otherwise show the
-      // old value forever (we persist snapshots to a log the UI re-reads).
-      // Treat an expired window as a fresh one: 0% used.
       const nowMs = Date.now();
-      const fiveExpired =
-        fiveResetUnix !== undefined && nowMs > fiveResetUnix * 1000;
-      const sevenExpired =
-        sevenResetUnix !== undefined && nowMs > sevenResetUnix * 1000;
+      let fiveHour: CodexUsageWindow | null = null;
+      let sevenDay: CodexUsageWindow | null = null;
+
+      // `primary`/`secondary` are response slots, not semantic names. The
+      // window length is the stable contract across the weekly-only rollout
+      // and the older two-window payload.
+      for (const candidate of [primary, secondary]) {
+        if (!candidate) continue;
+        const windowMinutes = numberOf(candidate.window_minutes);
+        if (windowMinutes === FIVE_HOUR_WINDOW_MINUTES) {
+          fiveHour = normalizeCodexWindow(candidate, nowMs);
+        } else if (windowMinutes === SEVEN_DAY_WINDOW_MINUTES) {
+          sevenDay = normalizeCodexWindow(candidate, nowMs);
+        }
+      }
+
+      const unknownWindows = [primary, secondary].filter(
+        (candidate) => candidate !== null && numberOf(candidate.window_minutes) === undefined,
+      );
+
+      // Older Codex payloads did not always include window_minutes. Preserve
+      // their positional meaning rather than dropping historical usage.
+      if (!fiveHour && !sevenDay) {
+        fiveHour = primary ? normalizeCodexWindow(primary, nowMs) : null;
+        sevenDay = secondary ? normalizeCodexWindow(secondary, nowMs) : null;
+      } else if (unknownWindows.length === 1) {
+        // Transitional payloads can label one slot before the other. Infer
+        // only the missing semantic window; never remap a weekly-only primary.
+        const inferred = normalizeCodexWindow(unknownWindows[0]!, nowMs);
+        if (!fiveHour) fiveHour = inferred;
+        else if (!sevenDay) sevenDay = inferred;
+      }
+
       return {
-        five_hour: {
-          utilization: fiveExpired ? 0 : (fivePct ?? null),
-          resets_at:
-            fiveResetUnix !== undefined ? new Date(fiveResetUnix * 1000).toISOString() : null,
-        },
-        seven_day: {
-          utilization: sevenExpired ? 0 : (sevenPct ?? null),
-          resets_at:
-            sevenResetUnix !== undefined
-              ? new Date(sevenResetUnix * 1000).toISOString()
-              : null,
-        },
+        five_hour: fiveHour ?? { utilization: null, resets_at: null },
+        seven_day: sevenDay ?? { utilization: null, resets_at: null },
         plan_type: planType,
         source_path: file.filePath,
       };

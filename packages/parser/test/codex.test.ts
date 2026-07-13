@@ -418,6 +418,32 @@ const usableCodexLimits = {
   rate_limit_reached_type: null,
 };
 
+const weeklyOnlyCodexLimits = {
+  limit_id: "codex",
+  plan_type: "plus",
+  primary: {
+    used_percent: 2,
+    window_minutes: 10080,
+    resets_at: 4_000_100_000,
+  },
+  secondary: null,
+  credits: null,
+  individual_limit: null,
+  limit_name: null,
+  rate_limit_reached_type: null,
+};
+
+const legacyCodexLimits = {
+  ...usableCodexLimits,
+  primary: { used_percent: 61, resets_at: 4_000_000_000 },
+  secondary: { used_percent: 23, resets_at: 4_000_100_000 },
+};
+
+const mixedCodexLimits = {
+  ...usableCodexLimits,
+  secondary: { used_percent: 23, resets_at: 4_000_100_000 },
+};
+
 const emptyPremiumLimits = {
   limit_id: "premium",
   plan_type: null,
@@ -462,6 +488,54 @@ describe("getLatestCodexUsage", () => {
     expect(w!.five_hour.utilization).toBe(54);
     expect(w!.seven_day.utilization).toBe(17);
     expect(w!.plan_type).toBe("plus");
+  });
+
+  it("maps a weekly-only primary window to 7d after the 5h limit is removed", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-usage-"));
+    await writeRollout(
+      root,
+      "2026-07-13",
+      "11111111-1111-1111-1111-111111111111",
+      [tokenCount(weeklyOnlyCodexLimits)],
+      Date.now(),
+    );
+    const w = await getLatestCodexUsage({ root });
+    expect(w).not.toBeNull();
+    expect(w!.five_hour.utilization).toBeNull();
+    expect(w!.five_hour.resets_at).toBeNull();
+    expect(w!.seven_day.utilization).toBe(2);
+    expect(w!.seven_day.resets_at).toBe(new Date(4_000_100_000 * 1000).toISOString());
+    expect(w!.plan_type).toBe("plus");
+  });
+
+  it("preserves positional mapping for legacy windows without durations", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-usage-"));
+    await writeRollout(
+      root,
+      "2026-07-13",
+      "22222222-2222-2222-2222-222222222222",
+      [tokenCount(legacyCodexLimits)],
+      Date.now(),
+    );
+    const w = await getLatestCodexUsage({ root });
+    expect(w).not.toBeNull();
+    expect(w!.five_hour.utilization).toBe(61);
+    expect(w!.seven_day.utilization).toBe(23);
+  });
+
+  it("fills one unlabeled transitional window without remapping the known one", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-usage-"));
+    await writeRollout(
+      root,
+      "2026-07-13",
+      "33333333-3333-3333-3333-333333333333",
+      [tokenCount(mixedCodexLimits)],
+      Date.now(),
+    );
+    const w = await getLatestCodexUsage({ root });
+    expect(w).not.toBeNull();
+    expect(w!.five_hour.utilization).toBe(54);
+    expect(w!.seven_day.utilization).toBe(23);
   });
 
   it("skips trailing empty premium and keeps earlier usable codex in the same file", async () => {

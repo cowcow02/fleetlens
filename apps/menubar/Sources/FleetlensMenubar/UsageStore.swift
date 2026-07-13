@@ -20,13 +20,14 @@ final class UsageStore: ObservableObject {
     watcher?.start()
   }
 
-  /// Headline value for the menu bar — Claude 5h, falling back to Codex 5h.
+  /// Headline value for the menu bar — Claude 5h, falling back to Codex 7d.
   var headlinePercent: String { Self.percentLabel(headlineUtil) }
   var hasData: Bool { !snapshots.isEmpty }
 
   var headlineUtil: Double? {
     snapshots[.claudeCode]?.fiveHour.utilization
       ?? snapshots[.codex]?.fiveHour.utilization
+      ?? snapshots[.codex]?.sevenDay.utilization
   }
 
   /// Color for the menu bar % — reflects the same threshold scale as the bars.
@@ -34,7 +35,8 @@ final class UsageStore: ObservableObject {
 
   /// Secondary metric for the menu bar when Codex is also present.
   var secondaryPercent: String? {
-    guard let codex = snapshots[.codex]?.fiveHour.utilization,
+    guard let codex = snapshots[.codex]?.fiveHour.utilization
+      ?? snapshots[.codex]?.sevenDay.utilization,
           snapshots[.claudeCode] != nil else { return nil }
     return Self.percentLabel(codex)
   }

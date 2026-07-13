@@ -276,6 +276,7 @@ const codexSource: AgentSource = {
       agent: "codex",
       five_hour: w.five_hour,
       seven_day: w.seven_day,
+      plan_type: w.plan_type,
     };
   },
 };
