@@ -752,11 +752,21 @@ export async function getLatestCodexUsage(
         }
       }
 
+      const unknownWindows = [primary, secondary].filter(
+        (candidate) => candidate !== null && numberOf(candidate.window_minutes) === undefined,
+      );
+
       // Older Codex payloads did not always include window_minutes. Preserve
       // their positional meaning rather than dropping historical usage.
       if (!fiveHour && !sevenDay) {
         fiveHour = primary ? normalizeCodexWindow(primary, nowMs) : null;
         sevenDay = secondary ? normalizeCodexWindow(secondary, nowMs) : null;
+      } else if (unknownWindows.length === 1) {
+        // Transitional payloads can label one slot before the other. Infer
+        // only the missing semantic window; never remap a weekly-only primary.
+        const inferred = normalizeCodexWindow(unknownWindows[0]!, nowMs);
+        if (!fiveHour) fiveHour = inferred;
+        else if (!sevenDay) sevenDay = inferred;
       }
 
       return {
