@@ -4,6 +4,13 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.16.3] — 2026-07-13
+
+Safe upgrade from 0.16.2. Codex weekly-only usage now maps to its current 7-day limit.
+
+### Fixed
+- **Codex usage no longer shows a retired 5-hour meter.** Rate-limit windows are classified by their reported duration, so weekly-only accounts show only the 7-day window in the dashboard and menu-bar widget. If the 5-hour limit returns, both windows are shown automatically; older positional payloads remain supported.
+
 ## [0.16.2] — 2026-07-11
 
 Safe upgrade from 0.16.1. Fixes the Agent page failing on every message for installed (non-dev) servers.
