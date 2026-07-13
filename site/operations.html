@@ -3,63 +3,106 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Operate, build, and troubleshoot Fleetlens.">
-  <title>Fleetlens - operations</title>
+  <meta name="description" content="Operate Fleetlens: service lifecycle, local state, updates, source builds, and troubleshooting.">
+  <title>Fleetlens operations guide</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="site-header"><nav class="nav" aria-label="Primary navigation"><a class="brand" href="index.html"><span class="brand-mark">⌁</span>Fleetlens</a><div class="nav-links"><a href="platform.html">Platform</a><a href="getting-started.html">Get started</a><a href="team-edition.html">Team Edition</a><a href="privacy.html">Privacy</a><a class="nav-cta" href="assets/fleetlens-user-guide.pdf">Setup guide PDF</a></div></nav></header>
-
-  <main>
-    <section class="page-hero"><div class="wrap"><p class="breadcrumbs">Fleetlens / Operations</p><h1>Keep the local loop healthy.</h1><p>Fleetlens has two local processes and one state directory. Most operational questions can be answered without touching the transcript files.</p></div></section>
-
-    <section class="section"><div class="wrap">
-      <div class="section-head"><p class="eyebrow">Lifecycle</p><h2>Server and daemon are separate, but start together.</h2><p>The common path is one command; the advanced path lets power users manage the pieces independently.</p></div>
-      <div class="grid-3">
-        <article class="card"><span class="tag">Start</span><h3><code>fleetlens start</code></h3><p>Ensures the current web bundle is running, then starts the usage and sync worker unless <code>--no-daemon</code> is supplied.</p></article>
-        <article class="card"><span class="tag">Inspect</span><h3><code>fleetlens status</code></h3><p>Shows the server, daemon, and latest snapshot in one glance. Use daemon logs for provider or sync errors.</p></article>
-        <article class="card"><span class="tag">Stop</span><h3><code>fleetlens stop</code></h3><p>Stops the web server and daemon. <code>fleetlens daemon stop</code> stops only the worker.</p></article>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <span class="brand-context">Documentation</span>
+      <div class="nav-links">
+        <a href="getting-started.html">Get started</a>
+        <a href="team-member.html">Team sync</a>
+        <a href="platform.html">Platform</a>
+        <a href="reference.html">Reference</a>
+        <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
       </div>
-    </div></section>
+    </nav>
+  </header>
 
-    <section class="section section-muted"><div class="wrap">
-      <div class="section-head"><p class="eyebrow">State directory</p><h2><code>~/.cclens</code> is Fleetlens's local control plane.</h2><p>Use <code>CCLENS_HOME</code> to isolate this state for another workspace, test run, or demo environment.</p></div>
-      <div class="table-wrap"><table><thead><tr><th>Path</th><th>Role</th><th>Writer / reader</th></tr></thead><tbody>
-        <tr><td><code>pid</code></td><td>Web PID, port, and version</td><td>CLI server lifecycle</td></tr>
-        <tr><td><code>daemon.pid</code></td><td>Detached worker PID</td><td>CLI daemon lifecycle</td></tr>
-        <tr><td><code>usage.jsonl</code></td><td>Append-only provider snapshots</td><td>Daemon, local dashboard, team sync</td></tr>
-        <tr><td><code>daemon.log</code></td><td>Polling, perception, update, and sync messages</td><td>Daemon and CLI log view</td></tr>
-        <tr><td><code>entries/</code></td><td>One day-scoped Entry per session slice</td><td>Perception worker and digest pipeline</td></tr>
-        <tr><td><code>digests/</code></td><td>Saved day, week, and month artifacts</td><td>Digest pipeline and Insights UI</td></tr>
-        <tr><td><code>agent-index/</code></td><td>Incremental local search index</td><td>Agent page</td></tr>
+  <main class="wrap docs-shell">
+    <aside class="sidebar" aria-label="Documentation sections">
+      <p class="sidebar-label">Learn Fleetlens</p>
+      <a class="side-link" href="getting-started.html">Get started</a>
+      <a class="side-link" href="team-member.html">Sync as a member</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Understand</p>
+      <a class="side-link" href="platform.html">Platform map</a>
+      <a class="side-link" href="privacy.html">Privacy model</a>
+      <p class="sidebar-label">Operate</p>
+      <a class="side-link" aria-current="page" href="operations.html">Operations</a>
+      <a class="side-link" href="reference.html">CLI reference</a>
+    </aside>
+
+    <article class="doc-content">
+      <div class="doc-meta"><span class="meta-chip teal">Operations</span><span class="meta-chip">Local CLI</span><span class="meta-chip">Team admin notes</span></div>
+      <h1>Keep the local services healthy.</h1>
+      <p class="intro">Most Fleetlens operation is intentionally small: start the local dashboard, let the daemon poll in the background, inspect logs when a metric is missing, and update the bundled CLI as one unit.</p>
+
+      <h2>Service lifecycle</h2>
+      <div class="grid-3">
+        <article class="card"><span class="tag">Start</span><h3><code>fleetlens start</code></h3><p>Starts the local web server and detached usage daemon together.</p></article>
+        <article class="card"><span class="tag">Inspect</span><h3><code>fleetlens status</code></h3><p>Shows the server, daemon, port, version, and latest usage state.</p></article>
+        <article class="card"><span class="tag">Stop</span><h3><code>fleetlens stop</code></h3><p>Stops both local services without deleting transcript history.</p></article>
+      </div>
+      <pre><code>fleetlens start
+fleetlens status
+fleetlens stop</code></pre>
+      <p>Use <code>fleetlens daemon stop</code> when you want to stop only usage polling while leaving the dashboard available.</p>
+
+      <h2>Local state directory</h2>
+      <p>Fleetlens keeps its own state separate from provider transcript roots:</p>
+      <div class="table-wrap"><table><thead><tr><th>Path</th><th>Purpose</th><th>Safe to inspect?</th></tr></thead><tbody>
+        <tr><td><code>~/.cclens/pid</code></td><td>Web PID, port, and serving version.</td><td>Yes</td></tr>
+        <tr><td><code>~/.cclens/daemon.pid</code></td><td>Usage daemon PID.</td><td>Yes</td></tr>
+        <tr><td><code>~/.cclens/usage.jsonl</code></td><td>Append-only provider usage snapshots.</td><td>Yes, treat as local data</td></tr>
+        <tr><td><code>~/.cclens/daemon.log</code></td><td>Usage, perception, update, and team-sync messages.</td><td>Redact before sharing</td></tr>
+        <tr><td><code>~/.cclens/entries/</code></td><td>Day-scoped local work units used by digests.</td><td>Keep private</td></tr>
+        <tr><td><code>~/.cclens/digests/</code></td><td>Saved day, week, and month digest artifacts.</td><td>Keep private</td></tr>
+        <tr><td><code>~/.cclens/team-config.json</code></td><td>Team server URL, member identity, token, and sync selection.</td><td>Never share</td></tr>
       </tbody></table></div>
-    </div></section>
 
-    <section class="section"><div class="wrap prose">
-      <h2>Build from source</h2>
+      <h2>Usage and team logs</h2>
+      <pre><code>fleetlens daemon status
+fleetlens daemon logs
+fleetlens usage
+fleetlens team status
+fleetlens team logs</code></pre>
+      <p>Transcript analytics do not depend on a plan snapshot. If usage is missing, first check provider authentication and the daemon log. For team sync, the log distinguishes a successful push, a queued retry, and an unrecoverable validation failure.</p>
+
+      <h2>Updates</h2>
+      <pre><code>fleetlens update</code></pre>
+      <p>The updater installs the newest published CLI and re-executes the fresh binary so the local server and daemon do not remain on an older bundle. If you run the dashboard from a source checkout, rebuild the web standalone output before preparing the CLI bundle.</p>
+
+      <h2>Build and verify from source</h2>
       <pre><code>git clone https://github.com/cowcow02/fleetlens.git
 cd fleetlens
 pnpm install
 pnpm typecheck
 pnpm test
 pnpm build</code></pre>
-      <p>The published CLI bundles the web standalone output. When building the CLI flow manually:</p>
+      <p>For the bundled CLI build:</p>
       <pre><code>NEXT_OUTPUT=standalone pnpm build
 node scripts/prepare-cli.mjs
 node packages/cli/dist/index.js start</code></pre>
-      <div class="note"><strong>Verification rule</strong><p>Use the repository's existing running dev server for smoke verification where possible. The canonical commands are <code>pnpm typecheck</code>, <code>pnpm test</code>, and <code>pnpm verify</code>.</p></div>
+      <div class="note"><strong>Verification order</strong><p>Use the repository's existing running server for smoke checks when possible. The normal gates are <code>pnpm typecheck</code>, <code>pnpm test</code>, and <code>pnpm verify</code>.</p></div>
 
-      <h2>Troubleshoot by symptom</h2>
-      <div class="table-wrap"><table><thead><tr><th>Symptom</th><th>First check</th><th>Likely next step</th></tr></thead><tbody>
-        <tr><td>No sessions</td><td>Provider transcript root exists and has recent files.</td><td>Run a new session, then reload or restart the server.</td></tr>
-        <tr><td>No usage</td><td><code>fleetlens daemon status</code> and <code>daemon logs</code>.</td><td>Refresh provider auth; wait for the next poll.</td></tr>
-        <tr><td>Port collision</td><td><code>fleetlens status</code> and the port error.</td><td>Use <code>--port</code> or stop the process holding the port.</td></tr>
-        <tr><td>Team not syncing</td><td><code>fleetlens team status</code> and <code>team logs</code>.</td><td>Finish onboarding, select projects, run <code>team sync</code>.</td></tr>
-        <tr><td>Empty Insights</td><td>Entries exist and AI features are enabled.</td><td>Run a session or backfill recent days.</td></tr>
+      <h2>Symptom-first troubleshooting</h2>
+      <div class="table-wrap"><table><thead><tr><th>Symptom</th><th>First check</th><th>Likely action</th></tr></thead><tbody>
+        <tr><td>No sessions</td><td>Does a supported agent have recent local history?</td><td>Run one new agent session, then reload the dashboard.</td></tr>
+        <tr><td>Server will not start</td><td><code>fleetlens status</code> and the port error.</td><td>Use <code>fleetlens start --port 4400</code> or stop the old process.</td></tr>
+        <tr><td>No usage</td><td><code>fleetlens daemon status</code> and <code>daemon logs</code>.</td><td>Restore provider authentication and wait for the next poll.</td></tr>
+        <tr><td>Team is not syncing</td><td><code>fleetlens team status</code> and <code>team logs</code>.</td><td>Finish onboarding, check project selection, and run <code>fleetlens team sync</code>.</td></tr>
+        <tr><td>UI is stale after an update</td><td>Compare the serving version from <code>fleetlens status</code>.</td><td>Run <code>fleetlens update</code> so both processes restart on the same bundle.</td></tr>
+        <tr><td>Insights are empty</td><td>Check entries and AI feature settings.</td><td>Run a session, enable the feature, or backfill recent days.</td></tr>
       </tbody></table></div>
-    </div></section>
+
+      <div class="note note-amber"><strong>Share diagnostics safely</strong><p>When asking for help, include the command, the error text, and a redacted excerpt of <code>fleetlens daemon logs</code>. Remove tokens, private paths, project names, prompts, and file contents first.</p></div>
+    </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens platform documentation</span><span><a href="getting-started.html">Get started</a> · <a href="team-edition.html">Team Edition</a> · <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.4</span><span><a href="reference.html">CLI reference</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
 </body>
 </html>

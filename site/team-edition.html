@@ -3,54 +3,108 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Deploy and pair Fleetlens Team Edition.">
-  <title>Fleetlens - Team Edition</title>
+  <meta name="description" content="Deploy Fleetlens Team Edition, create the first team, and issue device tokens to members.">
+  <title>Deploy Fleetlens Team Edition</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="site-header"><nav class="nav" aria-label="Primary navigation"><a class="brand" href="index.html"><span class="brand-mark">⌁</span>Fleetlens</a><div class="nav-links"><a href="platform.html">Platform</a><a href="getting-started.html">Get started</a><a aria-current="page" href="team-edition.html">Team Edition</a><a href="privacy.html">Privacy</a><a class="nav-cta" href="assets/fleetlens-user-guide.pdf">Setup guide PDF</a></div></nav></header>
-
-  <main>
-    <section class="page-hero"><div class="wrap"><p class="breadcrumbs">Fleetlens / Team Edition</p><h1>Shared visibility without centralizing raw sessions.</h1><p>Team Edition is the self-hosted server layer. It stores membership, rollups, usage history, integrations, and reports while local machines retain transcript authority.</p></div></section>
-
-    <section class="section"><div class="wrap">
-      <div class="section-head"><p class="eyebrow">Admin setup</p><h2>Pick an infrastructure path.</h2><p>All supported paths run the same Next.js team server and Postgres-backed data model. The tradeoff is operational control, not product behavior.</p></div>
-      <div class="grid-2">
-        <article class="card"><span class="tag">Railway</span><h3>Fastest first deployment</h3><p>The repository includes a one-click template that provisions the team server and Postgres with the core variables wired together.</p><p class="pill-row"><a class="pill pill-purple" href="https://railway.com/new/template/sGuijx">Deploy template</a><a class="pill" href="https://github.com/cowcow02/fleetlens/blob/master/deploy/railway/README.md">Runbook</a></p></article>
-        <article class="card"><span class="tag">Google Cloud</span><h3>Cloud Run + Cloud SQL</h3><p>The Cloud Shell installer provisions Cloud Run, Cloud SQL Postgres, Secret Manager, and the scheduler path with a preflight confirmation.</p><p class="pill-row"><a class="pill" href="https://github.com/cowcow02/fleetlens/blob/master/deploy/gcp/README.md">GCP guide</a></p></article>
-        <article class="card"><span class="tag">Docker Compose</span><h3>Run it on your host</h3><p>Compose runs the team server, Postgres, and Caddy. Set the database password and base URL, then let Caddy terminate TLS when a domain is available.</p><p class="pill-row"><a class="pill" href="https://github.com/cowcow02/fleetlens/blob/master/deploy/compose/README.md">Compose guide</a></p></article>
-        <article class="card"><span class="tag">AWS Terraform</span><h3>Own the cloud topology</h3><p>The module targets ECS Fargate, RDS Postgres, and an Application Load Balancer. Bring an existing VPC, subnets, DNS, and optionally an ACM certificate.</p><p class="pill-row"><a class="pill" href="https://github.com/cowcow02/fleetlens/blob/master/deploy/terraform/aws/README.md">AWS guide</a></p></article>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <span class="brand-context">Documentation</span>
+      <div class="nav-links">
+        <a href="getting-started.html">Get started</a>
+        <a href="team-member.html">Team sync</a>
+        <a aria-current="page" href="team-edition.html">Platform admin</a>
+        <a href="platform.html">Platform</a>
+        <a href="reference.html">Reference</a>
+        <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
       </div>
-    </div></section>
+    </nav>
+  </header>
 
-    <section class="section section-muted"><div class="wrap">
-      <div class="section-head"><p class="eyebrow">Pairing loop</p><h2>Admin creates context; members choose scope.</h2></div>
+  <main class="wrap docs-shell">
+    <aside class="sidebar" aria-label="Documentation sections">
+      <p class="sidebar-label">Learn Fleetlens</p>
+      <a class="side-link" href="getting-started.html">Get started</a>
+      <a class="side-link" href="team-member.html">Sync as a member</a>
+      <a class="side-link" aria-current="page" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Understand</p>
+      <a class="side-link" href="platform.html">Platform map</a>
+      <a class="side-link" href="privacy.html">Privacy model</a>
+      <p class="sidebar-label">Operate</p>
+      <a class="side-link" href="operations.html">Operations</a>
+      <a class="side-link" href="reference.html">CLI reference</a>
+    </aside>
+
+    <article class="doc-content">
+      <div class="doc-meta"><span class="meta-chip purple">Platform admin</span><span class="meta-chip">15-30 minutes</span><span class="meta-chip">Postgres required</span></div>
+      <h1>Deploy Team Edition and invite your first member.</h1>
+      <p class="intro">Team Edition is the shared server layer for a Fleetlens team. It stores membership, selected rollups, usage history, integrations, and server-side reports. Raw session transcripts remain on each member machine.</p>
+
+      <div class="lead-note">
+        <strong>Recommended first deployment: Railway</strong>
+        <p>For a first team, use the repository's Railway template. It provisions the team server and Postgres with the main variables connected. Move to GCP, Docker Compose, or AWS Terraform when you need more infrastructure control.</p>
+      </div>
+
+      <h2>Choose a deployment path</h2>
+      <div class="choice-grid">
+        <div class="choice-card"><h3>Railway</h3><p>Fastest path to a public HTTPS URL. The template provisions Team Edition and Postgres together. <a href="https://railway.com/new/template/sGuijx">Open the Railway template</a>.</p></div>
+        <div class="choice-card"><h3>Google Cloud</h3><p>Cloud Run, Cloud SQL, Secret Manager, and Cloud Scheduler. Follow the repository's <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/gcp/README.md">GCP deployment guide</a>.</p></div>
+        <div class="choice-card"><h3>Docker Compose</h3><p>Run the server, Postgres, and Caddy on a host you control. Follow the <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/compose/README.md">Compose guide</a>.</p></div>
+        <div class="choice-card"><h3>AWS Terraform</h3><p>Use ECS Fargate, RDS Postgres, and an Application Load Balancer. Follow the <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/terraform/aws/README.md">AWS module guide</a>.</p></div>
+      </div>
+
+      <h2>Railway: the first deployment</h2>
+      <div class="step-card"><span class="step-num">1</span><div><h3>Open the template</h3><p>Sign in to Railway, open the <a href="https://railway.com/new/template/sGuijx">Fleetlens template</a>, and choose a Railway project and environment.</p></div></div>
+      <div class="step-card"><span class="step-num">2</span><div><h3>Wait for both services</h3><p>Railway provisions <code>fleetlens-team-server</code> and Postgres. Wait until the server deployment is healthy and a public domain is available.</p></div></div>
+      <div class="step-card"><span class="step-num">3</span><div><h3>Open the generated URL</h3><p>Open the generated <code>*.up.railway.app</code> URL in a browser and visit <code>/signup</code>. The server's <code>BASE_URL</code> must match the public URL used by the browser and CLI.</p></div></div>
+      <div class="step-card"><span class="step-num">4</span><div><h3>Create the first account</h3><p>The first account becomes the administrator of the first team. Use a team-owned address and store the password in your normal password manager.</p></div></div>
+      <div class="step-card"><span class="step-num">5</span><div><h3>Check the server settings</h3><p>Confirm the team name, public URL, database connection, and encryption key are stable before inviting members. Do not paste secrets into a ticket or chat channel.</p></div></div>
+
+      <h2>Issue a device token</h2>
+      <p>Members pair local Fleetlens daemons with a device token. After signing in, open the Team Edition settings area and create a token for the member or device. Send the token and server URL through a private channel.</p>
+      <div class="note note-amber"><strong>Tokens are credentials</strong><p>Do not put a token in a public issue, a screenshot, a shared document, or a shell history file that other users can read. If a token leaks, revoke it and create a replacement.</p></div>
+      <p>Give the member these three pieces of context:</p>
+      <ul>
+        <li>The exact server URL, including <code>https://</code>.</li>
+        <li>The device token.</li>
+        <li>Which repositories are allowed to sync, if your team has a data policy.</li>
+      </ul>
+
+      <h2>Verify the first member sync</h2>
+      <p>Send the member to <a href="team-member.html">Sync your first project</a>. Their local onboarding flow has three screens:</p>
       <div class="flow">
-        <div class="flow-step"><span class="flow-number">01</span><h3>Deploy</h3><p>Bring the server and Postgres online with a stable HTTPS URL.</p></div>
-        <div class="flow-step"><span class="flow-number">02</span><h3>Claim</h3><p>The first account becomes admin of the first team.</p></div>
-        <div class="flow-step"><span class="flow-number">03</span><h3>Invite</h3><p>Create an invite or device token from server settings.</p></div>
-        <div class="flow-step"><span class="flow-number">04</span><h3>Pair</h3><p>Run <code>fleetlens team join</code> on each member machine.</p></div>
-        <div class="flow-step"><span class="flow-number">05</span><h3>Sync</h3><p>Select projects, then let the daemon push rollups.</p></div>
+        <div class="flow-step"><span class="flow-number">01</span><h3>What happens</h3><p>They review shared aggregates and the local-only boundary.</p></div>
+        <div class="flow-step"><span class="flow-number">02</span><h3>Choose</h3><p>They select the projects this machine may send.</p></div>
+        <div class="flow-step"><span class="flow-number">03</span><h3>Start</h3><p>They explicitly begin the history backfill.</p></div>
+        <div class="flow-step"><span class="flow-number">04</span><h3>Observe</h3><p>The browser shows days pushed and retry states.</p></div>
+        <div class="flow-step"><span class="flow-number">05</span><h3>Review</h3><p>The team dashboard receives derived rollups, not transcripts.</p></div>
       </div>
-    </div></section>
+      <p>Ask the member to run <code>fleetlens team status</code> after the browser reports success. On the server, check the member's activity and the selected project rows.</p>
 
-    <section class="section"><div class="wrap prose">
-      <h2>Member commands</h2>
-      <pre><code>fleetlens team join https://your-fleetlens.example &lt;invite-token&gt;&#10;fleetlens team status&#10;fleetlens team sync</code></pre>
-      <p>The join flow opens the browser onboarding page so the member can select projects. For a non-interactive first sync, add <code>--no-browser</code>. The local Team page shows the server, team slug, pairing state, selected projects, last pushed day, and latest usage snapshot.</p>
-      <pre><code>fleetlens team backfill&#10;fleetlens team logs&#10;fleetlens team leave</code></pre>
-
-      <h2>What the server receives</h2>
-      <div class="table-wrap"><table><thead><tr><th>Payload</th><th>Why it exists</th><th>Scope</th></tr></thead><tbody>
-        <tr><td>Daily rollup</td><td>Agent time, sessions, tools, turns, token totals</td><td>Selected projects and local day</td></tr>
-        <tr><td>Rich rollup</td><td>Working shape, skills, subagents, long turns, plan mode, tool errors, PRs, commits, pushes</td><td>Derived project labels and counts</td></tr>
-        <tr><td>Usage snapshot</td><td>Current provider windows and reset times</td><td>Paired member</td></tr>
-        <tr><td>Enriched extras</td><td>Outcome, helpfulness, and goal-minute mix from local enrichment</td><td>Selected project rollups</td></tr>
+      <h2>What Team Edition stores</h2>
+      <div class="table-wrap"><table><thead><tr><th>Area</th><th>Purpose</th></tr></thead><tbody>
+        <tr><td>Membership</td><td>Teams, users, roles, device pairing, invitations, and audit activity.</td></tr>
+        <tr><td>Daily rollups</td><td>Agent time, session count, tools, turns, tokens, projects, and daily outcomes.</td></tr>
+        <tr><td>Rich rollups</td><td>Working-shape mix, skills, subagents, long turns, plans, tool errors, PRs, commits, and pushes.</td></tr>
+        <tr><td>Usage history</td><td>Plan windows, reset times, and snapshots reported by paired members.</td></tr>
+        <tr><td>Reports and integrations</td><td>Server-side team views and optional connected services.</td></tr>
       </tbody></table></div>
-      <div class="note note-purple"><strong>Raw transcripts are not the sync contract.</strong><p>Prompts, assistant responses, absolute paths, file contents, tool-call payloads, and excluded projects remain on the member machine. See the <a href="privacy.html">privacy model</a> for the full boundary.</p></div>
-    </div></section>
+
+      <h2>Admin checklist</h2>
+      <ul>
+        <li>Use a stable HTTPS URL and keep <code>BASE_URL</code> aligned with it.</li>
+        <li>Back up Postgres and protect the server encryption key.</li>
+        <li>Use least-privilege admin accounts and revoke departed members.</li>
+        <li>Document which projects are allowed to sync before inviting the team.</li>
+        <li>Keep the team server and local member machines on supported Fleetlens versions.</li>
+      </ul>
+
+      <div class="note note-purple"><strong>Next step</strong><p>Read the <a href="privacy.html">privacy model</a> for the exact local/team boundary, then use the <a href="operations.html">operations guide</a> for logs, updates, and troubleshooting.</p></div>
+    </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens platform documentation</span><span><a href="privacy.html">Privacy</a> · <a href="operations.html">Operations</a> · <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.4</span><span><a href="team-member.html">Member onboarding</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
 </body>
 </html>

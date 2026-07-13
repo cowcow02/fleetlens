@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Fleetlens command, route, environment, state, and supported-source reference.">
+  <title>Fleetlens reference</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <span class="brand-context">Documentation</span>
+      <div class="nav-links">
+        <a href="getting-started.html">Get started</a>
+        <a href="team-member.html">Team sync</a>
+        <a href="platform.html">Platform</a>
+        <a aria-current="page" href="reference.html">Reference</a>
+        <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="wrap docs-shell">
+    <aside class="sidebar" aria-label="Documentation sections">
+      <p class="sidebar-label">Learn Fleetlens</p>
+      <a class="side-link" href="getting-started.html">Get started</a>
+      <a class="side-link" href="team-member.html">Sync as a member</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Understand</p>
+      <a class="side-link" href="platform.html">Platform map</a>
+      <a class="side-link" href="privacy.html">Privacy model</a>
+      <p class="sidebar-label">Operate</p>
+      <a class="side-link" href="operations.html">Operations</a>
+      <a class="side-link" aria-current="page" href="reference.html">CLI reference</a>
+    </aside>
+
+    <article class="doc-content">
+      <div class="doc-meta"><span class="meta-chip teal">Reference</span><span class="meta-chip">Fleetlens 0.16.4</span><span class="meta-chip">Keep nearby</span></div>
+      <h1>Commands, routes, sources, and local state.</h1>
+      <p class="intro">Use this page when you already know what you want to do. For a first setup, start with the <a href="getting-started.html">beginner walkthrough</a> instead.</p>
+
+      <h2>CLI commands</h2>
+      <div class="table-wrap"><table><thead><tr><th>Command</th><th>Purpose</th></tr></thead><tbody>
+        <tr><td><code>fleetlens start [--port N] [--open] [--no-daemon]</code></td><td>Start the local dashboard and, unless skipped, the usage daemon.</td></tr>
+        <tr><td><code>fleetlens stop</code></td><td>Stop the local dashboard and daemon.</td></tr>
+        <tr><td><code>fleetlens status</code></td><td>Show server, daemon, port, version, and latest snapshot state.</td></tr>
+        <tr><td><code>fleetlens update</code></td><td>Install the latest published CLI and restart stale services.</td></tr>
+        <tr><td><code>fleetlens web [page] [--open]</code></td><td>Open a dashboard page without managing the daemon.</td></tr>
+        <tr><td><code>fleetlens usage [--save]</code></td><td>Print or save a current provider plan-utilization snapshot.</td></tr>
+        <tr><td><code>fleetlens usage --history [-s D] [--days N]</code></td><td>Print historical usage and cost rows.</td></tr>
+        <tr><td><code>fleetlens entries --day D|--session ID|--all</code></td><td>Inspect day-scoped local perception entries.</td></tr>
+        <tr><td><code>fleetlens digest day|week|month ...</code></td><td>Generate or read local digest artifacts.</td></tr>
+        <tr><td><code>fleetlens daemon start|stop|status|logs</code></td><td>Manage the usage and team-sync worker separately.</td></tr>
+        <tr><td><code>fleetlens team join &lt;url&gt; &lt;token&gt;</code></td><td>Pair a local machine and open the browser onboarding flow.</td></tr>
+        <tr><td><code>fleetlens team status|sync|backfill|logs|leave</code></td><td>Inspect, trigger, backfill, diagnose, or end Team Edition sync.</td></tr>
+        <tr><td><code>fleetlens autostart install|uninstall|status</code></td><td>Manage daemon start at login on supported macOS setups.</td></tr>
+        <tr><td><code>fleetlens menubar install|uninstall|open|status</code></td><td>Manage the optional native macOS usage widget.</td></tr>
+      </tbody></table></div>
+
+      <h2>Dashboard routes</h2>
+      <div class="table-wrap"><table><thead><tr><th>Route</th><th>Use it for</th></tr></thead><tbody>
+        <tr><td><code>/</code></td><td>Overview metrics, heatmap, daily activity, projects, and recent sessions.</td></tr>
+        <tr><td><code>/sessions</code></td><td>Search and inspect sessions.</td></tr>
+        <tr><td><code>/projects</code></td><td>Canonical project rollups and worktree context.</td></tr>
+        <tr><td><code>/day</code></td><td>Daily timeline, activity, and concurrency.</td></tr>
+        <tr><td><code>/insights</code></td><td>Day, week, and month insights backed by local entries.</td></tr>
+        <tr><td><code>/agent</code></td><td>Ask questions over local history and create handoffs.</td></tr>
+        <tr><td><code>/usage</code></td><td>Historical provider utilization.</td></tr>
+        <tr><td><code>/settings</code></td><td>Local service, menu bar, credentials, and AI settings.</td></tr>
+        <tr><td><code>/team</code></td><td>Pairing, sync activity, project selection, and data boundary.</td></tr>
+        <tr><td><code>/team/onboarding</code></td><td>Three-step member setup after a browser-based join.</td></tr>
+      </tbody></table></div>
+
+      <h2>Supported local sources</h2>
+      <div class="table-wrap"><table><thead><tr><th>Source</th><th>Typical root</th><th>Notes</th></tr></thead><tbody>
+        <tr><td>Claude Code</td><td><code>~/.claude/projects</code></td><td>Sessions, transcripts, usage, projects, and signals.</td></tr>
+        <tr><td>Codex</td><td><code>~/.codex/sessions</code></td><td>Sessions, transcripts, projects, and available usage.</td></tr>
+        <tr><td>Gemini CLI</td><td><code>~/.gemini/tmp</code></td><td>Session analytics and detail.</td></tr>
+        <tr><td>Antigravity</td><td><code>~/.gemini/antigravity-cli</code></td><td>Session analytics and detail.</td></tr>
+        <tr><td>Cowork</td><td>Local Cowork mirror</td><td>Session analytics and detail.</td></tr>
+        <tr><td>Grok Build</td><td><code>~/.grok/sessions</code> or <code>GROK_HOME</code></td><td>Sessions and available usage.</td></tr>
+        <tr><td>Z.ai</td><td>Configured API key</td><td>Usage-only source; it is not a transcript adapter.</td></tr>
+      </tbody></table></div>
+
+      <h2>Environment variables</h2>
+      <div class="table-wrap"><table><thead><tr><th>Variable</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
+        <tr><td><code>CCLENS_PORT</code></td><td><code>3321</code></td><td>Default local dashboard port.</td></tr>
+        <tr><td><code>CCLENS_HOME</code></td><td><code>~/.cclens</code></td><td>Local Fleetlens state directory.</td></tr>
+        <tr><td><code>GROK_HOME</code></td><td><code>~/.grok</code></td><td>Alternate Grok Build home.</td></tr>
+        <tr><td><code>NEXT_OUTPUT</code></td><td>unset</td><td>Set to <code>standalone</code> when building the bundled web app.</td></tr>
+      </tbody></table></div>
+
+      <h2>Local state</h2>
+      <pre><code>~/.cclens/
+  pid
+  daemon.pid
+  usage.jsonl
+  daemon.log
+  entries/
+  digests/
+  agent-index/
+  team-config.json</code></pre>
+      <p>Provider transcript roots remain under the provider's own home directory. See the <a href="privacy.html">privacy model</a> before inspecting or sharing any local file.</p>
+
+      <div class="note"><strong>Need help choosing a command?</strong><p>Run <code>fleetlens help</code> in the installed build for the exact flags supported by your version.</p></div>
+    </article>
+  </main>
+
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.4</span><span><a href="operations.html">Operations</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+</body>
+</html>

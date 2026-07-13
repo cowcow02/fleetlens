@@ -20,3 +20,4 @@ pnpm-debug.log*
 .playwright-mcp/
 .qa/
 .tmp-browsertest/
+/output/pdf/

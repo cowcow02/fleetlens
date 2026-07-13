@@ -15,7 +15,7 @@ fleetlens start --open
 
 Open `http://localhost:3321` if the browser does not open automatically. `fleetlens start` launches the local dashboard and usage daemon together. Use `fleetlens start --no-daemon` when you only want the web server.
 
-For a visual walkthrough, see the [Fleetlens user guide PDF](./output/pdf/fleetlens-user-guide.pdf) or the [public platform documentation](https://cowcow02.github.io/fleetlens/).
+For product documentation, see the [public Fleetlens documentation](https://cowcow02.github.io/fleetlens/). The customer setup guide is distributed separately.
 
 ## What the local edition does
 

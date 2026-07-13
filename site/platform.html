@@ -3,69 +3,88 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Fleetlens architecture and platform data flow.">
-  <title>Fleetlens - platform map</title>
+  <meta name="description" content="Understand Fleetlens architecture, data flow, analytics semantics, and package responsibilities.">
+  <title>Fleetlens platform map</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="site-header"><nav class="nav" aria-label="Primary navigation"><a class="brand" href="index.html"><span class="brand-mark">⌁</span>Fleetlens</a><div class="nav-links"><a aria-current="page" href="platform.html">Platform</a><a href="getting-started.html">Get started</a><a href="team-edition.html">Team Edition</a><a href="privacy.html">Privacy</a><a class="nav-cta" href="assets/fleetlens-user-guide.pdf">Setup guide PDF</a></div></nav></header>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <span class="brand-context">Documentation</span>
+      <div class="nav-links">
+        <a href="getting-started.html">Get started</a>
+        <a href="team-member.html">Team sync</a>
+        <a aria-current="page" href="platform.html">Platform</a>
+        <a href="reference.html">Reference</a>
+        <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
+      </div>
+    </nav>
+  </header>
 
-  <main>
-    <section class="page-hero"><div class="wrap"><p class="breadcrumbs">Fleetlens / Platform</p><h1>A narrow pipeline with a wide view.</h1><p>Fleetlens keeps raw agent history at the edge, converts it into common session data, and lets each surface consume the smallest useful representation.</p></div></section>
+  <main class="wrap docs-shell">
+    <aside class="sidebar" aria-label="Documentation sections">
+      <p class="sidebar-label">Learn Fleetlens</p>
+      <a class="side-link" href="getting-started.html">Get started</a>
+      <a class="side-link" href="team-member.html">Sync as a member</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Understand</p>
+      <a class="side-link" aria-current="page" href="platform.html">Platform map</a>
+      <a class="side-link" href="privacy.html">Privacy model</a>
+      <p class="sidebar-label">Operate</p>
+      <a class="side-link" href="operations.html">Operations</a>
+      <a class="side-link" href="reference.html">CLI reference</a>
+    </aside>
 
-    <section class="section"><div class="wrap">
-      <div class="section-head"><p class="eyebrow">Data path</p><h2>Local inputs, derived outputs.</h2><p>The local dashboard is a reader over the machine's agent history. Team Edition is downstream of local aggregation, not a replacement for it.</p></div>
+    <article class="doc-content">
+      <div class="doc-meta"><span class="meta-chip teal">Concepts</span><span class="meta-chip">Architecture</span><span class="meta-chip">For contributors and curious users</span></div>
+      <h1>How Fleetlens turns agent history into a useful operating picture.</h1>
+      <p class="intro">Fleetlens is a layered system. Provider adapters read local history, the parser normalizes it, analytics derive stable metrics, the web app presents those results, and Team Edition receives only selected aggregates.</p>
+
+      <h2>The data path</h2>
       <div class="diagram">
         <div class="diagram-column">
           <div class="diagram-node"><strong>Claude Code</strong><span><code>~/.claude/projects</code></span></div>
           <div class="diagram-node"><strong>Codex</strong><span><code>~/.codex/sessions</code></span></div>
-          <div class="diagram-node"><strong>Other agents</strong><span>Gemini, Antigravity, Cowork, Grok</span></div>
+          <div class="diagram-node"><strong>Other agents</strong><span>Gemini, Antigravity, Cowork, and Grok adapters</span></div>
         </div>
-        <div class="diagram-center"><div><strong>Parser + analytics</strong><span>Common SessionMeta and SessionDetail shapes, active segments, project identity, rollups, entries, and concurrency.</span><div class="pill-row"><span class="pill pill-teal">parser</span><span class="pill pill-teal">entries</span><span class="pill pill-teal">analytics</span></div></div></div>
+        <div class="diagram-center"><div><strong>Parser + analytics</strong><span>Common session shapes, active segments, canonical projects, daily buckets, entries, costs, and concurrency bursts.</span><div class="pill-row"><span class="pill pill-teal">parser</span><span class="pill pill-teal">analytics</span><span class="pill pill-purple">entries</span></div></div></div>
         <div class="diagram-column">
-          <div class="diagram-node"><strong>Local dashboard</strong><span>Overview, sessions, projects, day, insights, usage, agent, settings</span></div>
-          <div class="diagram-node"><strong>Usage state</strong><span><code>~/.cclens/usage.jsonl</code> plus daemon logs and PID files</span></div>
-          <div class="diagram-node"><strong>Team server</strong><span>Receives selected daily and rich rollups after pairing</span></div>
+          <div class="diagram-node"><strong>Local dashboard</strong><span>Overview, sessions, projects, day, insights, usage, agent, and settings</span></div>
+          <div class="diagram-node"><strong>Local state</strong><span><code>~/.cclens</code> for usage, entries, digests, logs, and PID files</span></div>
+          <div class="diagram-node"><strong>Team server</strong><span>Selected daily and rich rollups after explicit pairing</span></div>
         </div>
       </div>
-    </div></section>
 
-    <section class="section section-muted"><div class="wrap">
-      <div class="section-head"><p class="eyebrow">Repository shape</p><h2>Where the responsibilities live.</h2><p>The monorepo is organized so pure parsing stays reusable while filesystem and network concerns sit at the edges.</p></div>
-      <div class="grid-3">
-        <article class="card"><span class="tag">packages/parser</span><h3>Pure data model</h3><p>Agent adapters, transcript parsing, presentation rows, session types, project identity, daily activity, cost, and concurrency analytics. The <code>/fs</code> entry point contains Node-only scanners.</p></article>
-        <article class="card"><span class="tag">packages/entries</span><h3>Day-scoped work units</h3><p>Builds one Entry per session and local day, computes deterministic signals, enriches entries locally when enabled, and composes day, week, and month digests.</p></article>
-        <article class="card"><span class="tag">apps/web</span><h3>Personal dashboard</h3><p>Next.js App Router pages read the local registry per request. A shared event stream refreshes session and usage surfaces when local files change.</p></article>
-        <article class="card"><span class="tag">packages/cli</span><h3>Operator surface</h3><p>Bundles the parser, web standalone output, and detached daemon worker into the published <code>fleetlens</code> binary.</p></article>
-        <article class="card"><span class="tag">packages/team-server</span><h3>Shared rollups</h3><p>Next.js server with Postgres-backed auth, teams, groups, integrations, insights, member commands, and ingest routes.</p></article>
-        <article class="card"><span class="tag">deploy/</span><h3>Self-hosted paths</h3><p>Railway template, Google Cloud installer, Docker Compose, and AWS Terraform describe the server's infrastructure choices.</p></article>
-      </div>
-    </div></section>
-
-    <section class="section"><div class="wrap">
-      <div class="section-head"><p class="eyebrow">Core semantics</p><h2>The numbers have a point of view.</h2><p>Fleetlens is intentionally opinionated about how agent work should be summarized.</p></div>
-      <div class="grid-2">
-        <article class="card"><h3>Agent time, not wall clock</h3><p>Timestamped events are split into active segments. A gap over three minutes is treated as idle, so the headline duration approximates time the agent was actually working.</p></article>
-        <article class="card"><h3>Canonical projects</h3><p>Worktrees fold into the parent repository. A worktree session remains discoverable but contributes to one project rollup, with worktree count retained for context.</p></article>
-        <article class="card"><h3>Every local day touched</h3><p>Sessions spanning midnight contribute to each local day they touch, clipped by segment duration. Day, week, and month surfaces therefore agree at boundaries.</p></article>
-        <article class="card"><h3>Concurrency bursts</h3><p>Short overlaps under one minute are dropped as noise. Nearby overlaps within ten minutes merge into a burst; same-project and cross-project bursts get different visual signals.</p></article>
-      </div>
-    </div></section>
-
-    <section class="section section-muted"><div class="wrap">
-      <div class="section-head"><p class="eyebrow">Dashboard map</p><h2>What each surface answers.</h2></div>
-      <div class="table-wrap"><table><thead><tr><th>Surface</th><th>Question it answers</th><th>Primary inputs</th></tr></thead><tbody>
-        <tr><td>Overview</td><td>How much happened, and where?</td><td>Session metadata, daily buckets, project rollups</td></tr>
-        <tr><td>All sessions</td><td>What did a particular run do?</td><td>Session metadata and presentation rows</td></tr>
-        <tr><td>Projects</td><td>Which repositories are consuming attention?</td><td>Canonical project identity and session analytics</td></tr>
-        <tr><td>Day</td><td>When did work overlap or go idle?</td><td>Active segments and concurrency bursts</td></tr>
-        <tr><td>Insights</td><td>What patterns are emerging over a closed period?</td><td>Entries, deterministic signals, local digests</td></tr>
-        <tr><td>Usage</td><td>How is provider capacity changing over time?</td><td>Daemon snapshots and provider-specific windows</td></tr>
-        <tr><td>Team</td><td>What is this machine sharing?</td><td>Pairing config, sync selection, last-push state</td></tr>
+      <h2>Repository responsibilities</h2>
+      <div class="table-wrap"><table><thead><tr><th>Package or area</th><th>Responsibility</th><th>Boundary</th></tr></thead><tbody>
+        <tr><td><code>packages/parser</code></td><td>Agent adapters, transcript parsing, session types, analytics, filesystem readers.</td><td>Pure parser code avoids network; Node filesystem access is isolated in its fs entry point.</td></tr>
+        <tr><td><code>packages/entries</code></td><td>Day-scoped work units, enrichment, digest inputs, queues, and perception.</td><td>Consumes normalized session data; raw transcripts do not flow to Team Edition.</td></tr>
+        <tr><td><code>apps/web</code></td><td>Local Next.js dashboard, settings, Team onboarding, insights, and API routes.</td><td>Reads local files per request and starts local CLI work where required.</td></tr>
+        <tr><td><code>packages/cli</code></td><td>Published <code>fleetlens</code> command, bundled web server, daemon, update flow, and team sync.</td><td>Owns local lifecycle and the explicit outbound sync boundary.</td></tr>
+        <tr><td><code>packages/team-server</code></td><td>Self-hosted Next.js server, Postgres model, authentication, ingestion, and team views.</td><td>Stores derived rollups and server-side team data, not raw member transcripts.</td></tr>
       </tbody></table></div>
-    </div></section>
+
+      <h2>Core semantics</h2>
+      <div class="choice-grid">
+        <div class="choice-card"><h3>Agent time</h3><p>A session is split into active segments wherever the gap between timestamped events exceeds three minutes. The metric sums those segments, so user-away gaps do not become work time.</p></div>
+        <div class="choice-card"><h3>Canonical project</h3><p>A project is identified by its current working directory with <code>/.worktrees/&lt;name&gt;</code> removed. Worktree sessions roll into the parent project while retaining context.</p></div>
+        <div class="choice-card"><h3>Daily activity</h3><p>Active segments are clipped across every local calendar day they touch. A session that crosses midnight contributes to both days.</p></div>
+        <div class="choice-card"><h3>Concurrency</h3><p>Overlaps shorter than one minute are dropped, and overlaps within ten minutes are merged into bursts. Same-project bursts are teal; cross-project bursts are purple.</p></div>
+      </div>
+
+      <h2>Why the layers matter</h2>
+      <ol>
+        <li><strong>Adapters keep differences at the edge.</strong> Each provider can write a different JSONL shape, but the rest of the product works with common session and event types.</li>
+        <li><strong>Analytics make the headline numbers explainable.</strong> Agent time, projects, daily activity, and concurrency are calculated from explicit rules rather than UI guesses.</li>
+        <li><strong>Entries make deeper views bounded.</strong> Local digests and enrichment consume compact day-scoped representations instead of handing an unbounded transcript to every feature.</li>
+        <li><strong>Team sync is an outbound contract.</strong> The member chooses the project scope, and the server receives rollups rather than raw event streams.</li>
+      </ol>
+
+      <div class="note note-purple"><strong>Read next</strong><p>Use the <a href="privacy.html">privacy model</a> to inspect the local/team boundary, or use the <a href="reference.html">reference</a> for supported sources, routes, state files, and commands.</p></div>
+    </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens platform documentation</span><span><a href="index.html">Home</a> · <a href="getting-started.html">Get started</a> · <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.4</span><span><a href="privacy.html">Privacy</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
 </body>
 </html>

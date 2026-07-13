@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Fleetlens setup guide PDF with reportlab."""
+"""Build the Fleetlens customer setup guide with reportlab."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
     Image,
-    KeepTogether,
     ListFlowable,
     ListItem,
     PageBreak,
@@ -32,7 +31,7 @@ from reportlab.platypus import (
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "output" / "pdf" / "fleetlens-user-guide.pdf"
 SCREENSHOTS = ROOT / "docs" / "assets" / "screenshots"
-VERSION = json.loads((ROOT / "package.json").read_text())['version']
+VERSION = json.loads((ROOT / "package.json").read_text())["version"]
 REVIEW_DATE = "2026-07-13"
 
 PAGE_W, PAGE_H = letter
@@ -54,7 +53,7 @@ styles.add(ParagraphStyle(
 ))
 styles.add(ParagraphStyle(
     name="CoverTitle", parent=styles["Title"], fontName="Helvetica-Bold",
-    fontSize=32, leading=36, textColor=INK, alignment=TA_LEFT, spaceAfter=14,
+    fontSize=31, leading=35, textColor=INK, alignment=TA_LEFT, spaceAfter=14,
 ))
 styles.add(ParagraphStyle(
     name="CoverSub", parent=styles["Normal"], fontName="Helvetica",
@@ -71,6 +70,10 @@ styles.add(ParagraphStyle(
 styles.add(ParagraphStyle(
     name="H3Fleet", parent=styles["Heading3"], fontName="Helvetica-Bold",
     fontSize=11, leading=14, textColor=TEAL_DARK, spaceBefore=8, spaceAfter=4,
+))
+styles.add(ParagraphStyle(
+    name="Badge", parent=styles["Normal"], fontName="Helvetica-Bold",
+    fontSize=10, leading=12, textColor=WHITE, alignment=TA_CENTER,
 ))
 styles.add(ParagraphStyle(
     name="BodyFleet", parent=styles["BodyText"], fontName="Helvetica",
@@ -91,10 +94,6 @@ styles.add(ParagraphStyle(
 styles.add(ParagraphStyle(
     name="TableCell", parent=styles["BodyText"], fontName="Helvetica",
     fontSize=8, leading=10.2, textColor=INK, spaceAfter=0,
-))
-styles.add(ParagraphStyle(
-    name="TableCellMono", parent=styles["BodyText"], fontName="Courier",
-    fontSize=7.4, leading=9.2, textColor=INK, spaceAfter=0,
 ))
 styles.add(ParagraphStyle(
     name="Caption", parent=styles["BodyText"], fontName="Helvetica-Oblique",
@@ -166,13 +165,11 @@ def callout(title: str, body: str, bg=colors.HexColor("#eef9f7"), accent=TEAL) -
 
 
 def step(number: str, title: str, body: str) -> Table:
-    badge = Table([[P(number, "H3Fleet")]], colWidths=[0.38 * inch], rowHeights=[0.36 * inch])
+    badge = Table([[P(number, "Badge")]], colWidths=[0.38 * inch], rowHeights=[0.36 * inch])
     badge.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), TEAL),
-        ("BOX", (0, 0), (-1, -1), 0, TEAL),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TEXTCOLOR", (0, 0), (-1, -1), WHITE),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 2),
@@ -194,14 +191,12 @@ def step(number: str, title: str, body: str) -> Table:
 
 def table(headers: list[str], rows: list[list[str]], widths: list[float]) -> Table:
     data = [[P(h, "TableHead") for h in headers]]
-    for row in rows:
-        data.append([P(cell, "TableCellMono" if cell.startswith("~") or "fleetlens " in cell else "TableCell") for cell in row])
+    data.extend([[P(cell, "TableCell") for cell in row] for row in rows])
     t = Table(data, colWidths=widths, repeatRows=1, hAlign="LEFT")
     t.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), TEAL_DARK),
         ("TEXTCOLOR", (0, 0), (-1, 0), WHITE),
         ("GRID", (0, 0), (-1, -1), 0.35, LINE),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.white),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, FAINT]),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING", (0, 0), (-1, -1), 7),
@@ -230,7 +225,7 @@ def page_chrome(canvas, doc):
         canvas.rect(0, PAGE_H - 0.18 * inch, PAGE_W, 0.18 * inch, stroke=0, fill=1)
         canvas.setFillColor(MUTED)
         canvas.setFont("Helvetica", 7.5)
-        canvas.drawString(0.7 * inch, 0.43 * inch, "Fleetlens | setup guide")
+        canvas.drawString(0.7 * inch, 0.43 * inch, "Fleetlens | customer setup guide")
         canvas.drawRightString(PAGE_W - 0.7 * inch, 0.43 * inch, f"Reviewed {REVIEW_DATE}")
     else:
         canvas.setStrokeColor(LINE)
@@ -238,7 +233,7 @@ def page_chrome(canvas, doc):
         canvas.line(0.7 * inch, PAGE_H - 0.48 * inch, PAGE_W - 0.7 * inch, PAGE_H - 0.48 * inch)
         canvas.setFillColor(MUTED)
         canvas.setFont("Helvetica", 7.5)
-        canvas.drawString(0.7 * inch, 0.43 * inch, "Fleetlens | user guide")
+        canvas.drawString(0.7 * inch, 0.43 * inch, "Fleetlens | customer setup guide")
         canvas.drawRightString(PAGE_W - 0.7 * inch, 0.43 * inch, f"{doc.page}")
     canvas.restoreState()
 
@@ -247,20 +242,21 @@ def build_story() -> list[object]:
     story: list[object] = []
 
     # Cover
-    story += [Spacer(1, 0.36 * inch), P("FLEETLENS USER GUIDE", "CoverKicker")]
-    story += [P("Set up Fleetlens and start reading your agent fleet.", "CoverTitle")]
+    story += [Spacer(1, 0.3 * inch), P("FLEETLENS CUSTOMER SETUP GUIDE", "CoverKicker")]
+    story += [P("From your first terminal command to your first team sync.", "CoverTitle")]
     story += [P(
-        "A practical first-run guide for the local dashboard, usage daemon, and optional Team Edition.",
+        "A beginner-first walkthrough for installing Fleetlens, seeing your first local session, and sending a chosen project rollup to Team Edition.",
         "CoverSub",
     )]
-    story += [Spacer(1, 0.18 * inch)]
+    story += [Spacer(1, 0.14 * inch)]
     cover = Table([
-        [P("LOCAL EDITION", "TableHead"), P("TEAM EDITION", "TableHead")],
+        [P("LOCAL CHECKPOINT", "TableHead"), P("TEAM CHECKPOINT", "TableHead")],
         [
-            P("One machine. Private by default. Reads local coding-agent session files and keeps the dashboard on localhost.", "BodyTight"),
-            P("Shared visibility. An admin runs the server and teammates pair their local Fleetlens daemons to it.", "BodyTight"),
+            P("You can open localhost, see a session, and understand the local dashboard.", "BodyTight"),
+            P("You have paired your machine, chosen projects, and confirmed the first aggregate push.", "BodyTight"),
         ],
-    ], colWidths=[3.22 * inch, 3.22 * inch])
+        ], colWidths=[3.22 * inch, 3.22 * inch],
+    )
     cover.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), INK),
         ("BACKGROUND", (0, 1), (-1, 1), FAINT),
@@ -272,295 +268,357 @@ def build_story() -> list[object]:
         ("TOPPADDING", (0, 0), (-1, -1), 10),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
     ]))
-    story += [cover, Spacer(1, 0.38 * inch)]
+    story += [cover, Spacer(1, 0.3 * inch)]
     story += [P(f"For Fleetlens {VERSION}", "H2Fleet")]
     story += [P(
-        "The shortest path is: install the CLI, run <font name='Courier'>fleetlens start</font>, then open the URL it prints. You do not need to create an account for the local edition.",
-        "BodyFleet",
+        "This handout is intentionally standalone. You can follow it without knowing what a shell, daemon, JSONL file, or local server is. Work through the checkpoints in order; each one gives you a visible sign that you are ready for the next.",
     )]
-    story += [code_block("Quick start", "npm install -g fleetlens\nfleetlens start --open")]
-    story += [Spacer(1, 0.24 * inch)]
+    story += [P("You will need", "H2Fleet")]
+    story += [bullets([
+        "A Mac, Windows PC, or Linux computer with permission to install software.",
+        "An internet connection for the first installation.",
+        "At least one coding agent installed and authenticated. Fleetlens observes an agent; it does not replace or install one.",
+        "For Team Edition: a server URL and private device token from your team admin.",
+    ])]
     story += [callout(
-        "Which path should I use?",
-        "Start with the Local Edition if you are exploring Fleetlens or working alone. Choose Team Edition when multiple people need a shared dashboard and project-level rollups.",
+        "Finish line",
+        "You are done when the local Team page shows a successful pairing and the Team Edition dashboard shows a rollup for one project or day. A new machine with no previous agent history can still finish successfully; its first activity will arrive after the next agent session.",
     )]
     story += [PageBreak()]
 
     # Page 2
-    story += [P("1. Before you start", "H1Fleet")]
-    story += [P(
-        "Fleetlens is a local-first reader and analytics layer. The local dashboard does not require a database, a hosted account, or a project import step. It discovers the session files that your coding agents already write.",
-    )]
-    story += [P("Prerequisites", "H2Fleet")]
-    story += [bullets([
-        "Node.js 20 or newer and npm. The published CLI is the easiest install path.",
-        "At least one supported agent with local session history. An empty machine still starts successfully; the dashboard will simply show no sessions yet.",
-        "For plan utilization, keep the relevant agent logged in. Claude Code usage is read through its existing OAuth credential; other providers expose their own local or configured usage sources.",
-        "For Team Edition, an admin needs a deployed server URL and an invite or device token for each member.",
-    ])]
-    story += [P("What Fleetlens can read locally", "H2Fleet")]
+    story += [P("Before you start: four words", "H1Fleet")]
+    story += [P("These are the only concepts you need before the first command.")]
     story += [table(
-        ["Source", "Local data", "What appears"],
+        ["Word", "Plain-language meaning"],
         [
-            ["Claude Code", "~/.claude/projects", "Sessions, transcripts, usage, projects, PR signals"],
-            ["Codex", "~/.codex/sessions", "Sessions, transcripts, projects, local usage when available"],
-            ["Gemini CLI", "~/.gemini/tmp", "Session analytics and detail"],
-            ["Antigravity", "~/.gemini/antigravity-cli", "Session analytics and detail"],
-            ["Cowork", "Local Cowork mirror", "Session analytics and detail"],
-            ["Grok Build", "~/.grok/sessions or GROK_HOME", "Sessions and weekly usage when logged in"],
-            ["Z.ai", "Configured API key", "Plan usage only; no local transcript source"],
+            ["Terminal", "A text window where you give the computer instructions by typing commands."],
+            ["Coding agent", "The AI tool you already use to work in a project. It writes local session history that Fleetlens can read."],
+            ["Fleetlens", "A local dashboard and analytics layer that reads agent history; it is not the coding agent."],
+            ["Team Edition", "An optional shared server that receives selected, derived rollups from paired machines."],
         ],
-        [1.05 * inch, 2.05 * inch, 3.45 * inch],
+        [1.35 * inch, 5.2 * inch],
     )]
-    story += [Spacer(1, 0.12 * inch), callout(
-        "Privacy baseline",
-        "Local transcript files stay on the machine. The usage daemon still makes the provider requests required for plan meters. Optional AI features invoke the local claude CLI rather than sending raw transcripts to a Fleetlens service.",
+    story += [P("If this computer has no agent yet", "H2Fleet")]
+    story += [P(
+        "Choose the coding agent your team uses and follow that provider's official install and sign-in instructions first. Fleetlens supports Claude Code, Codex, Gemini CLI, Antigravity, Cowork, and Grok Build sources. The exact agent installation command changes over time, so use the provider's current instructions rather than copying an old command from a screenshot.",
+    )]
+    story += [P("What happens to your data", "H2Fleet")]
+    story += [bullets([
+        "The local dashboard reads transcript history from the agent's own local folder.",
+        "Raw transcripts, prompts, assistant responses, absolute paths, and file contents stay on this machine.",
+        "Team Edition receives only the selected aggregate data described during onboarding.",
+        "You can change the selected projects or leave the team later.",
+    ])]
+    story += [callout(
+        "Ask your admin for these exact values",
+        "Before you start Team Edition setup, request the server URL, the device token, and any project-sharing policy your team follows. Keep the token private; it is a credential for this machine.",
         bg=colors.HexColor("#fff8e6"), accent=AMBER,
     )]
     story += [PageBreak()]
 
     # Page 3
-    story += [P("2. Install and open the local dashboard", "H1Fleet")]
-    story += [P("The first-run path takes a minute or two and is safe to repeat.", "BodyFleet")]
-    story += [step("1", "Install the published CLI", "Run the global install from a terminal. The npm package contains the CLI, parser, usage worker, and bundled Next.js dashboard."), code_block("Terminal", "npm install -g fleetlens\nfleetlens version"), Spacer(1, 0.08 * inch)]
-    story += [step("2", "Start Fleetlens", "Start launches the local web server and the background usage daemon together. Add --open if you want Fleetlens to launch your browser."), code_block("Terminal", "fleetlens start\n# or\nfleetlens start --open"), Spacer(1, 0.08 * inch)]
-    story += [step("3", "Open the printed URL", "The default address is http://localhost:3321. If you selected another port, use the URL printed by the CLI."), Spacer(1, 0.08 * inch)]
-    story += [step("4", "Run an agent session", "Fleetlens reads the agent's local files as they change. Refreshing is normally unnecessary because the dashboard listens for file events and refreshes its server-rendered data."), Spacer(1, 0.12 * inch)]
-    story += [callout(
-        "If you only want the web server",
-        "Use <font name='Courier'>fleetlens start --no-daemon</font>. You can later manage the worker independently with <font name='Courier'>fleetlens daemon start</font>.",
+    story += [P("1. Open a terminal and check your computer", "H1Fleet")]
+    story += [P("A terminal is just a text window. You will paste one command block at a time and press Enter.")]
+    story += [table(
+        ["Computer", "How to open it"],
+        [
+            ["macOS", "Press Command + Space, type Terminal, and press Enter."],
+            ["Windows", "Open Start, search for Windows Terminal or PowerShell, and open it."],
+            ["Linux", "Open your application menu and search for Terminal. Many desktops also use Ctrl + Alt + T."],
+        ],
+        [1.2 * inch, 5.35 * inch],
     )]
-    story += [Spacer(1, 0.15 * inch), PageBreak()]
-    story += [P("What the local dashboard looks like", "H1Fleet")]
+    story += [P("Find the prompt", "H2Fleet")]
     story += [P(
-        "The first screen gives you a compact read on sessions, agent time, tools, concurrency, code changes, cost, and daily activity. The numbers below come from a sanitized fixture used only for this guide.",
+        "The prompt is the short text immediately before the blinking cursor. It may end in a dollar sign, percent sign, or greater-than sign. Type after it; do not type the prompt itself. Commands are case-sensitive.",
     )]
-    story += screenshot("overview", "Figure 1. Overview with synthetic local fixture data. No personal transcript or project names are used.")
+    story += [code_block("Check Node.js and npm", "node --version\nnpm --version")]
+    story += [P("You should see two version numbers. Fleetlens requires Node.js 20 or newer.")]
+    story += [callout(
+        "If the command is not found",
+        "Install the current Node.js LTS release from https://nodejs.org/en/download. Choose the installer for your operating system, accept the defaults, close this terminal, open a new terminal, and run the two version commands again.",
+        bg=colors.HexColor("#fff8e6"), accent=AMBER,
+    )]
+    story += [P("Terminal etiquette for beginners", "H2Fleet")]
+    story += [bullets([
+        "Paste one code block, then wait for it to finish before running the next.",
+        "When a password is requested, the cursor may not move and no characters may appear. Type the password and press Enter.",
+        "If you see an error, stop and read the first line that describes the problem. Do not keep pasting commands after a failed step.",
+    ])]
     story += [PageBreak()]
 
     # Page 4
-    story += [P("3. Read the dashboard", "H1Fleet")]
-    story += [P(
-        "Fleetlens normalizes different agent transcript formats into one session model. The dashboard can therefore compare sessions, projects, agent time, tool calls, turns, tokens, code changes, estimated cost, and concurrency in one place.",
+    story += [P("2. Install Fleetlens", "H1Fleet")]
+    story += [P("The published npm package installs the command, parser, local dashboard bundle, and background worker.")]
+    story += [step("1", "Install the command", "Paste this command into the terminal and wait for npm to finish.")]
+    story += [code_block("Terminal", "npm install --global fleetlens")]
+    story += [step("2", "Check the installed version", "This confirms that the command is now available in your PATH.")]
+    story += [code_block("Terminal", "fleetlens version")]
+    story += [step("3", "Keep the terminal open", "You will use this same window to start the local dashboard and later confirm the first team push.")]
+    story += [callout(
+        "If npm reports permission denied",
+        "The safest beginner fix is to install Node.js with the official installer or a Node version manager, then repeat the global install. On a managed work computer, ask your administrator to install Fleetlens. Avoid copying an unreviewed permission command from a forum.",
+        bg=colors.HexColor("#fff8e6"), accent=AMBER,
     )]
-    story += [P("Primary pages", "H2Fleet")]
-    story += [table(
-        ["Page", "Use it for"],
-        [
-            ["Overview /", "Headline metrics, heatmap, daily activity, projects, recent sessions"],
-            ["All sessions /sessions", "Search, filter, sort, and open individual transcript views"],
-            ["Projects /projects", "Roll up activity by canonical project; worktrees fold into the parent repo"],
-            ["Day /day", "Inspect daily activity, timeline, and concurrency bursts"],
-            ["Insights /insights", "Read day/week/month digests when entries and AI features are enabled"],
-            ["Agent /agent", "Ask questions over local session history and create handoff prompts"],
-            ["Usage /usage", "Review historical plan utilization by agent"],
-            ["Settings /settings", "Manage auto-start, menu bar widget, Z.ai credentials, and AI features"],
-            ["Team /team", "Pairing status, sync selection, last push, and data boundary"],
-        ],
-        [1.55 * inch, 5 * inch],
-    )]
-    story += [Spacer(1, 0.16 * inch)]
-    story += screenshot("sessions", "Figure 2. All sessions view: search, project filter, card/table toggle, and session-level metrics.")
-    story += [P(
-        "Agent time is active event time, not wall-clock time. Long gaps between transcript events are treated as idle, so the headline duration is more useful for understanding actual agent work.",
-        "SmallFleet",
-    )]
+    story += [P("Checkpoint", "H2Fleet"), P("When <font name='Courier'>fleetlens version</font> prints a version number, Fleetlens is installed. Continue even if the dashboard is not showing data yet; it needs an agent session first.")]
     story += [PageBreak()]
 
     # Page 5
-    story += [P("4. Usage tracking and the background daemon", "H1Fleet")]
-    story += [P(
-        "The daemon is a detached process that keeps plan snapshots in Fleetlens's local state directory. The dashboard's usage sidebar shows the latest snapshot; the Usage page charts historical snapshots and cycle boundaries.",
-    )]
-    story += [P("Useful checks", "H2Fleet")]
-    story += [code_block("Terminal", "fleetlens status\nfleetlens daemon status\nfleetlens daemon logs\nfleetlens usage\nfleetlens usage --history")]
-    story += [Spacer(1, 0.14 * inch)]
-    story += [P("State files", "H2Fleet")]
-    story += [table(
-        ["Path", "Purpose"],
-        [
-            ["~/.cclens/pid", "Local web-server PID and port"],
-            ["~/.cclens/daemon.pid", "Usage daemon PID"],
-            ["~/.cclens/usage.jsonl", "Append-only usage snapshots"],
-            ["~/.cclens/daemon.log", "Recent daemon and sync messages"],
-            ["~/.cclens/entries/", "Day-scoped perception entries used by digests"],
-            ["~/.cclens/digests/", "Saved day, week, and month digest artifacts"],
-        ],
-        [2.35 * inch, 4.2 * inch],
-    )]
-    story += [Spacer(1, 0.16 * inch)]
+    story += [P("3. Open the local dashboard", "H1Fleet")]
+    story += [P("The local edition runs on this computer. It does not need an account, database, or public URL.")]
+    story += [step("1", "Start both local services", "The normal start command launches the web dashboard and the background usage daemon together.")]
+    story += [code_block("Terminal", "fleetlens start --open")]
+    story += [step("2", "Open the address", "If your browser does not open automatically, type the printed address into the browser. The default is http://localhost:3321.")]
+    story += [step("3", "Leave it running", "Keep this terminal window open during setup. Later, fleetlens stop will stop both services safely.")]
     story += [callout(
-        "No usage snapshot yet?",
-        "The dashboard can still analyze transcripts. Check <font name='Courier'>fleetlens daemon status</font>, make sure the provider CLI is logged in, then inspect <font name='Courier'>fleetlens daemon logs</font>. Agents without a structured usage endpoint will not show a plan meter.",
-        bg=colors.HexColor("#fff8e6"), accent=AMBER,
+        "If port 3321 is busy",
+        "Choose another port and open the URL printed by the command: <font name='Courier'>fleetlens start --port 4400</font>. The alternative is <font name='Courier'>CCLENS_PORT=4400 fleetlens start</font>.",
     )]
-    story += [P("Optional macOS conveniences", "H2Fleet")]
-    story += [bullets([
-        "Settings can install the native menu bar widget when the bundled widget is present.",
-        "The CLI can install daemon auto-start with fleetlens autostart install, or the settings page can enable it.",
-        "The daemon also drives perception sweeps and, when enabled, backfills digest work in the background.",
-    ])]
+    story += [Spacer(1, 0.08 * inch)]
+    story += screenshot("overview", "Figure 1. The Overview checkpoint, shown with synthetic fixture data.")
+    story += [P("A blank Overview is not an installation failure. It means Fleetlens has not found a completed local agent session yet.", "SmallFleet")]
     story += [PageBreak()]
 
     # Page 6
-    story += [P("5. Optional Team Edition", "H1Fleet")]
+    story += [P("4. Make your first session appear", "H1Fleet")]
     story += [P(
-        "Team Edition is a self-hosted Fleetlens server for shared rollups. The local CLI remains the source of truth for raw sessions; each paired machine chooses what project aggregates to sync.",
+        "Fleetlens has no import button because it reads the files your coding agent already creates. Use your normal agent workflow in a project, then return to the dashboard.",
     )]
-    story += [P("Admin flow", "H2Fleet")]
+    story += [P("A safe first task", "H2Fleet")]
     story += [bullets([
-        "Deploy the Team Edition with the Railway template, Google Cloud installer, Docker Compose, or the AWS Terraform module.",
-        "Open the server URL and create the first account. The first account becomes the admin of the first team.",
-        "Create an invite or device token from the team server's settings area and send it to each teammate.",
+        "Open a project that does not contain confidential material, or use a small test folder.",
+        "Ask your coding agent to explain a README, list files, or make a tiny harmless change.",
+        "Let the agent complete at least one turn so a session record is written.",
+        "Return to Fleetlens and open Sessions. The new session should appear after the local file watcher or a page refresh runs.",
     ])]
-    story += [P("Member flow", "H2Fleet")]
-    story += [code_block("Terminal", "fleetlens team join https://your-fleetlens.example <invite-token>\nfleetlens team status\nfleetlens team sync")]
-    story += [P(
-        "The join command opens the browser setup flow. Finish onboarding to select the projects that may sync. For a non-interactive first sync, use <font name='Courier'>fleetlens team join &lt;url&gt; &lt;token&gt; --no-browser</font>.",
-    )]
-    story += [P("Common team commands", "H2Fleet")]
+    story += screenshot("sessions", "Figure 2. Sessions view with synthetic fixture data; real sessions will use your projects and agent names.")
+    story += [P("The dashboard pages you will use first", "H2Fleet")]
     story += [table(
-        ["Command", "Result"],
+        ["Page", "What it answers"],
         [
-            ["fleetlens team status", "Pairing state, selected projects, and last sync"],
-            ["fleetlens team sync", "Push unsynced days immediately"],
-            ["fleetlens team backfill", "Re-upload local usage history for the shared dashboard"],
-            ["fleetlens team logs", "Show recent team-related daemon messages"],
-            ["fleetlens team leave", "Unpair and stop team syncing"],
+            ["Overview", "How much happened, where, and when?"],
+            ["Sessions", "What did a particular agent run do?"],
+            ["Projects", "Which repositories are consuming attention?"],
+            ["Day", "When did work overlap or go idle?"],
+            ["Usage", "How are provider limits changing over time?"],
+            ["Team", "What is this machine sharing?"],
         ],
-        [2.55 * inch, 4 * inch],
+        [1.35 * inch, 5.2 * inch],
     )]
-    story += [Spacer(1, 0.14 * inch), PageBreak()]
-    story += [P("Pairing starts from the Team page", "H1Fleet")]
-    story += [P(
-        "Before pairing, the page gives the exact CLI command shape and reminds you that the admin must provide the token. After pairing, this page becomes the member's control surface for sync selection and status.",
-    )]
-    story += screenshot("team", "Figure 3. Team sync screen before pairing. After pairing it shows server, team, project selection, and last push state.")
     story += [PageBreak()]
 
     # Page 7
-    story += [P("6. Understand the privacy boundary", "H1Fleet")]
-    story += [P(
-        "Fleetlens has two deliberately different operating modes. Keeping the boundary visible helps teams decide what to deploy and what to sync.",
-    )]
+    story += [P("5. Get ready for Team Edition", "H1Fleet")]
+    story += [P("Team Edition is optional. The local dashboard is already useful on its own; this step adds a shared destination for selected rollups.")]
+    story += [P("Your admin's handoff", "H2Fleet")]
     story += [table(
-        ["Data", "Local Edition", "Team Edition sync"],
+        ["You receive", "What it is for"],
         [
-            ["Raw transcripts", "Read locally by the parser", "Not uploaded"],
-            ["Prompts and assistant responses", "Remain on the machine", "Not uploaded"],
-            ["Absolute paths and file contents", "Used locally for parsing and signals", "Not uploaded"],
-            ["Daily metrics", "Computed locally", "Shared for selected projects"],
-            ["Rich project rollups", "Computed from local entries", "Shared as labeled aggregates"],
-            ["Usage snapshots", "Stored in ~/.cclens/usage.jsonl", "Shared for the paired member"],
-            ["AI enrichment", "Runs through the local claude CLI when enabled", "Enriched extras may be included in rollups"],
+            ["Server URL", "The Team Edition address, such as https://fleetlens.example.com."],
+            ["Device token", "A private credential that pairs this computer to your membership."],
+            ["Project policy", "A reminder of which repositories your team allows members to share."],
         ],
-        [1.65 * inch, 2.4 * inch, 2.5 * inch],
+        [1.45 * inch, 5.1 * inch],
     )]
-    story += [Spacer(1, 0.18 * inch)]
-    story += [callout(
-        "Project selection is member-controlled",
-        "The Team page shows which projects will sync. Exclude sensitive repositories before the first push. Leaving the team with <font name='Courier'>fleetlens team leave</font> stops future syncs.",
-    )]
-    story += [P("What the server needs", "H2Fleet")]
+    story += [P("What Team Edition receives", "H2Fleet")]
     story += [bullets([
-        "A Postgres database for team membership, daily rollups, usage history, integrations, and server-side reports.",
-        "A stable FLEETLENS_ENCRYPTION_KEY for protected server-side credentials and tokens.",
-        "A public HTTPS URL for browser sign-in and CLI pairing. Railway and Google Cloud setup paths provide one automatically.",
+        "Daily totals such as agent time, session count, tool calls, turns, and token totals.",
+        "Selected project labels and derived counts such as working shape, skills, subagents, PRs, commits, and pushes.",
+        "Plan utilization snapshots and sync health information.",
+        "Optional locally-derived outcome and helpfulness aggregates.",
     ])]
-    story += [PageBreak()]
-
-    # Page 8
-    story += [P("7. Configuration and source builds", "H1Fleet")]
-    story += [P("Most users do not need configuration. These are the supported knobs when the defaults do not fit.", "BodyFleet")]
-    story += [table(
-        ["Setting", "Default", "Use it when"],
-        [
-            ["CCLENS_PORT", "3321", "The default port is already in use"],
-            ["CCLENS_HOME", "~/.cclens", "You need isolated local state for another workspace or test run"],
-            ["GROK_HOME", "~/.grok", "Grok Build stores sessions or auth somewhere else"],
-            ["NEXT_OUTPUT", "unset", "You are building the web app for the bundled CLI"],
-        ],
-        [1.25 * inch, 1.55 * inch, 3.75 * inch],
-    )]
-    story += [Spacer(1, 0.16 * inch)]
-    story += [code_block("Choose another port", "fleetlens start --port 4400\n# or\nCCLENS_PORT=4400 fleetlens start")]
-    story += [Spacer(1, 0.14 * inch)]
-    story += [P("Build from source", "H2Fleet")]
-    story += [code_block("Repository checkout", "git clone https://github.com/cowcow02/fleetlens.git\ncd fleetlens\npnpm install\nNEXT_OUTPUT=standalone pnpm build\nnode scripts/prepare-cli.mjs\nnode packages/cli/dist/index.js start")]
-    story += [P(
-        "The monorepo builds parser, entries, web, team-server, and CLI packages through Turborepo. For the published experience, the CLI package contains the standalone dashboard bundle.",
-    )]
+    story += [P("What remains here", "H2Fleet")]
+    story += [bullets([
+        "Raw transcripts, prompts, and assistant responses.",
+        "Absolute paths, file contents, and tool-call payloads.",
+        "Anything in a project you exclude during onboarding.",
+    ])]
     story += [callout(
-        "Versioning rule for contributors",
-        "The root package.json is the version source of truth. Use npm version at the repository root so sub-package versions stay synchronized; do not edit package versions one by one.",
+        "Nothing syncs before you choose",
+        "The browser onboarding wizard shows this boundary before the first push. You can stop, go back, or leave the team later.",
         bg=colors.HexColor("#f3f0ff"), accent=PURPLE,
     )]
     story += [PageBreak()]
 
-    # Page 9
-    story += [P("8. Troubleshooting", "H1Fleet")]
-    story += [P("Use the symptom first, then run the smallest check that confirms the cause.", "BodyFleet")]
-    story += [table(
-        ["Symptom", "Check", "Next action"],
-        [
-            ["No sessions", "Confirm an agent has local transcript files; check the source path for that agent", "Run another agent session, then restart or refresh Fleetlens"],
-            ["Server will not start", "fleetlens status and the port in the error", "Use fleetlens start --port 4400 or stop the old process"],
-            ["No plan usage", "fleetlens daemon status; fleetlens daemon logs", "Log in to the provider CLI and wait for the next poll"],
-            ["UI looks stale after update", "fleetlens status; compare the serving version", "Run fleetlens update, which restarts stale services cleanly"],
-            ["Team is not syncing", "fleetlens team status and fleetlens team logs", "Finish /team/onboarding, select projects, then run fleetlens team sync"],
-            ["Digests are empty", "Check entries in ~/.cclens and AI features in Settings", "Run a session, enable AI features, or backfill recent days"],
-        ],
-        [1.35 * inch, 2.35 * inch, 2.85 * inch],
-    )]
-    story += [Spacer(1, 0.18 * inch)]
-    story += [P("Safe reset points", "H2Fleet")]
-    story += [bullets([
-        "Stopping Fleetlens does not delete transcript history or the local state directory.",
-        "The local server and daemon are independent processes; fleetlens stop manages both, while fleetlens daemon stop only stops the worker.",
-        "If a Team Edition server is unavailable, the local dashboard and local analytics continue to work. The daemon queues team payloads for retry where supported.",
-    ])]
-    story += [Spacer(1, 0.16 * inch)]
+    # Page 8
+    story += [P("6. Pair your machine", "H1Fleet")]
+    story += [P("Pairing records the server and member on this machine, then opens a local browser wizard. The browser wizard is where you choose the sync scope.")]
+    story += [step("1", "Paste the join command", "Replace both placeholders with the URL and device token from your admin. Keep the angle brackets out of the final command.")]
+    story += [code_block("Terminal", "fleetlens team join <server-url> <device-token>")]
+    story += [step("2", "Wait for the browser", "The CLI checks the token, starts the local dashboard if needed, and opens http://localhost:3321/team/onboarding.")]
+    story += [step("3", "Do not expect a push yet", "The paired daemon is held in setup-pending mode until you finish the browser wizard and press Start syncing.")]
     story += [callout(
-        "Still stuck?",
-        "Capture the output of <font name='Courier'>fleetlens status</font>, <font name='Courier'>fleetlens daemon logs</font>, and the exact command you ran. Remove tokens and private paths before sharing a log in a public issue.",
+        "Keep the token private",
+        "A device token is a credential. Do not put a real token in a screenshot, public issue, shared document, or copied example. Ask the admin to revoke it if it is exposed.",
         bg=colors.HexColor("#fff8e6"), accent=AMBER,
+    )]
+    story += [Spacer(1, 0.08 * inch)]
+    story += screenshot("team", "Figure 3. The local Team page before pairing, shown with synthetic fixture data.")
+    story += [PageBreak()]
+
+    # Page 9
+    story += [P("7. Choose projects and start the first sync", "H1Fleet")]
+    story += [P("The browser wizard has three steps. Read each screen; it is the safest way to confirm what your machine will share.")]
+    story += [step("1", "What happens", "Review the shared aggregate list and the local-only list. Choose Continue when the boundary matches your team's policy.")]
+    story += [step("2", "Choose projects", "Deselect private repositories. You can sync selected projects only, or allow new projects automatically if that is appropriate for your team.")]
+    story += [step("3", "Start syncing", "Review the project count and choose Start syncing. This is the explicit moment that the first history backfill begins.")]
+    story += [P("The progress screen", "H2Fleet")]
+    story += [bullets([
+        "Usage history is checked first when available.",
+        "Local days are pushed one by one and the browser reports pushed, queued, or rejected outcomes.",
+        "A machine with no old activity can finish with zero days pushed. That is a valid first setup.",
+        "After setup, the daemon checks for new activity about every five minutes.",
+    ])]
+    story += [callout(
+        "If you need to change your mind",
+        "Use Back before Start syncing to adjust the project list. After setup, change it from the local Team page; excluded projects stay private and future payloads are rebuilt around the new selection.",
     )]
     story += [PageBreak()]
 
     # Page 10
-    story += [P("9. Quick reference", "H1Fleet")]
-    story += [P("The commands most users need after the first run.", "BodyFleet")]
+    story += [P("8. Confirm the first team push", "H1Fleet")]
+    story += [P("You have completed the setup when the browser reports success and the local CLI can describe the pairing.")]
+    story += [code_block("Verify locally", "fleetlens team status\nfleetlens team logs")]
+    story += [P("Look for these signs:", "H2Fleet")]
+    story += [bullets([
+        "The status says the machine is paired with the expected team and server.",
+        "The project selection matches the choices you made.",
+        "The last pushed day changes when there is local activity to send.",
+        "The team dashboard shows a derived project or daily rollup after it processes the push.",
+    ])]
+    story += [P("Push immediately when needed", "H2Fleet")]
+    story += [code_block("Terminal", "fleetlens team sync")]
+    story += [P("The daemon will continue to push on its normal interval. If the server is temporarily unavailable, local analytics continue to work and supported payloads are queued for retry.")]
+    story += [P("Leave or disconnect", "H2Fleet")]
+    story += [code_block("Terminal", "fleetlens team leave")]
+    story += [callout(
+        "No local history yet",
+        "A successful pairing with zero pushed days is expected for a new machine. Run a normal agent task, wait for its session to appear locally, then run fleetlens team sync to verify the first non-empty rollup.",
+        bg=colors.HexColor("#f3f0ff"), accent=PURPLE,
+    )]
+    story += [PageBreak()]
+
+    # Page 11
+    story += [P("9. What keeps running locally", "H1Fleet")]
+    story += [P("Fleetlens has a web process for the dashboard and a detached daemon for usage polling, perception work, and team sync.")]
+    story += [P("Useful checks", "H2Fleet")]
+    story += [code_block("Terminal", "fleetlens status\nfleetlens daemon status\nfleetlens daemon logs\nfleetlens usage")]
+    story += [P("Local state", "H2Fleet")]
+    story += [table(
+        ["Path", "Purpose"],
+        [
+            ["~/.cclens/pid", "Web process PID, port, and version."],
+            ["~/.cclens/daemon.pid", "Usage and sync worker PID."],
+            ["~/.cclens/usage.jsonl", "Append-only provider usage snapshots."],
+            ["~/.cclens/daemon.log", "Usage, perception, update, and team messages."],
+            ["~/.cclens/entries/", "Day-scoped local work units used by digests."],
+            ["~/.cclens/digests/", "Saved day, week, and month digest artifacts."],
+            ["~/.cclens/team-config.json", "Pairing identity, server URL, token, and project scope."],
+        ],
+        [2.35 * inch, 4.2 * inch],
+    )]
+    story += [callout(
+        "Stopping is safe",
+        "fleetlens stop stops both local services. It does not delete agent transcript history or the local state directory. Run fleetlens start again when you want the dashboard back.",
+    )]
+    story += [P("Update as one bundle", "H2Fleet")]
+    story += [code_block("Terminal", "fleetlens update")]
+    story += [P("The updater installs the latest CLI and hands control to the fresh binary so the web server and daemon do not remain on different versions.")]
+    story += [PageBreak()]
+
+    # Page 12
+    story += [P("10. Troubleshooting for first-time users", "H1Fleet")]
+    story += [P("Start with the smallest check. If the first command fails, do not continue to later steps until it is resolved.")]
+    story += [table(
+        ["What you see", "Try first", "Then"],
+        [
+            ["node or npm is not found", "Install Node.js LTS and reopen the terminal.", "Run node --version and npm --version again."],
+            ["npm permission denied", "Use the official Node installer or ask an administrator.", "Repeat npm install --global fleetlens."],
+            ["Browser did not open", "Open http://localhost:3321 manually.", "Check fleetlens status and the printed port."],
+            ["Dashboard is empty", "Run one completed task with a supported agent.", "Refresh, then check the agent's local history root."],
+            ["Port is already in use", "Run fleetlens start --port 4400.", "Open the URL printed by Fleetlens."],
+            ["Token rejected", "Check the server URL and token characters.", "Ask the admin to revoke and issue a new token."],
+            ["Nothing syncs after join", "Open /team/onboarding and finish all three steps.", "Run fleetlens team status, then fleetlens team sync."],
+            ["First sync shows zero days", "Run a new agent session.", "Wait for it locally, then run fleetlens team sync."],
+            ["No usage meter", "Run fleetlens daemon status and daemon logs.", "Sign in to the provider and wait for the next poll."],
+        ],
+        [1.45 * inch, 2.45 * inch, 2.65 * inch],
+    )]
+    story += [Spacer(1, 0.16 * inch)]
+    story += [callout(
+        "When asking for help",
+        "Capture the command, the exact error, and a redacted excerpt of fleetlens daemon logs. Remove device tokens, private paths, project names, prompts, and file contents before sharing.",
+        bg=colors.HexColor("#fff8e6"), accent=AMBER,
+    )]
+    story += [PageBreak()]
+
+    # Page 13
+    story += [P("11. Privacy boundary", "H1Fleet")]
+    story += [P("Use this table as the final check before pressing Start syncing.")]
+    story += [table(
+        ["Data", "Stays local", "Team Edition"],
+        [
+            ["Raw transcripts", "Read by the local parser and dashboard.", "Not uploaded."],
+            ["Prompts and assistant responses", "Remain in provider-local history.", "Not uploaded."],
+            ["Absolute paths and file contents", "May support local project signals.", "Not uploaded."],
+            ["Daily metrics", "Computed from local session history.", "Shared for selected projects."],
+            ["Rich project rollups", "Derived from local entries and signals.", "Shared as labels and counts."],
+            ["Usage snapshots", "Stored in ~/.cclens/usage.jsonl.", "Shared for the paired member."],
+            ["Excluded projects", "Remain available only on this machine.", "Not part of future sync payloads."],
+            ["AI enrichment", "Runs through local AI features when enabled.", "Derived extras may be included; raw conversation is not the sync contract."],
+        ],
+        [1.65 * inch, 2.35 * inch, 2.55 * inch],
+    )]
+    story += [Spacer(1, 0.2 * inch)]
+    story += [P("Your controls", "H2Fleet")]
+    story += [bullets([
+        "Choose or exclude projects during onboarding.",
+        "Review the selection and last push on the local Team page.",
+        "Use fleetlens team sync to push intentionally.",
+        "Use fleetlens team leave to stop future team syncs.",
+        "Ask your admin to revoke a token if it is exposed or no longer needed.",
+    ])]
+    story += [callout(
+        "Admin responsibility",
+        "Your team admin protects the Team Edition URL, Postgres database, encryption key, member access, and device-token lifecycle. The member controls which local projects are selected.",
+        bg=colors.HexColor("#f3f0ff"), accent=PURPLE,
+    )]
+    story += [PageBreak()]
+
+    # Page 14
+    story += [P("12. Quick reference", "H1Fleet")]
+    story += [P("The commands most customers need after the first successful setup.")]
     story += [table(
         ["Command", "Purpose"],
         [
-            ["fleetlens start [--open]", "Start dashboard and usage daemon"],
-            ["fleetlens stop", "Stop dashboard and usage daemon"],
-            ["fleetlens status", "Show server, daemon, and latest snapshot"],
-            ["fleetlens update", "Update to the latest published CLI"],
-            ["fleetlens web [page] [--open]", "Open a dashboard page without starting the daemon"],
-            ["fleetlens usage", "Print a current plan-utilization snapshot"],
-            ["fleetlens usage --history", "Print daily token and cost history"],
-            ["fleetlens entries --all", "Inspect day-scoped perception entries"],
-            ["fleetlens digest day --yesterday", "Generate or read a day digest"],
-            ["fleetlens digest week --last-week", "Generate or read a weekly digest"],
-            ["fleetlens daemon logs", "Show recent daemon and sync logs"],
-            ["fleetlens team status", "Show Team Edition pairing state"],
+            ["fleetlens start --open", "Start the local dashboard and daemon, then open the browser."],
+            ["fleetlens stop", "Stop both local services."],
+            ["fleetlens status", "Check the local server and daemon."],
+            ["fleetlens daemon logs", "Read recent usage, perception, and sync messages."],
+            ["fleetlens team status", "Check pairing, selected projects, and last push."],
+            ["fleetlens team sync", "Push unsynced local activity now."],
+            ["fleetlens team logs", "Read recent Team Edition sync outcomes."],
+            ["fleetlens team leave", "Unpair the machine and stop future team sync."],
+            ["fleetlens update", "Update the CLI and restart stale local services."],
         ],
-        [2.65 * inch, 3.9 * inch],
+        [2.45 * inch, 4.1 * inch],
     )]
-    story += [Spacer(1, 0.18 * inch)]
-    story += [P("Where to go next", "H2Fleet")]
+    story += [P("Your completion checklist", "H2Fleet")]
     story += [bullets([
-        "Read the public platform documentation in the Fleetlens GitHub Pages site for architecture, data flow, deployment, and contributor notes.",
-        "Open the repository README for release status, deployment links, and source-build details.",
-        "Use the in-app Changelog icon to see user-facing changes in the installed build.",
+        "Node.js and npm are installed.",
+        "fleetlens version prints a version.",
+        "The local Overview shows at least one session after an agent task.",
+        "The Team onboarding wizard shows the intended project scope.",
+        "Start syncing completes and fleetlens team status reports the pairing.",
+        "The team dashboard shows the first derived rollup, or you know a new local session is needed first.",
     ])]
-    story += [Spacer(1, 0.24 * inch)]
+    story += [Spacer(1, 0.2 * inch)]
     story += [callout(
         "The one-line mental model",
-        "Agent transcripts are local inputs. The parser turns them into common session data. Analytics and entries turn that data into useful views. The local dashboard reads those results; Team Edition receives only the rollups you choose to share.",
+        "Your agent writes local history. Fleetlens reads and analyzes it locally. You choose a project scope. Team Edition receives derived rollups, not raw transcripts.",
     )]
-    story += [Spacer(1, 0.35 * inch), P(f"Fleetlens {VERSION} | reviewed {REVIEW_DATE}", "SmallFleet")]
+    story += [Spacer(1, 0.25 * inch), P(f"Fleetlens {VERSION} | customer setup guide | reviewed {REVIEW_DATE}", "SmallFleet")]
     return story
 
 
@@ -580,7 +638,7 @@ def main() -> None:
     doc = BaseDocTemplate(
         str(OUT), pagesize=letter, leftMargin=0.7 * inch, rightMargin=0.7 * inch,
         topMargin=0.68 * inch, bottomMargin=0.68 * inch,
-        title="Fleetlens User Guide", author="Fleetlens",
+        title="Fleetlens Customer Setup Guide", author="Fleetlens",
     )
     doc.addPageTemplates([PageTemplate(id="fleetlens", frames=[frame], onPage=page_chrome)])
     doc.build(build_story())
