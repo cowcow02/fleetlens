@@ -4,68 +4,175 @@
   <meta charset="utf-8">
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; overflow: hidden; background: #17181e; }
+    html, body { margin: 0; overflow: hidden; background: #0b1015; }
+    body { color: #f4f6f8; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .scene {
       position: relative;
       width: 1180px;
       height: 760px;
       overflow: hidden;
-      background: #17181e;
+      background: radial-gradient(circle at 82% 18%, rgba(54, 188, 175, 0.18), transparent 35%), linear-gradient(135deg, #0b1015, #161a22 56%, #0c1117);
     }
-    .session {
+    .scene::before {
       position: absolute;
       inset: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      transform-origin: 50% 42%;
-      animation: drift 6s ease-in-out both;
+      z-index: 1;
+      background-image: linear-gradient(rgba(255, 255, 255, 0.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.7), transparent 85%);
+      content: "";
     }
-    .timeline-focus {
+    .header {
       position: absolute;
-      top: 141px;
-      left: 9px;
-      width: 1162px;
-      height: 53px;
-      border: 1px solid rgba(91, 216, 202, 0.6);
-      border-radius: 7px;
-      box-shadow: 0 0 0 1px rgba(91, 216, 202, 0.12), 0 0 24px rgba(91, 216, 202, 0.2);
-      opacity: 0;
-      animation: focus 6s ease-in-out both;
+      top: 27px;
+      left: 48px;
+      right: 48px;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: rgba(232, 239, 241, 0.7);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
-    .sweep {
-      position: absolute;
-      top: 130px;
-      left: -150px;
-      width: 110px;
-      height: 520px;
-      background: linear-gradient(90deg, transparent, rgba(91, 216, 202, 0.11), transparent);
-      transform: skewX(-12deg);
-      opacity: 0;
-      animation: sweep 6s ease-in-out both;
-    }
-    @keyframes drift {
-      0%, 100% { transform: scale(1); }
-      50% { transform: scale(1.018) translateY(-3px); }
-    }
-    @keyframes focus {
-      0%, 12%, 82%, 100% { opacity: 0; }
-      22%, 45% { opacity: 0.95; }
-      58% { opacity: 0.35; }
-    }
-    @keyframes sweep {
-      0%, 12% { transform: translateX(0) skewX(-12deg); opacity: 0; }
-      20% { opacity: 0.75; }
-      56% { transform: translateX(1360px) skewX(-12deg); opacity: 0.25; }
-      70%, 100% { transform: translateX(1500px) skewX(-12deg); opacity: 0; }
-    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; color: #f5f7f8; letter-spacing: 0.04em; }
+    .brand-mark { position: relative; width: 24px; height: 24px; border-radius: 7px; background: #2cc2b2; box-shadow: 0 0 25px rgba(44, 194, 178, 0.34); }
+    .brand-mark::before { position: absolute; left: 6px; top: 7px; width: 12px; height: 8px; border-bottom: 2px solid #09201f; border-left: 2px solid #09201f; transform: skewY(-28deg) rotate(-12deg); content: ""; }
+    .header-status { display: flex; align-items: center; gap: 8px; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #5bd8ca; box-shadow: 0 0 12px #5bd8ca; }
+    .header-status b { color: #c7fff9; font-weight: 700; }
+    .progress { position: absolute; left: 48px; right: 48px; bottom: 26px; z-index: 30; height: 2px; overflow: hidden; background: rgba(255, 255, 255, 0.12); }
+    .progress::after { display: block; width: 24%; height: 100%; background: #5bd8ca; box-shadow: 0 0 16px #5bd8ca; content: ""; animation: progress 12s linear infinite; }
+
+    .intro,
+    .feature,
+    .outro { position: absolute; inset: 0; z-index: 2; opacity: 0; }
+    .intro { animation: introScene 12s ease-in-out infinite; }
+    .intro-copy { position: absolute; top: 170px; left: 55px; z-index: 4; width: 575px; }
+    .eyebrow { margin: 0 0 18px; color: #67e0d1; font-size: 11px; font-weight: 800; letter-spacing: 0.15em; text-transform: uppercase; }
+    .intro h1 { margin: 0; font-size: 57px; line-height: 0.98; letter-spacing: -0.055em; }
+    .intro h1 em { color: #68ded1; font-style: normal; }
+    .intro-copy > p:not(.eyebrow) { max-width: 440px; margin: 24px 0 0; color: #aab5ba; font-size: 17px; line-height: 1.5; }
+    .intro-tags { display: flex; gap: 8px; margin-top: 28px; }
+    .intro-tags span,
+    .feature-chips span,
+    .outro-tags span { padding: 8px 11px; border: 1px solid rgba(111, 224, 211, 0.28); border-radius: 999px; color: #c7fff9; background: rgba(43, 150, 141, 0.13); font-size: 10px; font-weight: 700; letter-spacing: 0.03em; }
+    .intro-preview { position: absolute; top: 137px; right: 37px; z-index: 3; width: 650px; overflow: hidden; border: 1px solid rgba(133, 239, 228, 0.38); border-radius: 17px; background: #12171d; box-shadow: -24px 26px 75px rgba(0, 0, 0, 0.42), 0 0 50px rgba(61, 204, 188, 0.12); transform: perspective(1100px) rotateY(-11deg) rotateX(2deg) rotateZ(1deg); animation: previewDrift 12s ease-in-out infinite; }
+    .intro-preview::before { display: block; height: 28px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); background: #161d24; content: "Fleetlens  /  Overview"; padding: 8px 14px; color: #7f9296; font-size: 9px; letter-spacing: 0.08em; }
+    .intro-preview img { display: block; width: 100%; height: auto; opacity: 0.76; }
+    .intro-preview::after { position: absolute; inset: 28px 0 0; background: linear-gradient(90deg, rgba(10, 16, 21, 0.76), transparent 55%), linear-gradient(0deg, rgba(10, 16, 21, 0.48), transparent 50%); content: ""; }
+    .preview-scan { position: absolute; top: 28px; bottom: 0; left: -24%; z-index: 2; width: 18%; background: linear-gradient(90deg, transparent, rgba(103, 224, 209, 0.22), transparent); transform: skewX(-14deg); animation: scan 12s ease-in-out infinite; }
+    .intro-signal { position: absolute; right: 126px; bottom: 106px; z-index: 6; display: flex; align-items: center; gap: 10px; padding: 12px 15px; border: 1px solid rgba(255, 255, 255, 0.13); border-radius: 11px; background: rgba(11, 16, 21, 0.78); box-shadow: 0 16px 35px rgba(0, 0, 0, 0.28); backdrop-filter: blur(12px); color: #c5cdd0; font-size: 11px; }
+    .intro-signal strong { color: #66ded0; font-size: 18px; }
+
+    .feature { color: #f5f7f8; }
+    .feature-overview { animation: overviewScene 12s ease-in-out infinite; }
+    .feature-sessions { animation: sessionsScene 12s ease-in-out infinite; }
+    .feature-rich { animation: richScene 12s ease-in-out infinite; }
+    .feature-team { animation: teamScene 12s ease-in-out infinite; }
+    .feature img { position: absolute; inset: -2%; z-index: 1; width: 104%; height: 104%; object-fit: cover; filter: saturate(0.92) contrast(1.02); }
+    .feature-overview img { animation: overviewImage 12s ease-in-out infinite; }
+    .feature-sessions img { animation: sessionsImage 12s ease-in-out infinite; }
+    .feature-rich img { animation: richImage 12s ease-in-out infinite; }
+    .feature-team img { animation: teamImage 12s ease-in-out infinite; }
+    .feature-wash { position: absolute; inset: 0; z-index: 2; background: linear-gradient(90deg, rgba(10, 15, 20, 0.95), rgba(10, 15, 20, 0.43) 38%, rgba(10, 15, 20, 0.04) 73%), linear-gradient(0deg, rgba(8, 13, 18, 0.91), transparent 46%); }
+    .feature-copy { position: absolute; left: 54px; bottom: 60px; z-index: 8; width: 450px; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5); }
+    .feature-copy .eyebrow { margin-bottom: 13px; }
+    .feature-copy h2 { max-width: 410px; margin: 0; font-size: 42px; line-height: 1.03; letter-spacing: -0.045em; }
+    .feature-copy p:not(.eyebrow) { max-width: 355px; margin: 15px 0 0; color: #b9c2c5; font-size: 15px; line-height: 1.45; }
+    .feature-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 20px; }
+    .feature-index { position: absolute; top: 103px; right: 55px; z-index: 8; color: rgba(232, 242, 243, 0.7); font-size: 11px; font-weight: 800; letter-spacing: 0.16em; }
+    .focus { position: absolute; z-index: 6; border: 1px solid rgba(101, 225, 210, 0.82); border-radius: 8px; box-shadow: 0 0 0 1px rgba(101, 225, 210, 0.12), 0 0 28px rgba(80, 215, 199, 0.24); opacity: 0; animation: focusPulse 2.5s ease-in-out infinite; }
+    .focus::after { position: absolute; top: -6px; right: 8px; width: 28px; height: 3px; border-radius: 2px; background: #5bd8ca; box-shadow: 0 0 13px #5bd8ca; content: ""; }
+    .focus-overview { top: 24%; left: 20%; width: 59%; height: 14%; }
+    .focus-sessions { top: 15%; left: 20%; width: 52%; height: 11%; }
+    .focus-rich { top: 16%; left: 0; width: 100%; height: 10%; }
+    .focus-team { top: 8%; left: 36%; width: 45%; height: 20%; }
+    .feature-sweep { position: absolute; top: -10%; left: -16%; z-index: 7; width: 12%; height: 125%; background: linear-gradient(90deg, transparent, rgba(101, 225, 210, 0.12), transparent); transform: skewX(-12deg); animation: featureSweep 12s ease-in-out infinite; }
+    .feature-tag { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 8px; background: rgba(11, 16, 21, 0.62); color: #d8e1e2; font-size: 10px; font-weight: 700; backdrop-filter: blur(10px); }
+    .feature-tag::before { width: 6px; height: 6px; border-radius: 50%; background: #5bd8ca; box-shadow: 0 0 10px #5bd8ca; content: ""; }
+    .feature-overview .feature-tag { position: absolute; top: 117px; left: 54px; z-index: 8; }
+    .feature-sessions .feature-tag { position: absolute; top: 117px; left: 54px; z-index: 8; }
+    .feature-rich .feature-tag { position: absolute; top: 117px; left: 54px; z-index: 8; }
+    .feature-team .feature-tag { position: absolute; top: 117px; left: 54px; z-index: 8; }
+
+    .outro { animation: outroScene 12s ease-in-out infinite; }
+    .outro-center { position: absolute; top: 215px; left: 0; right: 0; z-index: 5; text-align: center; }
+    .outro-mark { display: grid; place-items: center; width: 62px; height: 62px; margin: 0 auto 21px; border-radius: 18px; background: #2cc2b2; box-shadow: 0 0 50px rgba(44, 194, 178, 0.38); color: #09201f; font-size: 30px; font-weight: 900; }
+    .outro p { margin: 0 0 13px; color: #68ded1; font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; }
+    .outro h2 { margin: 0; font-size: 51px; letter-spacing: -0.055em; }
+    .outro-sub { max-width: 430px; margin: 18px auto 0; color: #aeb9bc; font-size: 16px; line-height: 1.5; }
+    .outro-tags { display: flex; justify-content: center; gap: 8px; margin-top: 25px; }
+
+    @keyframes introScene { 0%, 5%, 95%, 100% { opacity: 1; transform: translateY(0); } 9%, 91% { opacity: 0; transform: translateY(-14px); } }
+    @keyframes overviewScene { 0%, 8% { opacity: 0; transform: translateX(30px); } 12%, 27% { opacity: 1; transform: translateX(0); } 31%, 100% { opacity: 0; transform: translateX(-28px); } }
+    @keyframes sessionsScene { 0%, 26% { opacity: 0; transform: translateX(30px); } 30%, 45% { opacity: 1; transform: translateX(0); } 49%, 100% { opacity: 0; transform: translateX(-28px); } }
+    @keyframes richScene { 0%, 44% { opacity: 0; transform: translateX(30px); } 48%, 63% { opacity: 1; transform: translateX(0); } 67%, 100% { opacity: 0; transform: translateX(-28px); } }
+    @keyframes teamScene { 0%, 62% { opacity: 0; transform: translateX(30px); } 66%, 81% { opacity: 1; transform: translateX(0); } 85%, 100% { opacity: 0; transform: translateX(-28px); } }
+    @keyframes outroScene { 0%, 80% { opacity: 0; transform: translateY(15px); } 84%, 91% { opacity: 1; transform: translateY(0); } 95%, 100% { opacity: 0; transform: translateY(-12px); } }
+    @keyframes overviewImage { 0%, 100% { transform: scale(1.02) translate(0, 0); } 30% { transform: scale(1.08) translate(-1.2%, -1.5%); } }
+    @keyframes sessionsImage { 0%, 100% { transform: scale(1.02) translate(0, 0); } 30% { transform: scale(1.07) translate(-1%, -1%); } }
+    @keyframes richImage { 0%, 100% { transform: scale(1.01) translate(0, 0); } 30% { transform: scale(1.06) translate(0, -1%); } }
+    @keyframes teamImage { 0%, 100% { transform: scale(1.02) translate(0, 0); } 30% { transform: scale(1.07) translate(-1%, -1%); } }
+    @keyframes previewDrift { 0%, 100% { transform: perspective(1100px) rotateY(-11deg) rotateX(2deg) rotateZ(1deg) translateY(0); } 50% { transform: perspective(1100px) rotateY(-7deg) rotateX(1deg) rotateZ(0deg) translateY(-9px); } }
+    @keyframes scan { 0%, 17% { left: -24%; opacity: 0; } 24% { opacity: 1; } 70% { left: 115%; opacity: 0.5; } 78%, 100% { left: 125%; opacity: 0; } }
+    @keyframes featureSweep { 0%, 12% { left: -16%; opacity: 0; } 20% { opacity: 1; } 58% { left: 116%; opacity: 0.4; } 68%, 100% { left: 126%; opacity: 0; } }
+    @keyframes focusPulse { 0%, 100% { opacity: 0.15; transform: scale(0.995); } 35%, 64% { opacity: 1; transform: scale(1); } }
+    @keyframes progress { 0% { transform: translateX(0); } 100% { transform: translateX(420%); } }
   </style>
 </head>
 <body>
-  <div class="scene" data-composition-id="root" data-no-timeline="true" data-width="1180" data-height="760" data-duration="6" data-fps="30" data-bg="#17181e">
-    <img class="session" src="../../site/assets/screenshots/rich-session.png" alt="">
-    <div class="timeline-focus"></div>
-    <div class="sweep"></div>
+  <div class="scene" data-composition-id="root" data-no-timeline="true" data-width="1180" data-height="760" data-duration="12" data-fps="30" data-bg="#0b1015">
+    <header class="header">
+      <div class="brand"><span class="brand-mark"></span><span>Fleetlens</span></div>
+      <div class="header-status"><span class="status-dot"></span><b>local-first</b><span>/</span><span>agent fleet observability</span></div>
+    </header>
+
+    <section class="intro" aria-label="Fleetlens product overview">
+      <div class="intro-copy">
+        <p class="eyebrow">A clear view of the agent fleet</p>
+        <h1>See the whole fleet.<br><em>Understand the work.</em></h1>
+        <p>Fleetlens turns raw sessions into a calm, useful picture of what ran, what changed, and what shipped.</p>
+        <div class="intro-tags"><span>Sessions</span><span>Concurrency</span><span>Team sync</span></div>
+      </div>
+      <div class="intro-preview"><img src="../../site/assets/screenshots/overview.png" alt="Fleetlens overview dashboard"><div class="preview-scan"></div></div>
+      <div class="intro-signal"><strong>04</strong><span>sessions in view<br><small>ready to understand</small></span></div>
+    </section>
+
+    <section class="feature feature-overview" aria-label="Overview dashboard">
+      <img src="../../site/assets/screenshots/overview.png" alt="Fleetlens overview dashboard showing sessions, agent time, tool calls, parallelism, cost, heatmap, and daily activity">
+      <div class="feature-wash"></div><div class="feature-sweep"></div><div class="focus focus-overview"></div>
+      <div class="feature-tag">Overview dashboard</div><div class="feature-index">01 / 04</div>
+      <div class="feature-copy"><p class="eyebrow">01 / ORIENT</p><h2>One calm view of the fleet.</h2><p>Sessions, agent time, tools, parallelism, and estimated cost — visible before you open a single transcript.</p><div class="feature-chips"><span>Agent time</span><span>Parallelism</span><span>Est. cost</span></div></div>
+    </section>
+
+    <section class="feature feature-sessions" aria-label="All sessions view">
+      <img src="../../site/assets/screenshots/sessions.png" alt="Fleetlens all sessions view with search, project filters, sorting, and session cards">
+      <div class="feature-wash"></div><div class="feature-sweep"></div><div class="focus focus-sessions"></div>
+      <div class="feature-tag">Searchable session history</div><div class="feature-index">02 / 04</div>
+      <div class="feature-copy"><p class="eyebrow">02 / FIND THE SIGNAL</p><h2>Search the work, not the transcript.</h2><p>Filter across projects, sort by recency, and jump from a fleet-wide view to the exact session that matters.</p><div class="feature-chips"><span>Search</span><span>Project filters</span><span>Cards or table</span></div></div>
+    </section>
+
+    <section class="feature feature-rich" aria-label="Rich session detail">
+      <img src="../../site/assets/screenshots/rich-session.png" alt="Fleetlens rich session detail with timeline, turns, tool calls, tokens, idle gaps, and pull request context">
+      <div class="feature-wash"></div><div class="feature-sweep"></div><div class="focus focus-rich"></div>
+      <div class="feature-tag">Rich session detail</div><div class="feature-index">03 / 04</div>
+      <div class="feature-copy"><p class="eyebrow">03 / READ THE WORK</p><h2>From timeline to shipped context.</h2><p>See turns, tools, active gaps, token totals, and the pull request signal in one readable session story.</p><div class="feature-chips"><span>Turns</span><span>Tool calls</span><span>Shipping context</span></div></div>
+    </section>
+
+    <section class="feature feature-team" aria-label="Team sync">
+      <img src="../../site/assets/screenshots/team.png" alt="Fleetlens team sync page showing the one-command pairing flow">
+      <div class="feature-wash"></div><div class="feature-sweep"></div><div class="focus focus-team"></div>
+      <div class="feature-tag">Team edition pairing</div><div class="feature-index">04 / 04</div>
+      <div class="feature-copy"><p class="eyebrow">04 / SHARE THE SIGNAL</p><h2>Move from local insight to team rhythm.</h2><p>Pair a machine with the team edition in one command while keeping the local-first boundary obvious.</p><div class="feature-chips"><span>One command</span><span>Invite token</span><span>Team-ready</span></div></div>
+    </section>
+
+    <section class="outro" aria-label="Fleetlens closing card">
+      <div class="outro-center"><div class="outro-mark">∿</div><p>Fleetlens</p><h2>Make the fleet legible.</h2><div class="outro-sub">A local-first command center for sessions, agents, shipping signals, and team sync.</div><div class="outro-tags"><span>Private by default</span><span>Open source</span><span>Built for real work</span></div></div>
+    </section>
+
+    <div class="progress"></div>
   </div>
 </body>
 </html>
