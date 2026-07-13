@@ -233,7 +233,9 @@ h3 { margin: 0 0 8px; font-size: 18px; }
   background: #17181e;
 }
 
-.hero-shot img { display: block; width: 100%; height: auto; }
+.hero-video,
+.hero-poster { display: block; width: 100%; height: auto; }
+.hero-poster { display: none; }
 
 .hero-figure figcaption {
   display: grid;
@@ -442,4 +444,9 @@ td { color: var(--ink-soft); }
   .side-link[aria-current="page"] { border-left: 0; }
   .diagram { grid-template-columns: 1fr; }
   .footer-inner { align-items: flex-start; flex-direction: column; justify-content: center; padding: 17px 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-video { display: none; }
+  .hero-poster { display: block; }
 }

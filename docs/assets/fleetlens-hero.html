@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; overflow: hidden; background: #17181e; }
+    .scene {
+      position: relative;
+      width: 1180px;
+      height: 760px;
+      overflow: hidden;
+      background: #17181e;
+    }
+    .session {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform-origin: 50% 42%;
+      animation: drift 6s ease-in-out both;
+    }
+    .timeline-focus {
+      position: absolute;
+      top: 141px;
+      left: 9px;
+      width: 1162px;
+      height: 53px;
+      border: 1px solid rgba(91, 216, 202, 0.6);
+      border-radius: 7px;
+      box-shadow: 0 0 0 1px rgba(91, 216, 202, 0.12), 0 0 24px rgba(91, 216, 202, 0.2);
+      opacity: 0;
+      animation: focus 6s ease-in-out both;
+    }
+    .sweep {
+      position: absolute;
+      top: 130px;
+      left: -150px;
+      width: 110px;
+      height: 520px;
+      background: linear-gradient(90deg, transparent, rgba(91, 216, 202, 0.11), transparent);
+      transform: skewX(-12deg);
+      opacity: 0;
+      animation: sweep 6s ease-in-out both;
+    }
+    @keyframes drift {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.018) translateY(-3px); }
+    }
+    @keyframes focus {
+      0%, 12%, 82%, 100% { opacity: 0; }
+      22%, 45% { opacity: 0.95; }
+      58% { opacity: 0.35; }
+    }
+    @keyframes sweep {
+      0%, 12% { transform: translateX(0) skewX(-12deg); opacity: 0; }
+      20% { opacity: 0.75; }
+      56% { transform: translateX(1360px) skewX(-12deg); opacity: 0.25; }
+      70%, 100% { transform: translateX(1500px) skewX(-12deg); opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="scene" data-width="1180" data-height="760" data-duration="6" data-fps="30" data-bg="#17181e">
+    <img class="session" src="../../site/assets/screenshots/rich-session.png" alt="">
+    <div class="timeline-focus"></div>
+    <div class="sweep"></div>
+  </div>
+</body>
+</html>
