@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Install and run the Fleetlens local dashboard.">
+  <title>Fleetlens - get started</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header"><nav class="nav" aria-label="Primary navigation"><a class="brand" href="index.html"><span class="brand-mark">⌁</span>Fleetlens</a><div class="nav-links"><a href="platform.html">Platform</a><a aria-current="page" href="getting-started.html">Get started</a><a href="team-edition.html">Team Edition</a><a href="privacy.html">Privacy</a><a class="nav-cta" href="assets/fleetlens-user-guide.pdf">Setup guide PDF</a></div></nav></header>
+
+  <main>
+    <section class="page-hero"><div class="wrap"><p class="breadcrumbs">Fleetlens / Get started</p><h1>From zero to a local dashboard.</h1><p>The local path is deliberately small: install the CLI, start the server and daemon, then run an agent session.</p></div></section>
+
+    <section class="section"><div class="wrap prose">
+      <h2>1. Install the CLI</h2>
+      <p>Fleetlens is published as the lowercase npm package and command <code>fleetlens</code>. Node.js 20 or newer is required.</p>
+      <pre><code>npm install -g fleetlens&#10;fleetlens version</code></pre>
+
+      <h2>2. Start the local services</h2>
+      <p><code>fleetlens start</code> launches the local Next.js server and the detached usage daemon together. Add <code>--open</code> to launch the browser.</p>
+      <pre><code>fleetlens start&#10;# or&#10;fleetlens start --open</code></pre>
+      <div class="note"><strong>Default address</strong><p>Open <code>http://localhost:3321</code>. Use <code>fleetlens start --port 4400</code> or <code>CCLENS_PORT=4400</code> if the default port is busy.</p></div>
+
+      <h2>3. Run your normal agent workflow</h2>
+      <p>Fleetlens watches the local transcript roots used by supported agents. It does not need a separate import step. The dashboard refreshes its server-rendered data when session files or usage state change.</p>
+
+      <div class="screenshot"><img src="assets/screenshots/overview.png" alt="Fleetlens Overview page with synthetic session metrics"></div>
+      <p class="caption">The Overview page is the first checkpoint: sessions, agent time, tools, concurrency, code changes, cost, heatmap, and daily activity.</p>
+
+      <h2>4. Learn the navigation</h2>
+      <div class="table-wrap"><table><thead><tr><th>Page</th><th>Use it for</th></tr></thead><tbody>
+        <tr><td><code>/</code></td><td>Overview metrics and recent activity.</td></tr>
+        <tr><td><code>/sessions</code></td><td>Searchable session cards or table view.</td></tr>
+        <tr><td><code>/projects</code></td><td>Canonical project rollups and worktree context.</td></tr>
+        <tr><td><code>/day</code></td><td>Daily timeline, activity, and concurrency.</td></tr>
+        <tr><td><code>/insights</code></td><td>Day/week/month digests backed by local entries.</td></tr>
+        <tr><td><code>/agent</code></td><td>Ask questions over local history and create handoffs.</td></tr>
+        <tr><td><code>/usage</code></td><td>Historical provider utilization snapshots.</td></tr>
+        <tr><td><code>/settings</code></td><td>Local auto-start, menu bar, Z.ai, and AI settings.</td></tr>
+        <tr><td><code>/team</code></td><td>Pairing and sync scope for Team Edition.</td></tr>
+      </tbody></table></div>
+
+      <h2>5. Confirm the daemon</h2>
+      <pre><code>fleetlens status&#10;fleetlens daemon status&#10;fleetlens daemon logs</code></pre>
+      <p>The daemon writes snapshots and logs under <code>~/.cclens</code>. Transcript analytics work without a usage snapshot; plan meters require the provider's local auth or configured credentials.</p>
+
+      <h2>6. Stop or update</h2>
+      <pre><code>fleetlens stop&#10;fleetlens update</code></pre>
+      <p><code>stop</code> manages both local services. <code>update</code> installs the latest CLI and restarts stale services so the dashboard and daemon use the same bundle.</p>
+
+      <div class="note note-purple"><strong>Want the full walkthrough?</strong><p>Download the visual <a href="assets/fleetlens-user-guide.pdf">Fleetlens setup guide PDF</a>. It covers Team Edition pairing, state files, supported data sources, privacy, and troubleshooting.</p></div>
+    </div></section>
+  </main>
+
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens platform documentation</span><span><a href="platform.html">Platform</a> · <a href="operations.html">Operations</a> · <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+</body>
+</html>

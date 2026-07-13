@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Operate, build, and troubleshoot Fleetlens.">
+  <title>Fleetlens - operations</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header"><nav class="nav" aria-label="Primary navigation"><a class="brand" href="index.html"><span class="brand-mark">⌁</span>Fleetlens</a><div class="nav-links"><a href="platform.html">Platform</a><a href="getting-started.html">Get started</a><a href="team-edition.html">Team Edition</a><a href="privacy.html">Privacy</a><a class="nav-cta" href="assets/fleetlens-user-guide.pdf">Setup guide PDF</a></div></nav></header>
+
+  <main>
+    <section class="page-hero"><div class="wrap"><p class="breadcrumbs">Fleetlens / Operations</p><h1>Keep the local loop healthy.</h1><p>Fleetlens has two local processes and one state directory. Most operational questions can be answered without touching the transcript files.</p></div></section>
+
+    <section class="section"><div class="wrap">
+      <div class="section-head"><p class="eyebrow">Lifecycle</p><h2>Server and daemon are separate, but start together.</h2><p>The common path is one command; the advanced path lets power users manage the pieces independently.</p></div>
+      <div class="grid-3">
+        <article class="card"><span class="tag">Start</span><h3><code>fleetlens start</code></h3><p>Ensures the current web bundle is running, then starts the usage and sync worker unless <code>--no-daemon</code> is supplied.</p></article>
+        <article class="card"><span class="tag">Inspect</span><h3><code>fleetlens status</code></h3><p>Shows the server, daemon, and latest snapshot in one glance. Use daemon logs for provider or sync errors.</p></article>
+        <article class="card"><span class="tag">Stop</span><h3><code>fleetlens stop</code></h3><p>Stops the web server and daemon. <code>fleetlens daemon stop</code> stops only the worker.</p></article>
+      </div>
+    </div></section>
+
+    <section class="section section-muted"><div class="wrap">
+      <div class="section-head"><p class="eyebrow">State directory</p><h2><code>~/.cclens</code> is Fleetlens's local control plane.</h2><p>Use <code>CCLENS_HOME</code> to isolate this state for another workspace, test run, or demo environment.</p></div>
+      <div class="table-wrap"><table><thead><tr><th>Path</th><th>Role</th><th>Writer / reader</th></tr></thead><tbody>
+        <tr><td><code>pid</code></td><td>Web PID, port, and version</td><td>CLI server lifecycle</td></tr>
+        <tr><td><code>daemon.pid</code></td><td>Detached worker PID</td><td>CLI daemon lifecycle</td></tr>
+        <tr><td><code>usage.jsonl</code></td><td>Append-only provider snapshots</td><td>Daemon, local dashboard, team sync</td></tr>
+        <tr><td><code>daemon.log</code></td><td>Polling, perception, update, and sync messages</td><td>Daemon and CLI log view</td></tr>
+        <tr><td><code>entries/</code></td><td>One day-scoped Entry per session slice</td><td>Perception worker and digest pipeline</td></tr>
+        <tr><td><code>digests/</code></td><td>Saved day, week, and month artifacts</td><td>Digest pipeline and Insights UI</td></tr>
+        <tr><td><code>agent-index/</code></td><td>Incremental local search index</td><td>Agent page</td></tr>
+      </tbody></table></div>
+    </div></section>
+
+    <section class="section"><div class="wrap prose">
+      <h2>Build from source</h2>
+      <pre><code>git clone https://github.com/cowcow02/fleetlens.git
+cd fleetlens
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm build</code></pre>
+      <p>The published CLI bundles the web standalone output. When building the CLI flow manually:</p>
+      <pre><code>NEXT_OUTPUT=standalone pnpm build
+node scripts/prepare-cli.mjs
+node packages/cli/dist/index.js start</code></pre>
+      <div class="note"><strong>Verification rule</strong><p>Use the repository's existing running dev server for smoke verification where possible. The canonical commands are <code>pnpm typecheck</code>, <code>pnpm test</code>, and <code>pnpm verify</code>.</p></div>
+
+      <h2>Troubleshoot by symptom</h2>
+      <div class="table-wrap"><table><thead><tr><th>Symptom</th><th>First check</th><th>Likely next step</th></tr></thead><tbody>
+        <tr><td>No sessions</td><td>Provider transcript root exists and has recent files.</td><td>Run a new session, then reload or restart the server.</td></tr>
+        <tr><td>No usage</td><td><code>fleetlens daemon status</code> and <code>daemon logs</code>.</td><td>Refresh provider auth; wait for the next poll.</td></tr>
+        <tr><td>Port collision</td><td><code>fleetlens status</code> and the port error.</td><td>Use <code>--port</code> or stop the process holding the port.</td></tr>
+        <tr><td>Team not syncing</td><td><code>fleetlens team status</code> and <code>team logs</code>.</td><td>Finish onboarding, select projects, run <code>team sync</code>.</td></tr>
+        <tr><td>Empty Insights</td><td>Entries exist and AI features are enabled.</td><td>Run a session or backfill recent days.</td></tr>
+      </tbody></table></div>
+    </div></section>
+  </main>
+
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens platform documentation</span><span><a href="getting-started.html">Get started</a> · <a href="team-edition.html">Team Edition</a> · <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+</body>
+</html>
