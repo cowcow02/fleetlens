@@ -67,11 +67,17 @@
       <p>If it is already running, leave it running. The join command can also start the local services when needed, but starting them first makes the flow easier to see.</p>
 
       <h2 id="pair-machine">2. Pair the machine</h2>
-      <p>Replace the two placeholders with the values from your admin:</p>
+      <p>You get a server URL and device token one of two ways:</p>
+      <div class="choice-grid">
+        <div class="choice-card"><strong>An invite link from your admin</strong><p>Opening it lands on a signup screen with your email already filled in and locked, under a heading like "Join Orbit Shop." If no invite is attached and public signup is closed, the screen instead tells you to ask your admin for one.</p></div>
+        <div class="choice-card"><strong>The "Pair your CLI" panel</strong><p>If you already have a Team Edition account and just need to (re)pair a machine, sign in to the team dashboard, open its Settings, and use "Pair your CLI." It mints a fresh token and shows you the exact join command once, with a copy button &mdash; copy it immediately, because minting a new token instantly revokes the previous one, and any other machine still using the old token stops syncing.</p></div>
+      </div>
+      <p>Either way, replace the two placeholders with the values you were given:</p>
       <pre><code>fleetlens team join &lt;server-url&gt; &lt;device-token&gt;</code></pre>
       <p>For example, the shape is:</p>
       <pre><code>fleetlens team join https://fleetlens.example.com TOKEN_FROM_ADMIN</code></pre>
       <p>The CLI checks the token, records the pairing locally, starts the daemon if necessary, and opens <code>http://localhost:3321/team/onboarding</code>. Nothing is sent yet.</p>
+      <p>Joining also switches on background auto-start for the local daemon, so it keeps checking in every five minutes even after this machine reboots &mdash; you won't need to remember to relaunch Fleetlens. You can turn auto-start back off from the local Settings page at any time without affecting your pairing.</p>
 
       <div class="note note-amber"><strong>Do not paste your real token into a public terminal screenshot.</strong><p>The token is a credential for this member device. If it is exposed, ask your admin to revoke it and issue a new one.</p></div>
 
@@ -93,15 +99,41 @@
       <h2 id="first-sync">5. Start the first sync</h2>
       <p>The final screen shows the projects in scope and reminds you that the push runs every five minutes after setup. Choose <strong>Start syncing</strong> to begin the one-time history backfill.</p>
       <p>You will see progress such as usage history checks and individual local days being pushed. A computer with no previous agent history can finish successfully with zero activity days; the daemon will collect new sessions from then on.</p>
-      <div class="screenshot"><img src="assets/screenshots/team.png" alt="Fleetlens Team page before pairing with the team server" loading="lazy" decoding="async"></div>
-      <p class="caption">The Team page is the local control surface. This image uses synthetic data and shows the safe unpaired state.</p>
+      <div class="screenshot"><img src="assets/screenshots/team-pair-panel.png" alt="Fleetlens Team page before pairing, showing the join command and invite-token guidance" loading="lazy" decoding="async"></div>
+      <p class="caption">The Team page is the local control surface. This image shows the safe unpaired state with the join command it walks you through.</p>
 
       <h2 id="verify-sync">6. Verify the result</h2>
-      <p>After the browser says the sync is complete, check the local status:</p>
+      <p>After the browser says the sync is complete, the local Team page switches from the unpaired view you saw earlier to a connected view &mdash; the fastest way to confirm sync is healthy without a terminal.</p>
+      <p>The top card shows a green <strong>Connected</strong> label plus:</p>
+      <div class="table-wrap"><table><thead><tr><th>Field</th><th>What it tells you</th></tr></thead><tbody>
+        <tr><td>Team and server URL</td><td>Which team and server this machine is pushing to.</td></tr>
+        <tr><td>Member ID</td><td>Your identity on the server side.</td></tr>
+        <tr><td>Token</td><td>Shown masked &mdash; only the first and last few characters, never in full.</td></tr>
+        <tr><td>Paired at</td><td>When this machine first joined.</td></tr>
+        <tr><td>Last day pushed</td><td>The most recent local day the server has received.</td></tr>
+        <tr><td>Last usage snapshot</td><td>When your plan-utilization percentages were last recorded.</td></tr>
+      </tbody></table></div>
+      <p>If onboarding never finished, an amber banner replaces the rest of the page and links back to it &mdash; nothing syncs until that clears.</p>
+
+      <p>Below the status card, a sync activity panel shows a health dot that ages from green (pushed in the last 15 minutes) through amber (15&ndash;60 minutes, or no push yet) to red (over an hour, or the last push failed). Once a push has succeeded, the panel lists what it contained &mdash; agent time, session count, tool calls, turns, token total, and your plan tier for that day &mdash; and a collapsible "Show raw JSON payload" link lets you inspect the exact data that was sent. A <strong>Sync now</strong> button forces a push outside the five-minute cycle and streams the result inline.</p>
+
+      <div class="note"><strong>Need to push immediately?</strong><p>Use the <strong>Sync now</strong> button on the Team page, or run <code>fleetlens team sync</code> from a terminal. If the server is temporarily unavailable, Fleetlens keeps the local dashboard working and retries supported payloads later.</p></div>
+
+      <p>From a terminal, the same status is available without opening a browser:</p>
       <pre><code>fleetlens team status
 fleetlens team logs</code></pre>
-      <p>Open the team dashboard link shown by onboarding or use the URL your admin gave you. Your selected project rollups should appear after the server processes the push. The local daemon checks for new activity about every five minutes.</p>
-      <div class="note"><strong>Need to push immediately?</strong><p>Run <code>fleetlens team sync</code>. If the server is temporarily unavailable, Fleetlens keeps the local dashboard working and retries supported payloads later.</p></div>
+      <p>Open the team dashboard link shown by onboarding or use the URL your admin gave you. Your selected project rollups should appear after the server processes the push.</p>
+
+      <p>Two more places confirm sync at a glance. A small colored dot sits at the bottom of the sidebar on every page, next to your team's name, aging through the same green/amber/red schedule &mdash; hover it for the exact last-sync time, click it to jump back to the Team page. The first time you load the dashboard home after your first successful sync, a one-time banner also restates what is and is not shared, with a link back to the full explanation; dismissing it is permanent unless you pair again later.</p>
+
+      <h2 id="sync-health">How sync keeps itself healthy</h2>
+      <p>Once paired, syncing runs on its own and rarely needs attention. A few behaviors are worth knowing:</p>
+      <ul>
+        <li><strong>Cadence.</strong> The daemon checks in every five minutes &mdash; once right after pairing to backfill history, then on the regular timer, plus any time you or an admin forces one.</li>
+        <li><strong>Unreachable server.</strong> A push that can't reach the server is queued and retried on the next check-in instead of lost. A push the server actively rejects (bad data, not a network blip) is dropped rather than retried forever.</li>
+        <li><strong>Self-healing history.</strong> If an earlier attempt left a day unpushed, the daemon retries one such day per check-in on its own, so a later server-side fix can recover data an older sync missed.</li>
+        <li><strong>Admin-requested backfills.</strong> If your admin needs a range of days resent &mdash; after a data correction on their end, for example &mdash; your daemon fulfills that automatically on its next check-in. There's no approval prompt, but it still only resends what your current project selection allows.</li>
+      </ul>
 
       <h2 id="change-scope">Change the scope later</h2>
       <p>Open the local <strong>Team</strong> page, edit the synced-project selection, and save it. Changing the selection causes Fleetlens to rebuild the next payload so a newly private project is not sent again.</p>
