@@ -63,7 +63,7 @@ export type EntrySignals = {
   subagent_roles: SubagentRole[];
   /** Length bucket of first_user. */
   verbosity: "short" | "medium" | "long" | "very_long";
-  /** External-system references parsed out of first_user (KIP-N, issue#N, etc.). */
+  /** External-system references parsed out of first_user (ORB-N, issue#N, etc.). */
   external_refs: Array<{ kind: ExternalRefKind; preview: string }>;
   /** Did this session open with a brainstorming/writing-plans skill load? */
   brainstorm_warmup: boolean;
@@ -71,7 +71,7 @@ export type EntrySignals = {
   continuation_kind: "none" | "literal-continue" | "handoff-prose";
 };
 
-export type ExternalRefKind = "linear-kip" | "github-issue-pr" | "branch-ref" | "url";
+export type ExternalRefKind = "ticket-ref" | "github-issue-pr" | "branch-ref" | "url";
 
 export type Entry = {
   ...existing,

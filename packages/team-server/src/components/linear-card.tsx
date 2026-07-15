@@ -175,7 +175,7 @@ function LinearConnectForm({
             → Security &amp; access → API keys. Read access is enough.
           </span>
         </li>
-        <li><span>Paste it below, then pick the Linear teams to track (e.g. KIP).</span></li>
+        <li><span>Paste it below, then pick the Linear teams to track (e.g. ORB).</span></li>
       </ol>
       <div className="form-group" style={{ maxWidth: 420 }}>
         <label htmlFor="lin-label">Label <span className="optional">optional</span></label>

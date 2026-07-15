@@ -181,7 +181,7 @@ describe("detectPromptFrames", () => {
 });
 
 describe("detectExternalRef", () => {
-  it("detects Linear KIP references", () => {
+  it("detects Linear ORB references", () => {
     expect(detectExternalRef("can you implement ORB-123")).toMatchObject({ kind: "ticket-ref" });
   });
   it("detects GitHub issue references", () => {

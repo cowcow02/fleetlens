@@ -169,9 +169,9 @@ This is stored in a new `pr_ticket_map` table (schema below).
 
 ## Auto-detection of team configuration
 
-No team should have to type `KIP` or `ENG` into a config form. On first team sync (or on demand via Settings → Integrations → Re-detect), Fleetlens scans recent session logs and auto-configures:
+No team should have to type `ORB` or `ENG` into a config form. On first team sync (or on demand via Settings → Integrations → Re-detect), Fleetlens scans recent session logs and auto-configures:
 
-- **Primary ticket prefix** (e.g., `KIP`)
+- **Primary ticket prefix** (e.g., `ORB`)
 - **Ticket provider** (Linear, Jira, Shortcut, GitHub Issues, unknown)
 - **Provider team slug** (e.g., `orbit` for Linear)
 - **Home GitHub repo** (for same-repo PR filtering)
@@ -198,12 +198,12 @@ A blacklist drops common all-caps false positives (`HTTP`, `SHA`, `UTF`, `JSON`,
 
 | Prefix | Score | URL sessions | Branch | AgentNm | Content | Provider |
 |---|---|---|---|---|---|---|
-| **KIP** | **2,279** | **211** | 148 | 148 | 336 | Linear (`orbit`) |
+| **ORB** | **2,279** | **211** | 148 | 148 | 336 | Linear (`orbit`) |
 | CHECK | 6 | 0 | 0 | 2 | 0 | — |
 | LOGIN | 6 | 0 | 0 | 2 | 0 | — |
 | REVIEW | 6 | 0 | 0 | 2 | 0 | — |
 
-KIP dominates with a score ratio of **380×** to the next candidate. Runner-up prefixes are all agent-name debris (`login-test-agent`, `review-*-agent`) with zero URL evidence — filtered out by the `urlSessions > 0` gate before ratio evaluation.
+ORB dominates with a score ratio of **380×** to the next candidate. Runner-up prefixes are all agent-name debris (`login-test-agent`, `review-*-agent`) with zero URL evidence — filtered out by the `urlSessions > 0` gate before ratio evaluation.
 
 **Home GitHub repo detection** is equally clean:
 
@@ -226,7 +226,7 @@ Teams that use two systems (e.g., Linear for product work, Jira for infra) will 
 {
   "ticketConfig": {
     "prefixes": [
-      { "prefix": "KIP", "provider": "linear", "slug": "orbit", "confidence": "high" },
+      { "prefix": "ORB", "provider": "linear", "slug": "orbit", "confidence": "high" },
       { "prefix": "INFRA", "provider": "jira", "host": "acme.atlassian.net", "confidence": "high" }
     ],
     "homeGitHubRepo": "orbit/agentic-knowledge-system",
@@ -298,7 +298,7 @@ The daemon extends its `sessionBlocks[]` push (from Doc 3) with the signals the 
 **Everything in `ticketSignals`** is collected locally by the daemon aggregator and shipped as structured signals — never as raw session content. The daemon:
 
 - Scans `tool_result` events for URL patterns matching the allow-list in Appendix A
-- Reads `cwd` to check for worktree directory names matching `kip-*` or similar
+- Reads `cwd` to check for worktree directory names matching `orb-*` or similar
 - Reads top-level `agentName` and `teamName` JSONL fields
 - Reads the first user event for `/implement` slash commands
 - Counts prefix-matching tokens in message content (session-dominant only — just the top candidate)
@@ -496,7 +496,7 @@ The `GET /api/team/daemon-policy` endpoint (introduced in Doc 3 for repo slug re
   "policyVersion": 8,
   "repoSlugMappings": { "acme-billing-secret-rebrand": "billing-service" },
   "ticketConfig": {
-    "prefixes": [{"prefix": "KIP", "provider": "linear", "slug": "orbit"}],
+    "prefixes": [{"prefix": "ORB", "provider": "linear", "slug": "orbit"}],
     "homeGitHubRepo": "orbit/agentic-knowledge-system"
   },
   "privacy": {
@@ -969,6 +969,6 @@ The signal hierarchy and auto-detection were validated against **413 real JSONL 
 - **Tier 0 URL precision**: 100% on single-URL sessions, 98.3% on multi-URL sessions (with disambiguation rule)
 - **Tier 3 content frequency precision**: 94.8%
 - **Tier 5 git branch precision**: 77.5% (reason to demote to confirmation-only)
-- **Auto-detect result**: KIP dominated with a 380× score ratio; Linear `orbit` team and home repo `orbit/agentic-knowledge-system` both identified with HIGH confidence
+- **Auto-detect result**: ORB dominated with a 380× score ratio; Linear `orbit` team and home repo `orbit/agentic-knowledge-system` both identified with HIGH confidence
 
 **Caveat (restated)**: orbit stacks three reinforcing signals (Linear MCP integration, branch discipline, orchestration framework). The 85.5% is best-case. Teams with weaker signal stacks may land at 50-70% coverage with the same tiered resolution rule. The design's robustness comes from graceful degradation, not any single tier.

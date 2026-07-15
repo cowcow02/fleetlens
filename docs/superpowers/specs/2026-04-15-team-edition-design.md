@@ -168,7 +168,7 @@ interface TicketMetadata {
 
 ## Auto-detection of team ticket configuration
 
-No team should need to type `KIP` or `ENG` into a config form. Fleetlens auto-detects the team's ticket prefix, provider, team slug, and home GitHub repo by scanning session logs on first run.
+No team should need to type `ORB` or `ENG` into a config form. Fleetlens auto-detects the team's ticket prefix, provider, team slug, and home GitHub repo by scanning session logs on first run.
 
 ### Scoring
 
@@ -196,11 +196,11 @@ Scanning 413 orbit JSONL sessions with zero manual input:
 
 | Prefix | Score | URL sessions | Branch | AgentNm | Content | Provider |
 |---|---|---|---|---|---|---|
-| **KIP** | **2279** | **211** | 148 | 148 | 336 | Linear (`orbit`) |
+| **ORB** | **2279** | **211** | 148 | 148 | 336 | Linear (`orbit`) |
 | CHECK | 6 | 0 | 0 | 2 | 0 | — |
 | LOGIN | 6 | 0 | 0 | 2 | 0 | — |
 
-KIP dominates with a score ratio of **380×** to the next candidate. Runners-up are all agent-name debris (`login-test-agent`, `review-*-agent`) with zero URL evidence, filtered out by the `urlSessions > 0` gate.
+ORB dominates with a score ratio of **380×** to the next candidate. Runners-up are all agent-name debris (`login-test-agent`, `review-*-agent`) with zero URL evidence, filtered out by the `urlSessions > 0` gate.
 
 Home GitHub repo detection is equally clean: `orbit/agentic-knowledge-system` appears in 184 sessions vs. 15 for the next-highest (a third-party reference pattern). Same-repo filtering falls out naturally.
 
@@ -221,7 +221,7 @@ The signal hierarchy and auto-detection were validated against 413 real JSONL se
 | cwd worktree dir | 4 | 2.2% |
 | `agentName` field | 12 | 6.6% |
 | `gitBranch` field | 17 | 9.3% |
-| `/implement KIP-N` slash | 14 | 7.7% |
+| `/implement ORB-N` slash | 14 | 7.7% |
 | Content frequency scan | **122** | **67.0%** |
 | **Combined (any strategy)** | **122** | **67.0%** |
 | **Still unknown (no signal)** | **60** | **33.0%** |
@@ -233,7 +233,7 @@ The signal hierarchy and auto-detection were validated against 413 real JSONL se
 | cwd worktree dir | 8 | 6 | 0 | **100.0%** |
 | `agentName` field | 137 | 134 | 0 | **100.0%** |
 | `gitBranch` field | 129 | 100 | 29 | **77.5%** |
-| `/implement KIP-N` slash | 148 | 124 | 15 | **89.2%** |
+| `/implement ORB-N` slash | 148 | 124 | 15 | **89.2%** |
 | Content frequency scan | 229 | 200 | 11 | **94.8%** |
 
 ### Combined coverage across all 413 sessions
@@ -788,7 +788,7 @@ The daemon polls this endpoint **once per ingest cycle** (i.e. every 5 minutes a
   "policyVersion": 7,
   "stripPRTitle": false,
   "skillTagDenyList": ["^project-falcon-", "^acme-"],
-  "ticketPrefixOverrides": ["KIP", "ENG"],
+  "ticketPrefixOverrides": ["ORB", "ENG"],
   "lastUpdated": "2026-04-15T09:00:00Z"
 }
 ```

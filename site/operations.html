@@ -91,6 +91,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build</code></pre>
+      <p><strong>Prerequisite for <code>pnpm test</code>:</strong> the Team Edition server's test suite needs a local Postgres with a dedicated test database — run <code>createdb fleetlens_test</code> once (migrations apply automatically). Without it, team-server tests fail with connection errors while every other package's tests pass. Details in the repository's <a href="https://github.com/cowcow02/fleetlens/blob/master/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p>
       <p>For the bundled CLI build:</p>
       <pre><code>NEXT_OUTPUT=standalone pnpm build
 node scripts/prepare-cli.mjs
@@ -111,6 +112,6 @@ node packages/cli/dist/index.js start</code></pre>
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 1.0.0</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

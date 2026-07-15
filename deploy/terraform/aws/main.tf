@@ -189,6 +189,9 @@ resource "aws_ecs_task_definition" "main" {
 
       environment = [
         { name = "PORT", value = tostring(local.container_port) },
+        # Explicit rather than relying on the x-forwarded-* fallback, which
+        # breaks silently if a proxy/CDN in front of the ALB drops the headers.
+        { name = "BASE_URL", value = "${local.use_https ? "https" : "http"}://${var.hostname}" },
       ]
 
       secrets = [

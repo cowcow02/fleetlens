@@ -471,7 +471,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         spread_to: ["Alice"],
       },
       {
-        pattern: "embed Linear KIP refs at the top of long-form briefs",
+        pattern: "embed Linear ORB refs at the top of long-form briefs",
         first_seen_by: "Bob",
         spread_to: ["Erin"],
       },
@@ -605,7 +605,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     url_refs_count: 14,
     external_triggered_sessions: 6,
     sessions_ending_with_pr_post: 5,
-    most_leaned_on_system: { system: "Linear (KIP-*)", refs: 6 },
+    most_leaned_on_system: { system: "Linear (ORB-*)", refs: 6 },
   },
 
   // ─── O. Prompting fingerprint ───────────────────────────────────────────
@@ -2146,7 +2146,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
             "Agent-assisted ticket resolution share",
           ],
           integration_note:
-            "Sessions already reference Linear KIPs and GitHub issues in prompts (we extract these). A direct API link would let us close the loop on ticket-level outcomes rather than self-reported.",
+            "Sessions already reference Linear tickets and GitHub issues in prompts (we extract these). A direct API link would let us close the loop on ticket-level outcomes rather than self-reported.",
         },
         {
           name: "CI/CD + incident data",
@@ -3334,7 +3334,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
       {
         heading: "Bob is making the opposite bet, and it's also working",
-        body: "Where Alice shrinks her briefs and offloads structure to harness-orchestrate, Bob's briefs have grown 27% in four weeks. He's pouring more context — KIP refs, error logs, schema dumps — into the first user message, and then letting the agent run for hours. The 4.2-hour autonomous session on Wednesday's migration was the longest of the week, and it shipped without rework. His cost-per-PR is also dropping. Two different theories of the human-agent collaboration, both gaining evidence.",
+        body: "Where Alice shrinks her briefs and offloads structure to harness-orchestrate, Bob's briefs have grown 27% in four weeks. He's pouring more context — ORB refs, error logs, schema dumps — into the first user message, and then letting the agent run for hours. The 4.2-hour autonomous session on Wednesday's migration was the longest of the week, and it shipped without rework. His cost-per-PR is also dropping. Two different theories of the human-agent collaboration, both gaining evidence.",
       },
       {
         heading: "Dana hit the third-week inflection",

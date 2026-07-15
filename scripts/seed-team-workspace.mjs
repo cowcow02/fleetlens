@@ -40,7 +40,7 @@ async function seed(client) {
   const passwordHash = hashPassword("demo1234");
   await client.query(
     `INSERT INTO user_accounts (id, email, password_hash, display_name, is_staff)
-     VALUES ($1, 'demo-admin@example.com', $2, 'Charlie', false)`,
+     VALUES ($1, 'demo-admin@example.com', $2, 'Erin', false)`,
     [adminId, passwordHash],
   );
 
@@ -64,7 +64,7 @@ async function seed(client) {
     { name: "Frank", email: "frank@example.com", tier: "pro" },
     { name: "Grace", email: "grace@example.com", tier: "pro" },
   ];
-  const memberIds = { Charlie: charlieMembership };
+  const memberIds = { Erin: charlieMembership };
   for (const o of others) {
     const userId = randomUUID();
     await client.query(
@@ -87,7 +87,7 @@ async function seed(client) {
   // - midCyclePct is their current cycle progress.
   // - hasActiveCycle controls if they have active telemetry (Grace and Frank do not).
   const profiles = {
-    Charlie: { completedCyclesCount: 6, peakRange: [80, 95], midCyclePct: 78, hasActiveCycle: true }, 
+    Erin: { completedCyclesCount: 6, peakRange: [80, 95], midCyclePct: 78, hasActiveCycle: true }, 
     Diana:   { completedCyclesCount: 3, peakRange: [45, 62], midCyclePct: 42, hasActiveCycle: true },
     Eve:     { completedCyclesCount: 2, peakRange: [10, 32], midCyclePct: 15, hasActiveCycle: true },
     Frank:   { completedCyclesCount: 1, peakRange: [88, 100], midCyclePct: 0,  hasActiveCycle: false },

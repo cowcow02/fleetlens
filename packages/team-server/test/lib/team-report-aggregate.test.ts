@@ -22,7 +22,7 @@ describe("linearVelocity · ai-linked PR join (word-boundary regex)", () => {
       `INSERT INTO linear_issues
         (team_id, identifier, title, state_name, state_type, linear_team_key,
          created_at, started_at, completed_at)
-       VALUES ($1, 'ORB-315', 'Fix the bug', 'Done', 'completed', 'KIP',
+       VALUES ($1, 'ORB-315', 'Fix the bug', 'Done', 'completed', 'ORB',
          '2026-06-22T09:00:00Z', '2026-06-22T10:00:00Z', $2)`,
       [teamId, completed],
     );
@@ -46,7 +46,7 @@ describe("linearVelocity · ai-linked PR join (word-boundary regex)", () => {
 
     const integ = {
       provider: "linear",
-      config: { team_keys: ["KIP"] },
+      config: { team_keys: ["ORB"] },
       last_sync_at: "2026-06-23T12:00:00Z",
     };
     const result = await linearVelocity(teamId, { kind: "team-wide" }, weekMonday, pool, [integ]);

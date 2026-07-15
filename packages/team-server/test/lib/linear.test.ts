@@ -11,7 +11,7 @@ const node: LinearIssueNode = {
   completedAt: "2026-06-08T08:48:58.000Z",
   canceledAt: null,
   state: { name: "Done", type: "completed" },
-  team: { key: "KIP" },
+  team: { key: "ORB" },
   assignee: { displayName: "Sam" },
 };
 
@@ -20,7 +20,7 @@ describe("toIssueRow", () => {
     const row = toIssueRow(node);
     expect(row.identifier).toBe("ORB-315");
     expect(row.stateType).toBe("completed");
-    expect(row.linearTeamKey).toBe("KIP");
+    expect(row.linearTeamKey).toBe("ORB");
     expect(row.assignee).toBe("Sam");
     expect(row.startedAt).toBe("2026-06-05T09:00:00.000Z");
   });

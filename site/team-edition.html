@@ -78,7 +78,7 @@
 
       <h2 id="deployment-options">Choose a deployment path</h2>
       <div class="choice-grid">
-        <div class="choice-card"><h3>Railway</h3><p>Fastest path to a public HTTPS URL. The template provisions Team Edition and Postgres together. <a href="https://railway.com/new/template/sGuijx">Open the Railway template</a>.</p></div>
+        <div class="choice-card"><h3>Railway</h3><p>Fastest path to a public HTTPS URL. The template provisions Team Edition and Postgres together. <a href="https://railway.com/new/template/sGuijx">Open the Railway template</a> and see the <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/railway/README.md">Railway guide</a> for variables and one-click upgrades.</p></div>
         <div class="choice-card"><h3>Google Cloud</h3><p>Cloud Run, Cloud SQL, Secret Manager, and Cloud Scheduler. Follow the repository's <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/gcp/README.md">GCP deployment guide</a>.</p></div>
         <div class="choice-card"><h3>Docker Compose</h3><p>Run the server, Postgres, and Caddy on a host you control. Follow the <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/compose/README.md">Compose guide</a>.</p></div>
         <div class="choice-card"><h3>AWS Terraform</h3><p>Use ECS Fargate, RDS Postgres, and an Application Load Balancer. Follow the <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/terraform/aws/README.md">AWS module guide</a>.</p></div>
@@ -130,10 +130,20 @@
         <li>Keep the team server and local member machines on supported Fleetlens versions.</li>
       </ul>
 
+      <h2 id="upgrades-and-backups">Upgrades, migrations, and backups</h2>
+      <ul>
+        <li><strong>Database migrations run automatically on boot</strong> on every deployment path — upgrading the image is the whole upgrade procedure; there is no separate migrate step.</li>
+        <li><strong>Pin a released image tag in production.</strong> <code>ghcr.io/cowcow02/fleetlens-team-server:latest</code> tracks the development branch; released versions are published as <code>:X.Y.Z</code> from <code>server-vX.Y.Z</code> tags.</li>
+        <li><strong>Back up two things:</strong> the Postgres database (regular <code>pg_dump</code> or your platform's automated backups) and the <code>FLEETLENS_ENCRYPTION_KEY</code> value. All team data restores from the database backup alone, but integration credentials (GitHub, Jira, Linear, email) are encrypted with the key — if the key is lost, reconnect the integrations after restore; nothing else is affected.</li>
+      </ul>
+
+      <h2 id="developing">Developing and contributing</h2>
+      <p>Team Edition is part of the open-source repository. To run the server locally, work on it, and author database migrations, start from the <a href="https://github.com/cowcow02/fleetlens/blob/master/packages/team-server/README.md">team-server development guide</a> and the repository's <a href="https://github.com/cowcow02/fleetlens/blob/master/CONTRIBUTING.md">contributing guide</a>. Security reports go through <a href="https://github.com/cowcow02/fleetlens/blob/master/SECURITY.md">private vulnerability reporting</a>.</p>
+
       <div class="note note-purple"><strong>Next step</strong><p>Read the <a href="privacy.html">privacy model</a> for the exact local/team boundary, or send a member to the <a href="team-member.html">join guide</a>. Use the <a href="operations.html">operations guide</a> for logs, updates, and troubleshooting.</p></div>
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 1.0.0</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

@@ -226,7 +226,7 @@ Background worker (runs every 2 minutes via scheduler): pops up to 50 pending jo
 
 - [ ] **Write failing test with orbit-like fixture data**
 
-Seed ~50 session blocks with ticketSignals containing Linear URLs with KIP prefix → expect auto-detect returns `{ prefix: "KIP", provider: "linear", slug: "orbit", confidence: "high" }`.
+Seed ~50 session blocks with ticketSignals containing Linear URLs with ORB prefix → expect auto-detect returns `{ prefix: "ORB", provider: "linear", slug: "orbit", confidence: "high" }`.
 
 - [ ] **Implement auto-detector.ts**
 

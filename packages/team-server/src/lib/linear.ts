@@ -107,7 +107,7 @@ query ($filter: IssueFilter, $cursor: String) {
 }`;
 
 /** Issues updated within the trailing `sinceDays`, optionally limited to
- *  specific Linear team keys (e.g. ["KIP"]). */
+ *  specific Linear team keys (e.g. ["ORB"]). */
 export async function fetchLinearIssues(
   apiKey: string,
   teamKeys: string[],

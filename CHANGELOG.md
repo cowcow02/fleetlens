@@ -10,6 +10,7 @@ Fleetlens 1.0 — a maturity milestone, **not a breaking change**. Upgrading fro
 
 ### Added
 - **Open-source governance baseline.** `SECURITY.md` (vulnerability reporting via GitHub Security Advisories), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and GitHub issue/PR templates.
+- **Team Edition development guide.** `packages/team-server/README.md` now covers local development (Postgres setup, env vars, seeding), running the test suite, and an architecture orientation; `MIGRATIONS.md` documents the real (hand-authored) migration workflow.
 
 ### Fixed
 - **First-run empty state pointed at a nonexistent command.** The usage sidebar now says `fleetlens daemon start` (was `cclens daemon start`, a leftover from a pre-rename era).
@@ -18,6 +19,8 @@ Fleetlens 1.0 — a maturity milestone, **not a breaking change**. Upgrading fro
 
 ### Changed
 - **LICENSE copyright holder updated to Fleetlens contributors**, and the `fleetlens` npm package now carries `keywords`, `author`, and `homepage` metadata.
+- **`NEXT_OUTPUT` is now part of the build cache key**, so the documented standalone CLI build no longer silently reuses a stale non-standalone web bundle.
+- **The team-server test suite defaults to a dedicated `fleetlens_test` database and refuses to run against a database whose name doesn't contain "test"** — its reset step truncates every table, which previously could wipe a conventionally-named local dev database.
 
 ## [0.16.6] — 2026-07-15
 

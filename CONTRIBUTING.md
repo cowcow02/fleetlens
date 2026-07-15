@@ -24,6 +24,20 @@ pnpm clean        # Remove all build artifacts
 
 For the bundled-CLI build flow and other developer workflows, see `CLAUDE.md`.
 
+### Postgres prerequisite (team-server)
+
+The Team Edition server needs a local Postgres for dev and tests:
+
+- **Tests**: `createdb fleetlens_test` once, then `pnpm test` works — the
+  team-server suite defaults to `postgres://localhost:5432/fleetlens_test`,
+  migrates it automatically, and **truncates every table between tests** (it
+  refuses databases whose name doesn't contain `test`). Without Postgres
+  running, team-server's tests fail with connection errors; every other
+  package's tests pass without it.
+- **Dev**: the root `pnpm dev` starts team-server too, which crashes at boot
+  without `DATABASE_URL`. See `packages/team-server/README.md` → "Local
+  development" for the full env setup, or run per-package dev commands.
+
 ## Monorepo layout
 
 pnpm + Turborepo monorepo:

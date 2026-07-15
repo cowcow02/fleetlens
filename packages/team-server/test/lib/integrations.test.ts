@@ -35,8 +35,8 @@ describe("normalizeGithubRepos", () => {
 
 describe("normalizeLinearTeams", () => {
   it("upgrades the legacy team_keys shape", () => {
-    expect(normalizeLinearTeams({ team_keys: ["KIP", " OPS "] })).toEqual([
-      { key: "KIP", group_ids: [] },
+    expect(normalizeLinearTeams({ team_keys: ["ORB", " OPS "] })).toEqual([
+      { key: "ORB", group_ids: [] },
       { key: "OPS", group_ids: [] },
     ]);
   });
@@ -44,10 +44,10 @@ describe("normalizeLinearTeams", () => {
   it("prefers explicit team mappings and drops malformed entries", () => {
     expect(
       normalizeLinearTeams({
-        teams: [{ key: "KIP", group_ids: ["g1"] }, { key: "" }, { group_ids: ["g2"] }, null],
+        teams: [{ key: "ORB", group_ids: ["g1"] }, { key: "" }, { group_ids: ["g2"] }, null],
         team_keys: ["IGNORED"],
       }),
-    ).toEqual([{ key: "KIP", group_ids: ["g1"] }]);
+    ).toEqual([{ key: "ORB", group_ids: ["g1"] }]);
   });
 
   it("returns empty for missing config", () => {
