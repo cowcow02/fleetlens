@@ -17,6 +17,7 @@
 import { invalidateFile, DEFAULT_ROOT, cclensHome } from "@claude-lens/parser/fs";
 import { watch, promises as fs, existsSync } from "node:fs";
 import path from "node:path";
+import { ensureUsageDaemon } from "@/lib/daemon-lifecycle";
 
 export const dynamic = "force-dynamic";
 // Edge runtime can't do fs.watch
@@ -56,6 +57,7 @@ const DEBOUNCE_MS = 150;
 const SUBAGENT_DEBOUNCE_MS = 2_000;
 
 export async function GET(request: Request) {
+  void ensureUsageDaemon();
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({

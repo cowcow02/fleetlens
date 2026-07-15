@@ -8,7 +8,7 @@ import { join, dirname } from "node:path";
 // mutation shells out to the CLI so the install/login-item logic stays in one
 // place (same model as lib/autostart-data.ts).
 
-const APP_BUNDLE = "FleetlensMenubar.app";
+const APP_BUNDLE = "Fleetlens.app";
 const BUNDLE_EXEC = "FleetlensMenubar";
 const INSTALLED_PATH = join(homedir(), "Applications", APP_BUNDLE);
 

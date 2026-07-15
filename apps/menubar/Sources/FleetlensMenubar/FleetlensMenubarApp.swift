@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       rootView: ContentView().environmentObject(store)
     )
 
+    store.ensureDaemonRunning()
+
     redraw()
     cancellable = store.$snapshots
       .receive(on: DispatchQueue.main)
@@ -64,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if popover.isShown {
       popover.performClose(sender)
     } else {
+      store.ensureDaemonRunning()
       popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
       NSApp.activate(ignoringOtherApps: true)
     }

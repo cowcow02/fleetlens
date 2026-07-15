@@ -2,6 +2,32 @@ import Foundation
 import SwiftUI
 import Combine
 
+struct CliLaunch: Codable {
+  let node: String
+  let script: String
+
+  static func load() -> CliLaunch? {
+    let url = SnapshotIO.cclensDir().appendingPathComponent("cli-launch.json")
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    return try? JSONDecoder().decode(CliLaunch.self, from: data)
+  }
+
+  func run(_ arguments: [String]) -> Bool {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: node)
+    proc.arguments = [script] + arguments
+    proc.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
+    proc.standardError = FileHandle(forWritingAtPath: "/dev/null")
+    do {
+      try proc.run()
+      proc.waitUntilExit()
+      return proc.terminationStatus == 0
+    } catch {
+      return false
+    }
+  }
+}
+
 @MainActor
 final class UsageStore: ObservableObject {
   @Published var snapshots: [AgentKind: UsageSnapshot] = [:]
@@ -11,6 +37,7 @@ final class UsageStore: ObservableObject {
   @Published var refreshing = false
 
   private var watcher: UsageLogWatcher?
+  private var daemonStartInFlight = false
 
   init() {
     reload()
@@ -52,7 +79,24 @@ final class UsageStore: ObservableObject {
       if let p = pace(for: kind) { acc[kind] = p }
     }
     lastRefreshed = Date()
-    lastError = snapshots.isEmpty ? "no snapshots yet — is the daemon running?" : nil
+    lastError = snapshots.isEmpty ? "Waiting for the daemon's first usage snapshot…" : nil
+  }
+
+  /// When the widget is a login item, this becomes a second idempotent path
+  /// that brings the daemon back after login. Re-check when the popover opens,
+  /// but don't continuously supervise: updates need a clean stop/re-exec window.
+  func ensureDaemonRunning() {
+    guard !daemonStartInFlight else { return }
+    daemonStartInFlight = true
+    Task { [weak self] in
+      let ok = await Task.detached(priority: .utility) {
+        CliLaunch.load()?.run(["daemon", "start"]) == true
+      }.value
+      guard let self else { return }
+      self.daemonStartInFlight = false
+      guard !ok, self.snapshots.isEmpty else { return }
+      self.lastError = "Daemon couldn't start — re-run `fleetlens menubar install` to reconnect the widget to the CLI."
+    }
   }
 
   /// Force a fresh usage poll instead of just re-reading the file. Spawns the
@@ -63,43 +107,20 @@ final class UsageStore: ObservableObject {
   func forceRefresh() {
     guard !refreshing else { return }
     refreshing = true
-    Task.detached(priority: .utility) { [weak self] in
-      let ok = Self.runUsageSave()
-      await MainActor.run {
-        guard let self else { return }
-        self.refreshing = false
-        if ok {
-          self.reload()
-        } else {
-          self.lastError = "Refresh couldn't reach the CLI — ~/.cclens/cli-launch.json missing. Re-run `fleetlens menubar install`."
-        }
+    Task { [weak self] in
+      let ok = await Task.detached(priority: .utility) { Self.runUsageSave() }.value
+      guard let self else { return }
+      self.refreshing = false
+      if ok {
+        self.reload()
+      } else {
+        self.lastError = "Refresh couldn't reach the CLI — ~/.cclens/cli-launch.json missing. Re-run `fleetlens menubar install`."
       }
     }
   }
 
-  private struct CliLaunch: Codable {
-    let node: String
-    let script: String
-  }
-
   private static nonisolated func runUsageSave() -> Bool {
-    let url = SnapshotIO.cclensDir().appendingPathComponent("cli-launch.json")
-    guard let data = try? Data(contentsOf: url),
-          let launch = try? JSONDecoder().decode(CliLaunch.self, from: data) else {
-      return false
-    }
-    let proc = Process()
-    proc.executableURL = URL(fileURLWithPath: launch.node)
-    proc.arguments = [launch.script, "usage", "--save"]
-    proc.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-    proc.standardError = FileHandle(forWritingAtPath: "/dev/null")
-    do {
-      try proc.run()
-      proc.waitUntilExit()
-      return proc.terminationStatus == 0
-    } catch {
-      return false
-    }
+    CliLaunch.load()?.run(["usage", "--save"]) == true
   }
 
   /// Burn rate: 7-day utilization change vs ~1h ago. Positive = climbing.

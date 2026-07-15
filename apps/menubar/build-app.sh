@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Builds the Swift menu bar binary and bundles it into a proper .app.
 # LSUIElement=true makes it an agent app (no Dock icon, no main menu) — exactly
-# what a menu bar widget needs. Output: dist/FleetlensMenubar.app
+# what a menu bar widget needs. Output: dist/Fleetlens.app
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
-APP_NAME="FleetlensMenubar"
+TARGET_NAME="FleetlensMenubar"
+APP_NAME="Fleetlens"
 BUNDLE_ID="ai.fleetlens.menubar"
 VERSION="${MENUBAR_VERSION:-$(node -p "require('../../package.json').version" 2>/dev/null || echo 0.1.0)}"
 DIST="dist"
@@ -23,7 +24,7 @@ fi
 echo "→ swift build -c release $ARCH_FLAGS"
 swift build -c release $ARCH_FLAGS
 
-BIN_PATH="$(swift build -c release $ARCH_FLAGS --show-bin-path)/$APP_NAME"
+BIN_PATH="$(swift build -c release $ARCH_FLAGS --show-bin-path)/$TARGET_NAME"
 if [[ ! -f "$BIN_PATH" ]]; then
   echo "fatal: built binary not found at $BIN_PATH" >&2
   exit 1
@@ -35,10 +36,34 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 
-cp "$BIN_PATH" "$APP/Contents/MacOS/$APP_NAME"
+cp "$BIN_PATH" "$APP/Contents/MacOS/$TARGET_NAME"
 
 # Brand icons (SVGs) → Contents/Resources so Bundle.main.url(forResource:) finds them.
 cp Resources/*.svg "$APP/Contents/Resources/" 2>/dev/null || true
+
+# System Settings ignores SVG bundle resources for an app's identity. Build a
+# native icon so Login Items shows the Fleetlens mark instead of a placeholder.
+ICONSET="$DIST/Fleetlens.iconset"
+rm -rf "$ICONSET"
+mkdir -p "$ICONSET"
+for SPEC in \
+  "16 icon_16x16.png" \
+  "32 icon_16x16@2x.png" \
+  "32 icon_32x32.png" \
+  "64 icon_32x32@2x.png" \
+  "128 icon_128x128.png" \
+  "256 icon_128x128@2x.png" \
+  "256 icon_256x256.png" \
+  "512 icon_256x256@2x.png" \
+  "512 icon_512x512.png" \
+  "1024 icon_512x512@2x.png"; do
+  SIZE="${SPEC%% *}"
+  NAME="${SPEC#* }"
+  sips -s format png -z "$SIZE" "$SIZE" Resources/fleetlens-mark.svg \
+    --out "$ICONSET/$NAME" >/dev/null
+done
+iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/Fleetlens.icns"
+rm -rf "$ICONSET"
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -46,12 +71,12 @@ cat > "$APP/Contents/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleExecutable</key><string>$APP_NAME</string>
-  <key>CFBundleIconFile</key><string></string>
+  <key>CFBundleExecutable</key><string>$TARGET_NAME</string>
+  <key>CFBundleIconFile</key><string>Fleetlens.icns</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
   <key>CFBundleName</key><string>Fleetlens</string>
-  <key>CFBundleDisplayName</key><string>Fleetlens Menu Bar</string>
+  <key>CFBundleDisplayName</key><string>Fleetlens</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>

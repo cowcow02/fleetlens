@@ -57,7 +57,7 @@ export function MenubarInstall({ initial }: { initial: MenubarState }) {
           ? state.running
             ? "Installed and running — check your menu bar."
             : "Installed but not running."
-          : "Adds live Claude Code, Codex, Copilot, Z.ai, and Grok quota gauges to your menu bar, updated as the daemon polls."}
+          : "Adds live Claude Code, Codex, Copilot, Z.ai, and Grok quota gauges to your menu bar and starts the usage daemon automatically."}
       </p>
 
       <div className="flex flex-wrap gap-2">

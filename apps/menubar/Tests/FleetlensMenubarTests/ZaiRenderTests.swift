@@ -106,3 +106,21 @@ final class ZaiRenderTests: XCTestCase {
     XCTAssertEqual(snap?.agentKind, .grok)
   }
 }
+
+final class CliLaunchTests: XCTestCase {
+  func testPassesDaemonStartToPersistedNodeAndScript() throws {
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+      .appendingPathComponent("fleetlens-cli-launch-tests-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let output = tmp.appendingPathComponent("arguments.txt")
+    let script = tmp.appendingPathComponent("capture.sh")
+    try "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"\(output.path)\"\n"
+      .write(to: script, atomically: true, encoding: .utf8)
+
+    let launch = CliLaunch(node: "/bin/sh", script: script.path)
+    XCTAssertTrue(launch.run(["daemon", "start"]))
+    XCTAssertEqual(try String(contentsOf: output, encoding: .utf8), "daemon\nstart\n")
+  }
+}

@@ -26,15 +26,20 @@ jobs:
 
       - name: Assert universal binary
         run: |
-          ARCHS=$(lipo -archs apps/menubar/dist/FleetlensMenubar.app/Contents/MacOS/FleetlensMenubar)
+          ARCHS=$(lipo -archs apps/menubar/dist/Fleetlens.app/Contents/MacOS/FleetlensMenubar)
           echo "archs: $ARCHS"
           echo "$ARCHS" | grep -q arm64
           echo "$ARCHS" | grep -q x86_64
 
+      - name: Assert branded bundle metadata
+        run: |
+          test -f apps/menubar/dist/Fleetlens.app/Contents/Resources/Fleetlens.icns
+          test "$(plutil -extract CFBundleDisplayName raw apps/menubar/dist/Fleetlens.app/Contents/Info.plist)" = "Fleetlens"
+
       # tar, not a bare upload — upload-artifact drops the executable bit,
       # which would break the bundle.
       - name: Archive bundle
-        run: tar -C apps/menubar/dist -czf menubar-app.tgz FleetlensMenubar.app
+        run: tar -C apps/menubar/dist -czf menubar-app.tgz Fleetlens.app
 
       - uses: actions/upload-artifact@v4
         with:
@@ -115,7 +120,7 @@ jobs:
 
       # Guard against a repeat of 0.15.4: never publish without the widget.
       - name: Assert menubar bundle present
-        run: test -x packages/cli/menubar/FleetlensMenubar.app/Contents/MacOS/FleetlensMenubar
+        run: test -x packages/cli/menubar/Fleetlens.app/Contents/MacOS/FleetlensMenubar
 
       # OIDC trusted publishing needs npm >= 11.5.1; Node 20 ships npm 10.x.
       # Pin npm 11 because npm 12 requires a newer Node than this workflow uses.

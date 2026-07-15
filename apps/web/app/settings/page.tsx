@@ -34,7 +34,7 @@ export default function SettingsPage() {
         <p className="text-sm text-gray-500">
           Native macOS menu bar widget showing live Claude Code / Codex / Copilot / Z.ai plan
           utilization, reset countdowns, and burn-rate. Installs to ~/Applications
-          and updates as the daemon polls.
+          and starts the usage daemon whenever the widget launches.
         </p>
         <MenubarInstall initial={readMenubarState()} />
       </section>
