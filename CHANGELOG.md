@@ -4,6 +4,16 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.16.9] — 2026-07-15
+
+Safe upgrade from 0.16.8. The dashboard and native menu-bar app now keep Fleetlens usage polling alive without manual daemon restarts.
+
+### Added
+- **Fleetlens automatically recovers a stopped usage daemon.** Opening the local dashboard's live connection or launching the native menu-bar app idempotently starts the daemon. The menu-bar app also checks once a minute and restarts polling when the newest usage snapshot is more than five minutes old, including first-run machines with no snapshots.
+
+### Changed
+- **The native widget now installs as `Fleetlens.app`.** It uses the Fleetlens icon and migrates the former `FleetlensMenubar.app` login item cleanly, so macOS Background Items presents the product name instead of an implementation label.
+
 ## [0.16.8] — 2026-07-15
 
 Safe upgrade from 0.16.7. Copilot organization allowances are described accurately, and usage tabs now reflect locally observed providers.
