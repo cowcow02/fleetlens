@@ -32,6 +32,7 @@ import {
 } from "@claude-lens/parser";
 import {
   copilotQuotaPresentation,
+  copilotUnitLabel,
   type CopilotMonthlyQuota,
   visibleUsageAgents,
 } from "@/lib/usage-display";
@@ -302,7 +303,7 @@ function CopilotMonthlyCard({
   quota?: CopilotMonthlyQuota | null;
 }) {
   const pct = window.utilization;
-  const unit = quota?.unit === "premium-requests" ? "premium requests" : "AI credits";
+  const unit = copilotUnitLabel(quota?.unit);
   const presentation = copilotQuotaPresentation(pct, quota);
   return (
     <div className="af-card" style={{ padding: "16px 18px" }}>

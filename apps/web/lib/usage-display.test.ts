@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { copilotQuotaPresentation, visibleUsageAgents } from "./usage-display";
+import {
+  copilotQuotaPresentation,
+  copilotUnitLabel,
+  visibleUsageAgents,
+} from "./usage-display";
 
 describe("visibleUsageAgents", () => {
   it("keeps unobserved providers out of an empty usage page", () => {
@@ -40,6 +44,20 @@ describe("copilotQuotaPresentation", () => {
     expect(JSON.stringify(display).toLowerCase()).not.toContain("unlimited");
   });
 
+  it("omits the detail when Copilot reports neither a personal limit nor usage", () => {
+    expect(copilotQuotaPresentation(null, {
+      used: null,
+      limit: -1,
+      remaining: null,
+      unit: "ai-credits",
+      unlimited: true,
+    })).toEqual({
+      headline: "Limit not reported",
+      detail: null,
+      limitNotReported: true,
+    });
+  });
+
   it("keeps exact usage and remaining credits for personal allowances", () => {
     expect(copilotQuotaPresentation(1.5, {
       used: 3,
@@ -52,5 +70,10 @@ describe("copilotQuotaPresentation", () => {
       detail: "3 of 200 AI credits used · 197 remaining",
       limitNotReported: false,
     });
+  });
+
+  it("uses one unit mapping for headings and quota details", () => {
+    expect(copilotUnitLabel("ai-credits")).toBe("AI credits");
+    expect(copilotUnitLabel("premium-requests")).toBe("premium requests");
   });
 });

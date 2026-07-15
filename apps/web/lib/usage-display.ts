@@ -19,6 +19,12 @@ export type CopilotMonthlyQuota = {
   unlimited: boolean;
 };
 
+export function copilotUnitLabel(
+  unit?: CopilotMonthlyQuota["unit"],
+): "AI credits" | "premium requests" {
+  return unit === "premium-requests" ? "premium requests" : "AI credits";
+}
+
 export function copilotQuotaPresentation(
   utilization: number | null,
   quota?: CopilotMonthlyQuota | null,
@@ -27,7 +33,7 @@ export function copilotQuotaPresentation(
   detail: string | null;
   limitNotReported: boolean;
 } {
-  const unit = quota?.unit === "premium-requests" ? "premium requests" : "AI credits";
+  const unit = copilotUnitLabel(quota?.unit);
   if (quota?.unlimited) {
     return {
       headline: "Limit not reported",
