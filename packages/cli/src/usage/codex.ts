@@ -117,23 +117,39 @@ export function accessTokenExpiresAtMs(token: string): number | null {
   }
 }
 
-function needsRefresh(accessToken: string, lastRefresh?: string): boolean {
+/**
+ * Whether the access token should be proactively refreshed.
+ * Prefers JWT `exp` (with a 5-minute buffer); falls back to an 8-day
+ * wall-clock age on `last_refresh` only when the token isn't a decodable JWT.
+ * Exported for unit tests.
+ */
+export function needsRefresh(
+  accessToken: string,
+  lastRefresh?: string,
+  nowMs: number = Date.now(),
+): boolean {
   const expMs = accessTokenExpiresAtMs(accessToken);
   if (expMs !== null) {
-    return Date.now() >= expMs - REFRESH_BUFFER_MS;
+    return nowMs >= expMs - REFRESH_BUFFER_MS;
   }
   // Fallback when JWT exp is unreadable: only refresh if last_refresh is >8d old
   // (OpenUsage's wall-clock fallback). Brand-new login without last_refresh: no.
   if (!lastRefresh) return false;
   const ms = Date.parse(lastRefresh);
   if (!Number.isFinite(ms)) return false;
-  return Date.now() - ms > 8 * 24 * 60 * 60 * 1000;
+  return nowMs - ms > 8 * 24 * 60 * 60 * 1000;
 }
+
+type RefreshResult = {
+  accessToken: string;
+  /** Updated auth (in-memory + best-effort on disk) so a later retry uses the rotated refresh_token. */
+  auth: CodexAuthFile;
+};
 
 async function refreshAccessToken(
   auth: CodexAuthFile,
   filePath: string,
-): Promise<string | null> {
+): Promise<RefreshResult | null> {
   const refresh = auth.tokens?.refresh_token?.trim();
   if (!refresh) return null;
   const body = new URLSearchParams({
@@ -159,18 +175,18 @@ async function refreshAccessToken(
       id_token?: string;
     };
     if (typeof j.access_token !== "string" || !j.access_token) return null;
+    const next: CodexAuthFile = {
+      ...auth,
+      tokens: {
+        ...auth.tokens,
+        access_token: j.access_token,
+        refresh_token: j.refresh_token ?? auth.tokens?.refresh_token,
+        id_token: j.id_token ?? auth.tokens?.id_token,
+      },
+      last_refresh: new Date().toISOString(),
+    };
     // Best-effort write-back so subsequent polls (and Codex CLI) share the rotation.
     try {
-      const next: CodexAuthFile = {
-        ...auth,
-        tokens: {
-          ...auth.tokens,
-          access_token: j.access_token,
-          refresh_token: j.refresh_token ?? auth.tokens?.refresh_token,
-          id_token: j.id_token ?? auth.tokens?.id_token,
-        },
-        last_refresh: new Date().toISOString(),
-      };
       writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`, {
         encoding: "utf8",
         mode: 0o600,
@@ -178,7 +194,7 @@ async function refreshAccessToken(
     } catch {
       // Non-fatal — in-memory token still works for this poll.
     }
-    return j.access_token;
+    return { accessToken: j.access_token, auth: next };
   } catch {
     return null;
   }
@@ -363,20 +379,27 @@ async function fetchUsageResponse(
  */
 export async function fetchCodexUsage(): Promise<UsageSnapshot> {
   const loaded = loadAuth();
-  let access = loaded.auth.tokens!.access_token!.trim();
-  const accountId = loaded.auth.tokens?.account_id;
+  // Keep auth in memory so a rotated refresh_token from the first refresh
+  // is used if we need a second refresh on 401/403 (disk write alone isn't enough).
+  let auth = loaded.auth;
+  let access = auth.tokens!.access_token!.trim();
+  const accountId = auth.tokens?.account_id;
 
-  if (needsRefresh(access, loaded.auth.last_refresh)) {
-    const refreshed = await refreshAccessToken(loaded.auth, loaded.path);
-    if (refreshed) access = refreshed;
+  if (needsRefresh(access, auth.last_refresh)) {
+    const refreshed = await refreshAccessToken(auth, loaded.path);
+    if (refreshed) {
+      access = refreshed.accessToken;
+      auth = refreshed.auth;
+    }
   }
 
   let { status, body, headers } = await fetchUsageResponse(access, accountId);
   if (status === 401 || status === 403) {
     // One refresh-and-retry, matching OpenUsage's ProviderAuthRetry.
-    const refreshed = await refreshAccessToken(loaded.auth, loaded.path);
+    const refreshed = await refreshAccessToken(auth, loaded.path);
     if (refreshed) {
-      access = refreshed;
+      access = refreshed.accessToken;
+      auth = refreshed.auth;
       ({ status, body, headers } = await fetchUsageResponse(access, accountId));
     }
   }

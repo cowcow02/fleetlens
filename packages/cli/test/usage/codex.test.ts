@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parseCodexWhamUsage,
   accessTokenExpiresAtMs,
+  needsRefresh,
   CodexApiError,
 } from "../../src/usage/codex.js";
 
@@ -117,5 +118,36 @@ describe("accessTokenExpiresAtMs", () => {
 
   it("returns null for non-JWT tokens", () => {
     expect(accessTokenExpiresAtMs("not-a-jwt")).toBeNull();
+  });
+});
+
+describe("needsRefresh", () => {
+  const now = Date.parse("2026-07-15T12:00:00.000Z");
+
+  it("uses JWT exp with a 5-minute buffer", () => {
+    const expSec = Math.floor(now / 1000) + 60; // expires in 1 minute
+    const payload = Buffer.from(JSON.stringify({ exp: expSec }), "utf8").toString(
+      "base64url",
+    );
+    const token = `hdr.${payload}.sig`;
+    expect(needsRefresh(token, undefined, now)).toBe(true);
+
+    const farExp = Math.floor(now / 1000) + 3600;
+    const far = Buffer.from(JSON.stringify({ exp: farExp }), "utf8").toString(
+      "base64url",
+    );
+    expect(needsRefresh(`hdr.${far}.sig`, undefined, now)).toBe(false);
+  });
+
+  it("falls back to 8-day last_refresh wall-clock when JWT is undecodable", () => {
+    const nineDaysAgo = new Date(now - 9 * 24 * 60 * 60 * 1000).toISOString();
+    expect(needsRefresh("not-a-jwt", nineDaysAgo, now)).toBe(true);
+
+    const sevenDaysAgo = new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString();
+    expect(needsRefresh("not-a-jwt", sevenDaysAgo, now)).toBe(false);
+  });
+
+  it("does not refresh a brand-new non-JWT login without last_refresh", () => {
+    expect(needsRefresh("not-a-jwt", undefined, now)).toBe(false);
   });
 });
