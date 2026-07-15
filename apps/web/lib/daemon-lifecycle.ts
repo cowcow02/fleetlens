@@ -22,6 +22,8 @@ export function daemonLaunchSpec(
 }
 
 async function runDaemonStart(file: string, args: string[]): Promise<void> {
+  // This command only detaches the worker; bound cold ESM/npm loading so an
+  // SSE connection can proceed and retry later instead of hanging indefinitely.
   await execFileAsync(file, args, { timeout: 10_000 });
 }
 

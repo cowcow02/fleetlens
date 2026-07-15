@@ -94,15 +94,13 @@ async function quitApp(): Promise<void> {
 }
 
 /**
- * Register/unregister a login item via System Events. osascript may prompt
+ * Register a login item via System Events. osascript may prompt
  * for Automation permission the first time; we treat any failure as
  * non-fatal — the app is already installed and launchable, login-item is a
  * convenience on top.
  */
-async function setLoginItem(enabled: boolean, appPath: string): Promise<void> {
-  const script = enabled
-    ? `tell application "System Events" to make login item at end with properties {path:"${appPath}", hidden:false}`
-    : `tell application "System Events" to delete login item "${APP_BUNDLE.replace(".app", "")}"`;
+async function addLoginItem(appPath: string): Promise<void> {
+  const script = `tell application "System Events" to make login item at end with properties {path:"${appPath}", hidden:false}`;
   await execFileAsync("osascript", ["-e", script]).catch(() => {});
 }
 
@@ -149,7 +147,7 @@ async function installMenubar(opts: { open: boolean; login: boolean }): Promise<
   await removeLoginItem(APP_BUNDLE.replace(".app", ""));
   await removeLoginItem(LEGACY_APP_BUNDLE.replace(".app", ""));
   if (opts.login) {
-    await setLoginItem(true, dest);
+    await addLoginItem(dest);
     console.log("Login item enabled (launches at login).");
   }
 
@@ -166,7 +164,7 @@ async function uninstallMenubar(): Promise<void> {
     console.log(NON_MAC_MSG);
     return;
   }
-  await setLoginItem(false, installedAppPath());
+  await removeLoginItem(APP_BUNDLE.replace(".app", ""));
   await removeLoginItem(LEGACY_APP_BUNDLE.replace(".app", ""));
   if (await isRunning()) {
     console.log("Quitting the running widget…");

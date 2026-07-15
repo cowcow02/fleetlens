@@ -96,7 +96,7 @@ Terminal:
   runs [--watch] [--json] [--since 24h]      Live LLM call activity + token spend
 
 Advanced:
-  web [page] [--open]               Ensure the dashboard is running (opening it also recovers the daemon)
+  web [page] [--open]               Print dashboard URL; opening it also recovers a stopped daemon
   start --no-daemon                 Start only the web server (no daemon)
   daemon <start|stop|status|logs>   Manage the usage daemon by itself
   autostart <install|uninstall|status>   Run the usage daemon at login (macOS launchd)
