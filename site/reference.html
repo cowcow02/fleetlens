@@ -5,35 +5,43 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Fleetlens command, route, environment, state, and supported-source reference.">
   <title>Fleetlens reference</title>
+  <link rel="icon" href="assets/fleetlens-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="site-header">
     <nav class="nav" aria-label="Primary navigation">
-      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <a class="brand" href="index.html"><img class="brand-mark" src="assets/fleetlens-mark.svg" alt="">Fleetlens</a>
       <span class="brand-context">Documentation</span>
       <div class="nav-links">
         <a href="getting-started.html">Get started</a>
-        <a href="team-member.html">Team sync</a>
-        <a href="platform.html">Platform</a>
+        <a href="local-edition.html">Local Edition</a>
+        <a href="team-edition.html">Team Edition</a>
         <a aria-current="page" href="reference.html">Reference</a>
         <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
       </div>
     </nav>
   </header>
 
-  <main class="wrap docs-shell">
+  <main id="main-content" class="wrap docs-shell">
     <aside class="sidebar" aria-label="Documentation sections">
-      <p class="sidebar-label">Learn Fleetlens</p>
-      <a class="side-link" href="getting-started.html">Get started</a>
-      <a class="side-link" href="team-member.html">Sync as a member</a>
-      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
-      <p class="sidebar-label">Understand</p>
-      <a class="side-link" href="platform.html">Platform map</a>
+      <p class="sidebar-label">Get started</p>
+      <a class="side-link" href="getting-started.html">Beginner setup</a>
+      <p class="sidebar-label">Local Edition</p>
+      <a class="side-link" href="local-edition.html">Feature overview</a>
+      <a class="side-link" href="platform.html">How it works</a>
       <a class="side-link" href="privacy.html">Privacy model</a>
-      <p class="sidebar-label">Operate</p>
+      <p class="sidebar-label">Team Edition</p>
+      <a class="side-link" href="team-member.html">Join as a member</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Reference</p>
       <a class="side-link" href="operations.html">Operations</a>
-      <a class="side-link" aria-current="page" href="reference.html">CLI reference</a>
+      <a class="side-link" aria-current="page" href="reference.html">CLI and routes</a>
+      <a class="side-link side-link-detail" href="#cli-commands">CLI commands</a>
+      <a class="side-link side-link-detail" href="#dashboard-routes">Local routes</a>
+      <a class="side-link side-link-detail" href="#team-routes">Team routes</a>
+      <a class="side-link side-link-detail" href="#supported-sources">Supported sources</a>
     </aside>
 
     <article class="doc-content">
@@ -41,13 +49,15 @@
       <h1>Commands, routes, sources, and local state.</h1>
       <p class="intro">Use this page when you already know what you want to do. For a first setup, start with the <a href="getting-started.html">beginner walkthrough</a> instead.</p>
 
-      <h2>CLI commands</h2>
+      <h2 id="cli-commands">CLI commands</h2>
       <div class="table-wrap"><table><thead><tr><th>Command</th><th>Purpose</th></tr></thead><tbody>
         <tr><td><code>fleetlens start [--port N] [--open] [--no-daemon]</code></td><td>Start the local dashboard and, unless skipped, the usage daemon.</td></tr>
         <tr><td><code>fleetlens stop</code></td><td>Stop the local dashboard and daemon.</td></tr>
         <tr><td><code>fleetlens status</code></td><td>Show server, daemon, port, version, and latest snapshot state.</td></tr>
         <tr><td><code>fleetlens update</code></td><td>Install the latest published CLI and restart stale services.</td></tr>
         <tr><td><code>fleetlens web [page] [--open]</code></td><td>Open a dashboard page without managing the daemon.</td></tr>
+        <tr><td><code>fleetlens stats [--week|--4weeks|--since D --until D|--days N] [--json|--pretty]</code></td><td>Print period aggregates used by the local Insights pipeline.</td></tr>
+        <tr><td><code>fleetlens capsules [--days N|--since D|--until D] [--full] [--json|--pretty]</code></td><td>Export bounded local session capsules for a period.</td></tr>
         <tr><td><code>fleetlens usage [--save]</code></td><td>Print or save a current provider plan-utilization snapshot.</td></tr>
         <tr><td><code>fleetlens usage --history [-s D] [--days N]</code></td><td>Print historical usage and cost rows.</td></tr>
         <tr><td><code>fleetlens entries --day D|--session ID|--all</code></td><td>Inspect day-scoped local perception entries.</td></tr>
@@ -59,21 +69,38 @@
         <tr><td><code>fleetlens menubar install|uninstall|open|status</code></td><td>Manage the optional native macOS usage widget.</td></tr>
       </tbody></table></div>
 
-      <h2>Dashboard routes</h2>
+      <h2 id="dashboard-routes">Dashboard routes</h2>
       <div class="table-wrap"><table><thead><tr><th>Route</th><th>Use it for</th></tr></thead><tbody>
         <tr><td><code>/</code></td><td>Overview metrics, heatmap, daily activity, projects, and recent sessions.</td></tr>
-        <tr><td><code>/sessions</code></td><td>Search and inspect sessions.</td></tr>
+        <tr><td><code>/sessions</code></td><td>Search and inspect all normalized sessions.</td></tr>
+        <tr><td><code>/sessions/[id]</code></td><td>Open rich detail for one session: timeline, tools, tokens, gaps, workflows, and shipping signals.</td></tr>
         <tr><td><code>/projects</code></td><td>Canonical project rollups and worktree context.</td></tr>
-        <tr><td><code>/day</code></td><td>Daily timeline, activity, and concurrency.</td></tr>
-        <tr><td><code>/insights</code></td><td>Day, week, and month insights backed by local entries.</td></tr>
-        <tr><td><code>/agent</code></td><td>Ask questions over local history and create handoffs.</td></tr>
+        <tr><td><code>/projects/[slug]</code></td><td>Inspect one project's sessions, activity, and local folder context.</td></tr>
+        <tr><td><code>/day</code></td><td>Open daily activity, the timeline, idle gaps, and concurrency.</td></tr>
         <tr><td><code>/usage</code></td><td>Historical provider utilization.</td></tr>
+        <tr><td><code>/insights</code></td><td>Review a structured weekly retrospective when entries and AI features are available.</td></tr>
+        <tr><td><code>/digest</code></td><td>Browse local day, week, and month digest artifacts.</td></tr>
+        <tr><td><code>/agent</code></td><td>Ask questions over local history and create handoffs.</td></tr>
+        <tr><td><code>/runs</code></td><td>Watch live local LLM runs and their streamed events.</td></tr>
         <tr><td><code>/settings</code></td><td>Local service, menu bar, credentials, and AI settings.</td></tr>
         <tr><td><code>/team</code></td><td>Pairing, sync activity, project selection, and data boundary.</td></tr>
         <tr><td><code>/team/onboarding</code></td><td>Three-step member setup after a browser-based join.</td></tr>
+        <tr><td><code>/changelog</code></td><td>Review user-facing changes in the installed product.</td></tr>
       </tbody></table></div>
 
-      <h2>Supported local sources</h2>
+      <h2 id="team-routes">Team Edition surfaces</h2>
+      <div class="table-wrap"><table><thead><tr><th>Route</th><th>Use it for</th></tr></thead><tbody>
+        <tr><td><code>/team/[slug]</code></td><td>Admin roster, combined activity, selectable ranges, and live refresh.</td></tr>
+        <tr><td><code>/team/[slug]/members/[id]</code></td><td>Member activity, plan fit, daemon freshness, and daily rollups.</td></tr>
+        <tr><td><code>/team/[slug]/groups</code></td><td>Create and manage groups, memberships, and manager scope.</td></tr>
+        <tr><td><code>/team/[slug]/groups/[group]</code></td><td>Open a group-scoped activity view and its settings.</td></tr>
+        <tr><td><code>/team/[slug]/groups/[group]/insights</code></td><td>Review group-level insights and delivery context.</td></tr>
+        <tr><td><code>/team/[slug]/plan</code></td><td>Compare plan utilization, cycle pace, peaks, and capacity.</td></tr>
+        <tr><td><code>/team/[slug]/settings</code></td><td>Manage team settings and optional GitHub, Jira, and Linear integrations.</td></tr>
+        <tr><td><code>/report/[slug]</code></td><td>Open a shared report or its printable output.</td></tr>
+      </tbody></table></div>
+
+      <h2 id="supported-sources">Supported local sources</h2>
       <div class="table-wrap"><table><thead><tr><th>Source</th><th>Typical root</th><th>Notes</th></tr></thead><tbody>
         <tr><td>Claude Code</td><td><code>~/.claude/projects</code></td><td>Sessions, transcripts, usage, projects, and signals.</td></tr>
         <tr><td>Codex</td><td><code>~/.codex/sessions</code></td><td>Sessions, transcripts, projects, and available usage.</td></tr>
@@ -84,7 +111,7 @@
         <tr><td>Z.ai</td><td>Configured API key</td><td>Usage-only source; it is not a transcript adapter.</td></tr>
       </tbody></table></div>
 
-      <h2>Environment variables</h2>
+      <h2 id="environment-variables">Environment variables</h2>
       <div class="table-wrap"><table><thead><tr><th>Variable</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
         <tr><td><code>CCLENS_PORT</code></td><td><code>3321</code></td><td>Default local dashboard port.</td></tr>
         <tr><td><code>CCLENS_HOME</code></td><td><code>~/.cclens</code></td><td>Local Fleetlens state directory.</td></tr>
@@ -92,12 +119,13 @@
         <tr><td><code>NEXT_OUTPUT</code></td><td>unset</td><td>Set to <code>standalone</code> when building the bundled web app.</td></tr>
       </tbody></table></div>
 
-      <h2>Local state</h2>
+      <h2 id="local-state">Local state</h2>
       <pre><code>~/.cclens/
   pid
   daemon.pid
   usage.jsonl
   daemon.log
+  autostart.json
   entries/
   digests/
   agent-index/
@@ -108,6 +136,6 @@
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><span><a href="operations.html">Operations</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

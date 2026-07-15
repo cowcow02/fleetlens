@@ -62,6 +62,19 @@ input, textarea, select { font: inherit; color: inherit; }
   background: var(--paper);
   gap: 40px;
 }
+.masthead-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.masthead-mark {
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex: 0 0 auto;
+  background: url("/icon.svg") center / contain no-repeat;
+}
 .masthead-logo {
   font-family: "Instrument Serif", serif;
   font-size: 34px;

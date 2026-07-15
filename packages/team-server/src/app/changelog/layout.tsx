@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { getPool } from "../../db/pool";
 import { validateSession } from "../../lib/auth";
 import { NavFooter } from "../../components/nav-footer";
+import { FleetlensBrand } from "../../components/fleetlens-brand";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export default async function ChangelogLayout({ children }: { children: React.Re
   return (
     <>
       <header className="masthead">
-        <div className="masthead-logo">Fleet<em>lens</em></div>
+        <FleetlensBrand />
         <div className="masthead-meta">
           <span className="mono">CHANGELOG</span>
         </div>

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getPool } from "../../db/pool";
 import { validateSession } from "../../lib/auth";
 import { NavFooter } from "../../components/nav-footer";
+import { FleetlensBrand } from "../../components/fleetlens-brand";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <>
       <header className="masthead">
-        <div className="masthead-logo">Fleet<em>lens</em></div>
+        <FleetlensBrand />
         <div className="masthead-meta">
           <span className="mono">SERVER ADMIN</span>
         </div>

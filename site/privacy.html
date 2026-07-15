@@ -5,35 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Fleetlens privacy model: local transcript authority, Team Edition rollups, and member-controlled project scope.">
   <title>Fleetlens privacy model</title>
+  <link rel="icon" href="assets/fleetlens-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="site-header">
     <nav class="nav" aria-label="Primary navigation">
-      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <a class="brand" href="index.html"><img class="brand-mark" src="assets/fleetlens-mark.svg" alt="">Fleetlens</a>
       <span class="brand-context">Documentation</span>
       <div class="nav-links">
         <a href="getting-started.html">Get started</a>
-        <a href="team-member.html">Team sync</a>
-        <a href="platform.html">Platform</a>
+        <a aria-current="page" href="local-edition.html">Local Edition</a>
+        <a href="team-edition.html">Team Edition</a>
         <a href="reference.html">Reference</a>
         <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
       </div>
     </nav>
   </header>
 
-  <main class="wrap docs-shell">
+  <main id="main-content" class="wrap docs-shell">
     <aside class="sidebar" aria-label="Documentation sections">
-      <p class="sidebar-label">Learn Fleetlens</p>
-      <a class="side-link" href="getting-started.html">Get started</a>
-      <a class="side-link" href="team-member.html">Sync as a member</a>
-      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
-      <p class="sidebar-label">Understand</p>
-      <a class="side-link" href="platform.html">Platform map</a>
+      <p class="sidebar-label">Get started</p>
+      <a class="side-link" href="getting-started.html">Beginner setup</a>
+      <p class="sidebar-label">Local Edition</p>
+      <a class="side-link" href="local-edition.html">Feature overview</a>
+      <a class="side-link" href="platform.html">How it works</a>
       <a class="side-link" aria-current="page" href="privacy.html">Privacy model</a>
-      <p class="sidebar-label">Operate</p>
+      <a class="side-link side-link-detail" href="#data-boundary">Data boundary</a>
+      <a class="side-link side-link-detail" href="#member-controls">Member controls</a>
+      <a class="side-link side-link-detail" href="#server-responsibilities">Server responsibilities</a>
+      <p class="sidebar-label">Team Edition</p>
+      <a class="side-link" href="team-member.html">Join as a member</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Reference</p>
       <a class="side-link" href="operations.html">Operations</a>
-      <a class="side-link" href="reference.html">CLI reference</a>
+      <a class="side-link" href="reference.html">CLI and routes</a>
     </aside>
 
     <article class="doc-content">
@@ -41,15 +48,15 @@
       <h1>Local transcript authority, explicit team rollups.</h1>
       <p class="intro">Fleetlens is designed so the local machine remains the authority for raw agent history. Team Edition is an optional destination for derived data that the member has chosen to share.</p>
 
-      <h2>Two operating modes</h2>
+      <h2 id="operating-modes">Two operating modes</h2>
       <div class="grid-2">
         <article class="card"><span class="tag">Local Edition</span><h3>Private by default</h3><p>The CLI reads provider-local session files and stores its own usage, entries, digests, and logs under <code>~/.cclens</code>. No Fleetlens account or database is required.</p></article>
         <article class="card card-purple"><span class="tag">Team Edition</span><h3>Shared by explicit pairing</h3><p>A paired daemon sends selected rollups to a server. The member chooses the project scope during onboarding and can change it or leave the team later.</p></article>
       </div>
 
-      <h2>What can leave the machine?</h2>
+      <h2 id="data-boundary">What can leave the machine?</h2>
       <div class="table-wrap"><table><thead><tr><th>Data</th><th>Local behavior</th><th>Team behavior</th></tr></thead><tbody>
-        <tr><td>Raw transcripts</td><td>Read locally by adapters and local dashboard views.</td><td>Not uploaded by the Team sync contract.</td></tr>
+        <tr><td>Raw transcripts</td><td>Read locally by adapters and local dashboard views.</td><td>Not uploaded to Team Edition.</td></tr>
         <tr><td>Prompts and assistant responses</td><td>Remain in provider-local history.</td><td>Not uploaded.</td></tr>
         <tr><td>Absolute paths and file contents</td><td>May support local project and code-change signals.</td><td>Not uploaded.</td></tr>
         <tr><td>Daily rollups</td><td>Computed locally from session history.</td><td>Shared for projects in the member's selected scope.</td></tr>
@@ -58,7 +65,7 @@
         <tr><td>AI enrichment</td><td>Runs through the local AI feature pipeline when enabled.</td><td>Derived outcome/helpfulness fields may be included in selected rollups; raw model conversation is not the sync contract.</td></tr>
       </tbody></table></div>
 
-      <h2>Member controls</h2>
+      <h2 id="member-controls">Member controls</h2>
       <ul>
         <li>Choose projects during <code>/team/onboarding</code>.</li>
         <li>Review the current selection on the local Team page.</li>
@@ -69,13 +76,13 @@
 
       <div class="note note-amber"><strong>Privacy is also an operating practice</strong><p>Do not paste device tokens into public issues. Before sharing logs, remove bearer tokens, private project names, absolute paths, and any provider output that your team treats as confidential.</p></div>
 
-      <h2>Server responsibilities</h2>
+      <h2 id="server-responsibilities">Server responsibilities</h2>
       <p>Team admins are responsible for the deployment, Postgres backups, encryption key, access control, token revocation, and the team's project-sharing policy. Fleetlens gives the member a selection boundary; it does not decide which repositories your organization considers sensitive.</p>
 
       <div class="note note-purple"><strong>Need a concrete first sync?</strong><p>Follow <a href="team-member.html">Sync your first project</a>. The onboarding wizard shows the boundary before the first push begins.</p></div>
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><span><a href="team-member.html">Team sync</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

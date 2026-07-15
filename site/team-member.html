@@ -3,42 +3,49 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Pair a Fleetlens machine with Team Edition, choose projects, and complete the first sync.">
-  <title>Sync a machine to Fleetlens Team Edition</title>
+  <meta name="description" content="Join a Fleetlens machine to Team Edition, choose projects, and complete the first sync.">
+  <title>Join Fleetlens Team Edition</title>
+  <link rel="icon" href="assets/fleetlens-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="site-header">
     <nav class="nav" aria-label="Primary navigation">
-      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <a class="brand" href="index.html"><img class="brand-mark" src="assets/fleetlens-mark.svg" alt="">Fleetlens</a>
       <span class="brand-context">Documentation</span>
       <div class="nav-links">
         <a href="getting-started.html">Get started</a>
-        <a aria-current="page" href="team-member.html">Team sync</a>
-        <a href="platform.html">Platform</a>
+        <a href="local-edition.html">Local Edition</a>
+        <a aria-current="page" href="team-edition.html">Team Edition</a>
         <a href="reference.html">Reference</a>
         <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
       </div>
     </nav>
   </header>
 
-  <main class="wrap docs-shell">
+  <main id="main-content" class="wrap docs-shell">
     <aside class="sidebar" aria-label="Documentation sections">
-      <p class="sidebar-label">Learn Fleetlens</p>
-      <a class="side-link" href="getting-started.html">Get started</a>
-      <a class="side-link" aria-current="page" href="team-member.html">Sync as a member</a>
-      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
-      <p class="sidebar-label">Understand</p>
-      <a class="side-link" href="platform.html">Platform map</a>
+      <p class="sidebar-label">Get started</p>
+      <a class="side-link" href="getting-started.html">Beginner setup</a>
+      <p class="sidebar-label">Local Edition</p>
+      <a class="side-link" href="local-edition.html">Feature overview</a>
+      <a class="side-link" href="platform.html">How it works</a>
       <a class="side-link" href="privacy.html">Privacy model</a>
-      <p class="sidebar-label">Operate</p>
+      <p class="sidebar-label">Team Edition</p>
+      <a class="side-link" aria-current="page" href="team-member.html">Join as a member</a>
+      <a class="side-link side-link-detail" href="#pair-machine">Pair the machine</a>
+      <a class="side-link side-link-detail" href="#choose-projects">Choose projects</a>
+      <a class="side-link side-link-detail" href="#verify-sync">Verify the sync</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Reference</p>
       <a class="side-link" href="operations.html">Operations</a>
-      <a class="side-link" href="reference.html">CLI reference</a>
+      <a class="side-link" href="reference.html">CLI and routes</a>
     </aside>
 
     <article class="doc-content">
-      <div class="doc-meta"><span class="meta-chip purple">Team member</span><span class="meta-chip">10-15 minutes</span><span class="meta-chip">Admin token required</span></div>
-      <h1>Sync your first project to Team Edition.</h1>
+      <div class="doc-meta"><span class="meta-chip purple">Team Edition</span><span class="meta-chip">Member setup</span><span class="meta-chip">Admin token required</span></div>
+      <h1>Join Team Edition from your local machine.</h1>
       <p class="intro">This is the member path. Your admin has already deployed Team Edition and will send you a server URL plus a device token. You will pair one local machine, decide which projects are visible, and watch the first aggregate push.</p>
 
       <div class="lead-note">
@@ -46,7 +53,7 @@
         <p>Pairing does not upload raw transcripts. The onboarding screen shows the boundary before you choose projects, and nothing syncs until you select a scope and press <strong>Start syncing</strong>.</p>
       </div>
 
-      <h2>What your admin should send you</h2>
+      <h2 id="member-requirements">What your admin should send you</h2>
       <div class="check-grid">
         <div class="check-card"><h3>Server URL</h3><p>For example, <code>https://fleetlens.example.com</code>. It should use HTTPS in a real team deployment.</p></div>
         <div class="check-card"><h3>Device token</h3><p>A private token created by the admin from the Team Edition dashboard. Treat it like a password and do not post it in chat or an issue.</p></div>
@@ -54,12 +61,12 @@
         <div class="check-card"><h3>Local prerequisite</h3><p>Fleetlens must be installed. If not, finish the <a href="getting-started.html">beginner setup</a> first.</p></div>
       </div>
 
-      <h2>1. Start the local dashboard</h2>
+      <h2 id="start-local">1. Start the local dashboard</h2>
       <p>Open a terminal and start Fleetlens. This makes the local Team page and onboarding screen available:</p>
       <pre><code>fleetlens start --open</code></pre>
       <p>If it is already running, leave it running. The join command can also start the local services when needed, but starting them first makes the flow easier to see.</p>
 
-      <h2>2. Pair the machine</h2>
+      <h2 id="pair-machine">2. Pair the machine</h2>
       <p>Replace the two placeholders with the values from your admin:</p>
       <pre><code>fleetlens team join &lt;server-url&gt; &lt;device-token&gt;</code></pre>
       <p>For example, the shape is:</p>
@@ -68,14 +75,14 @@
 
       <div class="note note-amber"><strong>Do not paste your real token into a public terminal screenshot.</strong><p>The token is a credential for this member device. If it is exposed, ask your admin to revoke it and issue a new one.</p></div>
 
-      <h2>3. Read the “What happens” screen</h2>
+      <h2 id="review-boundary">3. Read the “What happens” screen</h2>
       <p>The first onboarding step lists the aggregate metrics that may be shared and the details that remain on this machine. Take a moment to confirm that the list matches your team policy, then choose <strong>Continue</strong>.</p>
       <ul>
         <li>Shared: agent time, sessions, tools, turns, token totals, project totals, daily working-shape counts, PRs, commits, pushes, usage percentages, and sync health.</li>
         <li>Local: transcripts, prompts, assistant responses, code, absolute paths, file contents, tool payloads, and excluded projects.</li>
       </ul>
 
-      <h2>4. Choose which projects sync</h2>
+      <h2 id="choose-projects">4. Choose which projects sync</h2>
       <p>Fleetlens lists projects discovered on this machine. Deselect repositories that should remain private. You can choose either:</p>
       <div class="choice-grid">
         <div class="choice-card"><strong>Include selected projects</strong><p>Only the repositories you explicitly choose will sync. New projects remain private until added.</p></div>
@@ -83,21 +90,21 @@
       </div>
       <p>Choose <strong>Continue</strong> when the summary shows the right count of projects.</p>
 
-      <h2>5. Start the first sync</h2>
+      <h2 id="first-sync">5. Start the first sync</h2>
       <p>The final screen shows the projects in scope and reminds you that the push runs every five minutes after setup. Choose <strong>Start syncing</strong> to begin the one-time history backfill.</p>
       <p>You will see progress such as usage history checks and individual local days being pushed. A computer with no previous agent history can finish successfully with zero activity days; the daemon will collect new sessions from then on.</p>
-      <div class="screenshot"><img src="assets/screenshots/team.png" alt="Fleetlens Team page before pairing with the team server"></div>
+      <div class="screenshot"><img src="assets/screenshots/team.png" alt="Fleetlens Team page before pairing with the team server" loading="lazy" decoding="async"></div>
       <p class="caption">The Team page is the local control surface. This image uses synthetic data and shows the safe unpaired state.</p>
 
-      <h2>6. Verify the result</h2>
+      <h2 id="verify-sync">6. Verify the result</h2>
       <p>After the browser says the sync is complete, check the local status:</p>
       <pre><code>fleetlens team status
 fleetlens team logs</code></pre>
       <p>Open the team dashboard link shown by onboarding or use the URL your admin gave you. Your selected project rollups should appear after the server processes the push. The local daemon checks for new activity about every five minutes.</p>
       <div class="note"><strong>Need to push immediately?</strong><p>Run <code>fleetlens team sync</code>. If the server is temporarily unavailable, Fleetlens keeps the local dashboard working and retries supported payloads later.</p></div>
 
-      <h2>Change the scope later</h2>
-      <p>Open the local <strong>Team sync</strong> page, edit the synced-project selection, and save it. Changing the selection causes Fleetlens to rebuild the next payload so a newly private project is not sent again.</p>
+      <h2 id="change-scope">Change the scope later</h2>
+      <p>Open the local <strong>Team</strong> page, edit the synced-project selection, and save it. Changing the selection causes Fleetlens to rebuild the next payload so a newly private project is not sent again.</p>
       <p>To disconnect this machine completely:</p>
       <pre><code>fleetlens team leave</code></pre>
 
@@ -105,6 +112,6 @@ fleetlens team logs</code></pre>
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><span><a href="team-edition.html">Admin deployment</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

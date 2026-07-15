@@ -3,45 +3,52 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Understand Fleetlens architecture, data flow, analytics semantics, and package responsibilities.">
-  <title>Fleetlens platform map</title>
+  <meta name="description" content="Understand how Fleetlens turns local agent history into explainable metrics, projects, daily activity, and optional team rollups.">
+  <title>How Fleetlens works</title>
+  <link rel="icon" href="assets/fleetlens-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="site-header">
     <nav class="nav" aria-label="Primary navigation">
-      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <a class="brand" href="index.html"><img class="brand-mark" src="assets/fleetlens-mark.svg" alt="">Fleetlens</a>
       <span class="brand-context">Documentation</span>
       <div class="nav-links">
         <a href="getting-started.html">Get started</a>
-        <a href="team-member.html">Team sync</a>
-        <a aria-current="page" href="platform.html">Platform</a>
+        <a aria-current="page" href="local-edition.html">Local Edition</a>
+        <a href="team-edition.html">Team Edition</a>
         <a href="reference.html">Reference</a>
         <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
       </div>
     </nav>
   </header>
 
-  <main class="wrap docs-shell">
+  <main id="main-content" class="wrap docs-shell">
     <aside class="sidebar" aria-label="Documentation sections">
-      <p class="sidebar-label">Learn Fleetlens</p>
-      <a class="side-link" href="getting-started.html">Get started</a>
-      <a class="side-link" href="team-member.html">Sync as a member</a>
-      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
-      <p class="sidebar-label">Understand</p>
-      <a class="side-link" aria-current="page" href="platform.html">Platform map</a>
+      <p class="sidebar-label">Get started</p>
+      <a class="side-link" href="getting-started.html">Beginner setup</a>
+      <p class="sidebar-label">Local Edition</p>
+      <a class="side-link" href="local-edition.html">Feature overview</a>
+      <a class="side-link" aria-current="page" href="platform.html">How it works</a>
+      <a class="side-link side-link-detail" href="#data-path">Data path</a>
+      <a class="side-link side-link-detail" href="#core-semantics">Core semantics</a>
+      <a class="side-link side-link-detail" href="#why-layers">Why the layers matter</a>
       <a class="side-link" href="privacy.html">Privacy model</a>
-      <p class="sidebar-label">Operate</p>
+      <p class="sidebar-label">Team Edition</p>
+      <a class="side-link" href="team-member.html">Join as a member</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Reference</p>
       <a class="side-link" href="operations.html">Operations</a>
-      <a class="side-link" href="reference.html">CLI reference</a>
+      <a class="side-link" href="reference.html">CLI and routes</a>
     </aside>
 
     <article class="doc-content">
-      <div class="doc-meta"><span class="meta-chip teal">Concepts</span><span class="meta-chip">Architecture</span><span class="meta-chip">For contributors and curious users</span></div>
-      <h1>How Fleetlens turns agent history into a useful operating picture.</h1>
-      <p class="intro">Fleetlens is a layered system. Provider adapters read local history, the parser normalizes it, analytics derive stable metrics, the web app presents those results, and Team Edition receives only selected aggregates.</p>
+      <div class="doc-meta"><span class="meta-chip teal">How it works</span><span class="meta-chip">Local Edition</span><span class="meta-chip">Explainable analytics</span></div>
+      <h1>How Fleetlens turns agent history into useful signals.</h1>
+      <p class="intro">The Local Edition runs on your machine. Provider adapters read local history, the parser normalizes it, analytics derive stable metrics, and the dashboard presents the result. This page explains the rules behind the views; the <a href="local-edition.html">Local Edition feature guide</a> explains what to use each view for.</p>
 
-      <h2>The data path</h2>
+      <h2 id="data-path">The data path</h2>
       <div class="diagram">
         <div class="diagram-column">
           <div class="diagram-node"><strong>Claude Code</strong><span><code>~/.claude/projects</code></span></div>
@@ -56,7 +63,7 @@
         </div>
       </div>
 
-      <h2>Repository responsibilities</h2>
+      <h2 id="repository-responsibilities">Repository responsibilities</h2>
       <div class="table-wrap"><table><thead><tr><th>Package or area</th><th>Responsibility</th><th>Boundary</th></tr></thead><tbody>
         <tr><td><code>packages/parser</code></td><td>Agent adapters, transcript parsing, session types, analytics, filesystem readers.</td><td>Pure parser code avoids network; Node filesystem access is isolated in its fs entry point.</td></tr>
         <tr><td><code>packages/entries</code></td><td>Day-scoped work units, enrichment, digest inputs, queues, and perception.</td><td>Consumes normalized session data; raw transcripts do not flow to Team Edition.</td></tr>
@@ -65,7 +72,7 @@
         <tr><td><code>packages/team-server</code></td><td>Self-hosted Next.js server, Postgres model, authentication, ingestion, and team views.</td><td>Stores derived rollups and server-side team data, not raw member transcripts.</td></tr>
       </tbody></table></div>
 
-      <h2>Core semantics</h2>
+      <h2 id="core-semantics">Core semantics</h2>
       <div class="choice-grid">
         <div class="choice-card"><h3>Agent time</h3><p>A session is split into active segments wherever the gap between timestamped events exceeds three minutes. The metric sums those segments, so user-away gaps do not become work time.</p></div>
         <div class="choice-card"><h3>Canonical project</h3><p>A project is identified by its current working directory with <code>/.worktrees/&lt;name&gt;</code> removed. Worktree sessions roll into the parent project while retaining context.</p></div>
@@ -73,18 +80,18 @@
         <div class="choice-card"><h3>Concurrency</h3><p>Overlaps shorter than one minute are dropped, and overlaps within ten minutes are merged into bursts. Same-project bursts are teal; cross-project bursts are purple.</p></div>
       </div>
 
-      <h2>Why the layers matter</h2>
+      <h2 id="why-layers">Why the layers matter</h2>
       <ol>
         <li><strong>Adapters keep differences at the edge.</strong> Each provider can write a different JSONL shape, but the rest of the product works with common session and event types.</li>
         <li><strong>Analytics make the headline numbers explainable.</strong> Agent time, projects, daily activity, and concurrency are calculated from explicit rules rather than UI guesses.</li>
         <li><strong>Entries make deeper views bounded.</strong> Local digests and enrichment consume compact day-scoped representations instead of handing an unbounded transcript to every feature.</li>
-        <li><strong>Team sync is an outbound contract.</strong> The member chooses the project scope, and the server receives rollups rather than raw event streams.</li>
+        <li><strong>Team Edition sync is an outbound contract.</strong> The member chooses the project scope, and the server receives rollups rather than raw event streams.</li>
       </ol>
 
       <div class="note note-purple"><strong>Read next</strong><p>Use the <a href="privacy.html">privacy model</a> to inspect the local/team boundary, or use the <a href="reference.html">reference</a> for supported sources, routes, state files, and commands.</p></div>
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><span><a href="privacy.html">Privacy</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

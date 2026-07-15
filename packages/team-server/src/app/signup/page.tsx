@@ -2,6 +2,7 @@ import { getPool } from "../../db/pool";
 import { instanceState } from "../../lib/server-config";
 import { lookupInvite } from "../../lib/members";
 import { SignupForm } from "../../components/signup-form";
+import { FleetlensBrand } from "../../components/fleetlens-brand";
 
 export default async function SignupPage({
   searchParams,
@@ -28,7 +29,7 @@ export default async function SignupPage({
   return (
     <>
       <header className="masthead">
-        <div className="masthead-logo">Fleet<em>lens</em></div>
+        <FleetlensBrand />
         <div className="masthead-meta">
           {isFirstUser ? (
             <>

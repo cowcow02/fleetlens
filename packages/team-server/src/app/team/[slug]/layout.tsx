@@ -5,6 +5,7 @@ import { validateSession } from "../../../lib/auth";
 import { instanceState } from "../../../lib/server-config";
 import { listGroupsManagedBy } from "../../../lib/groups";
 import { NavFooter } from "../../../components/nav-footer";
+import { FleetlensBrand } from "../../../components/fleetlens-brand";
 
 export default async function TeamLayout({
   children,
@@ -43,7 +44,7 @@ export default async function TeamLayout({
   return (
     <>
       <header className="masthead">
-        <div className="masthead-logo">Fleet<em>lens</em></div>
+        <FleetlensBrand />
         <div className="masthead-meta">
           <span className="mono">VOL. I</span>
           <span className="dot">·</span>

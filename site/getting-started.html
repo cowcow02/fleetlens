@@ -5,35 +5,42 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="A beginner-friendly Fleetlens setup walkthrough from the first terminal command to the first local session.">
   <title>Get started with Fleetlens</title>
+  <link rel="icon" href="assets/fleetlens-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="site-header">
     <nav class="nav" aria-label="Primary navigation">
-      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <a class="brand" href="index.html"><img class="brand-mark" src="assets/fleetlens-mark.svg" alt="">Fleetlens</a>
       <span class="brand-context">Documentation</span>
       <div class="nav-links">
         <a aria-current="page" href="getting-started.html">Get started</a>
-        <a href="team-member.html">Team sync</a>
-        <a href="platform.html">Platform</a>
+        <a href="local-edition.html">Local Edition</a>
+        <a href="team-edition.html">Team Edition</a>
         <a href="reference.html">Reference</a>
         <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
       </div>
     </nav>
   </header>
 
-  <main class="wrap docs-shell">
+  <main id="main-content" class="wrap docs-shell">
     <aside class="sidebar" aria-label="Documentation sections">
-      <p class="sidebar-label">Learn Fleetlens</p>
-      <a class="side-link" aria-current="page" href="getting-started.html">Get started</a>
-      <a class="side-link" href="team-member.html">Sync as a member</a>
-      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
-      <p class="sidebar-label">Understand</p>
-      <a class="side-link" href="platform.html">Platform map</a>
+      <p class="sidebar-label">Get started</p>
+      <a class="side-link" aria-current="page" href="getting-started.html">Beginner setup</a>
+      <a class="side-link side-link-detail" href="#install-fleetlens">Install Fleetlens</a>
+      <a class="side-link side-link-detail" href="#start-dashboard">Start the dashboard</a>
+      <a class="side-link side-link-detail" href="#verify-setup">Verify setup</a>
+      <p class="sidebar-label">Local Edition</p>
+      <a class="side-link" href="local-edition.html">Feature overview</a>
+      <a class="side-link" href="platform.html">How it works</a>
       <a class="side-link" href="privacy.html">Privacy model</a>
-      <p class="sidebar-label">Operate</p>
+      <p class="sidebar-label">Team Edition</p>
+      <a class="side-link" href="team-member.html">Join as a member</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Reference</p>
       <a class="side-link" href="operations.html">Operations</a>
-      <a class="side-link" href="reference.html">CLI reference</a>
+      <a class="side-link" href="reference.html">CLI and routes</a>
     </aside>
 
     <article class="doc-content">
@@ -46,13 +53,13 @@
         <p>Fleetlens is a dashboard that reads the history your coding agent already writes. It is not the coding agent itself. To see data, you need at least one supported agent installed and authenticated on this computer.</p>
       </div>
 
-      <h2>Before you begin</h2>
+      <h2 id="before-you-begin">Before you begin</h2>
       <div class="check-grid">
         <div class="check-card"><h3>You need</h3><p>A Mac, Windows PC, or Linux computer; an internet connection for installation; and permission to install software.</p></div>
         <div class="check-card"><h3>Your agent needs</h3><p>One supported local agent with session history. Claude Code, Codex, Gemini CLI, Antigravity, Cowork, and Grok Build are supported sources.</p></div>
       </div>
 
-      <h2>1. Open a terminal</h2>
+      <h2 id="open-terminal">1. Open a terminal</h2>
       <p>A terminal is a text window where you give your computer instructions by typing commands. You will copy a command from this page, paste it into the terminal, and press Enter.</p>
       <div class="os-grid">
         <div class="os-card"><h3>macOS</h3><p>Press <strong>Command + Space</strong>, type <strong>Terminal</strong>, and press Enter.</p></div>
@@ -63,48 +70,48 @@
 
       <div class="note note-amber"><strong>Small terminal rules</strong><p>Commands are case-sensitive. Paste one block at a time. When a command asks for your computer password, type it and press Enter; the characters may stay invisible while you type. That is normal.</p></div>
 
-      <h2>2. Check for Node.js and npm</h2>
+      <h2 id="check-node">2. Check for Node.js and npm</h2>
       <p>Fleetlens is distributed through npm, the package manager that comes with Node.js. In your terminal, paste this block:</p>
       <pre><code>node --version
 npm --version</code></pre>
       <p>You should see two version numbers. Fleetlens requires Node.js 20 or newer.</p>
       <div class="note"><strong>If the terminal says “command not found”</strong><p>Install the current Node.js LTS release from <a href="https://nodejs.org/en/download">nodejs.org</a>. Choose the installer for your operating system, accept the defaults, close this terminal, open a new terminal, and run the two version commands again.</p></div>
 
-      <h2>3. Install Fleetlens</h2>
+      <h2 id="install-fleetlens">3. Install Fleetlens</h2>
       <p>Now install the published Fleetlens command globally so it is available from any folder:</p>
       <pre><code>npm install --global fleetlens
 fleetlens version</code></pre>
       <p>The second command should print the installed Fleetlens version. If npm shows a progress bar, wait for it to finish before typing the next command.</p>
       <div class="note note-amber"><strong>If npm reports a permission error</strong><p>Do not paste random fixes from the internet. The safest beginner path is to reinstall Node.js using the official installer or a Node version manager, then repeat the install. If this is a managed work computer, ask your administrator to install Fleetlens for you.</p></div>
 
-      <h2>4. Start the local dashboard</h2>
+      <h2 id="start-dashboard">4. Start the local dashboard</h2>
       <p>Start Fleetlens and ask it to open your browser:</p>
       <pre><code>fleetlens start --open</code></pre>
       <p>The command starts two local services: the dashboard and a background usage daemon. Keep this terminal window open while you are learning; you can stop the services later with <code>fleetlens stop</code>.</p>
       <p>If the browser does not open, type <a href="http://localhost:3321"><code>http://localhost:3321</code></a> into the address bar. The dashboard is local to this computer; it is not a public website.</p>
 
-      <h2>5. Give Fleetlens one session to read</h2>
+      <h2 id="first-session">5. Give Fleetlens one session to read</h2>
       <p>Open your normal coding-agent application or terminal workflow and run a small, non-sensitive task in a project. For example, ask the agent to explain a README or list the files in a test project. You do not need to import anything into Fleetlens.</p>
       <p>After the agent finishes, return to Fleetlens. The Overview page reads the local transcript files and should show a session, a project, and some activity. A brand-new machine may show zero sessions until the agent has completed its first turn.</p>
-      <div class="screenshot"><img src="assets/screenshots/overview.png" alt="Fleetlens Overview page with synthetic session metrics"></div>
+      <div class="screenshot"><img src="assets/screenshots/overview.png" alt="Fleetlens Overview page with synthetic session metrics" loading="lazy" decoding="async"></div>
       <p class="caption">The first checkpoint is the Overview page. The data in this image is synthetic and exists only to illustrate the shape of the dashboard.</p>
 
-      <h2>6. Confirm that everything is healthy</h2>
+      <h2 id="verify-setup">6. Confirm that everything is healthy</h2>
       <p>Return to the terminal and run:</p>
       <pre><code>fleetlens status
 fleetlens daemon status</code></pre>
       <p>You should see a running web server and daemon. The dashboard can analyze transcripts even if usage data is not available yet; plan meters depend on the provider's own local authentication.</p>
 
-      <h2>What to do next</h2>
+      <h2 id="next-steps">What to do next</h2>
       <div class="choice-grid">
-        <div class="choice-card"><strong>I am working alone</strong><p>Explore <a href="platform.html">how the platform works</a>, then keep the local dashboard running when you want a fleet view.</p></div>
-        <div class="choice-card"><strong>My admin sent a server URL and token</strong><p>Continue to <a href="team-member.html">Sync your first project</a>. Nothing is shared until you choose projects and press Start syncing.</p></div>
+        <div class="choice-card"><strong>I want the Local Edition</strong><p>Explore the <a href="local-edition.html">Local Edition features</a>, then keep the dashboard running when you want a private fleet view.</p></div>
+        <div class="choice-card"><strong>I am joining Team Edition</strong><p>Continue to <a href="team-member.html">Join Team Edition</a>. Nothing is shared until you choose projects and press Start syncing.</p></div>
       </div>
 
       <div class="note note-purple"><strong>Stop or restart later</strong><p>Use <code>fleetlens stop</code> to stop both local services. Run <code>fleetlens start</code> again whenever you want to reopen the dashboard. Your agent history is not deleted.</p></div>
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><span><a href="team-member.html">Next: Team sync</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

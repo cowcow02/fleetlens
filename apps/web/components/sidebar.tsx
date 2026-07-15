@@ -11,7 +11,6 @@ import {
   Pin,
   PinOff,
   Search,
-  Activity,
   Lightbulb,
   Settings,
   CalendarDays,
@@ -122,20 +121,15 @@ export function Sidebar({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
+          <span
+            aria-hidden="true"
             style={{
               width: 28,
               height: 28,
-              borderRadius: 7,
-              background: "var(--af-accent-subtle)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "var(--af-accent)",
+              flex: "0 0 auto",
+              background: 'url("/icon.svg") center / contain no-repeat',
             }}
-          >
-            <Activity size={16} strokeWidth={2.25} />
-          </div>
+          />
           <div style={{ minWidth: 0, flex: 1 }}>
             <div
               style={{

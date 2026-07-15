@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore the Fleetlens Local Edition dashboard, analytics, usage history, insights, and local controls.">
+  <title>Fleetlens Local Edition features</title>
+  <link rel="icon" href="assets/fleetlens-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary navigation">
+      <a class="brand" href="index.html"><img class="brand-mark" src="assets/fleetlens-mark.svg" alt="">Fleetlens</a>
+      <span class="brand-context">Documentation</span>
+      <div class="nav-links">
+        <a href="getting-started.html">Get started</a>
+        <a aria-current="page" href="local-edition.html">Local Edition</a>
+        <a href="team-edition.html">Team Edition</a>
+        <a href="reference.html">Reference</a>
+        <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main-content" class="wrap docs-shell">
+    <aside class="sidebar" aria-label="Documentation sections">
+      <p class="sidebar-label">Get started</p>
+      <a class="side-link" href="getting-started.html">Beginner setup</a>
+      <p class="sidebar-label">Local Edition</p>
+      <a class="side-link" aria-current="page" href="local-edition.html">Feature overview</a>
+      <a class="side-link side-link-detail" href="#surfaces">Feature map</a>
+      <a class="side-link side-link-detail" href="#product-walkthrough">Product walkthrough</a>
+      <a class="side-link side-link-detail" href="#workflow">Suggested workflow</a>
+      <a class="side-link" href="platform.html">How it works</a>
+      <a class="side-link" href="privacy.html">Privacy model</a>
+      <p class="sidebar-label">Team Edition</p>
+      <a class="side-link" href="team-member.html">Join as a member</a>
+      <a class="side-link" href="team-edition.html">Deploy as an admin</a>
+      <p class="sidebar-label">Reference</p>
+      <a class="side-link" href="operations.html">Operations</a>
+      <a class="side-link" href="reference.html">CLI and routes</a>
+    </aside>
+
+    <article class="doc-content">
+      <div class="doc-meta"><span class="meta-chip teal">Local Edition</span><span class="meta-chip">Feature guide</span><span class="meta-chip">Local-first</span></div>
+      <h1>Everything you can see, measure, and ask locally.</h1>
+      <p class="intro">The Local Edition is a complete private dashboard for the agent work already recorded on your machine. It works without an account or database, and Team Edition is an optional sharing boundary when you are ready to compare selected rollups with a team.</p>
+
+      <div class="lead-note">
+        <strong>The local loop</strong>
+        <p>Fleetlens reads provider history, turns different transcript formats into one model, derives explainable signals, and gives you several ways to explore them. Detailed session data stays on this machine.</p>
+      </div>
+
+      <h2 id="surfaces">Find the right surface</h2>
+      <div class="grid-2">
+        <article class="card">
+          <span class="tag">Overview</span>
+          <h3>See the shape of your work</h3>
+          <p><code>/</code> brings together sessions, agent time, tools, turns, tokens, estimated cost, projects, recent activity, and the heatmap.</p>
+          <p><strong>How it works:</strong> parser analytics calculate the headline numbers locally, while the dashboard refreshes when local history changes.</p>
+        </article>
+        <article class="card card-purple">
+          <span class="tag">Sessions</span>
+          <h3>Find a particular run</h3>
+          <p><code>/sessions</code> lets you search and inspect normalized sessions across supported agent sources.</p>
+          <p><strong>How it works:</strong> provider adapters turn different transcript files into common session metadata with timestamps, models, projects, and outcomes.</p>
+        </article>
+        <article class="card">
+          <span class="tag">Session detail</span>
+          <h3>Understand the exact work</h3>
+          <p><code>/sessions/[id]</code> shows the timeline, turns, tool calls, tokens, idle gaps, plans, subagents, workflows, and shipping signals for one session.</p>
+          <p><strong>How it works:</strong> the detail view reads the timestamped event stream locally and uses active segments to separate work from time away.</p>
+        </article>
+        <article class="card card-purple">
+          <span class="tag">Projects</span>
+          <h3>See work by repository</h3>
+          <p><code>/projects</code> and <code>/projects/[slug]</code> roll sessions up by project and retain worktree context.</p>
+          <p><strong>How it works:</strong> Fleetlens removes the <code>/.worktrees/&lt;name&gt;</code> suffix from a working directory so worktree sessions belong to their canonical project.</p>
+        </article>
+        <article class="card">
+          <span class="tag">Day + concurrency</span>
+          <h3>See when work overlapped</h3>
+          <p><code>/day</code> opens the daily timeline, activity bands, idle gaps, and concurrency bursts across projects.</p>
+          <p><strong>How it works:</strong> segments are clipped into every local day they touch; overlaps under one minute are dropped and nearby overlaps within ten minutes are merged.</p>
+        </article>
+        <article class="card card-purple">
+          <span class="tag">Usage history</span>
+          <h3>Track provider capacity</h3>
+          <p><code>/usage</code> shows plan utilization by agent, current cycles, previous cycles, and longer-term trends when snapshots exist.</p>
+          <p><strong>How it works:</strong> the local daemon polls available provider usage and appends snapshots to <code>~/.cclens/usage.jsonl</code> about every five minutes.</p>
+        </article>
+        <article class="card">
+          <span class="tag">Insights + digests</span>
+          <h3>Turn history into a review</h3>
+          <p><code>/insights</code> provides weekly retrospectives; <code>/digest</code> organizes day, week, and month review pages from local entries.</p>
+          <p><strong>How it works:</strong> compact capsules and period bundles bound the data sent to the optional local AI process; raw transcripts do not leave the local pipeline.</p>
+        </article>
+        <article class="card card-purple">
+          <span class="tag">Agent + runs</span>
+          <h3>Ask about your own history</h3>
+          <p><code>/agent</code> searches local history and helps create handoffs; <code>/runs</code> shows live local LLM execution traces.</p>
+          <p><strong>How it works:</strong> the local index and run event stream power these views, so questions and execution details remain part of the local workflow.</p>
+        </article>
+        <article class="card">
+          <span class="tag">Settings + menu bar</span>
+          <h3>Keep the local service useful</h3>
+          <p><code>/settings</code> controls daemon auto-start, the macOS menu bar widget, provider credentials, and optional AI features.</p>
+          <p><strong>How it works:</strong> local settings and <code>~/.cclens</code> state control the daemon; the native widget reads the local usage log.</p>
+        </article>
+      </div>
+
+      <h2 id="product-walkthrough">See the Local Edition workflow</h2>
+      <p>These sanitized fixture screens show the normal path from fleet-level signal to one exact session.</p>
+      <div class="screenshot-grid">
+        <figure class="screenshot-card"><img src="assets/screenshots/overview.png" alt="Fleetlens Overview with aggregate metrics, contribution heatmap, and daily activity" loading="lazy" decoding="async"><figcaption><strong>Overview</strong> &mdash; start with fleet-level activity, project signal, agent time, and recent sessions.</figcaption></figure>
+        <figure class="screenshot-card"><img src="assets/screenshots/sessions.png" alt="Fleetlens All sessions page with searchable session cards" loading="lazy" decoding="async"><figcaption><strong>All sessions</strong> &mdash; search and narrow the local history to the run you need.</figcaption></figure>
+        <figure class="screenshot-card"><img src="assets/screenshots/rich-session.png" alt="Fleetlens rich session detail with timeline, turns, tool activity, and idle bands" loading="lazy" decoding="async"><figcaption><strong>Session detail</strong> &mdash; inspect turns, tools, timing, idle gaps, and shipping context.</figcaption></figure>
+      </div>
+      <p class="caption">All screenshots use sanitized fixture data; no private transcript content is included.</p>
+
+      <h2 id="workflow">A simple path through the app</h2>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-number">01</span><h3>Open Overview</h3><p>Start with the overall shape of sessions and agent time.</p></div>
+        <div class="flow-step"><span class="flow-number">02</span><h3>Choose a slice</h3><p>Move into a project, day, provider, or usage cycle.</p></div>
+        <div class="flow-step"><span class="flow-number">03</span><h3>Drill into detail</h3><p>Open the exact session, tools, turns, and idle gaps.</p></div>
+        <div class="flow-step"><span class="flow-number">04</span><h3>Make sense of it</h3><p>Use Insights, Digests, or the local Agent to review patterns.</p></div>
+        <div class="flow-step"><span class="flow-number">05</span><h3>Share by choice</h3><p>Pair with Team Edition only when selected rollups are useful.</p></div>
+      </div>
+
+      <h2 id="privacy-choice">Local by default, share by choice</h2>
+      <div class="choice-grid">
+        <div class="choice-card"><h3>Keep it private</h3><p>Read the <a href="privacy.html">privacy model</a> to see which raw files, derived views, and settings stay on the machine.</p></div>
+        <div class="choice-card"><h3>Understand the rules</h3><p>Use the <a href="platform.html">How it works</a> page for the data path and the definitions behind agent time, projects, days, and concurrency.</p></div>
+        <div class="choice-card"><h3>Connect a team later</h3><p>When sharing is useful, follow <a href="team-member.html">member onboarding</a> or send an admin to <a href="team-edition.html">Team Edition deployment</a>.</p></div>
+        <div class="choice-card"><h3>Keep it healthy</h3><p>Use the <a href="operations.html">operations guide</a> for lifecycle commands, logs, updates, and troubleshooting.</p></div>
+      </div>
+
+      <div class="note note-purple"><strong>New to Fleetlens?</strong><p>Start with the <a href="getting-started.html">beginner walkthrough</a>. It takes you from opening a terminal to seeing the first local session.</p></div>
+    </article>
+  </main>
+
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
+</body>
+</html>

@@ -5,48 +5,45 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Fleetlens documentation for local agent observability, Team Edition, privacy, and operations.">
   <title>Fleetlens Documentation</title>
+  <link rel="icon" href="assets/fleetlens-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="site-header">
     <nav class="nav" aria-label="Primary navigation">
-      <a class="brand" href="index.html"><span class="brand-mark">~</span>Fleetlens</a>
+      <a class="brand" href="index.html"><img class="brand-mark" src="assets/fleetlens-mark.svg" alt="">Fleetlens</a>
       <span class="brand-context">Documentation</span>
       <div class="nav-links">
         <a href="getting-started.html">Get started</a>
-        <a href="team-member.html">Team sync</a>
-        <a href="platform.html">Platform</a>
+        <a href="local-edition.html">Local Edition</a>
+        <a href="team-edition.html">Team Edition</a>
         <a href="reference.html">Reference</a>
         <a class="nav-github" href="https://github.com/cowcow02/fleetlens">GitHub <span aria-hidden="true">&#8599;</span></a>
       </div>
     </nav>
   </header>
 
-  <main>
+  <main id="main-content">
     <section class="wrap hero">
       <div>
         <p class="eyebrow">Fleetlens documentation</p>
-        <h1>A calm path from first terminal command to team signal.</h1>
-        <p class="lede">Fleetlens helps you understand how coding agents are working. These docs explain the product in layers: start with the beginner path, learn the data model, then operate or deploy the parts you need.</p>
+        <h1>From first command to team signal.</h1>
+        <p class="lede">Start with the Local Edition, then connect to Team Edition when you are ready.</p>
         <div class="hero-actions">
-          <a class="button button-primary" href="getting-started.html">Start here if you are new</a>
-          <a class="button button-secondary" href="team-member.html">Sync to a team</a>
+          <a class="button button-primary" href="getting-started.html">Start with Local Edition</a>
+          <a class="button button-secondary" href="team-member.html">Join Team Edition</a>
         </div>
-        <p class="small-print" style="margin-top:18px">Fleetlens 0.16.5 &middot; local-first &middot; open source</p>
+        <p class="small-print" style="margin-top:18px">Local-first &middot; open source</p>
       </div>
       <figure class="hero-figure">
         <div class="hero-shot">
-          <video class="hero-video" autoplay muted loop playsinline preload="metadata" poster="assets/screenshots/rich-session.png" aria-label="Fleetlens product tour showing the overview dashboard, searchable sessions, rich session detail, and team sync">
-            <source src="assets/fleetlens-hero.mp4" type="video/mp4">
-            <img src="assets/screenshots/rich-session.png" alt="Fleetlens session detail showing multiple turns, tool calls, token totals, idle gaps, and a pull request signal">
+          <video class="hero-video" autoplay muted loop playsinline preload="metadata" poster="assets/fleetlens-hero-remotion-simple-poster.png" aria-label="Fleetlens product tour showing the overview dashboard, all sessions, session detail, and usage history">
+            <source src="assets/fleetlens-hero-remotion-simple-preview.mp4" type="video/mp4">
+            <img src="assets/fleetlens-hero-remotion-simple-poster.png" alt="Fleetlens product tour opening card with the overview dashboard preview">
           </video>
-          <img class="hero-poster" src="assets/screenshots/rich-session.png" alt="Fleetlens session detail showing multiple turns, tool calls, token totals, idle gaps, and a pull request signal">
+          <img class="hero-poster" src="assets/fleetlens-hero-remotion-simple-poster.png" alt="Fleetlens product tour opening card with the overview dashboard preview">
         </div>
-        <figcaption>
-          <strong>A product tour in four views.</strong>
-          <span>Overview, searchable sessions, rich session detail, and team sync — in one Fleetlens flow.</span>
-          <small>Animated from real Fleetlens screens captured from sanitized fixture data.</small>
-        </figcaption>
       </figure>
     </section>
 
@@ -54,7 +51,7 @@
       <div class="wrap">
         <div class="section-head">
           <p class="eyebrow">Recommended learning path</p>
-          <h2>Four short stops, one useful outcome.</h2>
+          <h2 id="learning-path">Four short stops, one useful outcome.</h2>
           <p>Each page tells you who it is for, what you need, what success looks like, and where to go next.</p>
         </div>
         <div class="grid-2">
@@ -65,8 +62,8 @@
             <a class="card-arrow" href="getting-started.html">Begin the walkthrough &rarr;</a>
           </article>
           <article class="card home-card card-purple">
-            <span class="tag">02 &middot; Team member</span>
-            <h3><a href="team-member.html">Sync your first project</a></h3>
+            <span class="tag">02 &middot; Team Edition</span>
+            <h3><a href="team-member.html">Join Team Edition</a></h3>
             <p>Use the server URL and device token from your admin, choose what stays private, and confirm the first aggregate reaches Team Edition.</p>
             <a class="card-arrow" href="team-member.html">Pair a machine &rarr;</a>
           </article>
@@ -77,10 +74,10 @@
             <a class="card-arrow" href="team-edition.html">Open the admin guide &rarr;</a>
           </article>
           <article class="card home-card card-purple">
-            <span class="tag">04 &middot; Understand</span>
-            <h3><a href="platform.html">Learn how Fleetlens works</a></h3>
-            <p>Follow the data from agent files through the parser, analytics, dashboard, local state, and optional team rollups.</p>
-            <a class="card-arrow" href="platform.html">Read the platform map &rarr;</a>
+            <span class="tag">04 &middot; Local Edition</span>
+            <h3><a href="local-edition.html">Explore Local Edition features</a></h3>
+            <p>See what the dashboard can show, how each surface works, and where to go when you want more detail.</p>
+            <a class="card-arrow" href="local-edition.html">Explore local features &rarr;</a>
           </article>
         </div>
       </div>
@@ -90,7 +87,7 @@
       <div class="wrap">
         <div class="section-head">
           <p class="eyebrow">One mental model</p>
-          <h2>Raw history stays local. Useful signals travel only when you choose.</h2>
+          <h2 id="privacy-boundary">Raw history stays local. Useful signals travel only when you choose.</h2>
           <p>Fleetlens reads the session history your agents already write, turns it into a common model, and keeps the boundary between local detail and shared rollups explicit.</p>
         </div>
         <div class="flow">
@@ -98,20 +95,20 @@
           <div class="flow-step"><span class="flow-number">02</span><h3>Normalize</h3><p>Adapters produce one common session shape across agents.</p></div>
           <div class="flow-step"><span class="flow-number">03</span><h3>Analyze</h3><p>Agent time, projects, daily activity, cost, and concurrency are derived locally.</p></div>
           <div class="flow-step"><span class="flow-number">04</span><h3>Explore</h3><p>The local dashboard, entries, insights, and usage pages consume those results.</p></div>
-          <div class="flow-step"><span class="flow-number">05</span><h3>Share</h3><p>Selected project rollups can move to Team Edition after pairing.</p></div>
+          <div class="flow-step"><span class="flow-number">05</span><h3>Team rollups</h3><p>Selected project rollups can move to Team Edition after pairing.</p></div>
         </div>
       </div>
     </section>
 
     <section class="section section-muted">
       <div class="wrap grid-3">
-        <article class="card"><span class="tag">Concepts</span><h3><a href="platform.html">Platform map</a></h3><p>Architecture, package responsibilities, core semantics, and the data path.</p></article>
+        <article class="card"><span class="tag">Local Edition</span><h3><a href="local-edition.html">Local Edition features</a></h3><p>Find the right dashboard surface and see the simple mechanism behind each view.</p></article>
         <article class="card"><span class="tag">Trust</span><h3><a href="privacy.html">Privacy model</a></h3><p>What is read, what is stored, what can be shared, and what never leaves a machine.</p></article>
         <article class="card"><span class="tag">Operate</span><h3><a href="operations.html">Operations guide</a></h3><p>Daemon lifecycle, state files, updates, source builds, and symptom-first troubleshooting.</p></article>
       </div>
     </section>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><span><a href="reference.html">Reference</a> &middot; <a href="https://github.com/cowcow02/fleetlens">GitHub repository</a></span></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>
