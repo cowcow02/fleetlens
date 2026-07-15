@@ -21,6 +21,7 @@ final class ZaiRenderTests: XCTestCase {
     {"captured_at":"2026-07-10T02:00:00.000Z","agent":"zai","five_hour":{"utilization":10,"resets_at":"2026-07-10T05:00:00.000Z"},"seven_day":{"utilization":9,"resets_at":"2026-07-12T01:40:10.997Z"},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null,"plan_type":"GLM Coding Lite","web_search_quota":{"used":90,"limit":200}}
     {"captured_at":"2026-07-10T02:52:11.745Z","agent":"codex","five_hour":{"utilization":null,"resets_at":null},"seven_day":{"utilization":40,"resets_at":"2026-07-15T00:31:06.000Z"},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null,"plan_type":"plus"}
     {"captured_at":"2026-07-10T02:52:12.489Z","agent":"zai","five_hour":{"utilization":100,"resets_at":"2026-07-10T05:00:00.000Z"},"seven_day":{"utilization":24,"resets_at":"2026-07-12T01:40:10.997Z"},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null,"plan_type":"GLM Coding Lite","web_search_quota":{"used":100,"limit":200}}
+    {"captured_at":"2026-07-10T02:52:13.489Z","agent":"copilot","five_hour":{"utilization":null,"resets_at":null},"seven_day":{"utilization":null,"resets_at":null},"monthly":{"utilization":12.5,"resets_at":"2026-08-01T00:00:00.000Z"},"monthly_quota":{"used":25,"limit":200,"remaining":175,"unit":"ai-credits","unlimited":false},"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_oauth_apps":null,"seven_day_cowork":null,"extra_usage":null,"plan_type":"AI credits"}
     """
 
   override func setUpWithError() throws {
@@ -76,18 +77,25 @@ final class ZaiRenderTests: XCTestCase {
     let perAgent = SnapshotIO.latestPerAgent()
     XCTAssertTrue(perAgent.keys.contains(.zai))
     XCTAssertTrue(perAgent.keys.contains(.codex))
+    XCTAssertTrue(perAgent.keys.contains(.copilot))
     XCTAssertFalse(perAgent.keys.contains(.claudeCode)) // not in the fixture
     let codex = perAgent[.codex]
     XCTAssertNil(codex?.fiveHour.utilization)
     XCTAssertEqual(codex?.sevenDay.utilization, 40)
     XCTAssertEqual(codex?.planType, "plus")
-    // AgentKind is exhaustive over claude-code/codex/zai/grok — compiles & switches.
+    let copilot = perAgent[.copilot]
+    XCTAssertEqual(copilot?.monthly?.utilization, 12.5)
+    XCTAssertEqual(copilot?.monthlyQuota?.used, 25)
+    XCTAssertEqual(copilot?.monthlyQuota?.limit, 200)
+    XCTAssertEqual(monthlyDuration(resetsAt: copilot?.monthly?.resetsAtDate), 31 * 86_400)
+    // AgentKind is exhaustive over every menu-bar provider — compiles & switches.
     for kind in AgentKind.allCases {
       XCTAssertFalse(kind.displayName.isEmpty)
       XCTAssertFalse(kind.symbol.isEmpty)
     }
     XCTAssertEqual(AgentKind.grok.displayName, "Grok Build")
     XCTAssertEqual(AgentKind.grok.rawValue, "grok")
+    XCTAssertEqual(AgentKind.copilot.displayName, "GitHub Copilot")
   }
 
   func testGrokAgentKindDecodesFromSnapshotLine() {

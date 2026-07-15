@@ -58,8 +58,8 @@ struct ContentView: View {
       }
       Spacer()
       Button {
-        // Overview lists every agent (incl. Grok sessions). Usage is for
-        // Claude/Codex/Z.ai plan windows only.
+        // Overview lists every agent; Usage covers each provider that exposes
+        // a plan allowance, including Copilot's monthly credits.
         NSWorkspace.shared.open(URL(string: "http://localhost:3321/")!)
       } label: {
         Label("Dashboard", systemImage: "chart.bar.xaxis")
@@ -124,17 +124,29 @@ struct AgentSection: View {
         Text(kind.displayName).font(.subheadline.weight(.semibold))
       }
 
-      // Weekly-only Codex payloads no longer have a 5h window. Keep the old
-      // row for legacy snapshots, but don't render a misleading empty meter.
-      if snapshot.fiveHour.utilization != nil {
-        WindowRow(label: "5-hour window", window: snapshot.fiveHour,
-                  color: thresholdColor(snapshot.fiveHour.utilization),
-                  totalDuration: 5 * 3_600)
+      if kind == .copilot, let monthly = snapshot.monthly {
+        WindowRow(label: "Monthly AI credits", window: monthly,
+                  color: thresholdColor(monthly.utilization),
+                  totalDuration: monthlyDuration(resetsAt: monthly.resetsAtDate))
+        if let quota = snapshot.monthlyQuota, !quota.unlimited,
+           let used = quota.used, let limit = quota.limit {
+          Text("\(Int(used)) of \(Int(limit)) AI credits used")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      } else {
+        // Weekly-only Codex payloads no longer have a 5h window. Keep the old
+        // row for legacy snapshots, but don't render a misleading empty meter.
+        if snapshot.fiveHour.utilization != nil {
+          WindowRow(label: "5-hour window", window: snapshot.fiveHour,
+                    color: thresholdColor(snapshot.fiveHour.utilization),
+                    totalDuration: 5 * 3_600)
+        }
+        WindowRow(label: kind == .grok ? "7-day window (weekly)" : "7-day window",
+                  window: snapshot.sevenDay,
+                  color: thresholdColor(snapshot.sevenDay.utilization),
+                  totalDuration: 7 * 86_400)
       }
-      WindowRow(label: kind == .grok ? "7-day window (weekly)" : "7-day window",
-                window: snapshot.sevenDay,
-                color: thresholdColor(snapshot.sevenDay.utilization),
-                totalDuration: 7 * 86_400)
 
       if let opus = snapshot.sevenDayOpus?.utilization,
          let sonnet = snapshot.sevenDaySonnet?.utilization,

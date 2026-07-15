@@ -301,7 +301,7 @@ def build_story() -> list[object]:
     )]
     story += [P("If this computer has no agent yet", "H2Fleet")]
     story += [P(
-        "Choose the coding agent your team uses and follow that provider's official install and sign-in instructions first. Fleetlens supports Claude Code, Codex, Gemini CLI, Antigravity, Cowork, and Grok Build sources. The exact agent installation command changes over time, so use the provider's current instructions rather than copying an old command from a screenshot.",
+        "Choose the coding agent your team uses and follow that provider's official install and sign-in instructions first. Fleetlens supports Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, Antigravity, Cowork, and Grok Build sources. The exact agent installation command changes over time, so use the provider's current instructions rather than copying an old command from a screenshot.",
     )]
     story += [P("What happens to your data", "H2Fleet")]
     story += [bullets([

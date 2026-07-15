@@ -56,7 +56,7 @@
       <h2 id="before-you-begin">Before you begin</h2>
       <div class="check-grid">
         <div class="check-card"><h3>You need</h3><p>A Mac, Windows PC, or Linux computer; an internet connection for installation; and permission to install software.</p></div>
-        <div class="check-card"><h3>Your agent needs</h3><p>One supported local agent with session history. Claude Code, Codex, Gemini CLI, Antigravity, Cowork, and Grok Build are supported sources.</p></div>
+        <div class="check-card"><h3>Your agent needs</h3><p>One supported local agent with session history. Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, Antigravity, Cowork, and Grok Build are supported sources.</p></div>
       </div>
 
       <h2 id="open-terminal">1. Open a terminal</h2>
@@ -92,6 +92,7 @@ fleetlens version</code></pre>
 
       <h2 id="first-session">5. Give Fleetlens one session to read</h2>
       <p>Open your normal coding-agent application or terminal workflow and run a small, non-sensitive task in a project. For example, ask the agent to explain a README or list the files in a test project. You do not need to import anything into Fleetlens.</p>
+      <div class="note note-purple"><strong>Starting from scratch with GitHub Copilot CLI</strong><p>Copilot CLI requires Node.js 22 or newer. Install it with <code>npm install -g @github/copilot</code>, run <code>copilot login</code>, then start <code>copilot</code> inside a project and complete one turn. Fleetlens reads the resulting local session from <code>~/.copilot/session-state</code>. The usage daemon queries Copilot's authenticated local SDK server for the monthly AI-credit allowance; Copilot does not currently expose 5-hour or 7-day plan windows.</p></div>
       <p>After the agent finishes, return to Fleetlens. The Overview page reads the local transcript files and should show a session, a project, and some activity. A brand-new machine may show zero sessions until the agent has completed its first turn.</p>
       <div class="screenshot"><img src="assets/screenshots/overview.png" alt="Fleetlens Overview page with synthetic session metrics" loading="lazy" decoding="async"></div>
       <p class="caption">The first checkpoint is the Overview page. The data in this image is synthetic and exists only to illustrate the shape of the dashboard.</p>

@@ -46,6 +46,14 @@ export const CODEX_METADATA: AgentMetadata = {
   iconChar: "◆",
 };
 
+export const COPILOT_METADATA: AgentMetadata = {
+  kind: "copilot",
+  displayName: "GitHub Copilot CLI",
+  shortLabel: "Copilot",
+  accentColor: "rgb(137, 87, 229)",
+  iconChar: "∞",
+};
+
 export const GEMINI_METADATA: AgentMetadata = {
   kind: "gemini",
   displayName: "Gemini CLI",
@@ -92,6 +100,7 @@ export const GROK_METADATA: AgentMetadata = {
 export const agentMetadata: AgentMetadata[] = [
   CLAUDE_CODE_METADATA,
   CODEX_METADATA,
+  COPILOT_METADATA,
   GEMINI_METADATA,
   ANTIGRAVITY_METADATA,
   COWORK_METADATA,

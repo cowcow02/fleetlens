@@ -4,6 +4,7 @@ import {
   formatGap,
   formatDuration,
   prettyProjectName,
+  estimateCost,
 } from "./format";
 
 describe("formatTokens", () => {
@@ -217,5 +218,14 @@ describe("prettyProjectName", () => {
   it("treats a trailing slash as filtered empty segment", () => {
     expect(prettyProjectName("kipwise/agentic-knowledge-system/"))
       .toBe("kipwise/agentic-knowledge-system");
+  });
+});
+
+describe("estimateCost", () => {
+  it("uses GitHub Copilot's GPT-5 mini token rates", () => {
+    expect(estimateCost(
+      { input: 1_000_000, cacheRead: 1_000_000, cacheWrite: 0, output: 1_000_000 },
+      "gpt-5-mini",
+    )).toBe(2.275);
   });
 });
