@@ -4,6 +4,13 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [0.16.6] — 2026-07-15
+
+Safe upgrade from 0.16.5. Codex plan usage stays fresh after weekly resets without waiting for a new Codex turn.
+
+### Fixed
+- **Codex utilization no longer freezes on the last session's rate-limit snapshot.** The daemon and `fleetlens usage --save` poll ChatGPT's live WHAM usage API (same path as OpenUsage) with the Codex OAuth token from `~/.codex/auth.json`, so a weekly reset or claimed reset credit shows up on the next poll. Windows are classified by duration (weekly-only accounts stay on the 7-day meter). Transcript scraping remains available for offline/debug only.
+
 ## [0.16.4] — 2026-07-13
 
 Safe upgrade from 0.16.3.
