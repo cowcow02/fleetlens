@@ -5,7 +5,13 @@ import { Maximize2 } from "lucide-react";
 import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
 import { paceLabel, toneVar } from "@/lib/utilization-tone";
 
-type SeriesKey = "five_hour" | "seven_day" | "seven_day_sonnet";
+type SeriesKey = "five_hour" | "seven_day" | "seven_day_sonnet" | "monthly";
+
+function cycleStart(seriesKey: SeriesKey, resetsAt: number, windowMs: number): number {
+  if (seriesKey !== "monthly") return resetsAt - windowMs;
+  const reset = new Date(resetsAt);
+  return Date.UTC(reset.getUTCFullYear(), reset.getUTCMonth() - 1, 1);
+}
 
 /**
  * Burndown-style chart for a single usage window.
@@ -52,7 +58,7 @@ export function UsageChart({
       .map((s) => ({ capturedAt: new Date(s.captured_at).getTime(), window: s[seriesKey] }))
       .filter(
         (x): x is { capturedAt: number; window: UsageWindow } =>
-          x.window !== null && x.window.utilization !== null,
+          x.window != null && x.window.utilization !== null,
       );
 
     if (valid.length === 0) return null;
@@ -61,7 +67,7 @@ export function UsageChart({
     const resetsAt = latest.window.resets_at ? new Date(latest.window.resets_at).getTime() : null;
     if (!resetsAt) return null;
 
-    const windowStart = resetsAt - windowMs;
+    const windowStart = cycleStart(seriesKey, resetsAt, windowMs);
     const now = Date.now();
     const currentRemaining = 100 - (latest.window.utilization ?? 0);
 

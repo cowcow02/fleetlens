@@ -21,12 +21,13 @@ For product documentation, see the [public Fleetlens documentation](https://cowc
 
 ## What the local edition does
 
-- Reads local session history from Claude Code, Codex, Gemini CLI, Antigravity, Cowork, and Grok Build adapters.
+- Reads local session history from Claude Code, Codex, GitHub Copilot CLI, Gemini CLI, Antigravity, Cowork, and Grok Build adapters.
 - Presents a common session model across agent sources: sessions, transcript detail, turns, tool calls, tokens, models, and projects.
 - Computes agent time from active event segments rather than treating every wall-clock gap as work.
 - Rolls worktrees into canonical projects while retaining worktree context.
 - Shows daily activity, project rollups, estimated cost, PR signals, code changes, and concurrency bursts.
 - Stores usage snapshots, entries, digests, and daemon state under `~/.cclens`.
+- Tracks provider-native quota windows, including GitHub Copilot's monthly AI-credit allowance, in the dashboard and optional macOS menu-bar widget.
 - Provides local Insights and Agent surfaces when optional AI features are enabled.
 
 Raw transcripts stay on the machine in the local edition. No Fleetlens account or database is required.

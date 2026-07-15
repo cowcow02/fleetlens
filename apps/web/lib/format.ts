@@ -87,17 +87,19 @@ export function formatDuration(ms?: number): string {
 
 /**
  * Per-MTok pricing by model family.
- * Sourced from LiteLLM / Anthropic API pricing (as of 2025).
+ * Approximate per-million-token rates from each provider's pricing tables.
  */
 const MODEL_PRICING: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
-  haiku:  { input: 1,  output: 5,  cacheRead: 0.1,  cacheWrite: 1.25 },
-  sonnet: { input: 3,  output: 15, cacheRead: 0.3,  cacheWrite: 3.75 },
-  opus:   { input: 5,  output: 25, cacheRead: 0.5,  cacheWrite: 6.25 },
+  haiku:   { input: 1,    output: 5,  cacheRead: 0.1,   cacheWrite: 1.25 },
+  sonnet:  { input: 3,    output: 15, cacheRead: 0.3,   cacheWrite: 3.75 },
+  opus:    { input: 5,    output: 25, cacheRead: 0.5,   cacheWrite: 6.25 },
+  gpt5Mini: { input: 0.25, output: 2,  cacheRead: 0.025, cacheWrite: 0.25 },
 };
 
 function modelRate(model?: string) {
   if (!model) return MODEL_PRICING.opus;
   const m = model.toLowerCase();
+  if (m.includes("gpt-5-mini")) return MODEL_PRICING.gpt5Mini;
   if (m.includes("haiku")) return MODEL_PRICING.haiku;
   if (m.includes("sonnet")) return MODEL_PRICING.sonnet;
   return MODEL_PRICING.opus;

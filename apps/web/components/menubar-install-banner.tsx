@@ -83,7 +83,7 @@ export function MenubarInstallBanner() {
       }}
     >
       <span style={{ flex: 1 }}>
-        Get live Claude Code / Codex / Z.ai plan usage in your menu bar (Grok
+        Get live Claude Code / Codex / Copilot / Z.ai plan usage in your menu bar (Grok
         sessions live on the dashboard) —{" "}
         <strong>install the Fleetlens widget</strong>.
       </span>

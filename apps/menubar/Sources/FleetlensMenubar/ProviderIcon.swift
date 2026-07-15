@@ -14,6 +14,7 @@ enum BrandIcon {
     switch kind {
     case .claudeCode: name = "claude"
     case .codex: name = "codex"
+    case .copilot: name = "copilot"
     case .zai: name = "zai"
     case .grok: name = "grok"
     }
@@ -49,6 +50,8 @@ enum BrandIcon {
       return NSColor(calibratedRed: 0.85, green: 0.47, blue: 0.34, alpha: 1)
     case .codex:
       return NSColor(calibratedRed: 0.30, green: 0.62, blue: 0.95, alpha: 1)
+    case .copilot:
+      return NSColor(calibratedRed: 137 / 255, green: 87 / 255, blue: 229 / 255, alpha: 1)
     case .zai:
       return NSColor(calibratedRed: 0.23, green: 0.51, blue: 0.96, alpha: 1)
     case .grok:

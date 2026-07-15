@@ -23,6 +23,21 @@ Fleetlens 1.0 — a maturity milestone, **not a breaking change**. Upgrading fro
 - **`NEXT_OUTPUT` is now part of the build cache key**, so the documented standalone CLI build no longer silently reuses a stale non-standalone web bundle.
 - **The team-server test suite defaults to a dedicated `fleetlens_test` database and refuses to run against a database whose name doesn't contain "test"** — its reset step truncates every table, which previously could wipe a conventionally-named local dev database.
 
+## [0.16.8] — 2026-07-15
+
+Safe upgrade from 0.16.7. Copilot organization allowances are described accurately, and usage tabs now reflect locally observed providers.
+
+### Fixed
+- **Organization-managed Copilot allowances no longer claim to be unlimited.** When Copilot's SDK withholds a personal ceiling, the usage page now says "Limit not reported," explains that organization and enterprise credits may come from a shared pool, and links to GitHub's pooling documentation and billing view for verification.
+- **Usage tabs reflect providers actually found on the machine.** Grok and other non-Claude tabs appear only after Fleetlens has a real saved usage sample, instead of Grok appearing merely because the adapter is registered.
+
+## [0.16.7] — 2026-07-15
+
+Safe upgrade from 0.16.6. GitHub Copilot CLI sessions and monthly usage now appear alongside Fleetlens's existing agent sources.
+
+### Added
+- **GitHub Copilot CLI as a first-class agent source.** Fleetlens discovers resumable sessions under `~/.copilot/session-state`, reads workspace identity from Copilot's event stream, and normalizes messages, tool calls/results, model selection, token/cache totals, code changes, agent time, and projects into the same dashboard views as the existing adapters. The usage daemon also reads Copilot's authenticated monthly AI-credit quota through its local headless SDK server; `/usage` and the native menu-bar widget show the monthly meter without inventing Codex-style 5-hour or 7-day windows.
+
 ## [0.16.6] — 2026-07-15
 
 Safe upgrade from 0.16.5. Codex plan usage stays fresh after weekly resets without waiting for a new Codex turn.

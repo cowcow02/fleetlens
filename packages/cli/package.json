@@ -1,6 +1,6 @@
 {
   "name": "fleetlens",
-  "version": "0.16.6",
+  "version": "0.16.8",
   "description": "fleetlens — local-only dashboard and usage tracker for Claude Code sessions and agent fleets",
   "license": "MIT",
   "author": "cowcow02",

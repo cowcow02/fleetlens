@@ -27,10 +27,15 @@ import { UsageChartsDashboard } from "@/components/usage-charts-dashboard";
 import { PreviousCyclesTrend } from "@/components/previous-cycles-trend";
 import {
   type AgentKind,
-  agentMetadata,
   getAgentMetadata,
   isAgentKind,
 } from "@claude-lens/parser";
+import {
+  copilotQuotaPresentation,
+  copilotUnitLabel,
+  type CopilotMonthlyQuota,
+  visibleUsageAgents,
+} from "@/lib/usage-display";
 
 export const dynamic = "force-dynamic";
 
@@ -49,17 +54,9 @@ export default async function UsagePage({
 }) {
   const params = await searchParams;
   const allSnapshots = readUsageSnapshots();
-  const agentsWithData = new Set<AgentKind>();
-  for (const s of allSnapshots) {
-    const k = (s.agent ?? "claude-code") as AgentKind;
-    agentsWithData.add(k);
-  }
-  // Always show Claude in the tab strip even if empty — it's the canonical
-  // source. Codex appears only once it has at least one snapshot.
-  agentsWithData.add("claude-code");
-  // Always list Grok once registered — weekly pool snapshots appear after
-  // the daemon's first poll; the tab still works empty.
-  if (getAgentMetadata("grok")) agentsWithData.add("grok");
+  // Tabs represent usage sources found on this machine. Claude stays as the
+  // canonical empty state; every other provider needs a real saved sample.
+  const agentsWithData = new Set(visibleUsageAgents(allSnapshots));
 
   const requested: AgentKind | undefined = isAgentKind(params.agent) ? params.agent : undefined;
   const selected: AgentKind =
@@ -78,6 +75,7 @@ export default async function UsagePage({
   // longer history just narrows them rather than overflowing.
   const cycles7d = calibration ? previousCyclesTrend(calibration, "7d", 12) : [];
   const isGrok = selected === "grok";
+  const isCopilot = selected === "copilot";
   const codexWeeklyOnly =
     selected === "codex" && latest?.five_hour?.utilization == null;
 
@@ -157,6 +155,26 @@ export default async function UsagePage({
             </span>
           </span>
         )}
+        {isCopilot && latest?.plan_type && (
+          <span
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              padding: "4px 10px",
+              border: "1px solid var(--af-border-subtle)",
+              borderRadius: 999,
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            <span style={{ color: "var(--af-text-tertiary)" }}>allowance</span>
+            <span style={{ color: "var(--af-text)", fontWeight: 600 }}>
+              GitHub Copilot · {latest.plan_type}
+            </span>
+          </span>
+        )}
         {selected === "zai" && latest?.plan_type && (
           <span
             style={{
@@ -207,6 +225,12 @@ export default async function UsagePage({
               planType={latest.plan_type}
             />
           )}
+          {isCopilot && latest.monthly && (
+            <CopilotMonthlyCard
+              window={latest.monthly}
+              quota={latest.monthly_quota}
+            />
+          )}
           {cycles7d.length > 0 && (
             <PreviousCyclesTrend windowLabel="7d" cycles={cycles7d} />
           )}
@@ -224,6 +248,17 @@ export default async function UsagePage({
                       colorVar: "var(--af-accent)",
                     },
                   ]
+                : isCopilot
+                  ? [
+                      {
+                        key: "monthly",
+                        label: "Monthly AI-credit utilization",
+                        // Monthly charts derive their exact start from the
+                        // reset date; this value is only a nominal fallback.
+                        windowMs: 30 * 24 * 60 * 60 * 1000,
+                        colorVar: agentAccent("copilot"),
+                      },
+                    ]
                 : codexWeeklyOnly
                   ? [
                       {
@@ -235,7 +270,7 @@ export default async function UsagePage({
                     ]
                 : undefined
             }
-            hideSonnet={isGrok || selected === "codex"}
+            hideSonnet={isGrok || isCopilot || selected === "codex"}
           />
           {selected === "zai" && latest?.web_search_quota && (
             <WebSearchQuotaCard quota={latest.web_search_quota} />
@@ -251,9 +286,103 @@ export default async function UsagePage({
             Last {agentLabel(selected)} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
             {isGrok ? " · weekly shared-pool % (no 5h window)" : ""}
+            {isCopilot ? " · monthly AI-credit allowance (no 5h/7d windows)" : ""}
             {codexWeeklyOnly ? " · weekly-only Codex limit" : ""}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function CopilotMonthlyCard({
+  window,
+  quota,
+}: {
+  window: { utilization: number | null; resets_at: string | null };
+  quota?: CopilotMonthlyQuota | null;
+}) {
+  const pct = window.utilization;
+  const unit = copilotUnitLabel(quota?.unit);
+  const presentation = copilotQuotaPresentation(pct, quota);
+  return (
+    <div className="af-card" style={{ padding: "16px 18px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 600,
+        }}
+      >
+        Monthly {unit}
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          marginTop: 8,
+          letterSpacing: "-0.02em",
+          lineHeight: 1.1,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {presentation.headline}
+      </div>
+      {presentation.detail && (
+        <div style={{ marginTop: 6, fontSize: 12, color: "var(--af-text-secondary)" }}>
+          {presentation.detail}
+        </div>
+      )}
+      {pct !== null && (
+        <div
+          style={{
+            marginTop: 10,
+            height: 8,
+            borderRadius: 999,
+            background: "var(--af-border-subtle)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.min(100, Math.max(0, pct))}%`,
+              height: "100%",
+              borderRadius: 999,
+              background: agentAccent("copilot"),
+            }}
+          />
+        </div>
+      )}
+      {presentation.limitNotReported ? (
+        <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0, lineHeight: 1.5 }}>
+          Copilot did not expose a personal credit ceiling for this account. Organization-managed plans can
+          draw from a shared pool, so this does not mean individual use is unlimited.{" "}
+          <a
+            href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "var(--af-accent)" }}
+          >
+            How GitHub pools AI credits ↗
+          </a>
+          {" · "}
+          <a
+            href="https://github.com/settings/billing"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "var(--af-accent)" }}
+          >
+            Verify in GitHub billing ↗
+          </a>
+          {window.resets_at ? ` · Reported reset ${new Date(window.resets_at).toLocaleString()}.` : ""}
+        </p>
+      ) : (
+        <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
+          Copilot reports a monthly allowance; it does not expose Codex-style 5-hour or 7-day windows.
+          {window.resets_at ? ` Resets ${new Date(window.resets_at).toLocaleString()}.` : ""}
+        </p>
       )}
     </div>
   );
@@ -450,6 +579,42 @@ function GrokWeeklyCard({
 }
 
 function EmptyState({ agent }: { agent: AgentKind }) {
+  if (agent === "copilot") {
+    return (
+      <div className="af-card" style={{ padding: "48px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--af-text)" }}>
+          No GitHub Copilot usage samples yet
+        </div>
+        <p
+          style={{
+            fontSize: 12,
+            color: "var(--af-text-tertiary)",
+            margin: "8px auto 0",
+            maxWidth: 520,
+            lineHeight: 1.5,
+          }}
+        >
+          Run <code style={{ fontSize: 11 }}>copilot login</code>, then start the Fleetlens daemon.
+          Fleetlens reads the monthly AI-credit quota through Copilot CLI&apos;s authenticated local SDK server.
+        </p>
+        <pre
+          style={{
+            display: "inline-block",
+            marginTop: 14,
+            background: "var(--background)",
+            border: "1px solid var(--af-border-subtle)",
+            padding: "8px 16px",
+            borderRadius: 6,
+            fontSize: 13,
+            fontFamily: "var(--font-mono)",
+            color: "var(--af-text)",
+          }}
+        >
+          fleetlens daemon start
+        </pre>
+      </div>
+    );
+  }
   if (agent === "grok") {
     return (
       <div

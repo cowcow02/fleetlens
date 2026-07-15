@@ -32,7 +32,7 @@ export default function SettingsPage() {
       <section className="af-card space-y-3">
         <h2 className="text-lg font-medium">Menu bar widget</h2>
         <p className="text-sm text-gray-500">
-          Native macOS menu bar widget showing live Claude Code / Codex / Z.ai plan
+          Native macOS menu bar widget showing live Claude Code / Codex / Copilot / Z.ai plan
           utilization, reset countdowns, and burn-rate. Installs to ~/Applications
           and updates as the daemon polls.
         </p>
