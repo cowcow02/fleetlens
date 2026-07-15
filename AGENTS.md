@@ -37,9 +37,10 @@ a `DATABASE_URL` for `pnpm dev`. Details: `packages/team-server/README.md`.
 
 ## Project skills — read these before the matching task
 
-Battle-tested playbooks live in `.claude/skills/` (Claude Code discovers and
-invokes them automatically; Codex and other agents should read the relevant
-`SKILL.md` before starting):
+Battle-tested playbooks live in `.claude/skills/`, also exposed as
+`.agents/skills/` (a symlink) so Codex's native skill discovery picks them up
+too. Claude Code and Codex both load them automatically; other agents should
+read the relevant `SKILL.md` before starting:
 
 - `.claude/skills/dev-loop/` — build & verify a change locally: standalone rebuild flow, smoke tests, the port/cache/worktree-cwd traps.
 - `.claude/skills/add-agent-source/` — add a new coding-agent session source end-to-end (the canonical community extension task).

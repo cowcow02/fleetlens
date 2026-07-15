@@ -99,9 +99,12 @@ your agent lands well too:
   [`.claude/agents/`](./.claude/agents): `smoke-qa` boots the built CLI in
   isolation and verifies routes with evidence; `migration-reviewer` checks
   DB migrations against the zero-downtime upgrade rules.
-- **Codex and other agents** — `AGENTS.md` is the entry point; it indexes
-  the same skill files. Have the agent read the relevant `SKILL.md` before
-  starting the matching task.
+- **Codex** — discovers the same skills natively via the `.agents/skills/`
+  symlink, and reads `AGENTS.md` automatically for project context.
+- **Other agents** — `AGENTS.md` is the entry point; it indexes the skill
+  files. Have the agent read the relevant `SKILL.md` before starting the
+  matching task. (Note for Windows checkouts: `.agents/skills` is a git
+  symlink; enable symlink support or read `.claude/skills/` directly.)
 
 House rules the skills encode — reviewers hold agent PRs (and human ones) to
 the same bar:
