@@ -280,7 +280,7 @@ fleetlens version
 
 **Design:** `start` and `stop` manage **both** the web server AND the usage daemon in one call. That's the "common path" — almost everyone wants them together. Power users who want to manage them separately can use `fleetlens daemon <subcommand>` directly, or pass `--no-daemon` to `start`.
 
-`fleetlens web [page]` prints the dashboard URL for the requested page without auto-starting the daemon — useful when the server is already running and you just want to grab a link. Pass `--open` to also launch the URL in a browser; the default is print-only because auto-opening a browser surprised users in some terminals.
+`fleetlens web [page]` ensures the dashboard server is running, then prints the requested page URL. Opening that URL establishes the live connection that can recover a stopped daemon; the command itself does not start the daemon. Pass `--open` to also launch the URL in a browser; the default is print-only because auto-opening a browser surprised users in some terminals.
 
 **`fleetlens digest week` / `month` reproduce the same digests served at `/insights`.** Each consumes the layer immediately below — `digest week` reads day digests (auto-filling missing past-day digests), `digest month` reads week digests. Use `--json` for byte-equal output to the corresponding `/api/digest/{week,month}/<key>` GET response.
 

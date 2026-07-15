@@ -20,7 +20,7 @@ function appDir(): string {
 
 /** The CLI entry as an on-disk real path. argv[1] is normally the npm bin
  *  symlink (<prefix>/bin/fleetlens); web routes derive sibling paths from
- *  FLEETLENS_CLI_BIN (…/menubar/FleetlensMenubar.app) which only resolve
+ *  FLEETLENS_CLI_BIN (…/menubar/Fleetlens.app) which only resolve
  *  from the real package location — via the symlink the widget read as
  *  "not bundled" on every normal invocation. */
 function cliBinRealPath(): string {
@@ -83,14 +83,14 @@ export function isServerStale(status: ServerStatus): boolean {
  * broken) build until manually restarted.
  */
 export async function ensureCurrentServer(
-  opts: { port?: number } = {},
+  opts: { port?: number; autoStartDaemon?: boolean } = {},
 ): Promise<{ pid: number; port: number; restarted: boolean; previousVersion?: string }> {
   const status = getServerStatus();
   if (status.running && !isServerStale(status)) {
     return { pid: status.pid, port: status.port, restarted: false };
   }
   if (!status.running) {
-    const result = await startServer({ port: opts.port });
+    const result = await startServer(opts);
     return { ...result, restarted: false };
   }
 
@@ -113,7 +113,7 @@ export async function ensureCurrentServer(
   }
 
   try {
-    const result = await startServer({ port });
+    const result = await startServer({ port, autoStartDaemon: opts.autoStartDaemon });
     return { ...result, restarted: true, previousVersion };
   } catch (err) {
     // Relaunch failed and the old server may still be alive holding the port —
@@ -124,7 +124,9 @@ export async function ensureCurrentServer(
   }
 }
 
-export async function startServer(opts: { port?: number } = {}): Promise<{ pid: number; port: number }> {
+export async function startServer(
+  opts: { port?: number; autoStartDaemon?: boolean } = {},
+): Promise<{ pid: number; port: number }> {
   const port = opts.port ?? (parseInt(process.env.CCLENS_PORT ?? "", 10) || DEFAULT_PORT);
   const serverJs = join(appDir(), "server.js");
 
@@ -149,6 +151,7 @@ export async function startServer(opts: { port?: number } = {}): Promise<{ pid: 
       HOSTNAME: "localhost",
       CCLENS_DATA_DIR: dataDir,
       FLEETLENS_CLI_BIN: cliBinRealPath(),
+      FLEETLENS_WEB_START_DAEMON: opts.autoStartDaemon === false ? "0" : "1",
     },
     cwd: appDir(),
   });

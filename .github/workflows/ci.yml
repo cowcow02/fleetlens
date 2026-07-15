@@ -21,10 +21,15 @@ jobs:
 
       - name: Assert universal binary
         run: |
-          ARCHS=$(lipo -archs apps/menubar/dist/FleetlensMenubar.app/Contents/MacOS/FleetlensMenubar)
+          ARCHS=$(lipo -archs apps/menubar/dist/Fleetlens.app/Contents/MacOS/FleetlensMenubar)
           echo "archs: $ARCHS"
           echo "$ARCHS" | grep -q arm64
           echo "$ARCHS" | grep -q x86_64
+
+      - name: Assert branded bundle metadata
+        run: |
+          test -f apps/menubar/dist/Fleetlens.app/Contents/Resources/Fleetlens.icns
+          test "$(plutil -extract CFBundleDisplayName raw apps/menubar/dist/Fleetlens.app/Contents/Info.plist)" = "Fleetlens"
 
   checks:
     runs-on: ubuntu-latest

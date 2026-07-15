@@ -15,7 +15,7 @@ npm install -g fleetlens
 fleetlens start --open
 ```
 
-Open `http://localhost:3321` if the browser does not open automatically. `fleetlens start` launches the local dashboard and usage daemon together. Use `fleetlens start --no-daemon` when you only want the web server.
+Open `http://localhost:3321` if the browser does not open automatically. `fleetlens start` launches the local dashboard and usage daemon together. While the dashboard is open, its live connection also revives a stopped daemon. Use `fleetlens start --no-daemon` when you only want the web server.
 
 For product documentation, see the [public Fleetlens documentation](https://cowcow02.github.io/fleetlens/). The customer setup guide is distributed separately.
 

@@ -105,4 +105,52 @@ final class ZaiRenderTests: XCTestCase {
     XCTAssertNotNil(snap)
     XCTAssertEqual(snap?.agentKind, .grok)
   }
+
+  func testDaemonWatchdogRecoversOnlyAfterNewestSnapshotIsOverFiveMinutesOld() throws {
+    let snapshots = SnapshotIO.latestPerAgent()
+    let newest = try XCTUnwrap(snapshots.values.compactMap(\.capturedDate).max())
+
+    XCTAssertFalse(shouldRecoverDaemon(snapshots: snapshots, now: newest.addingTimeInterval(300)))
+    XCTAssertTrue(shouldRecoverDaemon(snapshots: snapshots, now: newest.addingTimeInterval(301)))
+    XCTAssertTrue(shouldRecoverDaemon(snapshots: [:], now: newest))
+  }
+
+  @MainActor
+  func testDaemonWatchdogInvokesPersistedCliWhenSnapshotIsStale() async throws {
+    let output = tmp.appendingPathComponent("watchdog-arguments.txt")
+    let script = tmp.appendingPathComponent("capture-watchdog.sh")
+    try "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"\(output.path)\"\n"
+      .write(to: script, atomically: true, encoding: .utf8)
+    let launch = CliLaunch(node: "/bin/sh", script: script.path)
+    try JSONEncoder().encode(launch)
+      .write(to: tmp.appendingPathComponent("cli-launch.json"), options: .atomic)
+
+    let store = UsageStore(watchdogInterval: 0.05)
+    for _ in 0..<50 {
+      if FileManager.default.fileExists(atPath: output.path) { break }
+      try await Task.sleep(nanoseconds: 20_000_000)
+    }
+
+    XCTAssertTrue(FileManager.default.fileExists(atPath: output.path))
+    XCTAssertEqual(try String(contentsOf: output, encoding: .utf8), "daemon\nstart\n")
+    withExtendedLifetime(store) {}
+  }
+}
+
+final class CliLaunchTests: XCTestCase {
+  func testPassesDaemonStartToPersistedNodeAndScript() throws {
+    let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+      .appendingPathComponent("fleetlens-cli-launch-tests-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: tmp) }
+
+    let output = tmp.appendingPathComponent("arguments.txt")
+    let script = tmp.appendingPathComponent("capture.sh")
+    try "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"\(output.path)\"\n"
+      .write(to: script, atomically: true, encoding: .utf8)
+
+    let launch = CliLaunch(node: "/bin/sh", script: script.path)
+    XCTAssertTrue(launch.run(["daemon", "start"]))
+    XCTAssertEqual(try String(contentsOf: output, encoding: .utf8), "daemon\nstart\n")
+  }
 }

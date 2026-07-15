@@ -24,6 +24,16 @@ Fleetlens 1.0 — a maturity milestone, **not a breaking change**. Upgrading fro
 - **`NEXT_OUTPUT` is now part of the build cache key**, so the documented standalone CLI build no longer silently reuses a stale non-standalone web bundle.
 - **The team-server test suite defaults to a dedicated `fleetlens_test` database and refuses to run against a database whose name doesn't contain "test"** — its reset step truncates every table, which previously could wipe a conventionally-named local dev database.
 
+## [0.16.9] — 2026-07-15
+
+Safe upgrade from 0.16.8. The dashboard and native menu-bar app now keep Fleetlens usage polling alive without manual daemon restarts.
+
+### Added
+- **Fleetlens automatically recovers a stopped usage daemon.** Opening the local dashboard's live connection or launching the native menu-bar app idempotently starts the daemon. The menu-bar app also checks once a minute and restarts polling when the newest usage snapshot is more than five minutes old, including first-run machines with no snapshots.
+
+### Changed
+- **The native widget now installs as `Fleetlens.app`.** It uses the Fleetlens icon and migrates the former `FleetlensMenubar.app` login item cleanly, so macOS Background Items presents the product name instead of an implementation label.
+
 ## [0.16.8] — 2026-07-15
 
 Safe upgrade from 0.16.7. Copilot organization allowances are described accurately, and usage tabs now reflect locally observed providers.
