@@ -4,10 +4,8 @@
 // deterministic or LLM-generated (and if so, exactly how).
 //
 // `status` describes the PIPELINE, not today's data:
-//   live      — computed from members' pushed rollups (seeded with mock data in
-//               this demo, real once the daemon pushes).
-//   templated — a placeholder generated from deterministic signals; LLM-authored
-//               in production but NOT an LLM call in this build.
+//   live      — computed from members' pushed rollups.
+//   templated — prose assembled from deterministic signals, no model call.
 //   planned   — not built yet.
 export type MetricStatus = "live" | "templated" | "planned";
 
@@ -21,8 +19,8 @@ export type MetricProvenance = {
 };
 
 export const STATUS_LABEL: Record<MetricStatus, string> = {
-  live: "Live pipeline · seeded with mock data in this demo",
-  templated: "Templated placeholder · LLM-authored in production",
+  live: "Live pipeline · computed from members' pushed rollups",
+  templated: "Templated prose · assembled from deterministic signals, no model call",
   planned: "Planned · not built yet",
 };
 
