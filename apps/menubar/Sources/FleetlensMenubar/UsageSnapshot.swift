@@ -25,11 +25,21 @@ struct WebSearchQuota: Codable, Equatable {
   let limit: Double?
 }
 
+struct MonthlyQuota: Codable, Equatable {
+  let used: Double?
+  let limit: Double?
+  let remaining: Double?
+  let unit: String
+  let unlimited: Bool
+}
+
 struct UsageSnapshot: Codable, Equatable {
   let capturedAt: String
   let agent: String?
   let fiveHour: UsageWindow
   let sevenDay: UsageWindow
+  let monthly: UsageWindow?
+  let monthlyQuota: MonthlyQuota?
   let sevenDayOpus: UsageWindow?
   let sevenDaySonnet: UsageWindow?
   let sevenDayOauthApps: UsageWindow?
@@ -43,6 +53,7 @@ extension UsageSnapshot {
   var agentKind: AgentKind {
     switch (agent ?? "claude-code").lowercased() {
     case "codex": return .codex
+    case "copilot": return .copilot
     case "zai": return .zai
     case "grok": return .grok
     default: return .claudeCode
@@ -57,6 +68,7 @@ extension UsageSnapshot {
 enum AgentKind: String, Codable, CaseIterable {
   case claudeCode = "claude-code"
   case codex
+  case copilot
   case zai
   /// Grok Build sessions are viewed on the dashboard; plan-window snapshots
   /// are not polled today. Kept so a future usage line decodes cleanly.
@@ -66,6 +78,7 @@ enum AgentKind: String, Codable, CaseIterable {
     switch self {
     case .claudeCode: return "Claude Code"
     case .codex: return "Codex"
+    case .copilot: return "GitHub Copilot"
     case .zai: return "Z.ai"
     case .grok: return "Grok Build"
     }
@@ -75,6 +88,7 @@ enum AgentKind: String, Codable, CaseIterable {
     switch self {
     case .claudeCode: return "c.circle.fill"
     case .codex: return "x.circle.fill"
+    case .copilot: return "infinity.circle.fill"
     case .zai: return "z.circle.fill"
     case .grok: return "g.circle.fill"
     }
@@ -84,6 +98,7 @@ enum AgentKind: String, Codable, CaseIterable {
     switch self {
     case .claudeCode: return .orange
     case .codex: return .blue
+    case .copilot: return .purple
     case .zai: return .blue
     case .grok: return .primary
     }
@@ -195,6 +210,18 @@ func idealFraction(now: Date, resetsAt: Date, duration: TimeInterval) -> Double?
   let start = resetsAt.addingTimeInterval(-duration)
   let f = now.timeIntervalSince(start) / duration
   return min(1, max(0, f))
+}
+
+/// Exact duration of the calendar month ending at a Copilot reset boundary.
+/// Falls back to 30 days only when an older snapshot has no reset timestamp.
+func monthlyDuration(resetsAt: Date?) -> TimeInterval {
+  guard let resetsAt else { return 30 * 86_400 }
+  var calendar = Calendar(identifier: .gregorian)
+  calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+  guard let start = calendar.date(byAdding: .month, value: -1, to: resetsAt) else {
+    return 30 * 86_400
+  }
+  return resetsAt.timeIntervalSince(start)
 }
 
 /// Compact data age for the refresh button: "now" / "2m" / "3h" / "1d".

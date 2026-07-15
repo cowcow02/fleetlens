@@ -20,6 +20,7 @@ import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { fetchZaiUsage, ZaiApiError } from "./usage/zai.js";
 import { fetchGrokUsage, GrokApiError } from "./usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "./usage/codex.js";
+import { fetchCopilotUsage, CopilotApiError } from "./usage/copilot.js";
 import { appendSnapshot, pruneAgent } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
@@ -45,6 +46,7 @@ function log(level: "info" | "warn" | "error", message: string): void {
 }
 
 let nextPollAtMs = 0;
+let nextAuxPollAtMs = 0;
 let nextTeamSyncAtMs = 0;
 // First team sync after this daemon booted is tagged trigger="boot" in the
 // [sync] summary line; every tick after is "auto".
@@ -206,9 +208,9 @@ async function runDaemonUpdateCheck(): Promise<void> {
   }
 }
 
-async function tick(): Promise<PollOutcome> {
+async function pollAuxiliaryUsage(): Promise<void> {
   // Iterate every registered agent source that still exposes a disk-side
-  // usagePoller. Network-backed agents (Claude, Codex, Grok, Z.ai) are
+  // usagePoller. Network-backed agents (Claude, Codex, Copilot, Grok, Z.ai) are
   // special-cased below so missing auth never stalls Claude's backoff path.
   for (const source of agentSources) {
     if (source.kind === "claude-code") continue;     // handled below
@@ -262,6 +264,25 @@ async function tick(): Promise<PollOutcome> {
       log("warn", `zai poll failed: ${(err as Error).message}`);
     }
   }
+  // GitHub Copilot's current allowance is monthly AI credits. Its public SDK
+  // RPC uses the Copilot CLI's secure login, so no token is copied into
+  // Fleetlens state. There are no 5h/7d windows for this provider.
+  try {
+    const copilotSnapshot = await fetchCopilotUsage();
+    appendSnapshot(USAGE_LOG, copilotSnapshot);
+    const monthly = copilotSnapshot.monthly?.utilization;
+    log("info", `copilot snapshot monthly=${monthly === null || monthly === undefined ? "—" : `${monthly}%`}`);
+  } catch (err) {
+    if (
+      err instanceof CopilotApiError &&
+      (err.code === "no_cli" || err.code === "no_auth")
+    ) {
+      pruneAgent(USAGE_LOG, "copilot");
+      // Quiet when Copilot isn't installed or logged in on this machine.
+    } else {
+      log("warn", `copilot poll failed: ${(err as Error).message}`);
+    }
+  }
   // Codex live plan windows — ChatGPT WHAM usage API (same path as OpenUsage).
   // Not scraped from session rollouts: those only refresh after a Codex turn
   // and can stick at a pre-reset % for days. Independent of Claude backoff.
@@ -308,6 +329,9 @@ async function tick(): Promise<PollOutcome> {
       log("warn", `grok poll failed: ${(err as Error).message}`);
     }
   }
+}
+
+async function pollClaudeUsage(): Promise<PollOutcome> {
   // Claude's poller stays distinct — its return value drives backoff
   // because OAuth/auth outcomes are the daemon's primary signal.
   try {
@@ -348,6 +372,12 @@ function sleep(ms: number): Promise<void> {
 async function runLoop(): Promise<void> {
   while (true) {
     const now = Date.now();
+    if (now >= nextAuxPollAtMs) {
+      // Every non-Claude provider has independent auth and must keep polling
+      // even when Claude Code is absent or waiting for a token refresh.
+      await pollAuxiliaryUsage();
+      nextAuxPollAtMs = Date.now() + BASE_INTERVAL_MS;
+    }
     if (now >= nextPollAtMs) {
       // Log a wake-from-sleep catch-up when we come back from a long gap.
       // Only meaningful once we've done at least one poll (nextPollAtMs > 0).
@@ -378,7 +408,7 @@ async function runLoop(): Promise<void> {
           log("info", "token refreshed; resuming polls");
           waitingForRefresh = false;
         }
-        const outcome = await tick();
+        const outcome = await pollClaudeUsage();
         scheduleAfter(Date.now(), outcome);
       }
 

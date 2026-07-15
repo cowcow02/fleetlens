@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 /// The menu-bar strip. Every present provider renders as a "detailed" pin;
-/// providers without a 5h window (current Codex and Grok) show only 7d%.
+/// providers without a 5h window show their active 7d or monthly allowance.
 /// Text and icons are white — the strip is a baked-color image on the dark
 /// menu bar (isTemplate=false), so white reads cleanly there.
 private struct StripLabel: View {
@@ -79,7 +79,7 @@ private struct StripLabel: View {
   let hasData: Bool
 
   private var ordered: [AgentKind] {
-    let priority: [AgentKind] = [.claudeCode, .codex]
+    let priority: [AgentKind] = [.claudeCode, .codex, .copilot]
     let present = priority.filter { snapshots[$0] != nil }
     let extras = snapshots.keys.filter { !present.contains($0) }.sorted(by: { $0.rawValue < $1.rawValue })
     return present + extras
@@ -112,11 +112,18 @@ private struct DetailedPin: View {
             .font(.system(size: 9))
             .monospacedDigit()
             .foregroundStyle(.white)
+        } else if snap.monthly?.utilization != nil {
+          Text(UsageStore.percentLabel(snap.monthly?.utilization))
+            .font(.system(size: 9))
+            .monospacedDigit()
+            .foregroundStyle(.white)
         }
-        Text(UsageStore.percentLabel(snap.sevenDay.utilization))
-          .font(.system(size: 9))
-          .monospacedDigit()
-          .foregroundStyle(.white)
+        if snap.sevenDay.utilization != nil {
+          Text(UsageStore.percentLabel(snap.sevenDay.utilization))
+            .font(.system(size: 9))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+        }
       }
     }
   }

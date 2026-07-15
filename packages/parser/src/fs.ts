@@ -20,6 +20,7 @@ import type { AgentKind, SessionDetail, SessionMeta } from "./types.js";
 import {
   type AgentMetadata,
   CODEX_METADATA,
+  COPILOT_METADATA,
   GEMINI_METADATA,
   ANTIGRAVITY_METADATA,
   COWORK_METADATA,
@@ -54,6 +55,13 @@ import {
   getCodexSession as _getCodexSession,
   clearCodexCaches,
 } from "./codex.js";
+
+import {
+  DEFAULT_COPILOT_ROOT as _DEFAULT_COPILOT_ROOT,
+  listCopilotSessions as _listCopilotSessions,
+  getCopilotSession as _getCopilotSession,
+  clearCopilotCaches,
+} from "./copilot.js";
 
 import {
   DEFAULT_GEMINI_ROOT as _DEFAULT_GEMINI_ROOT,
@@ -117,6 +125,17 @@ export type {
   GetCodexOptions,
   CodexUsageWindows,
 } from "./codex.js";
+
+export {
+  DEFAULT_COPILOT_ROOT,
+  listCopilotSessions,
+  getCopilotSession,
+  copilotSessionLocalDay,
+} from "./copilot.js";
+export type {
+  ListCopilotOptions,
+  GetCopilotOptions,
+} from "./copilot.js";
 
 export {
   DEFAULT_GEMINI_ROOT,
@@ -223,6 +242,7 @@ export function cacheStats(): CacheStats {
 export function clearCaches(): void {
   clearClaudeCodeCaches();
   clearCodexCaches();
+  clearCopilotCaches();
   clearGeminiCaches();
   clearAntigravityCaches();
   clearCoworkCaches();
@@ -273,9 +293,20 @@ const codexSource: AgentSource = {
   },
 };
 
+const copilotSource: AgentSource = {
+  ...COPILOT_METADATA,
+  defaultRoot: _DEFAULT_COPILOT_ROOT,
+  async listSessions(opts) {
+    return _listCopilotSessions(opts);
+  },
+  async getSession(id, opts) {
+    return _getCopilotSession(id, opts);
+  },
+};
+
 // Gemini CLI's free / paid tiers don't expose structured rate-limit
 // telemetry in transcripts, so no usagePoller — utilization tracking is
-// network-backed for Claude / Codex / Grok / Z.ai only.
+// network-backed for Claude / Codex / Copilot / Grok / Z.ai only.
 const geminiSource: AgentSource = {
   ...GEMINI_METADATA,
   defaultRoot: _DEFAULT_GEMINI_ROOT,
@@ -329,6 +360,7 @@ const grokSource: AgentSource = {
 export const agentSources: AgentSource[] = [
   claudeCodeSource,
   codexSource,
+  copilotSource,
   geminiSource,
   antigravitySource,
   coworkSource,

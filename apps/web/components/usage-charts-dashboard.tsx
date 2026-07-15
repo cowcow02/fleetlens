@@ -13,7 +13,7 @@ import {
   type DateRange,
 } from "@/components/date-range-picker";
 
-type SeriesKey = "five_hour" | "seven_day" | "seven_day_sonnet";
+type SeriesKey = "five_hour" | "seven_day" | "seven_day_sonnet" | "monthly";
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
@@ -99,7 +99,7 @@ export function UsageChartsDashboard({
             seriesKey={w.key}
             windowMs={w.windowMs}
             colorVar={w.colorVar}
-            predictedSeries={pred[w.key]}
+            predictedSeries={w.key === "monthly" ? undefined : pred[w.key]}
             onExpand={() => setExpanded(w)}
           />
         </section>
@@ -125,7 +125,7 @@ export function UsageChartsDashboard({
         <ExpandedModal
           config={expanded}
           snapshots={snapshots}
-          predictedSeries={pred[expanded.key]}
+          predictedSeries={expanded.key === "monthly" ? undefined : pred[expanded.key]}
           onClose={() => setExpanded(null)}
         />
       )}
@@ -154,6 +154,13 @@ function ExpandedModal({
       const w = snapshots[i]![config.key];
       if (w && w.resets_at) {
         const endMs = new Date(w.resets_at).getTime();
+        if (config.key === "monthly") {
+          const end = new Date(endMs);
+          return {
+            startMs: Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 1, 1),
+            endMs,
+          };
+        }
         return { startMs: endMs - config.windowMs, endMs };
       }
     }

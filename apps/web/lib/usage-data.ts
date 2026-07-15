@@ -22,6 +22,15 @@ export type UsageSnapshot = {
   agent?: AgentKind;
   five_hour: UsageWindow;
   seven_day: UsageWindow;
+  /** Monthly allowance, currently emitted by GitHub Copilot. */
+  monthly?: UsageWindow | null;
+  monthly_quota?: {
+    used: number | null;
+    limit: number | null;
+    remaining: number | null;
+    unit: "ai-credits" | "premium-requests";
+    unlimited: boolean;
+  } | null;
   seven_day_opus: UsageWindow | null;
   seven_day_sonnet: UsageWindow | null;
   seven_day_oauth_apps: UsageWindow | null;

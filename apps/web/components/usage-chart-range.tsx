@@ -1,9 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { UsageSnapshot, UsageWindow } from "@/lib/usage-data";
+import type { UsageSnapshot } from "@/lib/usage-data";
 
-type SeriesKey = "five_hour" | "seven_day" | "seven_day_sonnet";
+type SeriesKey = "five_hour" | "seven_day" | "seven_day_sonnet" | "monthly";
+
+function cycleStart(seriesKey: SeriesKey, resetsAt: number, windowMs: number): number {
+  if (seriesKey !== "monthly") return resetsAt - windowMs;
+  const reset = new Date(resetsAt);
+  return Date.UTC(reset.getUTCFullYear(), reset.getUTCMonth() - 1, 1);
+}
 
 /**
  * Gap threshold: consecutive snapshots separated by more than this are
@@ -126,7 +132,7 @@ export function UsageChartRange({
 
     const cycles: CycleData[] = [];
     for (const [resetsAtMs, points] of byReset) {
-      const cycleStartMs = resetsAtMs - windowMs;
+      const cycleStartMs = cycleStart(seriesKey, resetsAtMs, windowMs);
       // Sort points by time
       points.sort((a, b) => a.t - b.t);
       // Convert utilization → remaining budget

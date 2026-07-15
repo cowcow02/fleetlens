@@ -27,7 +27,6 @@ import { UsageChartsDashboard } from "@/components/usage-charts-dashboard";
 import { PreviousCyclesTrend } from "@/components/previous-cycles-trend";
 import {
   type AgentKind,
-  agentMetadata,
   getAgentMetadata,
   isAgentKind,
 } from "@claude-lens/parser";
@@ -60,6 +59,9 @@ export default async function UsagePage({
   // Always list Grok once registered — weekly pool snapshots appear after
   // the daemon's first poll; the tab still works empty.
   if (getAgentMetadata("grok")) agentsWithData.add("grok");
+  // Copilot's monthly quota appears after the first headless SDK poll. Keep
+  // the tab discoverable so a fresh install explains how to populate it.
+  if (getAgentMetadata("copilot")) agentsWithData.add("copilot");
 
   const requested: AgentKind | undefined = isAgentKind(params.agent) ? params.agent : undefined;
   const selected: AgentKind =
@@ -78,6 +80,7 @@ export default async function UsagePage({
   // longer history just narrows them rather than overflowing.
   const cycles7d = calibration ? previousCyclesTrend(calibration, "7d", 12) : [];
   const isGrok = selected === "grok";
+  const isCopilot = selected === "copilot";
   const codexWeeklyOnly =
     selected === "codex" && latest?.five_hour?.utilization == null;
 
@@ -157,6 +160,26 @@ export default async function UsagePage({
             </span>
           </span>
         )}
+        {isCopilot && latest?.plan_type && (
+          <span
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              padding: "4px 10px",
+              border: "1px solid var(--af-border-subtle)",
+              borderRadius: 999,
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            <span style={{ color: "var(--af-text-tertiary)" }}>allowance</span>
+            <span style={{ color: "var(--af-text)", fontWeight: 600 }}>
+              GitHub Copilot · {latest.plan_type}
+            </span>
+          </span>
+        )}
         {selected === "zai" && latest?.plan_type && (
           <span
             style={{
@@ -207,6 +230,12 @@ export default async function UsagePage({
               planType={latest.plan_type}
             />
           )}
+          {isCopilot && latest.monthly && (
+            <CopilotMonthlyCard
+              window={latest.monthly}
+              quota={latest.monthly_quota}
+            />
+          )}
           {cycles7d.length > 0 && (
             <PreviousCyclesTrend windowLabel="7d" cycles={cycles7d} />
           )}
@@ -224,6 +253,17 @@ export default async function UsagePage({
                       colorVar: "var(--af-accent)",
                     },
                   ]
+                : isCopilot
+                  ? [
+                      {
+                        key: "monthly",
+                        label: "Monthly AI-credit utilization",
+                        // Monthly charts derive their exact start from the
+                        // reset date; this value is only a nominal fallback.
+                        windowMs: 30 * 24 * 60 * 60 * 1000,
+                        colorVar: agentAccent("copilot"),
+                      },
+                    ]
                 : codexWeeklyOnly
                   ? [
                       {
@@ -235,7 +275,7 @@ export default async function UsagePage({
                     ]
                 : undefined
             }
-            hideSonnet={isGrok || selected === "codex"}
+            hideSonnet={isGrok || isCopilot || selected === "codex"}
           />
           {selected === "zai" && latest?.web_search_quota && (
             <WebSearchQuotaCard quota={latest.web_search_quota} />
@@ -251,10 +291,69 @@ export default async function UsagePage({
             Last {agentLabel(selected)} poll: {new Date(latest.captured_at).toLocaleString()} ·{" "}
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
             {isGrok ? " · weekly shared-pool % (no 5h window)" : ""}
+            {isCopilot ? " · monthly AI-credit allowance (no 5h/7d windows)" : ""}
             {codexWeeklyOnly ? " · weekly-only Codex limit" : ""}
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function CopilotMonthlyCard({
+  window,
+  quota,
+}: {
+  window: { utilization: number | null; resets_at: string | null };
+  quota?: {
+    used: number | null;
+    limit: number | null;
+    remaining: number | null;
+    unit: "ai-credits" | "premium-requests";
+    unlimited: boolean;
+  } | null;
+}) {
+  const pct = window.utilization;
+  const unit = quota?.unit === "premium-requests" ? "premium requests" : "AI credits";
+  return (
+    <div className="af-card" style={{ padding: "16px 18px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 600,
+        }}
+      >
+        Monthly {unit}
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          marginTop: 8,
+          letterSpacing: "-0.02em",
+          lineHeight: 1.1,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {quota?.unlimited
+          ? "Unlimited"
+          : pct === null
+            ? "—"
+            : `${pct.toFixed(1)}%`}
+      </div>
+      {quota && !quota.unlimited && quota.used !== null && quota.limit !== null && (
+        <div style={{ marginTop: 6, fontSize: 12, color: "var(--af-text-secondary)" }}>
+          {quota.used.toLocaleString()} of {quota.limit.toLocaleString()} {unit} used
+          {quota.remaining !== null ? ` · ${quota.remaining.toLocaleString()} remaining` : ""}
+        </div>
+      )}
+      <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
+        Copilot reports a monthly allowance; it does not expose Codex-style 5-hour or 7-day windows.
+        {window.resets_at ? ` Resets ${new Date(window.resets_at).toLocaleString()}.` : ""}
+      </p>
     </div>
   );
 }
@@ -450,6 +549,42 @@ function GrokWeeklyCard({
 }
 
 function EmptyState({ agent }: { agent: AgentKind }) {
+  if (agent === "copilot") {
+    return (
+      <div className="af-card" style={{ padding: "48px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--af-text)" }}>
+          No GitHub Copilot usage samples yet
+        </div>
+        <p
+          style={{
+            fontSize: 12,
+            color: "var(--af-text-tertiary)",
+            margin: "8px auto 0",
+            maxWidth: 520,
+            lineHeight: 1.5,
+          }}
+        >
+          Run <code style={{ fontSize: 11 }}>copilot login</code>, then start the Fleetlens daemon.
+          Fleetlens reads the monthly AI-credit quota through Copilot CLI&apos;s authenticated local SDK server.
+        </p>
+        <pre
+          style={{
+            display: "inline-block",
+            marginTop: 14,
+            background: "var(--background)",
+            border: "1px solid var(--af-border-subtle)",
+            padding: "8px 16px",
+            borderRadius: 6,
+            fontSize: 13,
+            fontFamily: "var(--font-mono)",
+            color: "var(--af-text)",
+          }}
+        >
+          fleetlens daemon start
+        </pre>
+      </div>
+    );
+  }
   if (agent === "grok") {
     return (
       <div
