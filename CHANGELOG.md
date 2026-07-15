@@ -4,7 +4,9 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.16.7] — 2026-07-15
+
+Safe upgrade from 0.16.6. GitHub Copilot CLI sessions and monthly usage now appear alongside Fleetlens's existing agent sources.
 
 ### Added
 - **GitHub Copilot CLI as a first-class agent source.** Fleetlens discovers resumable sessions under `~/.copilot/session-state`, reads workspace identity from Copilot's event stream, and normalizes messages, tool calls/results, model selection, token/cache totals, code changes, agent time, and projects into the same dashboard views as the existing adapters. The usage daemon also reads Copilot's authenticated monthly AI-credit quota through its local headless SDK server; `/usage` and the native menu-bar widget show the monthly meter without inventing Codex-style 5-hour or 7-day windows.
