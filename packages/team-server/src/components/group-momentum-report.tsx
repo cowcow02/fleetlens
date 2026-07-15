@@ -134,7 +134,7 @@ export function GroupMomentumReport({
   return (
     <div className="group-momentum">
       <div className="explain-banner">
-        Every metric below is computed from members&rsquo; pushed rollups.{" "}
+        Every metric below is computed from members&rsquo; pushed rollups or the delivery sources connected to this group.{" "}
         Hover any &#9432; for its data source, pipeline status, and whether it&rsquo;s deterministic or LLM-generated.
       </div>
       {trend && trend.length > 0 && (

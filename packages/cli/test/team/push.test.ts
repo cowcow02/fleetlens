@@ -525,7 +525,7 @@ describe("buildRichRollupBlocks", () => {
     expect(blocks.parallelMinutes).toBeGreaterThan(0);
   });
 
-  it("skips project rows for synthetic non-path identities (UUID / cowork:unspaced)", () => {
+  it("skips project rows for synthetic identities (UUID / hex hash / cowork:unspaced)", () => {
     const uuid = makeSession(day, {
       id: "s-uuid", projectName: "2ec7f3c9-280b-45f0-9d44-c066115b1888",
       projectDir: "2ec7f3c9-280b-45f0-9d44-c066115b1888", agent: "antigravity",
@@ -539,12 +539,33 @@ describe("buildRichRollupBlocks", () => {
         { startMs: Date.parse(`${day}T10:30:00.000Z`), endMs: Date.parse(`${day}T12:00:00.000Z`) },
       ],
     });
+    const geminiHash = makeSession(day, {
+      id: "s-gem-hash",
+      projectName: "c50f6012fad543bee71f6cbf9dd85c24ccd60e928595a8e85c09c1e517df6b71",
+      projectDir: "c50f6012fad543bee71f6cbf9dd85c24ccd60e928595a8e85c09c1e517df6b71", agent: "gemini",
+      activeSegments: [
+        { startMs: Date.parse(`${day}T13:00:00.000Z`), endMs: Date.parse(`${day}T13:30:00.000Z`) },
+      ],
+    });
 
-    const blocks = buildRichRollupBlocks(day, [s1, uuid, unspaced], []);
+    const blocks = buildRichRollupBlocks(day, [s1, uuid, unspaced, geminiHash], []);
 
     expect(blocks.projects.map((p) => p.project)).toEqual(["fleetlens"]);
     // The skipped sessions still count toward the day's concurrency math.
     expect(blocks.concurrencyPeak).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps project rows for real relative identities (Gemini slug fallback)", () => {
+    const geminiSlug = makeSession(day, {
+      id: "s-gem-slug", projectName: "orbit-shop", projectDir: "orbit-shop", agent: "gemini",
+      activeSegments: [
+        { startMs: Date.parse(`${day}T13:00:00.000Z`), endMs: Date.parse(`${day}T14:00:00.000Z`) },
+      ],
+    });
+
+    const blocks = buildRichRollupBlocks(day, [geminiSlug], []);
+
+    expect(blocks.projects.map((p) => p.project)).toEqual(["orbit-shop"]);
   });
 
   it("clips a cross-midnight session to each touched day", () => {
