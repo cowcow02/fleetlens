@@ -29,6 +29,8 @@ export type UsageSnapshot = {
     limit: number | null;
     remaining: number | null;
     unit: "ai-credits" | "premium-requests";
+    /** Raw Copilot SDK entitlement flag. It can mean no personal ceiling was
+     *  disclosed for an organization pool, not that use is unbounded. */
     unlimited: boolean;
   } | null;
   seven_day_opus: UsageWindow | null;

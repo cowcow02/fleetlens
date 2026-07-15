@@ -30,6 +30,11 @@ import {
   getAgentMetadata,
   isAgentKind,
 } from "@claude-lens/parser";
+import {
+  copilotQuotaPresentation,
+  type CopilotMonthlyQuota,
+  visibleUsageAgents,
+} from "@/lib/usage-display";
 
 export const dynamic = "force-dynamic";
 
@@ -48,20 +53,9 @@ export default async function UsagePage({
 }) {
   const params = await searchParams;
   const allSnapshots = readUsageSnapshots();
-  const agentsWithData = new Set<AgentKind>();
-  for (const s of allSnapshots) {
-    const k = (s.agent ?? "claude-code") as AgentKind;
-    agentsWithData.add(k);
-  }
-  // Always show Claude in the tab strip even if empty — it's the canonical
-  // source. Codex appears only once it has at least one snapshot.
-  agentsWithData.add("claude-code");
-  // Always list Grok once registered — weekly pool snapshots appear after
-  // the daemon's first poll; the tab still works empty.
-  if (getAgentMetadata("grok")) agentsWithData.add("grok");
-  // Copilot's monthly quota appears after the first headless SDK poll. Keep
-  // the tab discoverable so a fresh install explains how to populate it.
-  if (getAgentMetadata("copilot")) agentsWithData.add("copilot");
+  // Tabs represent usage sources found on this machine. Claude stays as the
+  // canonical empty state; every other provider needs a real saved sample.
+  const agentsWithData = new Set(visibleUsageAgents(allSnapshots));
 
   const requested: AgentKind | undefined = isAgentKind(params.agent) ? params.agent : undefined;
   const selected: AgentKind =
@@ -305,16 +299,11 @@ function CopilotMonthlyCard({
   quota,
 }: {
   window: { utilization: number | null; resets_at: string | null };
-  quota?: {
-    used: number | null;
-    limit: number | null;
-    remaining: number | null;
-    unit: "ai-credits" | "premium-requests";
-    unlimited: boolean;
-  } | null;
+  quota?: CopilotMonthlyQuota | null;
 }) {
   const pct = window.utilization;
   const unit = quota?.unit === "premium-requests" ? "premium requests" : "AI credits";
+  const presentation = copilotQuotaPresentation(pct, quota);
   return (
     <div className="af-card" style={{ padding: "16px 18px" }}>
       <div
@@ -338,16 +327,11 @@ function CopilotMonthlyCard({
           fontVariantNumeric: "tabular-nums",
         }}
       >
-        {quota?.unlimited
-          ? "Unlimited"
-          : pct === null
-            ? "—"
-            : `${pct.toFixed(1)}%`}
+        {presentation.headline}
       </div>
-      {quota && !quota.unlimited && quota.used !== null && quota.limit !== null && (
+      {presentation.detail && (
         <div style={{ marginTop: 6, fontSize: 12, color: "var(--af-text-secondary)" }}>
-          {quota.used.toLocaleString()} of {quota.limit.toLocaleString()} {unit} used
-          {quota.remaining !== null ? ` · ${quota.remaining.toLocaleString()} remaining` : ""}
+          {presentation.detail}
         </div>
       )}
       {pct !== null && (
@@ -370,10 +354,35 @@ function CopilotMonthlyCard({
           />
         </div>
       )}
-      <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
-        Copilot reports a monthly allowance; it does not expose Codex-style 5-hour or 7-day windows.
-        {window.resets_at ? ` Resets ${new Date(window.resets_at).toLocaleString()}.` : ""}
-      </p>
+      {presentation.limitNotReported ? (
+        <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0, lineHeight: 1.5 }}>
+          Copilot did not expose a personal credit ceiling for this account. Organization-managed plans can
+          draw from a shared pool, so this does not mean individual use is unlimited.{" "}
+          <a
+            href="https://docs.github.com/en/copilot/concepts/billing/usage-based-billing-for-organizations-and-enterprises"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "var(--af-accent)" }}
+          >
+            How GitHub pools AI credits ↗
+          </a>
+          {" · "}
+          <a
+            href="https://github.com/settings/billing"
+            target="_blank"
+            rel="noreferrer"
+            style={{ color: "var(--af-accent)" }}
+          >
+            Verify in GitHub billing ↗
+          </a>
+          {window.resets_at ? ` · Reported reset ${new Date(window.resets_at).toLocaleString()}.` : ""}
+        </p>
+      ) : (
+        <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
+          Copilot reports a monthly allowance; it does not expose Codex-style 5-hour or 7-day windows.
+          {window.resets_at ? ` Resets ${new Date(window.resets_at).toLocaleString()}.` : ""}
+        </p>
+      )}
     </div>
   );
 }

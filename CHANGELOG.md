@@ -4,6 +4,12 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Fixed
+- **Organization-managed Copilot allowances no longer claim to be unlimited.** When Copilot's SDK withholds a personal ceiling, the usage page now says "Limit not reported," explains that organization and enterprise credits may come from a shared pool, and links to GitHub's pooling documentation and billing view for verification.
+- **Usage tabs reflect providers actually found on the machine.** Grok and other non-Claude tabs appear only after Fleetlens has a real saved usage sample, instead of Grok appearing merely because the adapter is registered.
+
 ## [0.16.7] — 2026-07-15
 
 Safe upgrade from 0.16.6. GitHub Copilot CLI sessions and monthly usage now appear alongside Fleetlens's existing agent sources.
