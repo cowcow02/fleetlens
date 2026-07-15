@@ -86,6 +86,37 @@ Taken from the conventions in `CLAUDE.md`:
 - **Error handling only at system boundaries.** Trust framework guarantees inside the app.
 - **Brand:** "Fleetlens" (capitalized, proper noun) in UI and prose; `fleetlens` (lowercase) for the CLI/npm binary.
 
+## Contributing with AI agents
+
+Fleetlens is built largely *with* coding agents, and the repo is set up so
+your agent lands well too:
+
+- **Claude Code** — `CLAUDE.md` loads automatically. Project skills in
+  [`.claude/skills/`](./.claude/skills) are auto-discovered and cover the
+  tasks that have real gotchas: the local dev loop, adding a new agent
+  source, Team Edition development, cutting a release, and filing
+  agent-ready issues. Two subagents ship in
+  [`.claude/agents/`](./.claude/agents): `smoke-qa` boots the built CLI in
+  isolation and verifies routes with evidence; `migration-reviewer` checks
+  DB migrations against the zero-downtime upgrade rules.
+- **Codex and other agents** — `AGENTS.md` is the entry point; it indexes
+  the same skill files. Have the agent read the relevant `SKILL.md` before
+  starting the matching task.
+
+House rules the skills encode — reviewers hold agent PRs (and human ones) to
+the same bar:
+
+- **Evidence before "done".** Exercise the real artifact — `pnpm verify`,
+  smoke the routes, run the actual command — and show the observed output.
+  A green typecheck is not a working feature.
+- **All fixtures, demo, and mock data are fictional** (`orbit-shop` /
+  `ORB-n` house style). Never real company names, ticket ids, or people —
+  the Team Edition demo view renders this content to real customers.
+- **Every user-facing change gets a CHANGELOG entry** on the right track;
+  the release workflow hard-fails without it.
+- **Feature work happens on branches/worktrees**, never directly on the
+  primary checkout.
+
 ## License
 
 By contributing, you agree your contributions are licensed under the project's [MIT license](./LICENSE).

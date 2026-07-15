@@ -14,7 +14,10 @@ npm-debug.log*
 pnpm-debug.log*
 .superpowers/
 .worktrees/
-.claude/
+# .claude is local state EXCEPT the committed project skills/agents
+.claude/*
+!.claude/skills/
+!.claude/agents/
 .harness/
 .antigravitycli/
 .playwright-mcp/

@@ -11,6 +11,7 @@ Fleetlens 1.0 — a maturity milestone, **not a breaking change**. Upgrading fro
 ### Added
 - **Open-source governance baseline.** `SECURITY.md` (vulnerability reporting via GitHub Security Advisories), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and GitHub issue/PR templates.
 - **Team Edition development guide.** `packages/team-server/README.md` now covers local development (Postgres setup, env vars, seeding), running the test suite, and an architecture orientation; `MIGRATIONS.md` documents the real (hand-authored) migration workflow.
+- **Agent-ready contributor tooling.** Committed project skills (`.claude/skills/`: dev loop, add an agent source, Team Edition development, release runbook, issue filing) and subagents (`.claude/agents/`: smoke-qa, migration-reviewer) encode this repo's hard-won workflows for Claude Code; `AGENTS.md` indexes them for Codex and other agents.
 
 ### Fixed
 - **First-run empty state pointed at a nonexistent command.** The usage sidebar now says `fleetlens daemon start` (was `cclens daemon start`, a leftover from a pre-rename era).

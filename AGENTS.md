@@ -35,6 +35,23 @@ Team-server needs Postgres for dev and tests: `createdb fleetlens_test` for
 tests (the suite migrates it automatically and truncates it between tests) and
 a `DATABASE_URL` for `pnpm dev`. Details: `packages/team-server/README.md`.
 
+## Project skills — read these before the matching task
+
+Battle-tested playbooks live in `.claude/skills/` (Claude Code discovers and
+invokes them automatically; Codex and other agents should read the relevant
+`SKILL.md` before starting):
+
+- `.claude/skills/dev-loop/` — build & verify a change locally: standalone rebuild flow, smoke tests, the port/cache/worktree-cwd traps.
+- `.claude/skills/add-agent-source/` — add a new coding-agent session source end-to-end (the canonical community extension task).
+- `.claude/skills/team-server-dev/` — Team Edition: local run, guarded test DB, hand-authored migrations, the fixture-privacy rule.
+- `.claude/skills/wrap-up-and-release/` — ship a CLI release: changelog gate → version bump → tag → npm, with the known failure modes.
+- `.claude/skills/filing-fleetlens-issues/` — write agent-ready GitHub issues a future session can execute without follow-up questions.
+
+Purpose-built subagents live in `.claude/agents/`: `smoke-qa` (builds and
+boots the bundled CLI in isolation, smoke-checks routes, reports evidence)
+and `migration-reviewer` (checks DB migrations against the expand/contract
+rules).
+
 ## Releases
 
 Two independent tracks — CLI (`v*` tags → npm) and team-server (`server-v*`

@@ -174,6 +174,15 @@ Local preview:
 python3 -m http.server 4173 --directory site
 ```
 
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). The repo is agent-ready: `CLAUDE.md`
+(Claude Code) and `AGENTS.md` (Codex and others) carry the project context,
+and committed skills in [`.claude/skills/`](./.claude/skills) encode the dev
+loop, the add-an-agent-source extension path, Team Edition workflows, and the
+release runbook — so a coding agent can contribute productively from its
+first session.
+
 ## License
 
 MIT. See [LICENSE](./LICENSE).
