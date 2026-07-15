@@ -8,7 +8,8 @@ import { cclensPath } from "@claude-lens/parser/fs";
 
 const execFileAsync = promisify(execFile);
 
-const APP_BUNDLE = "FleetlensMenubar.app";
+const APP_BUNDLE = "Fleetlens.app";
+const LEGACY_APP_BUNDLE = "FleetlensMenubar.app";
 const BUNDLE_EXEC = "FleetlensMenubar";
 const NON_MAC_MSG =
   "The Fleetlens menu bar widget is a native macOS app and is macOS-only. " +
@@ -20,7 +21,7 @@ function isMac(): boolean {
 
 /**
  * Where the .app ships inside the npm package. `dist/index.js` and
- * `menubar/FleetlensMenubar.app` are siblings under `packages/cli/`, so from
+ * `menubar/Fleetlens.app` are siblings under `packages/cli/`, so from
  * this file's bundled location we go up one to reach the package root — same
  * resolution trick `server.ts:appDir()` uses for the Next.js standalone.
  */
@@ -62,6 +63,10 @@ function installedAppPath(): string {
   return join(homedir(), "Applications", APP_BUNDLE);
 }
 
+function legacyInstalledAppPath(): string {
+  return join(homedir(), "Applications", LEGACY_APP_BUNDLE);
+}
+
 /** True when the bundle exec is running. Uses pgrep -x (exact match) so a
  *  stray "FleetlensMenubarHelper" never reads as "running". */
 async function isRunning(): Promise<boolean> {
@@ -89,16 +94,21 @@ async function quitApp(): Promise<void> {
 }
 
 /**
- * Register/unregister a login item via System Events. osascript may prompt
+ * Register a login item via System Events. osascript may prompt
  * for Automation permission the first time; we treat any failure as
  * non-fatal — the app is already installed and launchable, login-item is a
  * convenience on top.
  */
-async function setLoginItem(enabled: boolean, appPath: string): Promise<void> {
-  const script = enabled
-    ? `tell application "System Events" to make login item at end with properties {path:"${appPath}", hidden:false}`
-    : `tell application "System Events" to delete login item "${APP_BUNDLE.replace(".app", "")}"`;
+async function addLoginItem(appPath: string): Promise<void> {
+  const script = `tell application "System Events" to make login item at end with properties {path:"${appPath}", hidden:false}`;
   await execFileAsync("osascript", ["-e", script]).catch(() => {});
+}
+
+async function removeLoginItem(name: string): Promise<void> {
+  await execFileAsync("osascript", [
+    "-e",
+    `tell application "System Events" to delete login item "${name}"`,
+  ]).catch(() => {});
 }
 
 async function installMenubar(opts: { open: boolean; login: boolean }): Promise<void> {
@@ -111,7 +121,7 @@ async function installMenubar(opts: { open: boolean; login: boolean }): Promise<
     console.error(
       `Bundled widget not found at ${src}.\n` +
         "This install was probably built without the menubar artifact. " +
-        "Run `node apps/menubar/build-app.sh && cp -R apps/menubar/dist/FleetlensMenubar.app packages/cli/menubar/` and rebuild.",
+        "Run `bash apps/menubar/build-app.sh && cp -R apps/menubar/dist/Fleetlens.app packages/cli/menubar/` and rebuild.",
     );
     process.exit(1);
   }
@@ -129,12 +139,15 @@ async function installMenubar(opts: { open: boolean; login: boolean }): Promise<
   }
 
   rmSync(dest, { recursive: true, force: true });
+  rmSync(legacyInstalledAppPath(), { recursive: true, force: true });
   cpSync(src, dest, { recursive: true });
   writeCliLaunchFile();
   console.log(`Installed → ${dest}`);
 
+  await removeLoginItem(APP_BUNDLE.replace(".app", ""));
+  await removeLoginItem(LEGACY_APP_BUNDLE.replace(".app", ""));
   if (opts.login) {
-    await setLoginItem(true, dest);
+    await addLoginItem(dest);
     console.log("Login item enabled (launches at login).");
   }
 
@@ -151,7 +164,8 @@ async function uninstallMenubar(): Promise<void> {
     console.log(NON_MAC_MSG);
     return;
   }
-  await setLoginItem(false, installedAppPath());
+  await removeLoginItem(APP_BUNDLE.replace(".app", ""));
+  await removeLoginItem(LEGACY_APP_BUNDLE.replace(".app", ""));
   if (await isRunning()) {
     console.log("Quitting the running widget…");
     await quitApp();
@@ -164,6 +178,7 @@ async function uninstallMenubar(): Promise<void> {
   } else {
     console.log("Widget is not installed — nothing to remove.");
   }
+  rmSync(legacyInstalledAppPath(), { recursive: true, force: true });
   console.log("Login item cleared (if it was set).");
 }
 
@@ -255,8 +270,9 @@ export async function menubar(args: string[]): Promise<void> {
   status                             Show install/running/bundled state.
 
 The widget tails ~/.cclens/usage.jsonl and shows live Claude Code / Codex
-plan utilization in the menu bar. Click it for a popover, or "Dashboard" to
-open http://localhost:3321.`);
+plan utilization in the menu bar. It starts the usage daemon when launched
+and re-checks it whenever you open the popover or usage data becomes more
+than five minutes stale. Click "Dashboard" to open http://localhost:3321.`);
       break;
     default:
       console.error(

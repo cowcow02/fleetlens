@@ -2,6 +2,43 @@ import Foundation
 import SwiftUI
 import Combine
 
+let daemonSnapshotStaleAfter: TimeInterval = 5 * 60
+
+func shouldRecoverDaemon(
+  snapshots: [AgentKind: UsageSnapshot],
+  now: Date,
+  staleAfter: TimeInterval = daemonSnapshotStaleAfter
+) -> Bool {
+  guard let newest = snapshots.values.compactMap(\.capturedDate).max() else { return true }
+  return now.timeIntervalSince(newest) > staleAfter
+}
+
+struct CliLaunch: Codable {
+  let node: String
+  let script: String
+
+  static func load() -> CliLaunch? {
+    let url = SnapshotIO.cclensDir().appendingPathComponent("cli-launch.json")
+    guard let data = try? Data(contentsOf: url) else { return nil }
+    return try? JSONDecoder().decode(CliLaunch.self, from: data)
+  }
+
+  func run(_ arguments: [String]) -> Bool {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: node)
+    proc.arguments = [script] + arguments
+    proc.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
+    proc.standardError = FileHandle(forWritingAtPath: "/dev/null")
+    do {
+      try proc.run()
+      proc.waitUntilExit()
+      return proc.terminationStatus == 0
+    } catch {
+      return false
+    }
+  }
+}
+
 @MainActor
 final class UsageStore: ObservableObject {
   @Published var snapshots: [AgentKind: UsageSnapshot] = [:]
@@ -11,13 +48,20 @@ final class UsageStore: ObservableObject {
   @Published var refreshing = false
 
   private var watcher: UsageLogWatcher?
+  private var watchdog: AnyCancellable?
+  private var daemonStartInFlight = false
 
-  init() {
+  init(watchdogInterval: TimeInterval = 60) {
     reload()
     watcher = UsageLogWatcher(url: SnapshotIO.usageLogURL()) { [weak self] in
       Task { @MainActor in self?.reload() }
     }
     watcher?.start()
+    watchdog = Timer.publish(every: watchdogInterval, on: .main, in: .common)
+      .autoconnect()
+      .sink { [weak self] now in
+        Task { @MainActor in self?.recoverDaemonIfStale(now: now) }
+      }
   }
 
   /// Headline value for the menu bar — Claude 5h, falling back to Codex 7d.
@@ -52,7 +96,28 @@ final class UsageStore: ObservableObject {
       if let p = pace(for: kind) { acc[kind] = p }
     }
     lastRefreshed = Date()
-    lastError = snapshots.isEmpty ? "no snapshots yet — is the daemon running?" : nil
+    lastError = snapshots.isEmpty ? "Waiting for the daemon's first usage snapshot…" : nil
+  }
+
+  /// App launch, popover open, and the stale-snapshot watchdog all converge on
+  /// this idempotent recovery path.
+  func ensureDaemonRunning() {
+    guard !daemonStartInFlight else { return }
+    daemonStartInFlight = true
+    Task { [weak self] in
+      let ok = await Task.detached(priority: .utility) {
+        CliLaunch.load()?.run(["daemon", "start"]) == true
+      }.value
+      guard let self else { return }
+      self.daemonStartInFlight = false
+      guard !ok, self.snapshots.isEmpty else { return }
+      self.lastError = "Daemon couldn't start — re-run `fleetlens menubar install` to reconnect the widget to the CLI."
+    }
+  }
+
+  func recoverDaemonIfStale(now: Date = Date()) {
+    guard shouldRecoverDaemon(snapshots: snapshots, now: now) else { return }
+    ensureDaemonRunning()
   }
 
   /// Force a fresh usage poll instead of just re-reading the file. Spawns the
@@ -63,43 +128,20 @@ final class UsageStore: ObservableObject {
   func forceRefresh() {
     guard !refreshing else { return }
     refreshing = true
-    Task.detached(priority: .utility) { [weak self] in
-      let ok = Self.runUsageSave()
-      await MainActor.run {
-        guard let self else { return }
-        self.refreshing = false
-        if ok {
-          self.reload()
-        } else {
-          self.lastError = "Refresh couldn't reach the CLI — ~/.cclens/cli-launch.json missing. Re-run `fleetlens menubar install`."
-        }
+    Task { [weak self] in
+      let ok = await Task.detached(priority: .utility) { Self.runUsageSave() }.value
+      guard let self else { return }
+      self.refreshing = false
+      if ok {
+        self.reload()
+      } else {
+        self.lastError = "Refresh couldn't reach the CLI — ~/.cclens/cli-launch.json missing. Re-run `fleetlens menubar install`."
       }
     }
   }
 
-  private struct CliLaunch: Codable {
-    let node: String
-    let script: String
-  }
-
   private static nonisolated func runUsageSave() -> Bool {
-    let url = SnapshotIO.cclensDir().appendingPathComponent("cli-launch.json")
-    guard let data = try? Data(contentsOf: url),
-          let launch = try? JSONDecoder().decode(CliLaunch.self, from: data) else {
-      return false
-    }
-    let proc = Process()
-    proc.executableURL = URL(fileURLWithPath: launch.node)
-    proc.arguments = [launch.script, "usage", "--save"]
-    proc.standardOutput = FileHandle(forWritingAtPath: "/dev/null")
-    proc.standardError = FileHandle(forWritingAtPath: "/dev/null")
-    do {
-      try proc.run()
-      proc.waitUntilExit()
-      return proc.terminationStatus == 0
-    } catch {
-      return false
-    }
+    CliLaunch.load()?.run(["usage", "--save"]) == true
   }
 
   /// Burn rate: 7-day utilization change vs ~1h ago. Positive = climbing.

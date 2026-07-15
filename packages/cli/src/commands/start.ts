@@ -35,7 +35,7 @@ export async function start(args: string[]): Promise<void> {
   let serverPid: number;
   try {
     console.log("Starting Fleetlens...");
-    const result = await ensureCurrentServer({ port });
+    const result = await ensureCurrentServer({ port, autoStartDaemon: !noDaemon });
     serverUrl = `http://localhost:${result.port}`;
     serverPid = result.pid;
     if (result.restarted) {
