@@ -647,12 +647,18 @@ export async function getCodexSession(
 }
 
 /**
- * Read the *latest* Codex rollout's most recent `token_count` event and
- * extract the rate-limit windows. Codex stores these in every token_count
- * event's `rate_limits.{primary,secondary}`. The slots are not stable:
- * after the 5-hour limit was removed, a weekly-only response puts the
- * 7-day window in `primary` and leaves `secondary` null. Classify by
- * `window_minutes`, then fall back to the old slot order for legacy payloads.
+ * Offline/debug: read the *latest* Codex rollout's most recent `token_count`
+ * event and extract rate-limit windows. The daemon does **not** use this for
+ * live plan utilization — that polls ChatGPT's WHAM usage API (see
+ * `packages/cli/src/usage/codex.ts`, same path as OpenUsage) so weekly resets
+ * show up without a new Codex turn. Rollout rate_limits only update after a
+ * turn and can stick at a pre-reset % for days.
+ *
+ * Codex stores windows in every token_count event's
+ * `rate_limits.{primary,secondary}`. The slots are not stable: after the
+ * 5-hour limit was removed, a weekly-only response puts the 7-day window in
+ * `primary` and leaves `secondary` null. Classify by `window_minutes`, then
+ * fall back to the old slot order for legacy payloads.
  *
  * Returns null when no Codex sessions exist yet, when no rollout has a
  * usable token_count.rate_limits payload, or when every rate_limits shell

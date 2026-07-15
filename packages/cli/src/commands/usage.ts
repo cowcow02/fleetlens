@@ -1,5 +1,6 @@
 import { fetchUsage, UsageApiError } from "../usage/api.js";
 import { fetchGrokUsage, GrokApiError } from "../usage/grok.js";
+import { fetchCodexUsage, CodexApiError } from "../usage/codex.js";
 import { formatUsage } from "../usage/format.js";
 import { appendSnapshot } from "../usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
@@ -45,6 +46,18 @@ Usage:
           });
         } catch {
           // Non-fatal for manual --save.
+        }
+      }
+      try {
+        appendSnapshot(USAGE_LOG, await fetchCodexUsage());
+      } catch (err) {
+        if (
+          !(
+            err instanceof CodexApiError &&
+            (err.code === "no_auth" || err.code === "api_key_only")
+          )
+        ) {
+          // Quiet when Codex isn't logged in; surface nothing on --save.
         }
       }
       try {
