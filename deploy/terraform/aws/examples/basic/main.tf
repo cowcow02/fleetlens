@@ -23,10 +23,10 @@ variable "hostname" {
   type        = string
 }
 
-variable "admin_email" {
-  description = "Email address for the initial admin"
+variable "encryption_key" {
+  description = "FLEETLENS_ENCRYPTION_KEY — 64 hex characters (openssl rand -hex 32)"
   type        = string
-  default     = ""
+  sensitive   = true
 }
 
 variable "vpc_id" {
@@ -54,7 +54,7 @@ module "fleetlens" {
   source = "../../"
 
   hostname          = var.hostname
-  admin_email       = var.admin_email
+  encryption_key    = var.encryption_key
   vpc_id            = var.vpc_id
   subnet_ids        = var.subnet_ids
   public_subnet_ids = var.public_subnet_ids

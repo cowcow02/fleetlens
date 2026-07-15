@@ -2,6 +2,8 @@
 
 Fleetlens is a local-first observability dashboard for coding-agent fleets. It reads the session history already written by your agents, normalizes it into a common model, and shows where agent time, tools, projects, concurrency, usage, and shipped work are accumulating.
 
+![Fleetlens overview dashboard](https://raw.githubusercontent.com/cowcow02/fleetlens/master/site/assets/screenshots/overview.png)
+
 The published CLI and npm package are lowercase: `fleetlens`. The product name in the UI is **Fleetlens**.
 
 ## Start locally
@@ -61,6 +63,8 @@ Deployment paths:
 - [Google Cloud installer](./deploy/gcp/README.md)
 - [Docker Compose](./deploy/compose/README.md)
 - [AWS Terraform module](./deploy/terraform/aws/README.md)
+
+For production image deploys, pin a released GHCR tag (`ghcr.io/cowcow02/fleetlens-team-server:X.Y.Z` from a `server-vX.Y.Z` release); `:latest` tracks master HEAD.
 
 ## Architecture
 

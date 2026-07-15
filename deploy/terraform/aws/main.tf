@@ -177,7 +177,7 @@ resource "aws_ecs_task_definition" "main" {
   container_definitions = jsonencode([
     {
       name      = local.name
-      image     = "ghcr.io/cowcow02/fleetlens-server:${var.image_tag}"
+      image     = "ghcr.io/cowcow02/fleetlens-team-server:${var.image_tag}"
       essential = true
 
       portMappings = [
@@ -189,14 +189,16 @@ resource "aws_ecs_task_definition" "main" {
 
       environment = [
         { name = "PORT", value = tostring(local.container_port) },
-        { name = "HOSTNAME", value = var.hostname },
-        { name = "ADMIN_EMAIL", value = var.admin_email },
       ]
 
       secrets = [
         {
           name      = "DATABASE_URL"
           valueFrom = aws_ssm_parameter.database_url.arn
+        },
+        {
+          name      = "FLEETLENS_ENCRYPTION_KEY"
+          valueFrom = aws_ssm_parameter.encryption_key.arn
         }
       ]
 
@@ -210,7 +212,7 @@ resource "aws_ecs_task_definition" "main" {
       }
 
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:${local.container_port}/api/health || exit 1"]
+        command     = ["CMD-SHELL", "curl -f http://localhost:${local.container_port}/api/auth/preflight || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
@@ -242,7 +244,7 @@ resource "aws_ecs_service" "main" {
   depends_on = [aws_lb_listener.http]
 }
 
-# ── SSM Parameter (DATABASE_URL) ──────────────────────────────────────────────
+# ── SSM Parameters (DATABASE_URL, FLEETLENS_ENCRYPTION_KEY) ───────────────────
 
 resource "aws_ssm_parameter" "database_url" {
   name  = "/${local.name}/database_url"
@@ -250,12 +252,21 @@ resource "aws_ssm_parameter" "database_url" {
   value = local.database_url
 }
 
+resource "aws_ssm_parameter" "encryption_key" {
+  name  = "/${local.name}/encryption_key"
+  type  = "SecureString"
+  value = var.encryption_key
+}
+
 # ── IAM: allow ECS execution role to read SSM ─────────────────────────────────
 
 data "aws_iam_policy_document" "ssm_read" {
   statement {
-    actions   = ["ssm:GetParameters"]
-    resources = [aws_ssm_parameter.database_url.arn]
+    actions = ["ssm:GetParameters"]
+    resources = [
+      aws_ssm_parameter.database_url.arn,
+      aws_ssm_parameter.encryption_key.arn,
+    ]
   }
 }
 
@@ -282,7 +293,7 @@ resource "aws_lb_target_group" "main" {
   target_type = "ip"
 
   health_check {
-    path                = "/api/health"
+    path                = "/api/auth/preflight"
     healthy_threshold   = 2
     unhealthy_threshold = 3
     interval            = 30

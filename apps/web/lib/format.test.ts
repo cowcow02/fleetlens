@@ -175,13 +175,13 @@ describe("prettyProjectName", () => {
   });
 
   it("shows the last two segments of a normal absolute path", () => {
-    expect(prettyProjectName("/Users/me/Repo/kipwise/agentic-knowledge-system"))
-      .toBe("kipwise/agentic-knowledge-system");
+    expect(prettyProjectName("/Users/me/Repo/orbit/agentic-knowledge-system"))
+      .toBe("orbit/agentic-knowledge-system");
   });
 
   it("rewrites a `.worktrees/<name>` path as `<parent>/<name>` so worktrees keep repo context", () => {
-    expect(prettyProjectName("/Users/me/Repo/kipwise/.worktrees/feature-branch"))
-      .toBe("kipwise/feature-branch");
+    expect(prettyProjectName("/Users/me/Repo/orbit/.worktrees/feature-branch"))
+      .toBe("orbit/feature-branch");
   });
 
   it("returns the last two segments when the path is long but those segments are short", () => {
@@ -210,12 +210,12 @@ describe("prettyProjectName", () => {
 
   it("treats a leading slash as filtered empty segment", () => {
     // filter(Boolean) drops the empty-string at the head.
-    expect(prettyProjectName("/kipwise/agentic-knowledge-system"))
-      .toBe("kipwise/agentic-knowledge-system");
+    expect(prettyProjectName("/orbit/agentic-knowledge-system"))
+      .toBe("orbit/agentic-knowledge-system");
   });
 
   it("treats a trailing slash as filtered empty segment", () => {
-    expect(prettyProjectName("kipwise/agentic-knowledge-system/"))
-      .toBe("kipwise/agentic-knowledge-system");
+    expect(prettyProjectName("orbit/agentic-knowledge-system/"))
+      .toBe("orbit/agentic-knowledge-system");
   });
 });

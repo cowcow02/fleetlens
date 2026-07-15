@@ -753,7 +753,7 @@ export function AgentChat() {
                   Ask anything about your past sessions
                 </div>
                 <div style={{ fontSize: 12.5, color: "var(--af-text-secondary)", marginBottom: 26, lineHeight: 1.5 }}>
-                  Every conversation is searched locally — nothing leaves this machine.
+                  Search runs locally against your transcripts; synthesis uses your local claude CLI with your existing Claude Code account.
                   <br />
                   Find past work, get it synthesized, or turn it into a prompt for your next agent run.
                 </div>

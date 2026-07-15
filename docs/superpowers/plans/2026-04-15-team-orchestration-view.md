@@ -150,11 +150,11 @@ describe("parseTranscript — team fields", () => {
 
   it("extracts agentName on member session", () => {
     const lines = [
-      { type: "user", sessionId: "s1", teamName: "t", agentName: "kip-127",
+      { type: "user", sessionId: "s1", teamName: "t", agentName: "orb-127",
         message: { content: "hi" }, timestamp: "2026-04-15T10:00:00Z", uuid: "u1" },
     ];
     const { meta } = parseTranscript(lines);
-    expect(meta.agentName).toBe("kip-127");
+    expect(meta.agentName).toBe("orb-127");
   });
 
   it("leaves agentName undefined on lead session", () => {
@@ -252,16 +252,16 @@ describe("parseTranscript — teammateMessage classification", () => {
 
   it("handles attributes like color and summary", () => {
     const lines = withContent(
-      '<teammate-message teammate_id="kip-121" color="blue" summary="PR #104 ready">PR merged</teammate-message>',
+      '<teammate-message teammate_id="orb-121" color="blue" summary="PR #104 ready">PR merged</teammate-message>',
     );
     const { events } = parseTranscript(lines);
-    expect(events[0]!.teammateMessage?.teammateId).toBe("kip-121");
+    expect(events[0]!.teammateMessage?.teammateId).toBe("orb-121");
     expect(events[0]!.teammateMessage?.body).toBe("PR merged");
   });
 
   it("classifies idle notifications by JSON body type", () => {
     const lines = withContent(
-      '<teammate-message teammate_id="kip-121">{"type":"idle_notification","from":"kip-121"}</teammate-message>',
+      '<teammate-message teammate_id="orb-121">{"type":"idle_notification","from":"orb-121"}</teammate-message>',
     );
     const { events } = parseTranscript(lines);
     expect(events[0]!.teammateMessage?.kind).toBe("idle-notification");
@@ -284,10 +284,10 @@ describe("parseTranscript — teammateMessage classification", () => {
   it("accepts wrapper inside an array content block", () => {
     const lines = withContent([
       { type: "text",
-        text: '<teammate-message teammate_id="kip-121">PR merged</teammate-message>' },
+        text: '<teammate-message teammate_id="orb-121">PR merged</teammate-message>' },
     ]);
     const { events } = parseTranscript(lines);
-    expect(events[0]!.teammateMessage?.teammateId).toBe("kip-121");
+    expect(events[0]!.teammateMessage?.teammateId).toBe("orb-121");
     expect(events[0]!.teammateMessage?.body).toBe("PR merged");
   });
 });

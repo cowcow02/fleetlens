@@ -1,5 +1,7 @@
 # Deploy Fleetlens Team Edition on Railway
 
+Fleetlens including Team Edition is MIT-licensed open source — no license keys, no seat gating.
+
 Zero-config template (Postgres + team-server, every variable pre-filled):
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template/sGuijx)

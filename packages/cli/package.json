@@ -3,6 +3,20 @@
   "version": "0.16.6",
   "description": "fleetlens — local-only dashboard and usage tracker for Claude Code sessions and agent fleets",
   "license": "MIT",
+  "author": "cowcow02",
+  "homepage": "https://cowcow02.github.io/fleetlens/",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "dashboard",
+    "agent",
+    "multi-agent",
+    "observability",
+    "usage",
+    "analytics"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/cowcow02/fleetlens.git",
@@ -15,7 +29,9 @@
   "files": [
     "dist",
     "app",
-    "menubar"
+    "menubar",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "node build.mjs",

@@ -3,25 +3,25 @@ import { normalizeGithubRepos, normalizeLinearTeams } from "../../src/lib/integr
 
 describe("normalizeGithubRepos", () => {
   it("upgrades the legacy string[] shape to mappings with all-groups default", () => {
-    expect(normalizeGithubRepos(["kipwise/a", " kipwise/b "])).toEqual([
-      { name: "kipwise/a", group_ids: [] },
-      { name: "kipwise/b", group_ids: [] },
+    expect(normalizeGithubRepos(["orbit/a", " orbit/b "])).toEqual([
+      { name: "orbit/a", group_ids: [] },
+      { name: "orbit/b", group_ids: [] },
     ]);
   });
 
   it("keeps explicit group mappings and drops malformed entries", () => {
     expect(
       normalizeGithubRepos([
-        { name: "kipwise/a", group_ids: ["g1", "g2"] },
-        { name: "kipwise/b" },
+        { name: "orbit/a", group_ids: ["g1", "g2"] },
+        { name: "orbit/b" },
         { name: "" },
         { group_ids: ["g1"] },
         42,
         null,
       ]),
     ).toEqual([
-      { name: "kipwise/a", group_ids: ["g1", "g2"] },
-      { name: "kipwise/b", group_ids: [] },
+      { name: "orbit/a", group_ids: ["g1", "g2"] },
+      { name: "orbit/b", group_ids: [] },
     ]);
   });
 

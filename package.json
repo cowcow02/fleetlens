@@ -1,8 +1,8 @@
 {
-  "name": "claude-lens-workspace",
+  "name": "fleetlens-workspace",
   "version": "0.16.6",
   "private": true,
-  "description": "Claude Lens — local-only dashboard for Claude Code sessions. Heatmaps, timelines, parallel agent detection, PR metrics, and Ask Claude analysis.",
+  "description": "Fleetlens — local-only, privacy-first dashboard for multi-agent coding fleets (Claude Code, Codex CLI, Gemini CLI). Sessions, concurrency, usage, and insights.",
   "license": "MIT",
   "scripts": {
     "dev": "turbo dev",

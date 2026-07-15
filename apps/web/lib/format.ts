@@ -145,7 +145,7 @@ export function projectSlug(projectDir: string): string {
  * Show the last two path segments as the project name.
  * If the result exceeds `maxLen`, prefix with "…".
  *
- * "/Users/me/Repo/kipwise/agentic-knowledge-system" → "kipwise/agentic-knowledge-system"
+ * "/Users/me/Repo/orbit/agentic-knowledge-system" → "orbit/agentic-knowledge-system"
  * A very long result → "…se/agentic-knowledge-system"
  */
 export function prettyProjectName(

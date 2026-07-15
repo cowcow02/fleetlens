@@ -24,7 +24,7 @@ Custom skills used in this window — every one is project-local, authored by th
 | `simplify` | 2 | (the user's `/simplify` slash command) |
 | `retrospective` | 1 | claude-lens |
 
-Plus custom subagent type **`implement-teammate`** dispatched 2× on 2026-04-21 (`Implement KIP-182 Cmd+K fixes` / `Implement KIP-183 sidebar settings IA`). That's the user's own Task subagent type.
+Plus custom subagent type **`implement-teammate`** dispatched 2× on 2026-04-21 (`Implement ORB-182 Cmd+K fixes` / `Implement ORB-183 sidebar settings IA`). That's the user's own Task subagent type.
 
 Plus a custom slash command **`/harness-orchestrate`** invoked twice via `<command-name>` framing (Apr 21, two sessions).
 

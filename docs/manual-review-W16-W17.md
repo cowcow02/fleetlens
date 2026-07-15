@@ -52,7 +52,7 @@ Friday's friction was specifically a Railway CLI permission stall on 231de74c: "
 
 Mon (04-20) was a single 216-minute autonomous push on `vinuage-server` — f0808012 — with two upfront Explore subagents ("Explore FE ai-wine-assistant branch", "Explore BE ai-wine-assistant branch") + a `claude-code-guide` subagent for SDK research, then build. Same research-precedes-build pattern as W16's Mon. Skills loaded: `superpowers:brainstorming`, `superpowers:writing-plans`. Outcome `partial` because of a `FailedToOpenSocket` at the end of the staging push.
 
-Tue (04-21) had two distinct interactions. The claude-lens session 1d3c1cd4 was **continuation** ("continue") of the previous day's retro pipeline build, ending blocked by `ConnectionRefused`. The agentic-knowledge-system session 198910c9 (KIP-183, sidebar settings) opened with a `<teammate-message teammate_id="team-lead">` — that's your **harness orchestration** sending the task in via a structured handoff format, with a background `general-purpose` env-setup subagent fired in parallel.
+Tue (04-21) had two distinct interactions. The claude-lens session 1d3c1cd4 was **continuation** ("continue") of the previous day's retro pipeline build, ending blocked by `ConnectionRefused`. The agentic-knowledge-system session 198910c9 (ORB-183, sidebar settings) opened with a `<teammate-message teammate_id="team-lead">` — that's your **harness orchestration** sending the task in via a structured handoff format, with a background `general-purpose` env-setup subagent fired in parallel.
 
 Wed (04-22) was the heaviest day: 647 minutes across multiple long sessions. e80b3554 (Phase 1b enrichment, 130m, 37 sub dispatches) ran the **spec → 3-pass review → implement** loop again — three "Review plan chunk N" subagents in sequence. 9688cea8 (V2 perception layer, 96m, 24 sub) included an `Explore` subagent reverse-engineering Anthropic's `/insights` slash command source code (`/Users/cowcow02/Repo/claude-code-source/src/`) — competitive analysis as a subagent task. 0368a77e (cold-cache indicator, 76m, 3 sub) ran three review subagents post-implementation: "Code reuse review" + "Code quality review" + "Efficiency review" — three different review lenses, parallel.
 
@@ -68,7 +68,7 @@ Sat (04-25) was Phase 2 merge + ahora v8 spec drafting (2d445de7, 99m, 9 sub on 
 2. **`claude-code-guide` and `Explore` subagents for competitive analysis.** Reverse-engineering Anthropic's own /insights slash command via subagent (9688cea8) is the kind of move most users wouldn't think to delegate. The parent session stayed productive while the subagent dug.
 3. **`brainstorming` skill anchored every design-day opener.** Mon vinuage, Wed perception V2, Sat ahora spec — all opened with `superpowers:brainstorming`. Skill-as-warmup ritual.
 4. **TodoWrite at industrial scale.** 469 task ops across the week (50+ on Wed alone). The TodoWrite-as-state-machine pattern is fully internalized.
-5. **The `<teammate-message>` harness on KIP-183.** Your agentic harness handoff format is genuinely a new abstraction — you've built a coordinator/teammate role hierarchy on top of plain Claude Code subagents. The auto-digest has no vocabulary for this.
+5. **The `<teammate-message>` harness on ORB-183.** Your agentic harness handoff format is genuinely a new abstraction — you've built a coordinator/teammate role hierarchy on top of plain Claude Code subagents. The auto-digest has no vocabulary for this.
 
 ### How each could be made better (W17)
 
@@ -82,7 +82,7 @@ Sat (04-25) was Phase 2 merge + ahora v8 spec drafting (2d445de7, 99m, 9 sub on 
 
 - **The reviewer triad pattern on 0368a77e (cold cache shipping):** code reuse + code quality + efficiency, three reviewers in parallel before the diff merged. This is more rigorous than what most teams do at PR time.
 - **The single 216-minute Mon push** is genuinely the longest single autonomous turn of either week — 789 tool calls in one push, mostly on the staging-prep phase. A real outlier.
-- **The teammate-message harness on KIP-183 ran a background env-setup agent in parallel with the main thread.** Two subagents working on the same goal, one foreground (the implementing teammate) and one background (env setup). That's coordinator-style orchestration.
+- **The teammate-message harness on ORB-183 ran a background env-setup agent in parallel with the main thread.** Two subagents working on the same goal, one foreground (the implementing teammate) and one background (env setup). That's coordinator-style orchestration.
 
 ---
 

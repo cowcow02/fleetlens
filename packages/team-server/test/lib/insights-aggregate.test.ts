@@ -399,7 +399,7 @@ describe("earliestWeekMonday", () => {
     await insertRichRollup(s.pool, s.teamId, s.alice, "2026-05-13", { sessions: 1 });
     await s.pool.query(
       `INSERT INTO github_pull_requests (team_id, repo, number, title, state, created_at, merged_at)
-       VALUES ($1, 'acme/app', 1, 'KIP-1 fix', 'merged', '2026-04-14T10:00:00Z', '2026-04-15T10:00:00Z')`,
+       VALUES ($1, 'acme/app', 1, 'ORB-1 fix', 'merged', '2026-04-14T10:00:00Z', '2026-04-15T10:00:00Z')`,
       [s.teamId],
     );
     expect(await earliestWeekMonday(s.teamId, [s.alice], s.pool)).toBe("2026-04-13");
@@ -417,7 +417,7 @@ describe("earliestWeekMonday · group-scoped sources", () => {
     await insertRichRollup(s.pool, s.teamId, s.alice, "2026-05-13", { sessions: 1 });
     await s.pool.query(
       `INSERT INTO github_pull_requests (team_id, repo, number, title, state, created_at, merged_at)
-       VALUES ($1, 'acme/other-groups-repo', 1, 'KIP-1 fix', 'merged', '2026-04-14T10:00:00Z', '2026-04-15T10:00:00Z')`,
+       VALUES ($1, 'acme/other-groups-repo', 1, 'ORB-1 fix', 'merged', '2026-04-14T10:00:00Z', '2026-04-15T10:00:00Z')`,
       [s.teamId],
     );
     // Scoped to no mapped repos/teams → the April PR can't widen the floor.

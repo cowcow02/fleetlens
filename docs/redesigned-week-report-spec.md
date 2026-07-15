@@ -63,7 +63,7 @@ Patterns that aren't tracked in the count layer but show up in *how* you talk to
 - **Brainstorming as warmup ritual.** `superpowers:brainstorming` opened every design day this week — Mon vinuage, Wed V2 perception, Sat ahora. Skill-load → planning mode.
 - **Cross-session handoff via prose preamble.** `4884407b` spans Wed → Thu → Fri; each new session opens with `## Session conclusion — Phase 1A` or `# Handoff: Fleetlens Team Edition` prose copied from the prior session's output. Manual continuity protocol.
 - **TodoWrite as orchestration substrate.** 469 task operations this week — not a personal checklist; a way for the parent session to direct itself while subagents fan out.
-- **`<teammate-message>` harness frame.** Tue 198910c9 (KIP-183 sidebar) opened with `<teammate-message teammate_id="team-lead">` — your structured handoff format from a coordinator role into a teammate worktree. Not stock Claude Code; an abstraction you built.
+- **`<teammate-message>` harness frame.** Tue 198910c9 (ORB-183 sidebar) opened with `<teammate-message teammate_id="team-lead">` — your structured handoff format from a coordinator role into a teammate worktree. Not stock Claude Code; an abstraction you built.
 - **Image-attached prompts.** 5 sessions opened with `[Image #N]` references — visual cue → quantitative ask.
 - **No Plan Mode.** Zero `ExitPlan` calls in 47 entries this week. You DO plan — via spec docs and review subagents — but the canonical `/plan` tool didn't fit your shape.
 
@@ -95,7 +95,7 @@ Patterns that aren't tracked in the count layer but show up in *how* you talk to
 
 **Competitive analysis via subagent.** Wed 9688cea8 dispatched an Explore subagent to read Anthropic's own `/insights` source for V2 design reference. Most users wouldn't think to delegate this; you treated it as a normal subagent task.
 
-**The `<teammate-message>` harness ran a background env-setup agent in parallel with the implementing teammate.** Tue 198910c9 dispatched `general-purpose` "Env setup for KIP-183" with `background: true` — coordinator-style orchestration where two subagents work the same goal at different layers (env vs code).
+**The `<teammate-message>` harness ran a background env-setup agent in parallel with the implementing teammate.** Tue 198910c9 dispatched `general-purpose` "Env setup for ORB-183" with `background: true` — coordinator-style orchestration where two subagents work the same goal at different layers (env vs code).
 
 **The week's range was wider than most.** Mon's 216-min vinuage push (single-shot `partial`) and the prior week's Tue 8-min daemon-fix (single-shot `shipped`) bracket the spectrum. Same approach (long autonomous), opposite outcomes. The difference: Tue had a scoped task; Mon was an open-ended end-of-feature push.
 

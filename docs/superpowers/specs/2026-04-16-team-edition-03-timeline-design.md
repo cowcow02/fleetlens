@@ -139,7 +139,7 @@ These are nullable. Doc 3's blocks have NULL ticket columns forever; newly-inges
 
 `repo_slug` is **not a filesystem path** and **not a git remote URL**. It's a team-stable short name that the daemon produces from the repo root:
 
-- If the repo has a git remote: `repo_slug = basename(git remote get-url origin, ".git")` — e.g., `github.com:kipwise/agentic-knowledge-system.git` → `agentic-knowledge-system`.
+- If the repo has a git remote: `repo_slug = basename(git remote get-url origin, ".git")` — e.g., `github.com:orbit/agentic-knowledge-system.git` → `agentic-knowledge-system`.
 - If no remote but the cwd is a worktree of a repo with a remote: resolve to the parent repo's slug (same `canonicalProjectName()` logic solo edition already uses).
 - If no remote at all: `basename(cwd)` — e.g., `/Users/alice/scratchpad` → `scratchpad`. Rare; only happens for throwaway projects.
 

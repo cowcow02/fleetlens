@@ -30,7 +30,7 @@ export function sessionDay(meta: SessionMeta): string | undefined {
  * Reduce a cwd path to its canonical project identity.
  *
  * Git worktrees are a common pattern for running multi-agent fleets in
- * parallel — `git worktree add .worktrees/kip-148 ...` creates a sibling
+ * parallel — `git worktree add .worktrees/orb-148 ...` creates a sibling
  * working copy under `.worktrees/`, and each worktree has its own cwd,
  * which Claude Code treats as a distinct "project". But conceptually
  * every `.worktrees/<name>` belongs to the parent repo, not a new project.
@@ -39,7 +39,7 @@ export function sessionDay(meta: SessionMeta): string | undefined {
  * under their parent repo everywhere: project list, sidebar, top projects,
  * Gantt colors, project detail page, etc.
  *
- *   canonicalProjectName("/Users/foo/Repo/bar/.worktrees/kip-148")
+ *   canonicalProjectName("/Users/foo/Repo/bar/.worktrees/orb-148")
  *     === "/Users/foo/Repo/bar"
  *   canonicalProjectName("/Users/foo/Repo/bar")
  *     === "/Users/foo/Repo/bar"

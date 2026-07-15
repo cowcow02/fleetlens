@@ -63,7 +63,7 @@ test/
   lib/
     ticket-matcher.test.ts         # every tier, disambiguation, multi-ticket
     ticket-enricher.test.ts        # gh pr list mock
-    auto-detector.test.ts          # kipwise fixture → HIGH confidence
+    auto-detector.test.ts          # orbit fixture → HIGH confidence
     insights-detector.test.ts      # each detector kind
 ```
 
@@ -224,9 +224,9 @@ Background worker (runs every 2 minutes via scheduler): pops up to 50 pending jo
 
 ### Task 8: Auto-detector
 
-- [ ] **Write failing test with kipwise-like fixture data**
+- [ ] **Write failing test with orbit-like fixture data**
 
-Seed ~50 session blocks with ticketSignals containing Linear URLs with KIP prefix → expect auto-detect returns `{ prefix: "KIP", provider: "linear", slug: "kipwise", confidence: "high" }`.
+Seed ~50 session blocks with ticketSignals containing Linear URLs with KIP prefix → expect auto-detect returns `{ prefix: "KIP", provider: "linear", slug: "orbit", confidence: "high" }`.
 
 - [ ] **Implement auto-detector.ts**
 
@@ -262,7 +262,7 @@ Scoring algorithm per spec: +5 per URL session, +3 per branch/agentName, +1 per 
 ### Task 11: Gantt label decoration
 
 - [ ] Modify `gantt-block.tsx` to read `session_block_tickets` data from the gantt feed response
-- [ ] When a block has a non-null ticket_id: prepend ticket ID to the label (`KIP-148 api-svc 4.1h`)
+- [ ] When a block has a non-null ticket_id: prepend ticket ID to the label (`ORB-148 api-svc 4.1h`)
 - [ ] When the ticket has `ship_state = 'merged'`: add a trailing ship marker
 - [ ] Blocks without tickets render exactly as Doc 3 left them (regression-safe)
 - [ ] Extend the gantt feed API to join `session_block_tickets` and include ticket data in the response
@@ -306,7 +306,7 @@ Scoring algorithm per spec: +5 per URL session, +3 per branch/agentName, +1 per 
 ### Task 17: End-to-end smoke test
 
 - [ ] Deploy fresh Docs 1/2/3/4 stack
-- [ ] Run 3 test daemons producing kipwise-like data for 24 hours:
+- [ ] Run 3 test daemons producing orbit-like data for 24 hours:
   - Daemon A: sessions with `gh pr create` tool_results containing PR URLs
   - Daemon B: sessions with Linear MCP tool_results containing ticket URLs
   - Daemon C: sessions with no URLs (content-frequency-only matching)

@@ -62,8 +62,8 @@ export function ZaiCredentialsForm({ initial }: { initial: CredentialMasked }) {
       <div className="space-y-2">
         <p className="text-sm text-gray-500">
           Z.ai API key configured ({hint}). Used by the daemon to poll your GLM Coding Plan
-          usage — data stays on this machine; the key is stored at ~/.cclens/credentials.json
-          (owner-read/write only).
+          usage — the key is sent only with those calls to Z.ai&apos;s own usage API and is
+          stored locally at ~/.cclens/credentials.json (owner-read/write only).
         </p>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="af-btn" onClick={() => setEditing(true)}>

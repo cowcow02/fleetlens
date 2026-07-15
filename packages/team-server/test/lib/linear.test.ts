@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { toIssueRow, type LinearIssueNode } from "../../src/lib/linear.js";
 
 const node: LinearIssueNode = {
-  identifier: "KIP-315",
+  identifier: "ORB-315",
   title: "M14 — ignore outcome, end-to-end",
-  url: "https://linear.app/kipwise/issue/KIP-315",
+  url: "https://linear.app/orbit/issue/ORB-315",
   estimate: 3,
   createdAt: "2026-06-01T08:00:00.000Z",
   startedAt: "2026-06-05T09:00:00.000Z",
@@ -18,7 +18,7 @@ const node: LinearIssueNode = {
 describe("toIssueRow", () => {
   it("maps a completed issue", () => {
     const row = toIssueRow(node);
-    expect(row.identifier).toBe("KIP-315");
+    expect(row.identifier).toBe("ORB-315");
     expect(row.stateType).toBe("completed");
     expect(row.linearTeamKey).toBe("KIP");
     expect(row.assignee).toBe("Sam");

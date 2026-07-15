@@ -38,7 +38,7 @@ fleetlens/                            ← github.com/cowcow02/fleetlens
 ## Core domain concepts
 
 ### Canonical project
-A **project** is identified by its `cwd` path with any `/.worktrees/<name>` suffix stripped. Running agents inside `foo/.worktrees/kip-148` and `foo/` both roll up under `foo` — see `canonicalProjectName()` in `parser/src/analytics.ts`. This means `groupByProject` and `listProjects` aggregate all worktree sessions into one project row with a `worktreeCount` badge in the UI.
+A **project** is identified by its `cwd` path with any `/.worktrees/<name>` suffix stripped. Running agents inside `foo/.worktrees/orb-148` and `foo/` both roll up under `foo` — see `canonicalProjectName()` in `parser/src/analytics.ts`. This means `groupByProject` and `listProjects` aggregate all worktree sessions into one project row with a `worktreeCount` badge in the UI.
 
 ### Active segments / agent time
 A session's raw timestamps are split into **active segments** wherever there's a gap > 3 minutes between events. The sum of segment durations is the session's **agent time** (formerly "air time"). This replaces wall-clock duration as the headline number because it excludes user-away gaps.
@@ -136,6 +136,10 @@ The CLI and team-server release on independent tracks. The CLI workflow does NOT
 
 ```bash
 pnpm test && pnpm verify      # Must pass — CI runs these and will fail the release otherwise
+# Write the CHANGELOG.md entry for the NEW version BEFORE tagging — the release
+# workflow's first step (scripts/check-changelog.mjs) hard-fails the publish if
+# the tagged version has no `## [<version>]` heading. This killed the 0.16.3 and
+# 0.16.5 releases; 0.16.5 was never published because of it.
 npm version patch             # or minor/major — bumps root + syncs parser/cli/web
 git push origin master
 git push origin v<version>    # pushing the tag triggers .github/workflows/release.yml
@@ -153,6 +157,8 @@ The agent does not need npm credentials. The workflow runs with the stored token
 
 ```bash
 pnpm -F @claude-lens/team-server test                              # team-server tests must pass
+# Same CHANGELOG gate as the CLI: packages/team-server/CHANGELOG.md needs a
+# `## [<version>]` entry for the new version or the image publish fails.
 (cd packages/team-server && npm version patch --no-git-tag-version) # or minor/major — bumps team-server only
 V=$(jq -r .version packages/team-server/package.json)
 git add packages/team-server/package.json

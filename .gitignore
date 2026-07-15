@@ -20,4 +20,10 @@ pnpm-debug.log*
 .playwright-mcp/
 .qa/
 .tmp-browsertest/
-/output/pdf/
+.commandcode/
+.conductor/
+/output/
+/tmp/
+# CI copies these into the npm package at publish time
+packages/cli/README.md
+packages/cli/LICENSE

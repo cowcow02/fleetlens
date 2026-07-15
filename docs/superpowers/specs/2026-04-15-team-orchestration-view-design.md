@@ -36,12 +36,12 @@ All conclusions below were verified against three real sessions shipped by Claud
 | Role | Session | Key JSONL fields |
 |---|---|---|
 | Lead | `3edd9aee…` | `teamName`, has `TeamCreate` tool_use, no `agentName` |
-| Member A | `21bec111…` | `teamName`, `agentName: "kip-127-agent-organize"` |
-| Member B | `aacdb908…` | `teamName`, `agentName: "kip-128-agent-edit"` |
+| Member A | `21bec111…` | `teamName`, `agentName: "orb-127-agent-organize"` |
+| Member B | `aacdb908…` | `teamName`, `agentName: "orb-128-agent-edit"` |
 
 **Team grouping field** — every event in every team-participating session carries a top-level `teamName: string`. All three share `"orchestrate-m6-cli"`. The value is stable across the full transcript.
 
-**Canonical teammate id** — every event in a member session carries a top-level `agentName: string` (e.g. `"kip-127-agent-organize"`). This is the same string the lead uses as the `to` argument of its `SendMessage` tool_use and that appears as the `teammate_id` attribute of `<teammate-message>` XML wrappers on the lead side. Lead sessions do **not** carry `agentName`.
+**Canonical teammate id** — every event in a member session carries a top-level `agentName: string` (e.g. `"orb-127-agent-organize"`). This is the same string the lead uses as the `to` argument of its `SendMessage` tool_use and that appears as the `teammate_id` attribute of `<teammate-message>` XML wrappers on the lead side. Lead sessions do **not** carry `agentName`.
 
 **Lead signals** — the lead session contains a `TeamCreate` tool_use near the start (`agent_type: "orchestrator"`) and a corresponding `TeamDelete` near shutdown. Its tool_result for `TeamCreate` references a `~/.claude/teams/<team_name>/config.json` file, but that file is deleted on `TeamDelete`, so we rely entirely on the JSONL, not the filesystem.
 
@@ -72,8 +72,8 @@ Delivered on the lead side as a synthetic `user` event wrapped in `<teammate-mes
 
 **Idle and shutdown notifications** ride the same channel with a JSON body:
 ```
-<teammate-message teammate_id="kip-121-cli-foundation">
-  {"type":"idle_notification","from":"kip-121-cli-foundation",…}
+<teammate-message teammate_id="orb-121-cli-foundation">
+  {"type":"idle_notification","from":"orb-121-cli-foundation",…}
 </teammate-message>
 ```
 

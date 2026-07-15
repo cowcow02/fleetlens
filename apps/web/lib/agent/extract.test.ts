@@ -53,7 +53,7 @@ describe("extractIndexDoc", () => {
     const doc = extractIndexDoc(
       session(
         [ev({ index: 0, role: "user", blocks: [{ type: "text", text: "hello world" }] })],
-        { projectName: "/Users/me/Repo/foo/.worktrees/kip-1", firstUserPreview: "hello world" },
+        { projectName: "/Users/me/Repo/foo/.worktrees/orb-1", firstUserPreview: "hello world" },
       ),
       FILE,
     );

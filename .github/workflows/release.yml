@@ -122,6 +122,11 @@ jobs:
       - name: Upgrade npm for OIDC trusted publishing
         run: npm install -g npm@11
 
+      # npm only auto-includes README/LICENSE from the package's own directory,
+      # not the monorepo root — without this copy the tarball ships bare.
+      - name: Copy README + LICENSE into CLI package
+        run: cp README.md LICENSE packages/cli/
+
       # Auth via OIDC trusted publisher (configured on npmjs.com), not a token.
       - name: Publish to npm
         run: npm publish packages/cli/ --access public

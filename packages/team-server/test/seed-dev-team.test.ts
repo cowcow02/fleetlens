@@ -40,7 +40,7 @@ describe("seed-dev-team", () => {
       `INSERT INTO teams (slug, name) VALUES ('acme-eng', 'Acme Engineering') RETURNING id`,
     );
     const teamId = teamRes.rows[0].id;
-    const admin = await createUserAccount("admin@acme.dev", "devpass1", "Charlie", { isStaff: false }, pool);
+    const admin = await createUserAccount("admin@acme.dev", "devpass1", "Erin", { isStaff: false }, pool);
     const alice = await createUserAccount("alice@acme.dev", "devpass1", "Alice", {}, pool);
     const bob = await createUserAccount("bob@acme.dev", "devpass1", "Bob", {}, pool);
     const dana = await createUserAccount("dana@acme.dev", "devpass1", "Dana", {}, pool);
@@ -61,7 +61,7 @@ describe("seed-dev-team", () => {
       [dana.id, teamId],
     );
     const members = [
-      { id: adminMem.rows[0].id, name: "Charlie", weight: 1.6 },
+      { id: adminMem.rows[0].id, name: "Erin", weight: 1.6 },
       { id: aliceMem.rows[0].id, name: "Alice", weight: 1.2 },
       { id: bobMem.rows[0].id, name: "Bob", weight: 1.3 },
       { id: danaMem.rows[0].id, name: "Dana", weight: 0.35 },
@@ -79,10 +79,10 @@ describe("seed-dev-team", () => {
       }
     }
 
-    const PROJECTS = ["topeka", "kipwise-v1", "ops-runbooks", "infra-bootstrap"];
+    const PROJECTS = ["topeka", "orbit-shop", "ops-runbooks", "infra-bootstrap"];
     const SKILLS = [
       "harness-orchestrate",
-      "kipwise-migration-guard",
+      "orbit-migration-guard",
       "release-ship-check",
       "brainstorming",
       "test-driven-development",
@@ -169,11 +169,11 @@ describe("seed-dev-team", () => {
       }
     }
 
-    // Artifact-authoring signals: Charlie authors 2 skills, edits CLAUDE.md.
-    // Bob adopts one of Charlie's skills. Together this proves both the
+    // Artifact-authoring signals: Erin authors 2 skills, edits CLAUDE.md.
+    // Bob adopts one of Erin's skills. Together this proves both the
     // L4-builds and L4-coaches paths against real (non-synthetic) signals.
-    const charlieSkillA = "skillhash-charlie-a" + "0".repeat(13);
-    const charlieSkillB = "skillhash-charlie-b" + "0".repeat(13);
+    const erinSkillA = "skillhash-erin-a" + "0".repeat(13);
+    const erinSkillB = "skillhash-erin-b" + "0".repeat(13);
     const today = thisWeek;
     await pool.query(
       `INSERT INTO day_artifact_signals (
@@ -184,13 +184,13 @@ describe("seed-dev-team", () => {
       [
         teamId, members[0].id, today,
         JSON.stringify([
-          { pathHash: charlieSkillA, firstSeenDate: today },
-          { pathHash: charlieSkillB, firstSeenDate: today },
+          { pathHash: erinSkillA, firstSeenDate: today },
+          { pathHash: erinSkillB, firstSeenDate: today },
         ]),
         24,
       ],
     );
-    // Catalog: Charlie is originator of both skills.
+    // Catalog: Erin is originator of both skills.
     await pool.query(
       `INSERT INTO team_skill_catalog (
          team_id, path_hash, kind,
@@ -199,7 +199,7 @@ describe("seed-dev-team", () => {
        ) VALUES
          ($1, $2, 'skill', $3, $4::date, ARRAY[$5::uuid], 3),
          ($1, $6, 'skill', $3, $4::date, ARRAY[]::uuid[], 1)`,
-      [teamId, charlieSkillA, members[0].id, today, members[2].id /* Bob is adopter */, charlieSkillB],
+      [teamId, erinSkillA, members[0].id, today, members[2].id /* Bob is adopter */, erinSkillB],
     );
 
     const { cookieToken } = await createSession(admin.id, pool);

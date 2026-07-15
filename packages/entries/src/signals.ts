@@ -218,7 +218,9 @@ export function classifySkill(name: string): SkillOrigin {
 // ─── External-reference detection ────────────────────────────────────────
 
 const EXTERNAL_REF_PATTERNS: Array<{ kind: ExternalRefKind; re: RegExp }> = [
-  { kind: "linear-kip", re: /\bKIP-\d+\b/i },
+  // Linear/Jira-style ticket ids. 2+ digits keeps model names (GPT-5) out;
+  // the denylist drops the common spec/hash tokens that share the shape.
+  { kind: "ticket-ref", re: /\b(?!(?:SHA|ISO|RFC|CVE)-)[A-Z]{2,10}-\d{2,}\b/ },
   { kind: "github-issue-pr", re: /\b(issue|pr|pull request)\s*#\d+\b|github\.com\/[^\s]+\/(issues|pull)\/\d+/i },
   { kind: "branch-ref", re: /\b(branch|feat|fix|chore|refactor)[/:]\s*[\w./-]+|on `[\w./-]+`/i },
   { kind: "url", re: /https?:\/\/\S+/ },

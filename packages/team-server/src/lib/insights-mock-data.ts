@@ -1,6 +1,6 @@
 import type { TeamInsightReport } from "../app/team/[slug]/insights/types";
 
-const MEMBERS = ["Charlie", "Alice", "Bob", "Dana"];
+const MEMBERS = ["Erin", "Alice", "Bob", "Dana"];
 
 export const mockTeamInsightReport: TeamInsightReport = {
   team_slug: "acme-eng",
@@ -13,25 +13,25 @@ export const mockTeamInsightReport: TeamInsightReport = {
     agent_hours_total: 18.4,
     agent_hours_wow_delta_pct: 12,
     agent_hours_per_member: [
-      { member: "Charlie", hours: 6.8 },
+      { member: "Erin", hours: 6.8 },
       { member: "Alice", hours: 4.9 },
       { member: "Bob", hours: 5.3 },
       { member: "Dana", hours: 1.4 },
     ],
     agent_hours_per_project: [
       { project: "topeka", hours: 8.2 },
-      { project: "kipwise-v1", hours: 5.1 },
+      { project: "orbit-shop", hours: 5.1 },
       { project: "ops-runbooks", hours: 3.4 },
       { project: "infra-bootstrap", hours: 1.7 },
     ],
     agent_hours_per_user_skill: [
       { skill: "harness-orchestrate", hours: 4.3 },
-      { skill: "kipwise-migration-guard", hours: 2.8 },
+      { skill: "orbit-migration-guard", hours: 2.8 },
       { skill: "release-ship-check", hours: 1.6 },
     ],
     sessions_total: 41,
     sessions_per_member: [
-      { member: "Charlie", count: 16 },
+      { member: "Erin", count: 16 },
       { member: "Alice", count: 11 },
       { member: "Bob", count: 9 },
       { member: "Dana", count: 5 },
@@ -44,7 +44,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       { bucket: "1–2h", count: 5 },
       { bucket: "2h+", count: 3 },
     ],
-    longest_session: { member: "Bob", project: "kipwise-v1", hours: 4.2, date: "2026-05-06" },
+    longest_session: { member: "Bob", project: "orbit-shop", hours: 4.2, date: "2026-05-06" },
     total_turns: 612,
     total_tool_calls: 1843,
     tools_per_turn: 3.0,
@@ -52,19 +52,19 @@ export const mockTeamInsightReport: TeamInsightReport = {
     tokens: { input: 6_200_000, output: 980_000, cache_read: 18_400_000, cache_write: 2_100_000 },
     cost_total_usd: 142.36,
     cost_per_member: [
-      { member: "Charlie", usd: 51.22 },
+      { member: "Erin", usd: 51.22 },
       { member: "Alice", usd: 36.74 },
       { member: "Bob", usd: 41.18 },
       { member: "Dana", usd: 13.22 },
     ],
     cost_per_project: [
       { project: "topeka", usd: 62.45 },
-      { project: "kipwise-v1", usd: 38.84 },
+      { project: "orbit-shop", usd: 38.84 },
       { project: "ops-runbooks", usd: 27.91 },
       { project: "infra-bootstrap", usd: 13.16 },
     ],
     cost_per_shipped_pr_per_member: [
-      { member: "Charlie", usd_per_pr: 17.07 },
+      { member: "Erin", usd_per_pr: 17.07 },
       { member: "Alice", usd_per_pr: 36.74 },
       { member: "Bob", usd_per_pr: 20.59 },
       { member: "Dana", usd_per_pr: 0 },
@@ -84,12 +84,12 @@ export const mockTeamInsightReport: TeamInsightReport = {
       { path: "CLAUDE.md", touches: 9, members: 3 },
     ],
     multi_member_files: [
-      { path: "CLAUDE.md", members: ["Charlie", "Alice", "Bob"] },
-      { path: "packages/parser/src/analytics.ts", members: ["Charlie", "Alice"] },
-      { path: "scripts/conductor-setup.sh", members: ["Charlie", "Dana"] },
+      { path: "CLAUDE.md", members: ["Erin", "Alice", "Bob"] },
+      { path: "packages/parser/src/analytics.ts", members: ["Erin", "Alice"] },
+      { path: "scripts/conductor-setup.sh", members: ["Erin", "Dana"] },
     ],
     silo_files: [
-      { path: "packages/cli/src/perception/backfill.ts", member: "Charlie", touches: 12 },
+      { path: "packages/cli/src/perception/backfill.ts", member: "Erin", touches: 12 },
       { path: "apps/web/components/week-digest.tsx", member: "Alice", touches: 29 },
       { path: "packages/team-server/src/db/migrations/0008_*.sql", member: "Bob", touches: 24 },
     ],
@@ -127,7 +127,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     config_to_code_ratio_pct: 8,
     shipped_vs_nonshipped_files: { shipped: 86, nonshipped: 38 },
     extension_diversity_per_member: [
-      { member: "Charlie", extensions: 9 },
+      { member: "Erin", extensions: 9 },
       { member: "Alice", extensions: 6 },
       { member: "Bob", extensions: 4 },
       { member: "Dana", extensions: 3 },
@@ -137,73 +137,73 @@ export const mockTeamInsightReport: TeamInsightReport = {
   // ─── C. Working style ───────────────────────────────────────────────────
   working_style: {
     prompt_length_distribution_per_member: [
-      { member: "Charlie", short: 4, medium: 7, long: 4, very_long: 1 },
+      { member: "Erin", short: 4, medium: 7, long: 4, very_long: 1 },
       { member: "Alice", short: 6, medium: 3, long: 1, very_long: 1 },
       { member: "Bob", short: 1, medium: 2, long: 4, very_long: 2 },
       { member: "Dana", short: 4, medium: 1, long: 0, very_long: 0 },
     ],
     long_brief_ratio_per_member: [
-      { member: "Charlie", ratio_pct: 31 },
+      { member: "Erin", ratio_pct: 31 },
       { member: "Alice", ratio_pct: 18 },
       { member: "Bob", ratio_pct: 67 },
       { member: "Dana", ratio_pct: 0 },
     ],
     verbosity_drift_per_member: [
-      { member: "Charlie", direction: "stable", delta_pct: 2 },
+      { member: "Erin", direction: "stable", delta_pct: 2 },
       { member: "Alice", direction: "shorter", delta_pct: -18 },
       { member: "Bob", direction: "longer", delta_pct: 24 },
       { member: "Dana", direction: "stable", delta_pct: 0 },
     ],
     imperative_vs_conversational_per_member: [
-      { member: "Charlie", imperative_pct: 62 },
+      { member: "Erin", imperative_pct: 62 },
       { member: "Alice", imperative_pct: 88 },
       { member: "Bob", imperative_pct: 41 },
       { member: "Dana", imperative_pct: 72 },
     ],
     code_block_usage_per_member: [
-      { member: "Charlie", pct: 22 },
+      { member: "Erin", pct: 22 },
       { member: "Alice", pct: 9 },
       { member: "Bob", pct: 38 },
       { member: "Dana", pct: 14 },
     ],
     external_ref_vs_self_contained_per_member: [
-      { member: "Charlie", external_pct: 24 },
+      { member: "Erin", external_pct: 24 },
       { member: "Alice", external_pct: 8 },
       { member: "Bob", external_pct: 51 },
       { member: "Dana", external_pct: 0 },
     ],
     structured_format_usage_per_member: [
-      { member: "Charlie", pct: 44 },
+      { member: "Erin", pct: 44 },
       { member: "Alice", pct: 14 },
       { member: "Bob", pct: 67 },
       { member: "Dana", pct: 12 },
     ],
     interrupt_freq_per_member: [
-      { member: "Charlie", per_session: 0.4 },
+      { member: "Erin", per_session: 0.4 },
       { member: "Alice", per_session: 0.2 },
       { member: "Bob", per_session: 1.1 },
       { member: "Dana", per_session: 0.6 },
     ],
     frustrated_signals_per_member: [
-      { member: "Charlie", count: 1 },
+      { member: "Erin", count: 1 },
       { member: "Alice", count: 0 },
       { member: "Bob", count: 3 },
       { member: "Dana", count: 1 },
     ],
     tone_grade_per_member: [
-      { member: "Charlie", grade: "neutral-imperative" },
+      { member: "Erin", grade: "neutral-imperative" },
       { member: "Alice", grade: "terse-imperative" },
       { member: "Bob", grade: "exploratory-conversational" },
       { member: "Dana", grade: "neutral-imperative" },
     ],
     politeness_markers_per_member: [
-      { member: "Charlie", per_msg: 0.04 },
+      { member: "Erin", per_msg: 0.04 },
       { member: "Alice", per_msg: 0.01 },
       { member: "Bob", per_msg: 0.11 },
       { member: "Dana", per_msg: 0.02 },
     ],
     sentiment_user_messages_per_member: [
-      { member: "Charlie", positive: 8, neutral: 89, negative: 3 },
+      { member: "Erin", positive: 8, neutral: 89, negative: 3 },
       { member: "Alice", positive: 4, neutral: 95, negative: 1 },
       { member: "Bob", positive: 14, neutral: 78, negative: 8 },
       { member: "Dana", positive: 5, neutral: 92, negative: 3 },
@@ -225,7 +225,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     webfetch_websearch_count: 6,
     todowrite_ops_per_session_avg: 4.2,
     tool_error_rate_per_member: [
-      { member: "Charlie", rate_pct: 3.1 },
+      { member: "Erin", rate_pct: 3.1 },
       { member: "Alice", rate_pct: 1.2 },
       { member: "Bob", rate_pct: 6.4 },
       { member: "Dana", rate_pct: 2.8 },
@@ -238,18 +238,18 @@ export const mockTeamInsightReport: TeamInsightReport = {
   skills_harness: {
     user_authored_skills: [
       { name: "harness-orchestrate", originated_by: "Alice", adopters: 3, uses: 11 },
-      { name: "kipwise-migration-guard", originated_by: "Bob", adopters: 1, uses: 5 },
-      { name: "release-ship-check", originated_by: "Charlie", adopters: 2, uses: 4 },
-      { name: "spec-frame-loader", originated_by: "Charlie", adopters: 2, uses: 3 },
+      { name: "orbit-migration-guard", originated_by: "Bob", adopters: 1, uses: 5 },
+      { name: "release-ship-check", originated_by: "Erin", adopters: 2, uses: 4 },
+      { name: "spec-frame-loader", originated_by: "Erin", adopters: 2, uses: 3 },
     ],
     user_authored_subagents: [
       { name: "implement-teammate", originated_by: "Alice", adopters: 2, uses: 6 },
-      { name: "spec-reviewer", originated_by: "Charlie", adopters: 1, uses: 3 },
+      { name: "spec-reviewer", originated_by: "Erin", adopters: 1, uses: 3 },
     ],
     skill_families: [
       { family: "harness-*", members: 3, uses: 14 },
       { family: "release-*", members: 2, uses: 4 },
-      { family: "kipwise-*", members: 1, uses: 5 },
+      { family: "orbit-*", members: 1, uses: 5 },
       { family: "superpowers:*", members: 4, uses: 22 },
     ],
     skills_loaded_never_dispatched: [
@@ -257,13 +257,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
       { name: "release-ship-check", loads: 1 },
     ],
     skills_newly_authored_this_week: [
-      { name: "spec-frame-loader", author: "Charlie", date: "2026-05-05" },
+      { name: "spec-frame-loader", author: "Erin", date: "2026-05-05" },
     ],
     preflight_skill_loads: [
       { skill: "superpowers:brainstorming", sessions: 4 },
       { skill: "superpowers:writing-plans", sessions: 3 },
       { skill: "harness-orchestrate", sessions: 3 },
-      { skill: "kipwise-migration-guard", sessions: 5 },
+      { skill: "orbit-migration-guard", sessions: 5 },
     ],
     midsession_skill_loads: [
       { skill: "superpowers:systematic-debugging", sessions: 3 },
@@ -271,7 +271,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ],
     sessions_with_zero_skills: 6,
     stock_vs_user_ratio_per_member: [
-      { member: "Charlie", stock_pct: 68 },
+      { member: "Erin", stock_pct: 68 },
       { member: "Alice", stock_pct: 41 },
       { member: "Bob", stock_pct: 53 },
       { member: "Dana", stock_pct: 92 },
@@ -282,8 +282,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
       { command: "/init", uses: 1, users: 1 },
     ],
     skill_diffusion_events: [
-      { skill: "harness-orchestrate", from_member: "Alice", to_member: "Charlie", date: "2026-05-07" },
-      { skill: "release-ship-check", from_member: "Charlie", to_member: "Dana", date: "2026-05-09" },
+      { skill: "harness-orchestrate", from_member: "Alice", to_member: "Erin", date: "2026-05-07" },
+      { skill: "release-ship-check", from_member: "Erin", to_member: "Dana", date: "2026-05-09" },
     ],
     skills_abandoned_this_week: [
       { name: "old-spec-linter", prev_uses: 7, current_uses: 0 },
@@ -296,7 +296,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
   // ─── F. Delegation / subagent ───────────────────────────────────────────
   delegation: {
     subagent_dispatches_per_member: [
-      { member: "Charlie", count: 11 },
+      { member: "Erin", count: 11 },
       { member: "Alice", count: 14 },
       { member: "Bob", count: 3 },
       { member: "Dana", count: 0 },
@@ -311,7 +311,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       { type: "spec-reviewer", count: 3 },
     ],
     user_authored_vs_stock_per_member: [
-      { member: "Charlie", user_pct: 27 },
+      { member: "Erin", user_pct: 27 },
       { member: "Alice", user_pct: 43 },
       { member: "Bob", user_pct: 0 },
       { member: "Dana", user_pct: 0 },
@@ -321,7 +321,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     implementer_reviewer_pairs: 3,
     orchestration_brief_first_sessions: 3,
     solo_vs_orchestrated_per_member: [
-      { member: "Charlie", orchestrated_pct: 38 },
+      { member: "Erin", orchestrated_pct: 38 },
       { member: "Alice", orchestrated_pct: 64 },
       { member: "Bob", orchestrated_pct: 12 },
       { member: "Dana", orchestrated_pct: 0 },
@@ -345,34 +345,34 @@ export const mockTeamInsightReport: TeamInsightReport = {
   outcomes: {
     prs_shipped: 6,
     prs_per_member: [
-      { member: "Charlie", count: 3 },
+      { member: "Erin", count: 3 },
       { member: "Alice", count: 1 },
       { member: "Bob", count: 2 },
       { member: "Dana", count: 0 },
     ],
     prs_per_project: [
       { project: "topeka", count: 3 },
-      { project: "kipwise-v1", count: 2 },
+      { project: "orbit-shop", count: 2 },
       { project: "ops-runbooks", count: 1 },
       { project: "infra-bootstrap", count: 0 },
     ],
     sessions_ending_in_commit: 24,
     sessions_ending_in_pr: 6,
     median_first_user_to_merge_min_per_member: [
-      { member: "Charlie", minutes: 88 },
+      { member: "Erin", minutes: 88 },
       { member: "Alice", minutes: 47 },
       { member: "Bob", minutes: 264 },
       { member: "Dana", minutes: 0 },
     ],
     per_project_outcome: [
       { project: "topeka", shipped: 3, partial: 1, blocked: 0 },
-      { project: "kipwise-v1", shipped: 2, partial: 0, blocked: 0 },
+      { project: "orbit-shop", shipped: 2, partial: 0, blocked: 0 },
       { project: "ops-runbooks", shipped: 1, partial: 1, blocked: 0 },
       { project: "infra-bootstrap", shipped: 0, partial: 1, blocked: 1 },
     ],
     skill_ship_rate: [
       { skill: "harness-orchestrate", ship_rate_pct: 100 },
-      { skill: "kipwise-migration-guard", ship_rate_pct: 100 },
+      { skill: "orbit-migration-guard", ship_rate_pct: 100 },
       { skill: "release-ship-check", ship_rate_pct: 75 },
       { skill: "superpowers:brainstorming", ship_rate_pct: 67 },
     ],
@@ -390,7 +390,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ],
     shipping_rate_ranking: [
       { member: "Alice", ship_rate_pct: 91 },
-      { member: "Charlie", ship_rate_pct: 71 },
+      { member: "Erin", ship_rate_pct: 71 },
       { member: "Bob", ship_rate_pct: 56 },
       { member: "Dana", ship_rate_pct: 0 },
     ],
@@ -403,13 +403,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
         kind: "migration-safety",
         members_affected: ["Bob", "Dana"],
         description:
-          "Bob caught a NOT-NULL backfill issue via kipwise-migration-guard on Wednesday; Dana hit the same shape on infra-bootstrap on Friday without a guard and ate a revert. Same friction, different harness preparation.",
+          "Bob caught a NOT-NULL backfill issue via orbit-migration-guard on Wednesday; Dana hit the same shape on infra-bootstrap on Friday without a guard and ate a revert. Same friction, different harness preparation.",
       },
       {
         kind: "TypeScript-import-resolution",
-        members_affected: ["Charlie", "Alice"],
+        members_affected: ["Erin", "Alice"],
         description:
-          "Both hit cross-package type imports (@claude-lens/entries to team-server) requiring local type aliases. Multiple workaround patterns landed in different places.",
+          "Both hit cross-package type imports (@orbit/shared-types to team-server) requiring local type aliases. Multiple workaround patterns landed in different places.",
       },
     ],
     frustrated_sessions: 4,
@@ -418,18 +418,18 @@ export const mockTeamInsightReport: TeamInsightReport = {
     loops_detected: 2,
     long_autonomous_failures: 1,
     shared_errors: [
-      { error: "Type 'X' is not assignable to type 'Y'", members_affected: ["Charlie", "Alice"] },
-      { error: "Connection refused on PG socket", members_affected: ["Charlie", "Dana"] },
+      { error: "Type 'X' is not assignable to type 'Y'", members_affected: ["Erin", "Alice"] },
+      { error: "Connection refused on PG socket", members_affected: ["Erin", "Dana"] },
     ],
     shared_dependency_trouble: [
-      { dep: "@claude-lens/entries", members: ["Charlie", "Alice"] },
+      { dep: "@orbit/shared-types", members: ["Erin", "Alice"] },
       { dep: "drizzle-kit", members: ["Bob"] },
     ],
     shared_external_systems_frustrated: [
-      { system: "Linear", refs: ["KIP-148", "KIP-152"] },
+      { system: "Linear", refs: ["ORB-148", "ORB-152"] },
     ],
     friction_rate_per_member: [
-      { member: "Charlie", rate_pct: 6 },
+      { member: "Erin", rate_pct: 6 },
       { member: "Alice", rate_pct: 0 },
       { member: "Bob", rate_pct: 33 },
       { member: "Dana", rate_pct: 20 },
@@ -437,7 +437,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     retry_same_op_count: 9,
     recovery_moves: [
       {
-        description: "Bob's kipwise-migration-guard caught a DROP COLUMN before commit; revised in 4 turns.",
+        description: "Bob's orbit-migration-guard caught a DROP COLUMN before commit; revised in 4 turns.",
         member: "Bob",
         date: "2026-05-06",
       },
@@ -452,8 +452,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
   // ─── J. Diffusion ───────────────────────────────────────────────────────
   diffusion: {
     skill_pickups: [
-      { skill: "harness-orchestrate", from_member: "Alice", to_member: "Charlie", days_to_pickup: 3 },
-      { skill: "release-ship-check", from_member: "Charlie", to_member: "Dana", days_to_pickup: 5 },
+      { skill: "harness-orchestrate", from_member: "Alice", to_member: "Erin", days_to_pickup: 3 },
+      { skill: "release-ship-check", from_member: "Erin", to_member: "Dana", days_to_pickup: 5 },
     ],
     subagent_spread: [
       { type: "implement-teammate", weeks_ago: 4, users_then: 1, users_now: 2 },
@@ -462,23 +462,23 @@ export const mockTeamInsightReport: TeamInsightReport = {
     skill_family_curve: [
       { family: "harness-*", weekly: [1, 2, 3, 3] },
       { family: "release-*", weekly: [0, 0, 1, 2] },
-      { family: "kipwise-*", weekly: [1, 1, 1, 1] },
+      { family: "orbit-*", weekly: [1, 1, 1, 1] },
     ],
     prompt_pattern_diffusion: [
       {
         pattern: "lead with the goal-statement, end with the verification gate",
-        first_seen_by: "Charlie",
+        first_seen_by: "Erin",
         spread_to: ["Alice"],
       },
       {
         pattern: "embed Linear KIP refs at the top of long-form briefs",
         first_seen_by: "Bob",
-        spread_to: ["Charlie"],
+        spread_to: ["Erin"],
       },
     ],
     tool_pattern_spreading: [
-      { pattern: "Read-then-Grep-then-Edit (no Bash for code search)", adopters: ["Charlie", "Alice", "Bob"] },
-      { pattern: "TodoWrite immediately after the spec is loaded", adopters: ["Charlie", "Alice"] },
+      { pattern: "Read-then-Grep-then-Edit (no Bash for code search)", adopters: ["Erin", "Alice", "Bob"] },
+      { pattern: "TodoWrite immediately after the spec is loaded", adopters: ["Erin", "Alice"] },
     ],
     plan_mode_curve: [1, 2, 3, 3],
     brainstorm_warmup_curve: [0, 1, 2, 2],
@@ -486,8 +486,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
       { practice: "manual diff-then-commit (no Task subagents)", peak_count: 3, current_count: 1 },
     ],
     first_used_other_member_skill_events: [
-      { event_member: "Charlie", skill: "harness-orchestrate", original_author: "Alice", date: "2026-05-07" },
-      { event_member: "Dana", skill: "release-ship-check", original_author: "Charlie", date: "2026-05-09" },
+      { event_member: "Erin", skill: "harness-orchestrate", original_author: "Alice", date: "2026-05-07" },
+      { event_member: "Dana", skill: "release-ship-check", original_author: "Erin", date: "2026-05-09" },
     ],
     velocity_diffusion_note:
       "Median session-to-PR-merge time dropped 18% week-over-week; the drop is concentrated in topeka sessions, suggesting the harness-orchestrate pattern is starting to pay off.",
@@ -498,54 +498,54 @@ export const mockTeamInsightReport: TeamInsightReport = {
   cooccurrence: {
     shared_friction_kinds: [
       { kind: "migration-safety", members: ["Bob", "Dana"] },
-      { kind: "TypeScript import resolution", members: ["Charlie", "Alice"] },
+      { kind: "TypeScript import resolution", members: ["Erin", "Alice"] },
     ],
     shared_files_same_week: [
-      { path: "CLAUDE.md", members: ["Charlie", "Alice", "Bob"] },
-      { path: "packages/parser/src/analytics.ts", members: ["Charlie", "Alice"] },
-      { path: "scripts/conductor-setup.sh", members: ["Charlie", "Dana"] },
+      { path: "CLAUDE.md", members: ["Erin", "Alice", "Bob"] },
+      { path: "packages/parser/src/analytics.ts", members: ["Erin", "Alice"] },
+      { path: "scripts/conductor-setup.sh", members: ["Erin", "Dana"] },
     ],
     shared_external_refs: [
-      { ref: "KIP-148", members: ["Bob", "Charlie"] },
-      { ref: "#41", members: ["Charlie", "Dana"] },
+      { ref: "ORB-148", members: ["Bob", "Erin"] },
+      { ref: "#41", members: ["Erin", "Dana"] },
     ],
     shared_skills_same_day: [
-      { skill: "harness-orchestrate", date: "2026-05-07", members: ["Alice", "Charlie"] },
-      { skill: "superpowers:writing-plans", date: "2026-05-04", members: ["Charlie", "Alice"] },
+      { skill: "harness-orchestrate", date: "2026-05-07", members: ["Alice", "Erin"] },
+      { skill: "superpowers:writing-plans", date: "2026-05-04", members: ["Erin", "Alice"] },
     ],
     concurrent_sessions: [
-      { date: "2026-05-07", window: "14:20–15:08", members: ["Alice", "Charlie", "Bob", "Dana"] },
-      { date: "2026-05-05", window: "10:11–10:58", members: ["Alice", "Charlie"] },
+      { date: "2026-05-07", window: "14:20–15:08", members: ["Alice", "Erin", "Bob", "Dana"] },
+      { date: "2026-05-05", window: "10:11–10:58", members: ["Alice", "Erin"] },
     ],
     shared_debugging: [
-      { dep: "@claude-lens/entries", members: ["Charlie", "Alice"] },
-      { dep: "fleetlens-topeka Postgres", members: ["Charlie", "Dana"] },
+      { dep: "@orbit/shared-types", members: ["Erin", "Alice"] },
+      { dep: "fleetlens-topeka Postgres", members: ["Erin", "Dana"] },
     ],
     shared_subagent_dispatch_kinds: [
-      { type: "Explore", members: ["Charlie", "Alice", "Bob"] },
-      { type: "implement-teammate", members: ["Alice", "Charlie"] },
+      { type: "Explore", members: ["Erin", "Alice", "Bob"] },
+      { type: "implement-teammate", members: ["Alice", "Erin"] },
     ],
   },
 
   // ─── L. Bench (team comparative) ────────────────────────────────────────
   bench: {
     task_category_bench: [
-      { category: "migrations", member: "Bob", metric_label: "1-pass ship rate 100% (kipwise-migration-guard)" },
+      { category: "migrations", member: "Bob", metric_label: "1-pass ship rate 100% (orbit-migration-guard)" },
       { category: "parallel dispatch", member: "Alice", metric_label: "3/3 sessions shipped on first pass" },
-      { category: "spec-first reviews", member: "Charlie", metric_label: "reviewer-triad shipped zero-rework" },
-      { category: "infra bring-up", member: "Charlie", metric_label: "fastest workspace setup via release-ship-check" },
-      { category: "refactors", member: "Charlie", metric_label: "median refactor session 22min" },
+      { category: "spec-first reviews", member: "Erin", metric_label: "reviewer-triad shipped zero-rework" },
+      { category: "infra bring-up", member: "Erin", metric_label: "fastest workspace setup via release-ship-check" },
+      { category: "refactors", member: "Erin", metric_label: "median refactor session 22min" },
       { category: "debugging", member: "Bob", metric_label: "highest interrupt-rate but highest recovery rate" },
     ],
     highest_delegation_rate: { member: "Alice", dispatches_per_session: 1.27 },
-    highest_skill_load_rate: { member: "Charlie", loads_per_session: 1.94 },
-    most_disciplined_plan_mode_user: { member: "Charlie", days: 4 },
+    highest_skill_load_rate: { member: "Erin", loads_per_session: 1.94 },
+    most_disciplined_plan_mode_user: { member: "Erin", days: 4 },
     most_parallel_dispatch_user: { member: "Alice", sessions: 3 },
     longest_autonomous_tolerance: { member: "Bob", hours: 4.2 },
     highest_first_pass_ship_rate: { member: "Alice", pct: 91 },
-    most_diverse_project_portfolio: { member: "Charlie", projects: 3 },
-    highest_user_authored_skill_output: { member: "Charlie", skills_authored: 2 },
-    most_efficient_member: { member: "Charlie", metric: "lowest cost-per-PR ($17.07)" },
+    most_diverse_project_portfolio: { member: "Erin", projects: 3 },
+    highest_user_authored_skill_output: { member: "Erin", skills_authored: 2 },
+    most_efficient_member: { member: "Erin", metric: "lowest cost-per-PR ($17.07)" },
   },
 
   // ─── M. Novelty / invention ─────────────────────────────────────────────
@@ -560,19 +560,19 @@ export const mockTeamInsightReport: TeamInsightReport = {
     },
     first_use_of_stock_skill: [
       { skill: "superpowers:dispatching-parallel-agents", member: "Alice", date: "2026-05-05" },
-      { skill: "superpowers:finishing-a-development-branch", member: "Charlie", date: "2026-05-12" },
+      { skill: "superpowers:finishing-a-development-branch", member: "Erin", date: "2026-05-12" },
     ],
     first_successful_parallel_dispatch: { member: "Alice", date: "2026-05-05" },
     first_long_autonomous_ship: { member: "Bob", date: "2026-05-06", hours: 4.2 },
     first_used_other_member_skill: [
-      { event_member: "Charlie", skill: "harness-orchestrate", original_author: "Alice" },
-      { event_member: "Dana", skill: "release-ship-check", original_author: "Charlie" },
+      { event_member: "Erin", skill: "harness-orchestrate", original_author: "Alice" },
+      { event_member: "Dana", skill: "release-ship-check", original_author: "Erin" },
     ],
     unprecedented_move:
-      "Charlie's spec-frame-loader skill (authored Tue) is the team's first metasynthesized skill — a skill that loads other skills based on the session's first_user signature.",
+      "Erin's spec-frame-loader skill (authored Tue) is the team's first metasynthesized skill — a skill that loads other skills based on the session's first_user signature.",
     new_claudemd_additions: [
       {
-        member: "Charlie",
+        member: "Erin",
         summary: "added rule: 'Specs must declare phasing before any code task.'",
         trigger_date: "2026-05-08",
       },
@@ -583,20 +583,20 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
     ],
     new_project_introduced: [
-      { project: "infra-bootstrap", member: "Charlie", date: "2026-05-11" },
+      { project: "infra-bootstrap", member: "Erin", date: "2026-05-11" },
     ],
   },
 
   // ─── N. External systems ────────────────────────────────────────────────
   external_systems: {
     linear_refs: [
-      { ref: "KIP-148", member: "Bob", sessions: 3 },
-      { ref: "KIP-152", member: "Alice", sessions: 2 },
-      { ref: "KIP-144", member: "Charlie", sessions: 1 },
+      { ref: "ORB-148", member: "Bob", sessions: 3 },
+      { ref: "ORB-152", member: "Alice", sessions: 2 },
+      { ref: "ORB-144", member: "Erin", sessions: 1 },
     ],
     github_refs: [
-      { ref: "#41", member: "Charlie", sessions: 4 },
-      { ref: "#39", member: "Charlie", sessions: 1 },
+      { ref: "#41", member: "Erin", sessions: 4 },
+      { ref: "#39", member: "Erin", sessions: 1 },
     ],
     branch_refs: [
       { branch: "cowcow02/team-insights-report", sessions: 8 },
@@ -611,13 +611,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
   // ─── O. Prompting fingerprint ───────────────────────────────────────────
   prompting_fingerprint: {
     style_per_member: [
-      { member: "Charlie", style: "Structured-imperative", descriptor: "Long briefs, numbered phases, code blocks for shape" },
+      { member: "Erin", style: "Structured-imperative", descriptor: "Long briefs, numbered phases, code blocks for shape" },
       { member: "Alice", style: "Terse-imperative", descriptor: "Short one-liners, high delegation, low structure" },
       { member: "Bob", style: "Exploratory-conversational", descriptor: "Long context, external refs, many corrections mid-flight" },
       { member: "Dana", style: "Neutral-imperative", descriptor: "Medium-length, minimal structure, near-zero delegation (new)" },
     ],
     prompt_frame_mix_per_member: [
-      { member: "Charlie", teammate: 2, slash_command: 1, image_attached: 0, handoff_prose: 4 },
+      { member: "Erin", teammate: 2, slash_command: 1, image_attached: 0, handoff_prose: 4 },
       { member: "Alice", teammate: 6, slash_command: 0, image_attached: 0, handoff_prose: 1 },
       { member: "Bob", teammate: 0, slash_command: 0, image_attached: 2, handoff_prose: 1 },
       { member: "Dana", teammate: 0, slash_command: 1, image_attached: 0, handoff_prose: 0 },
@@ -636,7 +636,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       0, 0, 0, 0, 0, 0, 0, 1, 4, 12, 18, 21, 14, 9, 24, 22, 19, 14, 8, 6, 4, 2, 1, 0,
     ],
     per_member_hour_histogram: [
-      { member: "Charlie", histogram: [0, 0, 0, 0, 0, 0, 0, 0, 2, 6, 9, 8, 5, 3, 11, 9, 7, 4, 2, 1, 0, 0, 0, 0] },
+      { member: "Erin", histogram: [0, 0, 0, 0, 0, 0, 0, 0, 2, 6, 9, 8, 5, 3, 11, 9, 7, 4, 2, 1, 0, 0, 0, 0] },
       { member: "Alice", histogram: [0, 0, 0, 0, 0, 0, 0, 0, 1, 3, 5, 6, 4, 2, 7, 7, 5, 3, 1, 0, 0, 0, 0, 0] },
       { member: "Bob", histogram: [0, 0, 0, 0, 0, 0, 0, 1, 1, 3, 4, 6, 4, 3, 4, 5, 6, 6, 4, 4, 3, 2, 1, 0] },
       { member: "Dana", histogram: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 0, 0, 0] },
@@ -653,11 +653,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
     peak_hours: [14, 15, 11],
     late_night_sessions: [
       { member: "Bob", count: 3 },
-      { member: "Charlie", count: 1 },
+      { member: "Erin", count: 1 },
     ],
     weekend_sessions: [
       { member: "Bob", count: 2 },
-      { member: "Charlie", count: 1 },
+      { member: "Erin", count: 1 },
       { member: "Dana", count: 1 },
     ],
     multi_timezone_signal: "Bob's activity histogram is shifted 4h later than Alice's — likely cross-TZ collaboration window.",
@@ -670,22 +670,22 @@ export const mockTeamInsightReport: TeamInsightReport = {
   // ─── Q. Velocity ────────────────────────────────────────────────────────
   velocity: {
     median_first_user_to_commit_per_member: [
-      { member: "Charlie", minutes: 41 },
+      { member: "Erin", minutes: 41 },
       { member: "Alice", minutes: 22 },
       { member: "Bob", minutes: 168 },
       { member: "Dana", minutes: 0 },
     ],
     median_first_user_to_pr_per_member: [
-      { member: "Charlie", minutes: 72 },
+      { member: "Erin", minutes: 72 },
       { member: "Alice", minutes: 31 },
       { member: "Bob", minutes: 224 },
       { member: "Dana", minutes: 0 },
     ],
     median_first_user_to_merge_min: 81,
     active_vs_wall_clock_ratio_sample: [
-      { session_id: "S-charlie-mon-am", project: "topeka", ratio_pct: 78 },
+      { session_id: "S-erin-mon-am", project: "topeka", ratio_pct: 78 },
       { session_id: "S-alice-tue-pm", project: "topeka", ratio_pct: 96 },
-      { session_id: "S-bob-wed", project: "kipwise-v1", ratio_pct: 71 },
+      { session_id: "S-bob-wed", project: "orbit-shop", ratio_pct: 71 },
     ],
     sessions_per_day: [
       { date: "2026-05-04", count: 7 },
@@ -699,7 +699,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     prs_per_week_trend: [3, 4, 4, 6],
     velocity_per_project_trend: [
       { project: "topeka", weekly: [2, 3, 2, 3] },
-      { project: "kipwise-v1", weekly: [1, 1, 2, 2] },
+      { project: "orbit-shop", weekly: [1, 1, 2, 2] },
       { project: "ops-runbooks", weekly: [0, 0, 0, 1] },
     ],
   },
@@ -711,7 +711,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         pattern: "Front-load orchestration brief subagent before parallel dispatch",
         member_a: "Alice",
         date_a: "2026-05-05",
-        member_b: "Charlie",
+        member_b: "Erin",
         date_b: "2026-05-08",
       },
       {
@@ -723,11 +723,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
     ],
     pattern_main_to_subagent: [
-      { pattern: "Read-then-Grep-then-Edit (no Bash for code search)", session_label: "Charlie · Mon · topeka" },
+      { pattern: "Read-then-Grep-then-Edit (no Bash for code search)", session_label: "Erin · Mon · topeka" },
       { pattern: "TodoWrite right after spec load", session_label: "Alice · Tue · topeka" },
     ],
     pattern_to_claudemd: [
-      { pattern: "Specs must declare phasing before any code task.", member: "Charlie", addition_date: "2026-05-08" },
+      { pattern: "Specs must declare phasing before any code task.", member: "Erin", addition_date: "2026-05-08" },
       { pattern: "Migrations on tables >10M rows require explicit confirmation.", member: "Bob", addition_date: "2026-05-06" },
     ],
     skill_refined_after_session: [
@@ -738,15 +738,15 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
     ],
     multi_day_threads: [
-      { thread_id: "T-team-insights-spec", member: "Charlie", days: 4, sessions: 6 },
-      { thread_id: "T-kipwise-migration", member: "Bob", days: 3, sessions: 4 },
+      { thread_id: "T-team-insights-spec", member: "Erin", days: 4, sessions: 6 },
+      { thread_id: "T-orbit-shop-migration", member: "Bob", days: 3, sessions: 4 },
     ],
     handoff_prose_events: [
-      { member: "Charlie", from_session: "Mon-pm", to_session: "Tue-am", date: "2026-05-04" },
-      { member: "Charlie", from_session: "Wed-am", to_session: "Wed-pm", date: "2026-05-06" },
+      { member: "Erin", from_session: "Mon-pm", to_session: "Tue-am", date: "2026-05-04" },
+      { member: "Erin", from_session: "Wed-am", to_session: "Wed-pm", date: "2026-05-06" },
     ],
     cross_member_threads: [
-      { topic: "team insight report design", members: ["Charlie", "Alice"], sessions: 3 },
+      { topic: "team insight report design", members: ["Erin", "Alice"], sessions: 3 },
     ],
   },
 
@@ -764,12 +764,12 @@ export const mockTeamInsightReport: TeamInsightReport = {
     hallucination_flags: 2,
     reverted_tool_calls: 7,
     high_cost_sessions: [
-      { session_label: "Bob · Wed · kipwise migration", cost_usd: 28.41, member: "Bob" },
-      { session_label: "Charlie · Tue · spec design", cost_usd: 19.62, member: "Charlie" },
+      { session_label: "Bob · Wed · orbit-shop migration", cost_usd: 28.41, member: "Bob" },
+      { session_label: "Erin · Tue · spec design", cost_usd: 19.62, member: "Erin" },
     ],
     cache_hit_rate_avg_pct: 78,
     agent_helpfulness_per_member: [
-      { member: "Charlie", essential: 8, helpful: 6, neutral: 2, unhelpful: 0 },
+      { member: "Erin", essential: 8, helpful: 6, neutral: 2, unhelpful: 0 },
       { member: "Alice", essential: 7, helpful: 3, neutral: 1, unhelpful: 0 },
       { member: "Bob", essential: 5, helpful: 2, neutral: 1, unhelpful: 1 },
       { member: "Dana", essential: 2, helpful: 2, neutral: 1, unhelpful: 0 },
@@ -780,14 +780,14 @@ export const mockTeamInsightReport: TeamInsightReport = {
   cost_efficiency: {
     cost_per_pr_per_project: [
       { project: "topeka", cost_usd: 62.45, prs: 3, ratio: 20.82 },
-      { project: "kipwise-v1", cost_usd: 38.84, prs: 2, ratio: 19.42 },
+      { project: "orbit-shop", cost_usd: 38.84, prs: 2, ratio: 19.42 },
       { project: "ops-runbooks", cost_usd: 27.91, prs: 1, ratio: 27.91 },
     ],
     tokens_per_pr_team: 4_546_667,
     plan_utilization_burndown_pct: 64,
     extra_usage_spend_per_project: [
       { project: "topeka", usd: 12.40 },
-      { project: "kipwise-v1", usd: 8.10 },
+      { project: "orbit-shop", usd: 8.10 },
     ],
     cost_trend_wow_pct: 8,
     high_cost_low_yield_sessions: [
@@ -822,7 +822,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
   trend: {
     skill_adoption_curves: [
       { skill: "harness-orchestrate", weekly: [1, 1, 2, 3] },
-      { skill: "kipwise-migration-guard", weekly: [1, 1, 1, 1] },
+      { skill: "orbit-migration-guard", weekly: [1, 1, 1, 1] },
       { skill: "release-ship-check", weekly: [0, 0, 1, 2] },
       { skill: "superpowers:brainstorming", weekly: [2, 3, 3, 4] },
     ],
@@ -861,8 +861,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
   manager: {
     wins_this_week: [
       { member: "Alice", win: "Authored the brief-as-contract pattern; 3/3 parallel-dispatch sessions shipped." },
-      { member: "Bob", win: "kipwise-migration-guard caught two would-be reverts on Wed's migration." },
-      { member: "Charlie", win: "Lowest cost-per-PR at $17.07; reviewer-triad pattern landed zero-rework PR." },
+      { member: "Bob", win: "orbit-migration-guard caught two would-be reverts on Wed's migration." },
+      { member: "Erin", win: "Lowest cost-per-PR at $17.07; reviewer-triad pattern landed zero-rework PR." },
     ],
     topics_for_oneonone: [
       { member: "Alice", topic: "Ask about generalizing harness-orchestrate beyond topeka — anyone else can use it?" },
@@ -879,11 +879,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ask_x_about_y: [
       { ask_member: "Alice", topic: "parallel dispatch / harness-orchestrate" },
       { ask_member: "Bob", topic: "long-autonomous turns / migration safety" },
-      { ask_member: "Charlie", topic: "spec phasing / reviewer-triad" },
+      { ask_member: "Erin", topic: "spec phasing / reviewer-triad" },
     ],
     friday_demo_candidates: [
       { session_label: "Alice · Tue · topeka · 47-min parallel ship", member: "Alice" },
-      { session_label: "Bob · Wed · kipwise-v1 · 4.2h autonomous migration", member: "Bob" },
+      { session_label: "Bob · Wed · orbit-shop · 4.2h autonomous migration", member: "Bob" },
     ],
   },
 
@@ -904,24 +904,24 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ],
     skill_authoring_rate: 2,
     bus_factor_practices: [
-      { practice: "kipwise-migration-guard", sole_practitioner: "Bob" },
-      { practice: "spec-frame-loader", sole_practitioner: "Charlie" },
+      { practice: "orbit-migration-guard", sole_practitioner: "Bob" },
+      { practice: "spec-frame-loader", sole_practitioner: "Erin" },
     ],
   },
 
   // ─── Z. Pair work / threads ─────────────────────────────────────────────
   pair_work: {
     multiday_continuations: [
-      { thread_id: "T-team-insights-spec", member: "Charlie", days: 4 },
-      { thread_id: "T-kipwise-migration", member: "Bob", days: 3 },
+      { thread_id: "T-team-insights-spec", member: "Erin", days: 4 },
+      { thread_id: "T-orbit-shop-migration", member: "Bob", days: 3 },
     ],
     coauthored_commits: [
-      { file: "CLAUDE.md", members: ["Charlie", "Alice", "Bob"], date: "2026-05-08" },
-      { file: "packages/parser/src/analytics.ts", members: ["Charlie", "Alice"], date: "2026-05-06" },
+      { file: "CLAUDE.md", members: ["Erin", "Alice", "Bob"], date: "2026-05-08" },
+      { file: "packages/parser/src/analytics.ts", members: ["Erin", "Alice"], date: "2026-05-06" },
     ],
     cross_session_threads: [
-      { topic: "team insight report design", sessions: 6, member: "Charlie" },
-      { topic: "kipwise migration runbook", sessions: 4, member: "Bob" },
+      { topic: "team insight report design", sessions: 6, member: "Erin" },
+      { topic: "orbit-shop migration runbook", sessions: 4, member: "Bob" },
     ],
     hot_files: [
       { path: "packages/team-server/src/app/team/[slug]/insights/page.tsx", consecutive_sessions: 5 },
@@ -943,32 +943,32 @@ export const mockTeamInsightReport: TeamInsightReport = {
     interrupt_spike: { member: "Bob", usual: 0.4, this_week: 1.1 },
     outlier_long_autonomous: { member: "Bob", hours: 4.2, median: 0.7 },
     novel_friction_kind: {
-      kind: "@claude-lens/entries cross-package type resolution",
-      member: "Charlie",
+      kind: "@orbit/shared-types cross-package type resolution",
+      member: "Erin",
     },
   },
 
   // ─── BB. Spotlights ─────────────────────────────────────────────────────
   spotlights: [
     {
-      id: "spotlight-charlie-mon-spec-review",
+      id: "spotlight-erin-mon-spec-review",
       flavor: "case-study",
-      author: "Charlie",
+      author: "Erin",
       session_meta: { date: "2026-05-04", project: "topeka", duration_hours: 3.1, shipped: 1 },
       title: "A reviewer-triad before any code was written",
       body:
-        "Charlie opened Monday on topeka by pinning a reviewer-triad on the spec before writing any code. Three reviewer subagents dispatched in parallel — one with a correctness lens, one with an ergonomics lens, one with a rollback lens — each reading the full spec and returning structured findings. Charlie merged the three reviews into a revised spec, then started implementation only after the spec converged.\n\nThe session ran 3.1 active hours and produced one shipped PR with zero follow-up review cycles needed. The upfront triad caught edge cases that would normally surface during the first review pass — a meaningful pattern for any spec where the cost of a revert is high.",
+        "Erin opened Monday on topeka by pinning a reviewer-triad on the spec before writing any code. Three reviewer subagents dispatched in parallel — one with a correctness lens, one with an ergonomics lens, one with a rollback lens — each reading the full spec and returning structured findings. Erin merged the three reviews into a revised spec, then started implementation only after the spec converged.\n\nThe session ran 3.1 active hours and produced one shipped PR with zero follow-up review cycles needed. The upfront triad caught edge cases that would normally surface during the first review pass — a meaningful pattern for any spec where the cost of a revert is high.",
       harness_signature: "skills: superpowers:writing-plans, superpowers:brainstorming · subagents: spec-reviewer ×3 (parallel dispatch) · tools: Read ×84, Edit ×26, Write ×11",
     },
     {
       id: "spotlight-bob-wed-migration",
       flavor: "long-autonomous",
       author: "Bob",
-      session_meta: { date: "2026-05-06", project: "kipwise-v1", duration_hours: 7.0, shipped: 1 },
+      session_meta: { date: "2026-05-06", project: "orbit-shop", duration_hours: 7.0, shipped: 1 },
       title: "A migration that didn't need a rework cycle",
       body:
-        "Bob spent Wednesday on a column-not-null migration on a 50M-row table. Two long autonomous turns (4.2h and 2.8h) carried the migration end-to-end without a rework cycle, which is unusual for a flag-touching change — typically these come back twice before shipping.\n\nThe load-bearing piece was Bob's kipwise-migration-guard skill, loaded at session start. It gates risky operations (DROP COLUMN, ALTER TABLE, anything touching audit_log) behind explicit confirmation prompts, and on Wednesday it caught two would-be early commits before they landed. The pattern: long autonomous runs become safe when there's a deterministic guardrail catching the irreversible moves, even when the LLM is otherwise in a build-fast mode. Worth studying as a template for any future migration touching live tables.",
-      harness_signature: "skills: kipwise-migration-guard ×5 · long-autonomous turns: 4.2h, 2.8h · tools: Bash ×142, Edit ×38, Read ×96",
+        "Bob spent Wednesday on a column-not-null migration on a 50M-row table. Two long autonomous turns (4.2h and 2.8h) carried the migration end-to-end without a rework cycle, which is unusual for a flag-touching change — typically these come back twice before shipping.\n\nThe load-bearing piece was Bob's orbit-migration-guard skill, loaded at session start. It gates risky operations (DROP COLUMN, ALTER TABLE, anything touching audit_log) behind explicit confirmation prompts, and on Wednesday it caught two would-be early commits before they landed. The pattern: long autonomous runs become safe when there's a deterministic guardrail catching the irreversible moves, even when the LLM is otherwise in a build-fast mode. Worth studying as a template for any future migration touching live tables.",
+      harness_signature: "skills: orbit-migration-guard ×5 · long-autonomous turns: 4.2h, 2.8h · tools: Bash ×142, Edit ×38, Read ×96",
     },
     {
       id: "spotlight-alice-tue-parallel",
@@ -991,13 +991,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
       harness_signature: "skills: harness-orchestrate (re-run) · subagents: implement-teammate ×4 (second dispatch) · tools: Task ×4, Edit ×9",
     },
     {
-      id: "spotlight-charlie-tue-harness-invention",
+      id: "spotlight-erin-tue-harness-invention",
       flavor: "harness-invention",
-      author: "Charlie",
+      author: "Erin",
       session_meta: { date: "2026-05-05", project: "topeka", duration_hours: 2.4, shipped: 0 },
       title: "Authoring spec-frame-loader — a skill that loads other skills",
       body:
-        "Charlie's Tuesday afternoon session produced the team's first metasynthesized skill: spec-frame-loader. The skill reads the session's first_user and decides which of (writing-plans, brainstorming, systematic-debugging, …) to load before any tool runs. It's a skill that picks skills.\n\nThe session didn't ship a PR — the work was meta — but the skill landed in CLAUDE.md and is already loaded in two of Charlie's subsequent sessions. The diffusion frontier worth watching.",
+        "Erin's Tuesday afternoon session produced the team's first metasynthesized skill: spec-frame-loader. The skill reads the session's first_user and decides which of (writing-plans, brainstorming, systematic-debugging, …) to load before any tool runs. It's a skill that picks skills.\n\nThe session didn't ship a PR — the work was meta — but the skill landed in CLAUDE.md and is already loaded in two of Erin's subsequent sessions. The diffusion frontier worth watching.",
       harness_signature: "skills: superpowers:writing-skills · skill authored: spec-frame-loader · tools: Edit ×17, Read ×42",
     },
   ],
@@ -1045,18 +1045,18 @@ export const mockTeamInsightReport: TeamInsightReport = {
   // ─── DD. Cross-edition ──────────────────────────────────────────────────
   cross_edition: {
     member_links: [
-      { member: "Charlie", personal_digest_shared: true, personal_digest_href: "/team/acme-eng/members/mock-charlie/digest/2026-05-04" },
+      { member: "Erin", personal_digest_shared: true, personal_digest_href: "/team/acme-eng/members/mock-erin/digest/2026-05-04" },
       { member: "Alice", personal_digest_shared: true, personal_digest_href: "/team/acme-eng/members/mock-alice/digest/2026-05-04" },
       { member: "Bob", personal_digest_shared: false, personal_digest_href: null },
       { member: "Dana", personal_digest_shared: false, personal_digest_href: null },
     ],
     session_deep_links: [
       { session_label: "Alice · Tue · topeka · 47-min parallel ship", href: "/team/acme-eng/sessions/S-alice-tue-pm" },
-      { session_label: "Bob · Wed · kipwise-v1 · 4.2h autonomous", href: "/team/acme-eng/sessions/S-bob-wed" },
-      { session_label: "Charlie · Mon · topeka · reviewer-triad", href: "/team/acme-eng/sessions/S-charlie-mon-am" },
+      { session_label: "Bob · Wed · orbit-shop · 4.2h autonomous", href: "/team/acme-eng/sessions/S-bob-wed" },
+      { session_label: "Erin · Mon · topeka · reviewer-triad", href: "/team/acme-eng/sessions/S-erin-mon-am" },
     ],
     roster: [
-      { membership_id: "mock-membership-charlie", display_name: "Charlie", agent_hours: 6.8, shipped: 3 },
+      { membership_id: "mock-membership-erin", display_name: "Erin", agent_hours: 6.8, shipped: 3 },
       { membership_id: "mock-membership-alice", display_name: "Alice", agent_hours: 4.9, shipped: 1 },
       { membership_id: "mock-membership-bob", display_name: "Bob", agent_hours: 5.3, shipped: 2 },
       { membership_id: "mock-membership-dana", display_name: "Dana", agent_hours: 1.4, shipped: 0 },
@@ -1068,11 +1068,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
     // ─── v1: Member fingerprints ──────────────────────────────────────────
     fingerprints: [
       {
-        member: "Charlie",
+        member: "Erin",
         role_hint: "Structured-imperative · planning-heavy",
         signature_move: "Brainstorm warmup → long structured brief → TodoWrite → small refinements",
         signature_paragraph:
-          "Charlie almost always loads a brainstorming or writing-plans skill before any tool fires, then drops a 900-character structured brief, then iterates through small turn-by-turn refinements. The planning is front-loaded; the building is delegated. He's the team's lowest cost-per-PR ($17.07), and the front-loaded planning seems to be why.",
+          "Erin almost always loads a brainstorming or writing-plans skill before any tool fires, then drops a 900-character structured brief, then iterates through small turn-by-turn refinements. The planning is front-loaded; the building is delegated. He's the team's lowest cost-per-PR ($17.07), and the front-loaded planning seems to be why.",
         this_week: {
           sessions: 16,
           hours: 6.8,
@@ -1132,14 +1132,14 @@ export const mockTeamInsightReport: TeamInsightReport = {
         role_hint: "Exploratory-conversational · long-autonomous",
         signature_move: "Long contextual brief → load migration-guard → long autonomous turn → review",
         signature_paragraph:
-          "Bob writes the longest briefs on the team (median ~1400 chars) — heavy on external context, Linear ticket refs, error logs. Once briefed, the agent runs autonomously for a long time. His kipwise-migration-guard skill gates the irreversible operations, which is what lets the autonomous runs ship safely on flag-touching changes.",
+          "Bob writes the longest briefs on the team (median ~1400 chars) — heavy on external context, Linear ticket refs, error logs. Once briefed, the agent runs autonomously for a long time. His orbit-migration-guard skill gates the irreversible operations, which is what lets the autonomous runs ship safely on flag-touching changes.",
         this_week: {
           sessions: 9,
           hours: 5.3,
           prs: 2,
           median_first_user_to_merge_min: 264,
           notable_signals: [
-            "Longest single session: 4.2h autonomous on kipwise-v1",
+            "Longest single session: 4.2h autonomous on orbit-shop",
             "Highest tool-error rate (6.4%) — also highest recovery rate",
             "Three late-night sessions (Tue/Wed/Thu) — worth a check-in",
             "Brief length rose 24% week-over-week — documenting more context up-front",
@@ -1162,7 +1162,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         role_hint: "New member · ramp-up week 3",
         signature_move: "Short imperative prompts → mostly stock skills → no subagents yet",
         signature_paragraph:
-          "Dana joined three weeks ago and is mid-ramp. Sessions are short, stock-skill-heavy, near-zero delegation. The shape of her sessions resembles Alice's early weeks more than Bob's. Friday saw her first subagent dispatch (Explore) and her first cross-member skill pickup (release-ship-check from Charlie).",
+          "Dana joined three weeks ago and is mid-ramp. Sessions are short, stock-skill-heavy, near-zero delegation. The shape of her sessions resembles Alice's early weeks more than Bob's. Friday saw her first subagent dispatch (Explore) and her first cross-member skill pickup (release-ship-check from Erin).",
         this_week: {
           sessions: 5,
           hours: 1.4,
@@ -1170,7 +1170,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           median_first_user_to_merge_min: 0,
           notable_signals: [
             "First subagent dispatch this week (Explore)",
-            "First pickup of another member's skill: release-ship-check from Charlie",
+            "First pickup of another member's skill: release-ship-check from Erin",
             "Zero PRs shipped in 3 weeks — likely onboarding-pacing, not a problem yet",
             "Stock-vs-user skill ratio: 92% stock (still early)",
           ],
@@ -1196,7 +1196,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "sessions",
         direction_better: "higher",
         per_member: [
-          { member: "Charlie", weekly: [9, 11, 14, 16], current_label: "16" },
+          { member: "Erin", weekly: [9, 11, 14, 16], current_label: "16" },
           { member: "Alice", weekly: [7, 8, 10, 11], current_label: "11" },
           { member: "Bob", weekly: [6, 7, 8, 9], current_label: "9" },
           { member: "Dana", weekly: [0, 2, 4, 5], current_label: "5" },
@@ -1207,7 +1207,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "loads",
         direction_better: "higher",
         per_member: [
-          { member: "Charlie", weekly: [0.8, 1.1, 1.5, 1.9], current_label: "1.9" },
+          { member: "Erin", weekly: [0.8, 1.1, 1.5, 1.9], current_label: "1.9" },
           { member: "Alice", weekly: [0.4, 0.6, 1.2, 1.4], current_label: "1.4" },
           { member: "Bob", weekly: [0.5, 0.6, 0.7, 0.8], current_label: "0.8" },
           { member: "Dana", weekly: [0, 0.5, 0.8, 1.0], current_label: "1.0" },
@@ -1218,7 +1218,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "dispatches",
         direction_better: "higher",
         per_member: [
-          { member: "Charlie", weekly: [0.4, 0.6, 0.8, 1.1], current_label: "1.1" },
+          { member: "Erin", weekly: [0.4, 0.6, 0.8, 1.1], current_label: "1.1" },
           { member: "Alice", weekly: [0.8, 1.0, 1.2, 1.3], current_label: "1.3" },
           { member: "Bob", weekly: [0.1, 0.2, 0.2, 0.3], current_label: "0.3" },
           { member: "Dana", weekly: [0, 0, 0, 0.2], current_label: "0.2" },
@@ -1229,7 +1229,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "%",
         direction_better: "higher",
         per_member: [
-          { member: "Charlie", weekly: [22, 28, 31, 38], current_label: "38%" },
+          { member: "Erin", weekly: [22, 28, 31, 38], current_label: "38%" },
           { member: "Alice", weekly: [38, 47, 58, 64], current_label: "64%" },
           { member: "Bob", weekly: [8, 10, 11, 12], current_label: "12%" },
           { member: "Dana", weekly: [0, 0, 0, 0], current_label: "0%" },
@@ -1240,7 +1240,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "days",
         direction_better: "higher",
         per_member: [
-          { member: "Charlie", weekly: [3, 3, 4, 4], current_label: "4" },
+          { member: "Erin", weekly: [3, 3, 4, 4], current_label: "4" },
           { member: "Alice", weekly: [0, 1, 2, 2], current_label: "2" },
           { member: "Bob", weekly: [0, 0, 0, 0], current_label: "0" },
           { member: "Dana", weekly: [0, 0, 1, 1], current_label: "1" },
@@ -1251,7 +1251,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "chars",
         direction_better: "lower",
         per_member: [
-          { member: "Charlie", weekly: [1100, 1050, 980, 920], current_label: "920" },
+          { member: "Erin", weekly: [1100, 1050, 980, 920], current_label: "920" },
           { member: "Alice", weekly: [180, 140, 100, 80], current_label: "80" },
           { member: "Bob", weekly: [1100, 1200, 1320, 1400], current_label: "1400" },
           { member: "Dana", weekly: [0, 220, 280, 310], current_label: "310" },
@@ -1262,7 +1262,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "min",
         direction_better: "lower",
         per_member: [
-          { member: "Charlie", weekly: [124, 102, 95, 88], current_label: "88m" },
+          { member: "Erin", weekly: [124, 102, 95, 88], current_label: "88m" },
           { member: "Alice", weekly: [82, 64, 51, 47], current_label: "47m" },
           { member: "Bob", weekly: [388, 312, 281, 264], current_label: "264m" },
           { member: "Dana", weekly: [0, 0, 0, 0], current_label: "—" },
@@ -1273,7 +1273,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "$",
         direction_better: "lower",
         per_member: [
-          { member: "Charlie", weekly: [28.40, 24.10, 20.20, 17.07], current_label: "$17" },
+          { member: "Erin", weekly: [28.40, 24.10, 20.20, 17.07], current_label: "$17" },
           { member: "Alice", weekly: [62.10, 48.80, 39.40, 36.74], current_label: "$37" },
           { member: "Bob", weekly: [34.20, 28.80, 23.40, 20.59], current_label: "$21" },
           { member: "Dana", weekly: [0, 0, 0, 0], current_label: "—" },
@@ -1284,7 +1284,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         unit: "count",
         direction_better: "higher",
         per_member: [
-          { member: "Charlie", weekly: [0, 1, 1, 2], current_label: "2" },
+          { member: "Erin", weekly: [0, 1, 1, 2], current_label: "2" },
           { member: "Alice", weekly: [1, 1, 2, 3], current_label: "3" },
           { member: "Bob", weekly: [1, 2, 2, 2], current_label: "2" },
           { member: "Dana", weekly: [0, 0, 0, 0], current_label: "0" },
@@ -1293,7 +1293,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ],
     trajectory_observations: [
       {
-        member: "Charlie",
+        member: "Erin",
         observation: "Pre-flight skill-loads more than doubled (0.8 → 1.9). The discipline is consolidating into a habit, and cost-per-PR is the lagging indicator: 39% drop in four weeks.",
       },
       {
@@ -1319,7 +1319,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       { key: "long_autonomous", label: "Long autonomous", short_desc: "Tolerates >1h autonomous turns" },
       { key: "skill_authoring", label: "Skill authoring", short_desc: "Has authored a user-skill" },
       { key: "harness_orchestrate", label: "harness-orchestrate", short_desc: "Uses the brief-as-contract pattern" },
-      { key: "migration_guard", label: "migration-guard", short_desc: "Uses kipwise-migration-guard" },
+      { key: "migration_guard", label: "migration-guard", short_desc: "Uses orbit-migration-guard" },
       { key: "release_ship_check", label: "release-ship-check", short_desc: "Pre-ship verification skill" },
       { key: "todowrite_discipline", label: "TodoWrite discipline", short_desc: "Loads TodoWrite after spec" },
       { key: "handoff_prose", label: "Cross-session handoff", short_desc: "Writes handoff prose between sessions" },
@@ -1327,7 +1327,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ],
     diffusion_grid: [
       {
-        member: "Charlie",
+        member: "Erin",
         cells: {
           plan_mode: "regular",
           brainstorm_warmup: "regular",
@@ -1399,13 +1399,13 @@ export const mockTeamInsightReport: TeamInsightReport = {
       {
         practice_key: "harness_orchestrate",
         from_member: "Alice",
-        to_member: "Charlie",
+        to_member: "Erin",
         date: "2026-05-07",
-        note: "Charlie used Alice's harness-orchestrate for the first time on Thursday's topeka session. 3 days from origin to pickup.",
+        note: "Erin used Alice's harness-orchestrate for the first time on Thursday's topeka session. 3 days from origin to pickup.",
       },
       {
         practice_key: "release_ship_check",
-        from_member: "Charlie",
+        from_member: "Erin",
         to_member: "Dana",
         date: "2026-05-09",
         note: "Dana's first cross-member skill pickup — release-ship-check on a Friday ops-runbooks session.",
@@ -1459,7 +1459,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ],
     archetype_distribution: [
       {
-        member: "Charlie",
+        member: "Erin",
         distribution: [
           { archetype_key: "spec_then_iterate", pct: 31 },
           { archetype_key: "parallel_orchestration", pct: 19 },
@@ -1505,8 +1505,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ],
     illustrative_session_timelines: [
       {
-        session_label: "Charlie · Mon · topeka · reviewer-triad",
-        member: "Charlie",
+        session_label: "Erin · Mon · topeka · reviewer-triad",
+        member: "Erin",
         archetype_key: "reviewer_triad_gate",
         turns: [
           { kind: "user", weight: 4, tag: "spec brief 920 ch" },
@@ -1538,12 +1538,12 @@ export const mockTeamInsightReport: TeamInsightReport = {
         ],
       },
       {
-        session_label: "Bob · Wed · kipwise-v1 · 4.2h autonomous",
+        session_label: "Bob · Wed · orbit-shop · 4.2h autonomous",
         member: "Bob",
         archetype_key: "long_autonomous",
         turns: [
-          { kind: "user", weight: 5, tag: "1400-char context + KIP-148 ref" },
-          { kind: "tool", weight: 1, tag: "Skill: kipwise-migration-guard" },
+          { kind: "user", weight: 5, tag: "1400-char context + ORB-148 ref" },
+          { kind: "tool", weight: 1, tag: "Skill: orbit-migration-guard" },
           { kind: "tool", weight: 1, tag: "Read schema" },
           { kind: "tool", weight: 1, tag: "Read migration history" },
           { kind: "tool", weight: 1, tag: "Bash: pg_dump" },
@@ -1569,7 +1569,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         current: 7,
         last_week: 5,
         delta: 2,
-        sample_refs: ["KIP-148", "KIP-152", "KIP-144", "KIP-156"],
+        sample_refs: ["ORB-148", "ORB-152", "ORB-144", "ORB-156"],
       },
       parallel_execution: { total_min: 87, peak_concurrent: 4, total_min_wow_delta_pct: 67 },
       long_autonomous: {
@@ -1581,7 +1581,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
       project_time: [
         { project: "topeka", hours_this_week: 8.2, hours_last_week: 6.4, delta_pct: 28 },
-        { project: "kipwise-v1", hours_this_week: 5.1, hours_last_week: 4.9, delta_pct: 4 },
+        { project: "orbit-shop", hours_this_week: 5.1, hours_last_week: 4.9, delta_pct: 4 },
         { project: "ops-runbooks", hours_this_week: 3.4, hours_last_week: 4.2, delta_pct: -19 },
         { project: "infra-bootstrap", hours_this_week: 1.7, hours_last_week: 0.9, delta_pct: 89 },
       ],
@@ -1597,7 +1597,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         { skill: "superpowers:writing-plans", uses_this_week: 14, uses_last_week: 9, delta: 5 },
         { skill: "harness-orchestrate", uses_this_week: 11, uses_last_week: 7, delta: 4 },
         { skill: "superpowers:brainstorming", uses_this_week: 9, uses_last_week: 8, delta: 1 },
-        { skill: "kipwise-migration-guard", uses_this_week: 5, uses_last_week: 5, delta: 0 },
+        { skill: "orbit-migration-guard", uses_this_week: 5, uses_last_week: 5, delta: 0 },
         { skill: "release-ship-check", uses_this_week: 4, uses_last_week: 2, delta: 2 },
         { skill: "superpowers:systematic-debugging", uses_this_week: 3, uses_last_week: 1, delta: 2 },
         { skill: "spec-frame-loader", uses_this_week: 3, uses_last_week: 0, delta: 3 },
@@ -1671,7 +1671,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         id: "case-bob-wed-migration",
         author: "Bob",
         date: "2026-05-06",
-        project: "kipwise-v1",
+        project: "orbit-shop",
         duration: { wall_min: 252, active_min: 248, idle_min: 4 },
         turn_count: 18,
         outcome: "shipped 1 PR",
@@ -1687,7 +1687,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           task_success: 5,
         },
         harness_signature: {
-          user_skills: [{ name: "kipwise-migration-guard", uses: 5 }],
+          user_skills: [{ name: "orbit-migration-guard", uses: 5 }],
           user_subagents: [],
           stock_skills: [{ name: "superpowers:systematic-debugging", uses: 1 }],
           top_tools: [
@@ -1706,8 +1706,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
             { start_min: 161, end_min: 252 },
           ],
           pins: [
-            { start_min: 0, kind: "user-steering", label: "1400-char brief — schema dump + KIP-148 ref + prior-migration history" },
-            { start_min: 2, kind: "skill-load", label: "kipwise-migration-guard loaded" },
+            { start_min: 0, kind: "user-steering", label: "1400-char brief — schema dump + ORB-148 ref + prior-migration history" },
+            { start_min: 2, kind: "skill-load", label: "orbit-migration-guard loaded" },
             { start_min: 5, end_min: 42, kind: "long-autonomous", label: "Agent runs schema analysis, drafts migration (37 min)" },
             { start_min: 44, kind: "harness-chain", label: "Guard caught a DROP COLUMN — agent rewrites approach" },
             { start_min: 46, end_min: 98, kind: "long-autonomous", label: "Agent finalizes safe migration, runs tests on staging" },
@@ -1721,7 +1721,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         narrative: {
           why_picked: "Longest single autonomous run of the week (4.2h), shipped without a rework cycle — unusual for a flag-touching change on a 50M-row table.",
           session_summary:
-            "Bob wrote a 1400-character contextual brief at the start (schema dump, KIP-148 reference, prior-migration history). Then kipwise-migration-guard loaded and the agent ran four near-uninterrupted long stretches over 4.2 hours: schema analysis → drafting the migration → staging run + verification → prod migration. Bob's mid-flight interventions: one confirm before prod, and acknowledging two guard catches.",
+            "Bob wrote a 1400-character contextual brief at the start (schema dump, ORB-148 reference, prior-migration history). Then orbit-migration-guard loaded and the agent ran four near-uninterrupted long stretches over 4.2 hours: schema analysis → drafting the migration → staging run + verification → prod migration. Bob's mid-flight interventions: one confirm before prod, and acknowledging two guard catches.",
           steering_summary: "Heavy front-loading. One long brief (1400 chars), near-zero mid-flight steering. The guard skill substitutes for human attention by gating the irreversible operations.",
           what_worked: "Migration-guard caught two unsafe operations that would have shipped otherwise. Long brief eliminated mid-flight context-gathering. Most of Bob's attention budget moved from mid-session to up-front.",
           what_hit_friction: "Bash had to retry 3 times for a transient pg connection issue (counted in the retry-chain stat). No friction on the migration logic itself.",
@@ -1744,7 +1744,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         id: "case-bob-thu-rapid-fire",
         author: "Bob",
         date: "2026-05-07",
-        project: "kipwise-v1",
+        project: "orbit-shop",
         duration: { wall_min: 142, active_min: 130, idle_min: 12 },
         turn_count: 38,
         outcome: "partial · 1 commit, no PR",
@@ -1760,7 +1760,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           task_success: 3,
         },
         harness_signature: {
-          user_skills: [{ name: "kipwise-migration-guard", uses: 1 }],
+          user_skills: [{ name: "orbit-migration-guard", uses: 1 }],
           user_subagents: [{ type: "implement-teammate", count: 1 }],
           stock_skills: [{ name: "superpowers:systematic-debugging", uses: 1 }],
           top_tools: ["Bash×84 (psql×34, git×18)", "Read×52", "Edit×38", "Grep×24"],
@@ -1776,7 +1776,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
             { start_min: 100, end_min: 130 },
           ],
           pins: [
-            { start_min: 0, kind: "user-steering", label: "Brief — 'fix the migration backfill that broke staging tonight, KIP-152'" },
+            { start_min: 0, kind: "user-steering", label: "Brief — 'fix the migration backfill that broke staging tonight, ORB-152'" },
             { start_min: 2, end_min: 28, kind: "long-autonomous", label: "Agent investigates, reproduces error, drafts a fix" },
             { start_min: 28, kind: "user-steering", label: "12-char nudge — 'try -X option'" },
             { start_min: 30, kind: "interrupt", label: "User stops agent before commit" },
@@ -1794,7 +1794,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         narrative: {
           why_picked: "Demonstrates the 'harness works but last-mile needs hand-holding' pattern. Initial autonomous work landed in 28 minutes; the remaining 100 minutes were rapid-fire human steering through the actual bug.",
           session_summary:
-            "Bob opened with a 60-character brief referencing KIP-152. The agent ran autonomously for 28 minutes, identified the issue, and drafted a fix. Then the pattern shifted: 18 short messages over 40 minutes as Bob debugged the actual root cause with the agent — short nudges, occasional 'wait', 'retry', 'check pg version first'. Mid-session at minute 82 Bob loaded systematic-debugging, which framed the search. Final fix landed at minute 130. Bob stopped before the PR to verify staging.",
+            "Bob opened with a 60-character brief referencing ORB-152. The agent ran autonomously for 28 minutes, identified the issue, and drafted a fix. Then the pattern shifted: 18 short messages over 40 minutes as Bob debugged the actual root cause with the agent — short nudges, occasional 'wait', 'retry', 'check pg version first'. Mid-session at minute 82 Bob loaded systematic-debugging, which framed the search. Final fix landed at minute 130. Bob stopped before the PR to verify staging.",
           steering_summary:
             "Highest interrupt count of the week (6). Median user message: 32 chars — these are nudges, not briefs. The mid-session systematic-debugging load was a course correction. Phase change: median brief length dropped from 60 chars (initial brief) to ~20 chars during rapid-fire (debug nudges).",
           what_worked: "The agent's initial 28-minute autonomous diagnosis correctly identified the broken backfill. Without that initial run, the rapid-fire debug would have been pure exploration.",
@@ -1817,8 +1817,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
 
       {
-        id: "case-charlie-mon-reviewer-triad",
-        author: "Charlie",
+        id: "case-erin-mon-reviewer-triad",
+        author: "Erin",
         date: "2026-05-04",
         project: "topeka",
         duration: { wall_min: 186, active_min: 180, idle_min: 6 },
@@ -1872,10 +1872,10 @@ export const mockTeamInsightReport: TeamInsightReport = {
         narrative: {
           why_picked: "First-time-on-team use of reviewer-triad gating BEFORE any code is written. Resulted in a zero-rework PR — unusual for a feature spec of this scope.",
           session_summary:
-            "Charlie opened with a brainstorming warm-up, then loaded spec-frame-loader, which auto-selected writing-plans. The agent drafted the spec; three spec-reviewer subagents then critiqued in parallel — correctness, ergonomics, rollback. Charlie merged 4 of 5 recommendations into a revised spec. Only then did implementation start. The PR shipped without a follow-up review cycle.",
+            "Erin opened with a brainstorming warm-up, then loaded spec-frame-loader, which auto-selected writing-plans. The agent drafted the spec; three spec-reviewer subagents then critiqued in parallel — correctness, ergonomics, rollback. Erin merged 4 of 5 recommendations into a revised spec. Only then did implementation start. The PR shipped without a follow-up review cycle.",
           steering_summary: "Eight user messages, three of them long. Steering concentrated at decision points: scope clarification, accepting reviewer findings, approving the revised spec. Implementation phase had near-zero steering.",
           what_worked: "Pre-implementation reviewer-triad caught issues at the spec level, where they're cheap to fix. The investment paid off in zero rework cycles after the code landed.",
-          what_hit_friction: "Brainstorming warm-up was a slow start — 5 minutes of clarifying questions. Faster if Charlie front-loads more context.",
+          what_hit_friction: "Brainstorming warm-up was a slow start — 5 minutes of clarifying questions. Faster if Erin front-loads more context.",
         },
         drill_observations: {
           started_with_brainstorming: true,
@@ -1892,8 +1892,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
 
       {
-        id: "case-charlie-tue-meta-skill",
-        author: "Charlie",
+        id: "case-erin-tue-meta-skill",
+        author: "Erin",
         date: "2026-05-05",
         project: "topeka",
         duration: { wall_min: 144, active_min: 138, idle_min: 6 },
@@ -1939,9 +1939,9 @@ export const mockTeamInsightReport: TeamInsightReport = {
         narrative: {
           why_picked: "Team's first metasynthesized skill — a skill that loads other skills. Sets a pattern for adaptive harness selection.",
           session_summary:
-            "Charlie spent the first 18 minutes in open exploration with the agent, deciding scope and taxonomy. Then loaded writing-skills as primary and the agent drafted the spec, implementation, and test prompts over three long autonomous stretches. Charlie's role was scope-setter and reviewer, not implementer.",
+            "Erin spent the first 18 minutes in open exploration with the agent, deciding scope and taxonomy. Then loaded writing-skills as primary and the agent drafted the spec, implementation, and test prompts over three long autonomous stretches. Erin's role was scope-setter and reviewer, not implementer.",
           steering_summary: "Nine user messages, four long. Steering concentrated at design-decision points. After spec lock-in, near-zero mid-flight steering.",
-          what_worked: "Open exploration up front let the agent surface taxonomy questions Charlie hadn't considered. Writing-skills carried the implementation structure.",
+          what_worked: "Open exploration up front let the agent surface taxonomy questions Erin hadn't considered. Writing-skills carried the implementation structure.",
           what_hit_friction: "Decision-fatigue mid-session — choosing between three competing taxonomies for skill-load triggers cost ~10 minutes.",
         },
         drill_observations: {
@@ -1953,7 +1953,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           notes: [
             "Inverse of Bob's debug session: planning-heavy phase, then long-autonomous build, very little last-mile steering.",
             "The session product isn't a PR but a tool for future sessions — harness-as-output.",
-            "The resulting skill (spec-frame-loader) was used in 2 of Charlie's subsequent sessions this week.",
+            "The resulting skill (spec-frame-loader) was used in 2 of Erin's subsequent sessions this week.",
           ],
         },
       },
@@ -2279,44 +2279,44 @@ export const mockTeamInsightReport: TeamInsightReport = {
         ],
       },
       ticket_lifecycle: [
-        { id: "KIP-148", title: "kipwise-v1 audit-log NOT NULL backfill", status: "deployed", cycle_min: 264, ai_assisted_pct: 92, linked_sessions: ["case-bob-wed-migration"], linked_pr: "kipwise/web#412" },
-        { id: "KIP-152", title: "Fix staging backfill regression", status: "merged", cycle_min: 142, ai_assisted_pct: 71, linked_sessions: ["case-bob-thu-rapid-fire"], linked_pr: "kipwise/web#418" },
-        { id: "KIP-144", title: "topeka — team insight report design", status: "shipped", cycle_min: 186, ai_assisted_pct: 100, linked_sessions: ["case-charlie-mon-reviewer-triad"], linked_pr: "topeka/web#41" },
-        { id: "KIP-156", title: "harness-orchestrate · parallel-dispatch demo", status: "merged", cycle_min: 47, ai_assisted_pct: 100, linked_sessions: ["case-alice-tue-parallel", "case-alice-thu-rescue"], linked_pr: "topeka/web#43" },
-        { id: "KIP-159", title: "spec-frame-loader skill (meta)", status: "in-flight", cycle_min: 144, ai_assisted_pct: 100, linked_sessions: ["case-charlie-tue-meta-skill"] },
+        { id: "ORB-148", title: "orbit-shop audit-log NOT NULL backfill", status: "deployed", cycle_min: 264, ai_assisted_pct: 92, linked_sessions: ["case-bob-wed-migration"], linked_pr: "acme/orbit-shop#412" },
+        { id: "ORB-152", title: "Fix staging backfill regression", status: "merged", cycle_min: 142, ai_assisted_pct: 71, linked_sessions: ["case-bob-thu-rapid-fire"], linked_pr: "acme/orbit-shop#418" },
+        { id: "ORB-144", title: "topeka — team insight report design", status: "shipped", cycle_min: 186, ai_assisted_pct: 100, linked_sessions: ["case-erin-mon-reviewer-triad"], linked_pr: "topeka/web#41" },
+        { id: "ORB-156", title: "harness-orchestrate · parallel-dispatch demo", status: "merged", cycle_min: 47, ai_assisted_pct: 100, linked_sessions: ["case-alice-tue-parallel", "case-alice-thu-rescue"], linked_pr: "topeka/web#43" },
+        { id: "ORB-159", title: "spec-frame-loader skill (meta)", status: "in-flight", cycle_min: 144, ai_assisted_pct: 100, linked_sessions: ["case-erin-tue-meta-skill"] },
       ],
       case_study_attribution: [
         {
           case_study_id: "case-alice-tue-parallel",
-          ticket_ids: ["KIP-156"],
+          ticket_ids: ["ORB-156"],
           pr_links: [{ label: "topeka/web#43", status: "merged", review_comments: 2 }],
           ci_result: "green",
           deployed: true,
         },
         {
           case_study_id: "case-bob-wed-migration",
-          ticket_ids: ["KIP-148"],
-          pr_links: [{ label: "kipwise/web#412", status: "merged", review_comments: 4 }],
+          ticket_ids: ["ORB-148"],
+          pr_links: [{ label: "acme/orbit-shop#412", status: "merged", review_comments: 4 }],
           ci_result: "green",
           deployed: true,
         },
         {
           case_study_id: "case-bob-thu-rapid-fire",
-          ticket_ids: ["KIP-152"],
-          pr_links: [{ label: "kipwise/web#418", status: "merged", review_comments: 7 }],
+          ticket_ids: ["ORB-152"],
+          pr_links: [{ label: "acme/orbit-shop#418", status: "merged", review_comments: 7 }],
           ci_result: "yellow",
           deployed: false,
         },
         {
-          case_study_id: "case-charlie-mon-reviewer-triad",
-          ticket_ids: ["KIP-144"],
+          case_study_id: "case-erin-mon-reviewer-triad",
+          ticket_ids: ["ORB-144"],
           pr_links: [{ label: "topeka/web#41", status: "merged", review_comments: 0 }],
           ci_result: "green",
           deployed: true,
         },
         {
-          case_study_id: "case-charlie-tue-meta-skill",
-          ticket_ids: ["KIP-159"],
+          case_study_id: "case-erin-tue-meta-skill",
+          ticket_ids: ["ORB-159"],
           pr_links: [],
           ci_result: "n/a",
           deployed: false,
@@ -2324,7 +2324,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       ],
       cost_per_resolved: [
         { project: "topeka", usd_total_week: 62.45, tickets_resolved: 3, usd_per_ticket: 20.82, prs_merged: 3, usd_per_pr: 20.82 },
-        { project: "kipwise-v1", usd_total_week: 38.84, tickets_resolved: 2, usd_per_ticket: 19.42, prs_merged: 2, usd_per_pr: 19.42 },
+        { project: "orbit-shop", usd_total_week: 38.84, tickets_resolved: 2, usd_per_ticket: 19.42, prs_merged: 2, usd_per_pr: 19.42 },
         { project: "ops-runbooks", usd_total_week: 27.91, tickets_resolved: 1, usd_per_ticket: 27.91, prs_merged: 1, usd_per_pr: 27.91 },
         { project: "infra-bootstrap", usd_total_week: 13.16, tickets_resolved: 0, usd_per_ticket: 0, prs_merged: 0, usd_per_pr: 0 },
       ],
@@ -2339,11 +2339,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
         },
         {
           question: "Which sessions actually shipped to production?",
-          answer: "4 of 5 case studies this week are deployed. Bob's Thursday rapid-fire debug merged but didn't deploy (yellow CI). Charlie's meta-skill session has no PR by design — it produced a skill, not a shipped change.",
+          answer: "4 of 5 case studies this week are deployed. Bob's Thursday rapid-fire debug merged but didn't deploy (yellow CI). Erin's meta-skill session has no PR by design — it produced a skill, not a shipped change.",
         },
         {
           question: "What does each ticket cost in agent spend?",
-          answer: "Average $22 per merged ticket this week, with a range from $19 (kipwise-v1) to $28 (ops-runbooks). The two parallel-dispatch sessions on topeka (KIP-156) shipped for $21 — one ticket, two related PRs.",
+          answer: "Average $22 per merged ticket this week, with a range from $19 (orbit-shop) to $28 (ops-runbooks). The two parallel-dispatch sessions on topeka (ORB-156) shipped for $21 — one ticket, two related PRs.",
         },
         {
           question: "Is our team performing at DORA Elite, High, Medium, or Low?",
@@ -2390,7 +2390,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
             "AI functions as an amplifier — it magnifies organisational strengths and dysfunctions equally. Higher adoption correlates with both increased throughput AND increased instability. The list below names what this team is amplifying right now, in both directions.",
           strengths_amplified: [
             {
-              observation: "harness-orchestrate (Alice) is spreading — Charlie picked it up 3 days after Alice authored it",
+              observation: "harness-orchestrate (Alice) is spreading — Erin picked it up 3 days after Alice authored it",
               supporting_metric: "1 cross-member skill pickup this week; 3 of 5 members now using it",
             },
             {
@@ -2398,12 +2398,12 @@ export const mockTeamInsightReport: TeamInsightReport = {
               supporting_metric: "Plan-mode adopters: 1 → 2 → 3 → 3 over 4 weeks",
             },
             {
-              observation: "Median session length is dropping for Charlie as he leans more on orchestration",
-              supporting_metric: "Charlie median session: 41 → 38 → 31 → 25 min over 4 weeks",
+              observation: "Median session length is dropping for Erin as he leans more on orchestration",
+              supporting_metric: "Erin median session: 41 → 38 → 31 → 25 min over 4 weeks",
             },
             {
               observation: "Cost-per-shipped-PR dropped 19% week-over-week — the harness is starting to pay off",
-              supporting_metric: "Cost-per-PR: ~$24 → $19.42 (kipwise-v1) / $20.82 (topeka)",
+              supporting_metric: "Cost-per-PR: ~$24 → $19.42 (orbit-shop) / $20.82 (topeka)",
             },
           ],
           dysfunctions_amplified: [
@@ -2416,7 +2416,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
               supporting_metric: "Median user message 32 chars, 6 interrupts, 38 turns",
             },
             {
-              observation: "kipwise-migration-guard is a Bob-only practice — single-practitioner bus factor",
+              observation: "orbit-migration-guard is a Bob-only practice — single-practitioner bus factor",
               supporting_metric: "1 of 5 members; load-bearing on Wednesday's migration",
             },
             {
@@ -2429,11 +2429,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
           { name: "code generation", our_mapping: "goal_category: build", sessions: 18, hours: 7.7, ai_autonomy_avg: 4, success_rate_pct: 89, notable_signal: "Alice's parallel-dispatch is the canonical high-autonomy example" },
           { name: "debugging", our_mapping: "goal_category: debug", sessions: 8, hours: 3.3, ai_autonomy_avg: 2, success_rate_pct: 50, notable_signal: "Bob's Thursday session — low autonomy, partial outcome, the 'expertise paradox' case" },
           { name: "refactoring", our_mapping: "goal_category: refactor", sessions: 5, hours: 2.6, ai_autonomy_avg: 4, success_rate_pct: 80 },
-          { name: "idea generation", our_mapping: "goal_category: plan", sessions: 4, hours: 2.2, ai_autonomy_avg: 3, success_rate_pct: 75, notable_signal: "Charlie's brainstorm warmup pattern" },
-          { name: "code review", our_mapping: "subagent: spec-reviewer / code-reviewer dispatches", sessions: 3, hours: 1.4, ai_autonomy_avg: 5, success_rate_pct: 100, notable_signal: "Charlie's reviewer-triad: 3 parallel reviewers, zero rework" },
+          { name: "idea generation", our_mapping: "goal_category: plan", sessions: 4, hours: 2.2, ai_autonomy_avg: 3, success_rate_pct: 75, notable_signal: "Erin's brainstorm warmup pattern" },
+          { name: "code review", our_mapping: "subagent: spec-reviewer / code-reviewer dispatches", sessions: 3, hours: 1.4, ai_autonomy_avg: 5, success_rate_pct: 100, notable_signal: "Erin's reviewer-triad: 3 parallel reviewers, zero rework" },
           { name: "info seeking", our_mapping: "goal_category: research", sessions: 4, hours: 1.1, ai_autonomy_avg: 3, success_rate_pct: 100 },
           { name: "testing", our_mapping: "goal_category: test", sessions: 2, hours: 0.5, ai_autonomy_avg: 3, success_rate_pct: 100, notable_signal: "Low absolute count — test session share lagging the DORA Google baseline" },
-          { name: "learning", our_mapping: "goal_category: meta", sessions: 2, hours: 2.4, ai_autonomy_avg: 4, success_rate_pct: 100, notable_signal: "Charlie's meta-skill authoring — team's first metasynthesized skill" },
+          { name: "learning", our_mapping: "goal_category: meta", sessions: 2, hours: 2.4, ai_autonomy_avg: 4, success_rate_pct: 100, notable_signal: "Erin's meta-skill authoring — team's first metasynthesized skill" },
           { name: "prototyping", our_mapping: "early-phase build sessions before spec", sessions: 1, hours: 0.4, ai_autonomy_avg: 4, success_rate_pct: 100 },
           { name: "writing docs", our_mapping: "(near-zero; CLAUDE.md additions + spec writing only)", sessions: 0, hours: 0.0, ai_autonomy_avg: 1, success_rate_pct: 0, notable_signal: "Underused — opportunity to lean on AI for docs" },
         ],
@@ -2444,19 +2444,19 @@ export const mockTeamInsightReport: TeamInsightReport = {
             {
               title: "47-min parallel-dispatch ship — fastest first-pass of the week",
               member: "Alice",
-              ticket: "KIP-156",
+              ticket: "ORB-156",
               detail: "Brief-as-contract pattern (harness-orchestrate) dispatched four worker subagents in parallel; merged in 47 min, no rework, PR closed clean.",
             },
             {
               title: "4.2h autonomous migration that didn't need a rework cycle",
               member: "Bob",
-              ticket: "KIP-148",
-              detail: "kipwise-migration-guard caught two unsafe operations during a long autonomous run; the safety skill let the autonomy ship without revisions.",
+              ticket: "ORB-148",
+              detail: "orbit-migration-guard caught two unsafe operations during a long autonomous run; the safety skill let the autonomy ship without revisions.",
             },
             {
               title: "Zero-rework first PR on a feature spec",
-              member: "Charlie",
-              ticket: "KIP-144",
+              member: "Erin",
+              ticket: "ORB-144",
               detail: "Three reviewer subagents critiqued the spec BEFORE any code — 4 of 5 findings landed in the revised spec; the implementation phase shipped with no follow-up review.",
             },
           ],
@@ -2476,7 +2476,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
               { label: "Tools-per-shipped-change", value: "38 (median)", note: "rising trend over 4 weeks" },
             ],
             canonical_example: {
-              session_label: "Bob · Thu · kipwise-v1 · rapid-fire debug",
+              session_label: "Bob · Thu · orbit-shop · rapid-fire debug",
               member: "Bob",
               explanation:
                 "Initial agent run nailed the diagnosis in 28 min. Then 18 short user messages over 40 min — 'try -X', 'nope, retry', 'wait', 'check pg version first' — dragged the session to 142 min wall. Median user message dropped from 60 chars (the initial brief) to 32 chars (debug nudges). Phase-changed from 'writing' to 'babysitting'.",
@@ -2496,7 +2496,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
               { label: "Rework PR rate", value: "11%", note: "follow-up fix within 24h — proxy for blind-leading-blind" },
             ],
             canonical_example: {
-              session_label: "Bob · Thu · kipwise-v1 · rapid-fire debug",
+              session_label: "Bob · Thu · orbit-shop · rapid-fire debug",
               member: "Bob",
               explanation:
                 "Same session as Tension 1. The agent couldn't infer the pg-version compatibility issue from the codebase; it needed Bob's domain expertise. The 'rapid-fire' tail is the audible signal of the expertise paradox — the agent was generating fixes faster than Bob could verify them against his knowledge.",
@@ -2508,7 +2508,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
             article_quote:
               "It's hard to know which AI tool to use for a given task and whether the AI will be able to complete the task.",
             our_data_summary:
-              "We can read this as 'mid-session skill loads' — moments when a member realises mid-flight that they reached for the wrong harness initially. The team had 3 mid-session skill loads this week (Bob loading systematic-debugging mid-debug; Charlie loading writing-skills mid-meta-session; etc.). Plus: the team authored a brand-new skill (spec-frame-loader) explicitly to AUTOMATE which skill to load — a literal answer to the workflow gap.",
+              "We can read this as 'mid-session skill loads' — moments when a member realises mid-flight that they reached for the wrong harness initially. The team had 3 mid-session skill loads this week (Bob loading systematic-debugging mid-debug; Erin loading writing-skills mid-meta-session; etc.). Plus: the team authored a brand-new skill (spec-frame-loader) explicitly to AUTOMATE which skill to load — a literal answer to the workflow gap.",
             signal_metrics: [
               { label: "Mid-session skill loads", value: "3", note: "corrective — member reaching for a different harness mid-flight" },
               { label: "Skills loaded but never dispatched", value: "2", note: "wrong-tool-loaded signal" },
@@ -2516,10 +2516,10 @@ export const mockTeamInsightReport: TeamInsightReport = {
               { label: "New skills authored this week", value: "1", note: "spec-frame-loader — a skill that picks skills" },
             ],
             canonical_example: {
-              session_label: "Charlie · Tue · topeka · authoring spec-frame-loader",
-              member: "Charlie",
+              session_label: "Erin · Tue · topeka · authoring spec-frame-loader",
+              member: "Erin",
               explanation:
-                "The session itself is the workflow-gap response — Charlie noticed he kept asking 'which skill should I load for this kind of task?' and authored a meta-skill that decides for him. The team's first metasynthesized skill, built explicitly to close the gap the DORA article names.",
+                "The session itself is the workflow-gap response — Erin noticed he kept asking 'which skill should I load for this kind of task?' and authored a meta-skill that decides for him. The team's first metasynthesized skill, built explicitly to close the gap the DORA article names.",
             },
           },
         ],
@@ -2558,7 +2558,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
             our_mapping: [
               { dimension: "Adoption (of user-authored skills)", current_value: "3 of 5 members use harness-orchestrate; 1 skill picked up cross-member this week" },
               { dimension: "Task success (per Economic Index)", current_value: "Median task success 4/5 across opted-in case studies" },
-              { dimension: "Engagement (with the harness)", current_value: "1.5 skills loaded per session; 11/16 sessions pre-flight-load for Charlie" },
+              { dimension: "Engagement (with the harness)", current_value: "1.5 skills loaded per session; 11/16 sessions pre-flight-load for Erin" },
             ],
             citation: { label: "H.E.A.R.T. (DORA article reference)", href: "https://cloud.google.com/transform/unlocking-product-success-by-combining-dora-and-heart" },
           },
@@ -2579,11 +2579,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
         conclusion_paragraphs: [
           {
             heading: "Engineering rigor still matters",
-            body: "Echoing the DORA article's close: AI is fundamentally shifting the rules of software development, but it hasn't replaced the need for engineering rigor. The team that shipped 6 PRs this week did so because the harness — context engineering, the spec-reviewer subagent pattern, kipwise-migration-guard's safety gates — carried the rigor that used to live in human discipline alone.",
+            body: "Echoing the DORA article's close: AI is fundamentally shifting the rules of software development, but it hasn't replaced the need for engineering rigor. The team that shipped 6 PRs this week did so because the harness — context engineering, the spec-reviewer subagent pattern, orbit-migration-guard's safety gates — carried the rigor that used to live in human discipline alone.",
           },
           {
             heading: "Three concrete tradeoffs to watch next week",
-            body: "1. Bob's late-night session count (wellbeing × velocity push/pull tension). 2. Conformity-check failure clustering on test:must-cover-error-path (expertise paradox — candidate for a team-standards skill). 3. The single-practitioner bus factor on kipwise-migration-guard (the harness diffusion signal we want to inverse).",
+            body: "1. Bob's late-night session count (wellbeing × velocity push/pull tension). 2. Conformity-check failure clustering on test:must-cover-error-path (expertise paradox — candidate for a team-standards skill). 3. The single-practitioner bus factor on orbit-migration-guard (the harness diffusion signal we want to inverse).",
           },
           {
             heading: "Where the article points us next",
@@ -2604,12 +2604,12 @@ export const mockTeamInsightReport: TeamInsightReport = {
         strengths: [
           {
             observation: "harness-orchestrate is spreading across the team",
-            metric: "1 cross-member pickup this week (Alice → Charlie, 3 days); 3 of 5 members now using it",
+            metric: "1 cross-member pickup this week (Alice → Erin, 3 days); 3 of 5 members now using it",
             action: "Ask Alice to lead a Friday demo on the brief-as-contract pattern; capture the shape in CLAUDE.md so the next pickup is faster.",
           },
           {
             observation: "Cost-per-shipped-PR dropped sharply",
-            metric: "$23.73/PR this week vs $29.34 last week (−19%) — driven by Charlie's pre-flight skill-loading habit",
+            metric: "$23.73/PR this week vs $29.34 last week (−19%) — driven by Erin's pre-flight skill-loading habit",
             action: "Promote the 'load planning skill before any tool call' habit at the team retro. Track whether other members adopt the pre-flight pattern in their next 5 sessions.",
           },
           {
@@ -2630,9 +2630,9 @@ export const mockTeamInsightReport: TeamInsightReport = {
             action: "Author a 'team-standards-check' skill that pre-loads conformity reminders. The pattern is repeatable — same rule, different members — so it's a context-engineering gap, not an individual miss.",
           },
           {
-            observation: "kipwise-migration-guard is a 1-of-5 bus factor",
+            observation: "orbit-migration-guard is a 1-of-5 bus factor",
             metric: "Only Bob has used it; load-bearing on Wednesday's 4.2h migration that shipped without rework",
-            action: "Pair-document with Charlie next week. The skill's value is high (caught 2 unsafe operations); concentration is high (one practitioner). Both signals point the same direction.",
+            action: "Pair-document with Erin next week. The skill's value is high (caught 2 unsafe operations); concentration is high (one practitioner). Both signals point the same direction.",
           },
         ],
         risk_signals: [
@@ -2665,7 +2665,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           headline: "Review time is the new bottleneck",
           phase: "review",
           delta_pct: 22,
-          action: "Lean on the harness-orchestrate sessions (Alice's pattern) which had tighter first-pass PRs requiring less review iteration. Charlie's reviewer-triad (3 spec-reviewer subagents BEFORE code) is a complementary upstream move — catches issues at the spec stage where they're cheap.",
+          action: "Lean on the harness-orchestrate sessions (Alice's pattern) which had tighter first-pass PRs requiring less review iteration. Erin's reviewer-triad (3 spec-reviewer subagents BEFORE code) is a complementary upstream move — catches issues at the spec stage where they're cheap.",
         },
         paired_metrics: [
           {
@@ -2697,20 +2697,20 @@ export const mockTeamInsightReport: TeamInsightReport = {
             effort: "small",
           },
           {
-            title: "Pair-document `kipwise-migration-guard`",
-            rationale: "The skill is load-bearing (caught 2 unsafe ops on Wednesday) and concentrated (1 of 5 members). Pair-doc with Charlie cuts bus factor in half and may surface the migration patterns most worth generalising.",
+            title: "Pair-document `orbit-migration-guard`",
+            rationale: "The skill is load-bearing (caught 2 unsafe ops on Wednesday) and concentrated (1 of 5 members). Pair-doc with Erin cuts bus factor in half and may surface the migration patterns most worth generalising.",
             evidence: "Bob's 4.2h Wednesday migration shipped without rework specifically because of this skill.",
             effort: "small",
           },
           {
             title: "Schedule a Friday demo of `harness-orchestrate`",
             rationale: "Alice's brief-as-contract pattern is the team's fastest first-pass shipper (47-min PR). One demo + a recorded session would likely accelerate next pickup.",
-            evidence: "3 of 5 members already using it; 1 fresh pickup this week (Charlie); the pattern scales beyond topeka.",
+            evidence: "3 of 5 members already using it; 1 fresh pickup this week (Erin); the pattern scales beyond topeka.",
             effort: "small",
           },
           {
             title: "Try `harness-orchestrate` on the next migration-class ticket",
-            rationale: "Bob's migration sessions are the team's longest runs. Alice's parallel-dispatch + brief-as-contract pattern hasn't been tried on a flag-touching change yet; pairing them with `kipwise-migration-guard` might shorten Bob's 4.2h sessions.",
+            rationale: "Bob's migration sessions are the team's longest runs. Alice's parallel-dispatch + brief-as-contract pattern hasn't been tried on a flag-touching change yet; pairing them with `orbit-migration-guard` might shorten Bob's 4.2h sessions.",
             evidence: "Bob's autonomous run worked, but rapid-fire follow-up on Thursday shows the harness doesn't yet cover the debug-with-domain-knowledge mode.",
             effort: "medium",
           },
@@ -2735,16 +2735,16 @@ export const mockTeamInsightReport: TeamInsightReport = {
           },
           {
             member: "Bob",
-            prompt: "kipwise-migration-guard is the only thing keeping autonomy safe on flag-touching migrations. Want to pair-doc with Charlie so the team has a second practitioner?",
+            prompt: "orbit-migration-guard is the only thing keeping autonomy safe on flag-touching migrations. Want to pair-doc with Erin so the team has a second practitioner?",
             evidence: "1 of 5 members using; load-bearing on Wednesday's ship",
           },
           {
             member: "Alice",
             prompt: "harness-orchestrate has spread to 3 of 5 members in 4 weeks. Anything you'd want to add to the skill itself before more people adopt it?",
-            evidence: "Charlie picked it up this week; 3-day origin-to-pickup",
+            evidence: "Erin picked it up this week; 3-day origin-to-pickup",
           },
           {
-            member: "Charlie",
+            member: "Erin",
             prompt: "spec-frame-loader is the team's first metasynthesized skill. Used in 2 of your own sessions already — is the heuristic working, or are you finding cases where it picks wrong?",
             evidence: "Authored Tuesday; loaded in Wed + Thu sessions",
           },
@@ -2761,12 +2761,12 @@ export const mockTeamInsightReport: TeamInsightReport = {
             one_line: "Brief-as-contract pattern → four parallel workers → one merge. Team's fastest first-pass ship.",
           },
           {
-            session_label: "Charlie · Mon · topeka · reviewer-triad before code",
-            member: "Charlie",
+            session_label: "Erin · Mon · topeka · reviewer-triad before code",
+            member: "Erin",
             one_line: "Three spec-reviewer subagents critique the spec BEFORE implementation. Zero-rework PR.",
           },
           {
-            session_label: "Bob · Wed · kipwise-v1 · 4.2h autonomous migration",
+            session_label: "Bob · Wed · orbit-shop · 4.2h autonomous migration",
             member: "Bob",
             one_line: "Front-loaded brief + migration-guard skill = longest autonomous run of the week shipping without rework.",
           },
@@ -2840,7 +2840,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           submitted_sections: 4,
           bottleneck_score: 42,
           narrative:
-            "Spec time is shrinking because Charlie and Alice now front-load reviewer or orchestrator agents before development starts.",
+            "Spec time is shrinking because Erin and Alice now front-load reviewer or orchestrator agents before development starts.",
         },
         {
           phase: "ready",
@@ -2910,7 +2910,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       ],
       ticket_journeys: [
         {
-          id: "KIP-148",
+          id: "ORB-148",
           title: "audit-log NOT NULL backfill",
           source: "Linear",
           owner: "Bob",
@@ -2958,7 +2958,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
                 {
                   timestamp: "2026-05-06T10:48:00",
                   member: "Bob",
-                  label: "kipwise-migration-guard caught unsafe op",
+                  label: "orbit-migration-guard caught unsafe op",
                   sensitivity: "opt-in",
                 },
                 {
@@ -3006,7 +3006,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           ],
         },
         {
-          id: "KIP-156",
+          id: "ORB-156",
           title: "parallel-dispatch demo",
           source: "Linear",
           owner: "Alice",
@@ -3089,7 +3089,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           ],
         },
         {
-          id: "KIP-152",
+          id: "ORB-152",
           title: "staging backfill regression",
           source: "Linear",
           owner: "Bob",
@@ -3198,7 +3198,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
           note: "Longest agent windows; strongest migration case study and clearest debug counterexample.",
         },
         {
-          member: "Charlie",
+          member: "Erin",
           spec_min: 62,
           implementation_min: 96,
           review_min: 31,
@@ -3221,7 +3221,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
       case_studies: [
         {
           title: "Why implementation compressed: brief-as-contract before dispatch",
-          ticket_id: "KIP-156",
+          ticket_id: "ORB-156",
           member: "Alice",
           session_window: "Tue 13:10-14:21",
           phase: "implementation",
@@ -3233,7 +3233,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
         },
         {
           title: "Why speed did not mean recklessness: migration guard inside the implementation phase",
-          ticket_id: "KIP-148",
+          ticket_id: "ORB-148",
           member: "Bob",
           session_window: "Wed 09:05-13:02",
           phase: "implementation",
@@ -3245,19 +3245,19 @@ export const mockTeamInsightReport: TeamInsightReport = {
         },
         {
           title: "Why the bottleneck moved downstream: reviewer-triad shifts work left",
-          ticket_id: "KIP-144",
-          member: "Charlie",
+          ticket_id: "ORB-144",
+          member: "Erin",
           session_window: "Mon 10:00-13:06",
           phase: "spec",
           evidence_level: "ticket-plus-telemetry",
           what_happened:
-            "Charlie spent unusually high agent time in the spec phase and then had a low-rework implementation. The submitted section would reveal which reviewer findings mattered.",
+            "Erin spent unusually high agent time in the spec phase and then had a low-rework implementation. The submitted section would reveal which reviewer findings mattered.",
           why_it_matters:
             "The report can distinguish healthy review growth from waste. Some review time is absorbed upstream; some is accumulating downstream.",
         },
         {
           title: "Why one ticket did not compress: human domain steering after the first diagnosis",
-          ticket_id: "KIP-152",
+          ticket_id: "ORB-152",
           member: "Bob",
           session_window: "Thu 10:01-12:23",
           phase: "implementation",
@@ -3278,19 +3278,19 @@ export const mockTeamInsightReport: TeamInsightReport = {
         {
           question: "Which phase contained the Codex work?",
           data_needed: "JSONL active segments joined to ticket ids from issue mentions, branch names, PR links, or submitted section metadata.",
-          answer_if_connected: "Bob's KIP-148 had 252m agent time inside a 74m implementation phase because multiple active segments overlapped the ticket span.",
+          answer_if_connected: "Bob's ORB-148 had 252m agent time inside a 74m implementation phase because multiple active segments overlapped the ticket span.",
           capturability: "individual-telemetry",
         },
         {
           question: "Why did the implementation window shrink?",
           data_needed: "Opted-in session sections that describe the actual mechanism: orchestration brief, guard skill, reviewer-triad, rapid-fire steering.",
-          answer_if_connected: "Alice's KIP-156 compressed because the brief-as-contract made four workers converge; Bob's KIP-152 did not because no debug harness existed.",
+          answer_if_connected: "Alice's ORB-156 compressed because the brief-as-contract made four workers converge; Bob's ORB-152 did not because no debug harness existed.",
           capturability: "opt-in-session",
         },
         {
           question: "Is review growth a quality problem or a throughput handoff problem?",
           data_needed: "Ticket phase spans, PR review comments, rework commits, QA outcomes, and opt-in review-session sections.",
-          answer_if_connected: "Mixed. KIP-156 review was healthy validation; KIP-152 review was rework pressure from a yellow-CI debug tail.",
+          answer_if_connected: "Mixed. ORB-156 review was healthy validation; ORB-152 review was rework pressure from a yellow-CI debug tail.",
           capturability: "ticket-integration",
         },
         {
@@ -3306,11 +3306,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
     v2_closing: [
       {
         heading: "What the case studies are showing",
-        body: "Five sessions submitted, four distinct collaboration shapes: front-loaded contract (Alice), front-loaded autonomy (Bob's migration), rapid-fire debug-after-initial (Bob's Thursday), pre-code reviewer triad (Charlie's Monday), and meta-skill authoring (Charlie's Tuesday). The shapes vary more than the members do — same member can show two textures in two days.",
+        body: "Five sessions submitted, four distinct collaboration shapes: front-loaded contract (Alice), front-loaded autonomy (Bob's migration), rapid-fire debug-after-initial (Bob's Thursday), pre-code reviewer triad (Erin's Monday), and meta-skill authoring (Erin's Tuesday). The shapes vary more than the members do — same member can show two textures in two days.",
       },
       {
         heading: "Where the harness is doing the work",
-        body: "Three sessions had near-zero mid-flight steering: Alice's parallel ship, Bob's migration, Charlie's spec triad. In each, a load-bearing skill or contract absorbed the structure that would otherwise live in human attention — harness-orchestrate, kipwise-migration-guard, and the spec-reviewer subagent pattern. The lesson is the same across three different shapes: when the harness carries the structure, the agent runs long without losing direction.",
+        body: "Three sessions had near-zero mid-flight steering: Alice's parallel ship, Bob's migration, Erin's spec triad. In each, a load-bearing skill or contract absorbed the structure that would otherwise live in human attention — harness-orchestrate, orbit-migration-guard, and the spec-reviewer subagent pattern. The lesson is the same across three different shapes: when the harness carries the structure, the agent runs long without losing direction.",
       },
       {
         heading: "Where the human is still doing the last mile",
@@ -3325,12 +3325,12 @@ export const mockTeamInsightReport: TeamInsightReport = {
         body: "Five days that hint that the team's relationship with the coding agent is changing. Two members compressed their workflow, one member doubled down on the opposite approach, and a new member crossed the first orchestration milestone — all in the same week. None of it would show up in a PR review or a sprint report. It only shows up in how each of them held the keyboard.",
       },
       {
-        heading: "Charlie's planning ritual is becoming a habit",
-        body: "Four weeks ago, Charlie loaded a skill in roughly one of every two sessions. This week he loaded one in fourteen of sixteen. The skill is almost always superpowers:writing-plans or superpowers:brainstorming, fired before any tool call. The lagging indicator: his cost per shipped PR dropped from $28 to $17 in the same four weeks. The team's lowest now.",
+        heading: "Erin's planning ritual is becoming a habit",
+        body: "Four weeks ago, Erin loaded a skill in roughly one of every two sessions. This week he loaded one in fourteen of sixteen. The skill is almost always superpowers:writing-plans or superpowers:brainstorming, fired before any tool call. The lagging indicator: his cost per shipped PR dropped from $28 to $17 in the same four weeks. The team's lowest now.",
       },
       {
         heading: "Alice taught the team how to dispatch in parallel",
-        body: "On Tuesday afternoon Alice ran four worker subagents against the same file at the same time, with one orchestration brief subagent acting as their shared contract. The session shipped a PR in 47 minutes — the team's fastest first-pass ship of the week. By Thursday, Charlie tried the pattern for the first time. The diffusion arrow on the dashboard says three days from origin to first pickup. The pattern was unknown on this team four weeks ago.",
+        body: "On Tuesday afternoon Alice ran four worker subagents against the same file at the same time, with one orchestration brief subagent acting as their shared contract. The session shipped a PR in 47 minutes — the team's fastest first-pass ship of the week. By Thursday, Erin tried the pattern for the first time. The diffusion arrow on the dashboard says three days from origin to first pickup. The pattern was unknown on this team four weeks ago.",
       },
       {
         heading: "Bob is making the opposite bet, and it's also working",
@@ -3338,11 +3338,11 @@ export const mockTeamInsightReport: TeamInsightReport = {
       },
       {
         heading: "Dana hit the third-week inflection",
-        body: "Dana's first three weeks resemble the curve every new member rides — short sessions, mostly stock skills, near-zero delegation. Friday's Explore subagent dispatch is the first orchestration milestone, the one most new members hit around week 3-4. The next inflection to watch for is the first cross-member skill pickup; that happened the same day (release-ship-check, from Charlie). Two milestones at once, slightly ahead of the median ramp.",
+        body: "Dana's first three weeks resemble the curve every new member rides — short sessions, mostly stock skills, near-zero delegation. Friday's Explore subagent dispatch is the first orchestration milestone, the one most new members hit around week 3-4. The next inflection to watch for is the first cross-member skill pickup; that happened the same day (release-ship-check, from Erin). Two milestones at once, slightly ahead of the median ramp.",
       },
       {
         heading: "Where the team is converging",
-        body: "Three of the four active members loaded a brainstorming or writing-plans skill at least once this week, up from one last week. Plan-mode adoption is at 75% — far above the org baseline of 41%. The team is not just building with agents; they're starting to share a small repertoire of structured warmup moves. The team-built skill collection (harness-orchestrate, kipwise-migration-guard, release-ship-check, spec-frame-loader) is the visible product of that shared repertoire.",
+        body: "Three of the four active members loaded a brainstorming or writing-plans skill at least once this week, up from one last week. Plan-mode adoption is at 75% — far above the org baseline of 41%. The team is not just building with agents; they're starting to share a small repertoire of structured warmup moves. The team-built skill collection (harness-orchestrate, orbit-migration-guard, release-ship-check, spec-frame-loader) is the visible product of that shared repertoire.",
       },
       {
         heading: "Where the team is still solo",

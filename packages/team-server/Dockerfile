@@ -39,6 +39,10 @@ RUN set -eux; \
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
+LABEL org.opencontainers.image.source="https://github.com/cowcow02/fleetlens" \
+      org.opencontainers.image.description="Fleetlens Team Edition server" \
+      org.opencontainers.image.licenses="MIT"
+
 ARG APP_VERSION=0.0.0-dev
 ENV APP_VERSION=$APP_VERSION
 

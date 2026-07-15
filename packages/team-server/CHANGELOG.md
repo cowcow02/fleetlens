@@ -4,6 +4,13 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
+## [0.15.8] — 2026-07-15
+
+### Changed
+- **Demo insights data is fully generic.** The sample report behind `?mock=1` now uses fictional placeholder projects, tickets, and member names throughout.
+- **Contract migration 0016 drops the legacy `team_integrations` table** — the contract half of the 0015 expand/contract pair; all rows were copied to `integrations` in server-v0.15.0 and nothing has read the old table since.
+- **Deployment paths fixed and documented.** AWS Terraform now pulls the correct image (`fleetlens-team-server`) and probes the real health route (`/api/auth/preflight`); `FLEETLENS_ENCRYPTION_KEY` is wired and documented for the Compose and AWS paths; all deploy docs note that `:latest` tracks master and production should pin a released tag. The image now carries OCI source/license labels.
+
 ## [0.15.7] — 2026-07-10
 
 ### Fixed

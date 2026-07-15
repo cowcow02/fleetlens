@@ -707,7 +707,7 @@ const V8_BLOCKS: DashboardBlock[] = [
         return (
           <div className="live-empty-row">
             No completed tickets joined to a merged PR this week — the timeline needs the ticket ref
-            (e.g. KIP-315) in the PR title to connect the two.
+            (e.g. ORB-315) in the PR title to connect the two.
           </div>
         );
       }

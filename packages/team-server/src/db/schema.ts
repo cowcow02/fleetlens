@@ -498,36 +498,6 @@ export const integrations = pgTable(
   }),
 );
 
-// Legacy single-integration-per-provider table, superseded by `integrations`
-// (0015 copied the rows across). Kept one release so the previous container's
-// ON CONFLICT (team_id, provider) upserts keep working during the revision
-// swap — dropped next release. Do not use.
-export const teamIntegrations = pgTable(
-  "team_integrations",
-  {
-    teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-    provider: text("provider").notNull(),
-    credentialsEnc: text("credentials_enc").notNull(),
-    config: jsonb("config").notNull().default(sql`'{}'::jsonb`),
-    status: text("status").notNull().default("active"),
-    lastError: text("last_error"),
-    lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
-    createdBy: uuid("created_by").references(() => userAccounts.id, { onDelete: "set null" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey({ columns: [t.teamId, t.provider] }),
-    providerCheck: check(
-      "team_integrations_provider_check",
-      sql`${t.provider} IN ('github', 'jira', 'linear')`,
-    ),
-    statusCheck: check(
-      "team_integrations_status_check",
-      sql`${t.status} IN ('active', 'error')`,
-    ),
-  }),
-);
-
 // PR facts synced from the GitHub integration, upserted on every sync. The
 // AI-assisted flag comes from Co-Authored-By trailers in the PR's commits —
 // an undercount when squash-merges strip trailers; the session↔commit-SHA
@@ -576,7 +546,7 @@ export const linearIssues = pgTable(
   "linear_issues",
   {
     teamId: uuid("team_id").notNull().references(() => teams.id, { onDelete: "cascade" }),
-    identifier: text("identifier").notNull(), // e.g. KIP-315
+    identifier: text("identifier").notNull(), // e.g. ORB-315
     title: text("title").notNull(),
     stateName: text("state_name").notNull(),
     // Linear's canonical buckets: triage|backlog|unstarted|started|completed|canceled

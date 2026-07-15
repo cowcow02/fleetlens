@@ -3,7 +3,7 @@
 Date: 2026-06-10
 Scope: team-server only. Local end-to-end proof that a self-hosted team admin can
 connect a GitHub token, sync PRs from a real org repo
-(`kipwise/agentic-knowledge-system`), and see delivery metrics — including the
+(`orbit/agentic-knowledge-system`), and see delivery metrics — including the
 AI-assisted vs non-AI split — on the group insights page.
 
 Context: this is the phase-1 "token paste" flow from the integration design
@@ -111,7 +111,7 @@ PR count), Sync now (POST), Disconnect (DELETE).
 - Vitest: `isAiCommitMessage` trailer matrix, `toPullRow` mapping, median
   helper edge cases (empty, single).
 - Local E2E (manual, this session): local Postgres 16 → signup → create group →
-  PUT integration with a real `gh` token scoped to kipwise → sync → assert DB
+  PUT integration with a real `gh` token scoped to orbit → sync → assert DB
   rows → assert the group insights page HTML renders the GitHub block with
   non-zero numbers.
 
