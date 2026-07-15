@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { fetchUsage, UsageApiError } from "./usage/api.js";
 import { fetchZaiUsage, ZaiApiError } from "./usage/zai.js";
 import { fetchGrokUsage, GrokApiError } from "./usage/grok.js";
+import { fetchCodexUsage, CodexApiError } from "./usage/codex.js";
 import { appendSnapshot, pruneAgent } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
@@ -206,11 +207,9 @@ async function runDaemonUpdateCheck(): Promise<void> {
 }
 
 async function tick(): Promise<PollOutcome> {
-  // Iterate every registered agent source. Each declares its own
-  // usagePoller (or omits it). Sources that read from disk (Codex)
-  // can't fail in ways that block Claude's OAuth path; Claude's
-  // poller is wired below as a special-cased one because OAuth
-  // outcomes drive the daemon's backoff state.
+  // Iterate every registered agent source that still exposes a disk-side
+  // usagePoller. Network-backed agents (Claude, Codex, Grok, Z.ai) are
+  // special-cased below so missing auth never stalls Claude's backoff path.
   for (const source of agentSources) {
     if (source.kind === "claude-code") continue;     // handled below
     if (!source.usagePoller) continue;
@@ -261,6 +260,30 @@ async function tick(): Promise<PollOutcome> {
       pruneAgent(USAGE_LOG, "zai");
     } else {
       log("warn", `zai poll failed: ${(err as Error).message}`);
+    }
+  }
+  // Codex live plan windows — ChatGPT WHAM usage API (same path as OpenUsage).
+  // Not scraped from session rollouts: those only refresh after a Codex turn
+  // and can stick at a pre-reset % for days. Independent of Claude backoff.
+  try {
+    const codexSnapshot = await fetchCodexUsage();
+    appendSnapshot(USAGE_LOG, codexSnapshot);
+    const fiveHour = codexSnapshot.five_hour.utilization === null
+      ? "—"
+      : `${codexSnapshot.five_hour.utilization}%`;
+    const sevenDay = codexSnapshot.seven_day.utilization === null
+      ? "—"
+      : `${codexSnapshot.seven_day.utilization}%`;
+    log("info", `codex snapshot 5h=${fiveHour} 7d=${sevenDay}`);
+  } catch (err) {
+    if (
+      err instanceof CodexApiError &&
+      (err.code === "no_auth" || err.code === "api_key_only")
+    ) {
+      pruneAgent(USAGE_LOG, "codex");
+      // Quiet when Codex simply isn't logged in (or is API-key-only).
+    } else {
+      log("warn", `codex poll failed: ${(err as Error).message}`);
     }
   }
   // Grok weekly credit pool — same endpoint as the Grok CLI / OpenUsage.

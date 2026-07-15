@@ -1,5 +1,6 @@
 import { fetchUsage, UsageApiError } from "../usage/api.js";
 import { fetchGrokUsage, GrokApiError } from "../usage/grok.js";
+import { fetchCodexUsage, CodexApiError } from "../usage/codex.js";
 import { formatUsage } from "../usage/format.js";
 import { appendSnapshot } from "../usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
@@ -48,10 +49,26 @@ Usage:
         }
       }
       try {
+        appendSnapshot(USAGE_LOG, await fetchCodexUsage());
+      } catch (err) {
+        if (
+          err instanceof CodexApiError &&
+          (err.code === "no_auth" || err.code === "api_key_only")
+        ) {
+          // Quiet when Codex simply isn't logged in (or is API-key-only).
+        } else {
+          console.warn(
+            `codex usage: ${(err as Error).message}`,
+          );
+        }
+      }
+      try {
         appendSnapshot(USAGE_LOG, await fetchGrokUsage());
       } catch (err) {
-        if (!(err instanceof GrokApiError && err.code === "no_auth")) {
+        if (err instanceof GrokApiError && err.code === "no_auth") {
           // Quiet when Grok isn't logged in.
+        } else {
+          console.warn(`grok usage: ${(err as Error).message}`);
         }
       }
     }

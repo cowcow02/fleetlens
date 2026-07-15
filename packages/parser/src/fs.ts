@@ -53,7 +53,6 @@ import {
   listCodexSessions as _listCodexSessions,
   getCodexSession as _getCodexSession,
   clearCodexCaches,
-  getLatestCodexUsage,
 } from "./codex.js";
 
 import {
@@ -259,6 +258,10 @@ type UsageSnapshotLike = {
   plan_type?: string | null;
 };
 
+// Codex plan usage is polled by the CLI daemon via ChatGPT's WHAM usage API
+// (same path as OpenUsage) — not from session rollouts. Rollout rate_limits
+// only update after a Codex turn and can stick at a pre-reset % for days.
+// getLatestCodexUsage remains exported for offline/debug use.
 const codexSource: AgentSource = {
   ...CODEX_METADATA,
   defaultRoot: _DEFAULT_CODEX_ROOT,
@@ -268,22 +271,11 @@ const codexSource: AgentSource = {
   async getSession(id) {
     return _getCodexSession(id);
   },
-  async usagePoller() {
-    const w = await getLatestCodexUsage();
-    if (!w) return null;
-    return {
-      captured_at: new Date().toISOString(),
-      agent: "codex",
-      five_hour: w.five_hour,
-      seven_day: w.seven_day,
-      plan_type: w.plan_type,
-    };
-  },
 };
 
 // Gemini CLI's free / paid tiers don't expose structured rate-limit
 // telemetry in transcripts, so no usagePoller — utilization tracking is
-// Claude / Codex only until that surfaces upstream.
+// network-backed for Claude / Codex / Grok / Z.ai only.
 const geminiSource: AgentSource = {
   ...GEMINI_METADATA,
   defaultRoot: _DEFAULT_GEMINI_ROOT,
