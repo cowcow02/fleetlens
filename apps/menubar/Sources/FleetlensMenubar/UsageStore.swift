@@ -2,6 +2,17 @@ import Foundation
 import SwiftUI
 import Combine
 
+let daemonSnapshotStaleAfter: TimeInterval = 5 * 60
+
+func shouldRecoverDaemon(
+  snapshots: [AgentKind: UsageSnapshot],
+  now: Date,
+  staleAfter: TimeInterval = daemonSnapshotStaleAfter
+) -> Bool {
+  guard let newest = snapshots.values.compactMap(\.capturedDate).max() else { return true }
+  return now.timeIntervalSince(newest) > staleAfter
+}
+
 struct CliLaunch: Codable {
   let node: String
   let script: String
@@ -37,14 +48,20 @@ final class UsageStore: ObservableObject {
   @Published var refreshing = false
 
   private var watcher: UsageLogWatcher?
+  private var watchdog: AnyCancellable?
   private var daemonStartInFlight = false
 
-  init() {
+  init(watchdogInterval: TimeInterval = 60) {
     reload()
     watcher = UsageLogWatcher(url: SnapshotIO.usageLogURL()) { [weak self] in
       Task { @MainActor in self?.reload() }
     }
     watcher?.start()
+    watchdog = Timer.publish(every: watchdogInterval, on: .main, in: .common)
+      .autoconnect()
+      .sink { [weak self] now in
+        Task { @MainActor in self?.recoverDaemonIfStale(now: now) }
+      }
   }
 
   /// Headline value for the menu bar — Claude 5h, falling back to Codex 7d.
@@ -82,9 +99,8 @@ final class UsageStore: ObservableObject {
     lastError = snapshots.isEmpty ? "Waiting for the daemon's first usage snapshot…" : nil
   }
 
-  /// When the widget is a login item, this becomes a second idempotent path
-  /// that brings the daemon back after login. Re-check when the popover opens,
-  /// but don't continuously supervise: updates need a clean stop/re-exec window.
+  /// App launch, popover open, and the stale-snapshot watchdog all converge on
+  /// this idempotent recovery path.
   func ensureDaemonRunning() {
     guard !daemonStartInFlight else { return }
     daemonStartInFlight = true
@@ -97,6 +113,11 @@ final class UsageStore: ObservableObject {
       guard !ok, self.snapshots.isEmpty else { return }
       self.lastError = "Daemon couldn't start — re-run `fleetlens menubar install` to reconnect the widget to the CLI."
     }
+  }
+
+  func recoverDaemonIfStale(now: Date = Date()) {
+    guard shouldRecoverDaemon(snapshots: snapshots, now: now) else { return }
+    ensureDaemonRunning()
   }
 
   /// Force a fresh usage poll instead of just re-reading the file. Spawns the

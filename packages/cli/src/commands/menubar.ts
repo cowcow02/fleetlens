@@ -271,8 +271,8 @@ export async function menubar(args: string[]): Promise<void> {
 
 The widget tails ~/.cclens/usage.jsonl and shows live Claude Code / Codex
 plan utilization in the menu bar. It starts the usage daemon when launched
-and re-checks it whenever you open the popover. Click "Dashboard" to open
-http://localhost:3321.`);
+and re-checks it whenever you open the popover or usage data becomes more
+than five minutes stale. Click "Dashboard" to open http://localhost:3321.`);
       break;
     default:
       console.error(
