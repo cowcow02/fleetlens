@@ -4,7 +4,9 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.16.8] — 2026-07-15
+
+Safe upgrade from 0.16.7. Copilot organization allowances are described accurately, and usage tabs now reflect locally observed providers.
 
 ### Fixed
 - **Organization-managed Copilot allowances no longer claim to be unlimited.** When Copilot's SDK withholds a personal ceiling, the usage page now says "Limit not reported," explains that organization and enterprise credits may come from a shared pool, and links to GitHub's pooling documentation and billing view for verification.
