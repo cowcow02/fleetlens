@@ -273,13 +273,10 @@ async function pollAuxiliaryUsage(): Promise<void> {
     const monthly = copilotSnapshot.monthly?.utilization;
     log("info", `copilot snapshot monthly=${monthly === null || monthly === undefined ? "—" : `${monthly}%`}`);
   } catch (err) {
-    if (
-      err instanceof CopilotApiError &&
-      (err.code === "no_cli" || err.code === "no_auth")
-    ) {
+    if (err instanceof CopilotApiError && err.code === "no_cli") {
       pruneAgent(USAGE_LOG, "copilot");
-      // Quiet when Copilot isn't installed or logged in on this machine.
-    } else {
+      // Quiet when Copilot isn't installed on this machine.
+    } else if (!(err instanceof CopilotApiError && err.code === "no_auth")) {
       log("warn", `copilot poll failed: ${(err as Error).message}`);
     }
   }

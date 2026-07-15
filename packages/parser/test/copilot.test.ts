@@ -223,6 +223,7 @@ describe("Copilot parser", () => {
       },
     ].map((line) => JSON.stringify(line)).join("\n") + "\n");
 
+    clearCopilotCaches();
     const meta = (await listCopilotSessions({ root }))[0]!;
     expect(meta.turnCount).toBe(2);
     expect(meta.lastUserPreview).toBe("Now add a regression test.");

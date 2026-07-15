@@ -350,6 +350,26 @@ function CopilotMonthlyCard({
           {quota.remaining !== null ? ` · ${quota.remaining.toLocaleString()} remaining` : ""}
         </div>
       )}
+      {pct !== null && (
+        <div
+          style={{
+            marginTop: 10,
+            height: 8,
+            borderRadius: 999,
+            background: "var(--af-border-subtle)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.min(100, Math.max(0, pct))}%`,
+              height: "100%",
+              borderRadius: 999,
+              background: agentAccent("copilot"),
+            }}
+          />
+        </div>
+      )}
       <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
         Copilot reports a monthly allowance; it does not expose Codex-style 5-hour or 7-day windows.
         {window.resets_at ? ` Resets ${new Date(window.resets_at).toLocaleString()}.` : ""}

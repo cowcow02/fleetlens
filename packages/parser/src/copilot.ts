@@ -1,14 +1,3 @@
-/**
- * GitHub Copilot CLI transcript reader.
- *
- * Copilot stores each resumable session at:
- *   ~/.copilot/session-state/<sessionId>/events.jsonl
- *
- * The event log includes workspace context, messages, tool execution, model
- * selection, and a final token/code-change summary. The adapter normalizes
- * those records into Fleetlens's shared session model.
- */
-
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";

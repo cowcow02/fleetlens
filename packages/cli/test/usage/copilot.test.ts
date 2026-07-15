@@ -80,6 +80,22 @@ describe("parseCopilotQuota", () => {
     expect(parsed.monthly?.resets_at).toBe("2026-08-03T12:00:00.000Z");
   });
 
+  it("keeps a real reset reported within the final day of the month", () => {
+    const monthEnd = Date.parse("2026-07-31T23:00:00.000Z");
+    const parsed = parseCopilotQuota({
+      quotaSnapshots: {
+        chat: {
+          entitlementRequests: 200,
+          usedRequests: 20,
+          remainingPercentage: 90,
+          resetDate: "2026-08-01T00:00:00.000Z",
+          tokenBasedBilling: true,
+        },
+      },
+    }, monthEnd);
+    expect(parsed.monthly?.resets_at).toBe("2026-08-01T00:00:00.000Z");
+  });
+
   it("keeps unlimited plans unmetered", () => {
     const parsed = parseCopilotQuota({
       quotaSnapshots: {

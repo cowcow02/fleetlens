@@ -1,15 +1,9 @@
-/**
- * GitHub Copilot plan utilization through Copilot CLI's headless JSON-RPC
- * server. The account.getQuota method uses the CLI's existing secure login,
- * so Fleetlens never reads or persists the GitHub token itself.
- */
-
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { UsageSnapshot } from "./api.js";
 
-const RPC_TIMEOUT_MS = 20_000;
+const RPC_TIMEOUT_MS = 10_000;
 
 export class CopilotApiError extends Error {
   constructor(
@@ -57,7 +51,7 @@ function quotaResetDate(value: unknown, nowMs: number): string {
   const parsed = typeof value === "string" ? Date.parse(value) : Number.NaN;
   // Copilot CLI 1.0.x maps quota timestamp_utc (the observation time) into
   // resetDate. Accept a future reset when the SDK fixes that mapping.
-  return Number.isFinite(parsed) && parsed > nowMs + 24 * 60 * 60 * 1000
+  return Number.isFinite(parsed) && parsed > nowMs + 60_000
     ? new Date(parsed).toISOString()
     : nextCopilotMonthlyReset(nowMs);
 }
