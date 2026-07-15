@@ -13,8 +13,6 @@ const TTL_MS = 90_000;
 export type RenderScope = {
   slug: string;
   group: string;
-  coaching: boolean;
-  mock: boolean;
   week?: string;
 };
 
@@ -31,7 +29,7 @@ function secret(): Buffer {
 }
 
 function sign(scope: RenderScope, exp: number): string {
-  const payload = [scope.slug, scope.group, scope.coaching ? 1 : 0, scope.mock ? 1 : 0, scope.week ?? "", exp].join("|");
+  const payload = [scope.slug, scope.group, scope.week ?? "", exp].join("|");
   return createHmac("sha256", secret()).update(payload).digest("base64url");
 }
 

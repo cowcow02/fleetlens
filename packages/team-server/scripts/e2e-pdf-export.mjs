@@ -33,7 +33,7 @@ try {
   ]);
   console.log("✓ logged in →", page.url());
 
-  const insightsUrl = `${BASE}/team/${TEAM}/groups/${GROUP}/insights?mock=1`;
+  const insightsUrl = `${BASE}/team/${TEAM}/groups/${GROUP}/insights`;
   console.log(`→ ${insightsUrl}`);
   await page.goto(insightsUrl, { waitUntil: "networkidle" });
   await page.waitForSelector(".builder-grid, a.btn", { timeout: 20_000 });

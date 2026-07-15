@@ -229,6 +229,14 @@ export function buildRichRollupBlocks(
     const canonical = canonicalProjectName(s.projectName);
     const name = projectKey(s.projectName);
     const repo = resolveRepo?.(canonical) ?? sessionRepo.get(s.id);
+    // Adapters derive projectName from cwd; a non-path value is a synthetic
+    // bucket, not a project — an Antigravity conversation without cwd reports
+    // its conversation UUID, unspaced Cowork sessions report "cowork:unspaced".
+    // Those sessions still count toward day totals, but minting a project row
+    // per bucket lands each one on the server as a distinct fake project and
+    // inflates the per-member distinct-project breadth counters (observed 2x
+    // on a real fleet: 28 of 56 reported "projects" were conversation UUIDs).
+    if (!repo && !/^(?:[A-Za-z]:[\\/]|\/)/.test(s.projectName)) continue;
     const key = repo ?? name;
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
     const cur = projects.get(key) ?? { project: name, agentTimeMs: 0, sessions: 0, ...(repo ? { resolved: repo } : {}) };

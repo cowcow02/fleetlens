@@ -525,6 +525,28 @@ describe("buildRichRollupBlocks", () => {
     expect(blocks.parallelMinutes).toBeGreaterThan(0);
   });
 
+  it("skips project rows for synthetic non-path identities (UUID / cowork:unspaced)", () => {
+    const uuid = makeSession(day, {
+      id: "s-uuid", projectName: "2ec7f3c9-280b-45f0-9d44-c066115b1888",
+      projectDir: "2ec7f3c9-280b-45f0-9d44-c066115b1888", agent: "antigravity",
+      activeSegments: [
+        { startMs: Date.parse(`${day}T10:00:00.000Z`), endMs: Date.parse(`${day}T11:00:00.000Z`) },
+      ],
+    });
+    const unspaced = makeSession(day, {
+      id: "s-cowork", projectName: "cowork:unspaced", projectDir: "cowork-unspaced", agent: "cowork",
+      activeSegments: [
+        { startMs: Date.parse(`${day}T10:30:00.000Z`), endMs: Date.parse(`${day}T12:00:00.000Z`) },
+      ],
+    });
+
+    const blocks = buildRichRollupBlocks(day, [s1, uuid, unspaced], []);
+
+    expect(blocks.projects.map((p) => p.project)).toEqual(["fleetlens"]);
+    // The skipped sessions still count toward the day's concurrency math.
+    expect(blocks.concurrencyPeak).toBeGreaterThanOrEqual(2);
+  });
+
   it("clips a cross-midnight session to each touched day", () => {
     const dayA = "2026-05-12";
     const dayB = "2026-05-13";

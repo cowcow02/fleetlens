@@ -19,12 +19,10 @@ export function SeatRightSizing({
   candidates,
   reviewedCount,
   insufficientCount,
-  explain = false,
 }: {
   candidates: SeatCandidate[];
   reviewedCount: number;
   insufficientCount: number;
-  explain?: boolean;
 }) {
   const totalSavings = candidates.reduce((s, c) => s + c.savingsUsd, 0);
   return (
@@ -35,7 +33,7 @@ export function SeatRightSizing({
       <div className="subsection-head">
         <h2>
           <em>Seat right-sizing</em>
-          {explain && <ExplainBadge p={provenanceFor("seat-right-sizing")} />}
+          <ExplainBadge p={provenanceFor("seat-right-sizing")} />
         </h2>
         <span className="kicker">cost lens · not performance</span>
       </div>
