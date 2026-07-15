@@ -396,10 +396,11 @@ export async function fetchCodexUsage(): Promise<UsageSnapshot> {
   let { status, body, headers } = await fetchUsageResponse(access, accountId);
   if (status === 401 || status === 403) {
     // One refresh-and-retry, matching OpenUsage's ProviderAuthRetry.
+    // Uses in-memory `auth` so a refresh_token rotated on the first pass
+    // (if any) is not overwritten by a stale pre-refresh snapshot.
     const refreshed = await refreshAccessToken(auth, loaded.path);
     if (refreshed) {
       access = refreshed.accessToken;
-      auth = refreshed.auth;
       ({ status, body, headers } = await fetchUsageResponse(access, accountId));
     }
   }
