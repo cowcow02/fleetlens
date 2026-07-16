@@ -1,6 +1,6 @@
 {
   "name": "@claude-lens/team-server",
-  "version": "0.15.8",
+  "version": "1.0.0",
   "private": true,
   "description": "Fleetlens Team Edition server — self-hosted team dashboard, shipped as a Docker image",
   "license": "MIT",

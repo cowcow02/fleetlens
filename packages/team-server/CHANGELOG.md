@@ -4,7 +4,9 @@ User-facing changes to the Fleetlens team-server (`ghcr.io/cowcow02/fleetlens-te
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). The personal
 CLI has its own log at the repo root `CHANGELOG.md`.
 
-## [0.15.8] — 2026-07-15
+## [1.0.0] — 2026-07-15
+
+**Team Edition 1.0** — version aligned with the Fleetlens 1.0 launch. No breaking changes; upgrades from any 0.15.x are seamless.
 
 ### Changed
 - **The group insight report is production-ready and always complete.** It is now reachable from a visible "Insight report" button on the group page (previously URL-only). The Options modal and all three of its toggles are gone: per-member maturity portraits and the metric-provenance ⓘ explanations always render, and the `?mock=1` synthetic-data mode is removed entirely (old flag URLs still load and show the live report). The PDF export always includes the full report. Access is unchanged: group manager, team admin, or staff only.
