@@ -1,6 +1,6 @@
 {
   "name": "fleetlens-workspace",
-  "version": "0.16.9",
+  "version": "1.0.0",
   "private": true,
   "description": "Fleetlens — local-only, privacy-first dashboard for multi-agent coding fleets (Claude Code, Codex CLI, Gemini CLI). Sessions, concurrency, usage, and insights.",
   "license": "MIT",
