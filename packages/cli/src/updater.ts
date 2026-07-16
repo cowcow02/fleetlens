@@ -41,12 +41,16 @@ function runNpmInstall(): boolean {
     // --prefer-online: this code path just proved a newer version exists via a
     // direct registry fetch; npm's own packument cache (~5 min TTL) may still
     // resolve `latest` to the old version right after a publish.
+    // 5 min: the package is ~61 MB unpacked and a cold-CDN install of 1.0.0
+    // took >60 s on a fast connection — the old 60 s timeout killed it mid-flight.
     execSync(`npm install -g ${PACKAGE_NAME}@latest --prefer-online`, {
       stdio: "pipe",
-      timeout: 60_000,
+      timeout: 300_000,
     });
     return true;
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`  (npm install failed: ${msg.split("\n")[0]})`);
     return false;
   }
 }

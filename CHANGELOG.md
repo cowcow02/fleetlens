@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.1] — 2026-07-16
+
+### Fixed
+- **Auto-update no longer times out mid-install.** The updater gave `npm install -g` only 60 seconds; the package is ~61 MB unpacked and a cold-CDN install can take longer, so the 0.16.9 → 1.0.0 update reported "Update failed" on a healthy system. The timeout is now 5 minutes, and when the install does fail the underlying npm error is printed instead of being swallowed. (Updating *into* this version with an older CLI can still hit the old 60-second limit — if it does, run `npm install -g fleetlens@latest` once by hand.)
+
 ## [1.0.0] — 2026-07-15
 
 Fleetlens 1.0 — a maturity milestone, **not a breaking change**. Upgrading from any 0.16.x is safe: no CLI, state-directory, or data-format changes. This release marks Fleetlens as stable and ready for community use.
