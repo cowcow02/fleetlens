@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Deploy Fleetlens Team Edition, create the first team, and issue device tokens to members.">
+  <meta name="description" content="Deploy Fleetlens Team Edition, create the first team, and invite members.">
   <title>Deploy Fleetlens Team Edition</title>
   <link rel="icon" href="assets/fleetlens-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
@@ -37,6 +37,14 @@
       <a class="side-link" aria-current="page" href="team-edition.html">Deploy as an admin</a>
       <a class="side-link side-link-detail" href="#team-features">Team features</a>
       <a class="side-link side-link-detail" href="#deployment-options">Deployment options</a>
+      <a class="side-link side-link-detail" href="#invite-members">Invites and access</a>
+      <a class="side-link side-link-detail" href="#joining-the-team">How members join</a>
+      <a class="side-link side-link-detail" href="#team-layout">Dashboard and profiles</a>
+      <a class="side-link side-link-detail" href="#groups">Groups</a>
+      <a class="side-link side-link-detail" href="#integrations">Connected tools</a>
+      <a class="side-link side-link-detail" href="#insight-report">Insight report</a>
+      <a class="side-link side-link-detail" href="#plan-page">Plan utilization</a>
+      <a class="side-link side-link-detail" href="#admin-area">Server administration</a>
       <a class="side-link side-link-detail" href="#stored-data">Stored data</a>
       <p class="sidebar-label">Reference</p>
       <a class="side-link" href="operations.html">Operations</a>
@@ -47,6 +55,7 @@
       <div class="doc-meta"><span class="meta-chip purple">Team Edition</span><span class="meta-chip">Admin setup</span><span class="meta-chip">Postgres required</span></div>
       <h1>Deploy Team Edition and invite your first member.</h1>
       <p class="intro">Team Edition is the shared server layer for a Fleetlens team. It stores membership, selected rollups, usage history, integrations, and server-side reports. Raw session transcripts remain on each member machine.</p>
+      <p>Fleetlens including Team Edition is MIT-licensed open source — no license keys, no seat gating.</p>
 
       <div class="lead-note">
         <strong>Recommended first deployment: Railway</strong>
@@ -59,16 +68,16 @@
         <div class="choice-card"><h3>Member profiles</h3><p>Open a member profile for daily activity, sessions, tokens, plan fit, daemon freshness, and recent cycle history.</p><p><strong>How it works:</strong> profile views read the member's stored rollups and usage snapshots, with role-based visibility for other members.</p></div>
         <div class="choice-card"><h3>Groups and scoped views</h3><p>Organize people into groups, assign managers, and give a group a focused activity and insights view.</p><p><strong>How it works:</strong> group membership and visibility rules are stored in Postgres and applied before a team view is rendered.</p></div>
         <div class="choice-card"><h3>Plan utilization</h3><p>Compare member plan usage, current-cycle pace, recent cycle peaks, and possible unused capacity.</p><p><strong>How it works:</strong> local usage snapshots are aggregated into server-side cycles and burndown signals for admins.</p></div>
-        <div class="choice-card"><h3>Team insights and reports</h3><p>Turn shared activity into team-level insights, narrative reports, and printable report output when your deployment enables them.</p><p><strong>How it works:</strong> the server combines bounded rollups and report inputs; it does not need raw member transcripts.</p></div>
-        <div class="choice-card"><h3>Project and issue context</h3><p>Optional GitHub, Jira, and Linear connections add repository, ticket, and delivery context to shared views.</p><p><strong>How it works:</strong> admins connect integrations in Team Edition settings and choose when their metadata is synchronized.</p></div>
+        <div class="choice-card"><h3>Group insight report</h3><p>Every group gets an always-on momentum report: a four-week trend, an adoption maturity mix, per-member AI-adoption portraits, delivery metrics from any connected GitHub, Linear, or Jira, and a one-click PDF export. There is no setting to turn it on — it's there for any group with members, opened from the group page.</p><p><strong>How it works:</strong> the server combines bounded rollups, usage history, and connected-integration data; it does not need raw member transcripts.</p></div>
+        <div class="choice-card"><h3>Project and issue context</h3><p>Connect GitHub, Jira, and Linear at the team level, or let a group manager connect their own group's accounts directly, to add repository, ticket, and delivery context to shared views and the insight report.</p><p><strong>How it works:</strong> each provider supports more than one simultaneous connection, and every connected source can be owned by the team or scoped to a single group.</p></div>
         <div class="choice-card"><h3>Member-controlled scope</h3><p>Each member decides which local projects are allowed to sync, so a team connection does not mean every repository is shared.</p><p><strong>How it works:</strong> the local Team page stores the project selection and the sync worker filters before upload.</p></div>
-        <div class="choice-card"><h3>Admin controls</h3><p>Invite or revoke members, rotate device tokens, review daemon logs, and keep the server deployment current.</p><p><strong>How it works:</strong> server roles protect administrative actions and Postgres keeps membership, audit, and update state together.</p></div>
+        <div class="choice-card"><h3>Admin controls</h3><p>Create and revoke invite links, manage member access, promote trusted people to server-wide staff, and keep the server deployment current from an in-app updates screen.</p><p><strong>How it works:</strong> server roles protect administrative actions and Postgres keeps membership, audit, and update state together.</p></div>
       </div>
 
       <h2 id="data-flow">How data moves</h2>
       <p>Team Edition begins with the Local Edition. Pairing creates an explicit outbound boundary; it does not turn the local dashboard into a remote transcript viewer.</p>
       <div class="flow">
-        <div class="flow-step"><span class="flow-number">01</span><h3>Pair</h3><p>An admin provides a server URL and device token.</p></div>
+        <div class="flow-step"><span class="flow-number">01</span><h3>Pair</h3><p>The member signs up via invite (or self-serves from their Account page) and gets a server URL plus a one-time device token.</p></div>
         <div class="flow-step"><span class="flow-number">02</span><h3>Select</h3><p>The member chooses which projects this machine may share.</p></div>
         <div class="flow-step"><span class="flow-number">03</span><h3>Derive</h3><p>Local adapters and analytics prepare bounded rollups.</p></div>
         <div class="flow-step"><span class="flow-number">04</span><h3>Send</h3><p>The daemon uploads selected activity and usage data.</p></div>
@@ -77,7 +86,7 @@
 
       <h2 id="deployment-options">Choose a deployment path</h2>
       <div class="choice-grid">
-        <div class="choice-card"><h3>Railway</h3><p>Fastest path to a public HTTPS URL. The template provisions Team Edition and Postgres together. <a href="https://railway.com/new/template/sGuijx">Open the Railway template</a>.</p></div>
+        <div class="choice-card"><h3>Railway</h3><p>Fastest path to a public HTTPS URL. The template provisions Team Edition and Postgres together. <a href="https://railway.com/new/template/sGuijx">Open the Railway template</a> and see the <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/railway/README.md">Railway guide</a> for variables and one-click upgrades.</p></div>
         <div class="choice-card"><h3>Google Cloud</h3><p>Cloud Run, Cloud SQL, Secret Manager, and Cloud Scheduler. Follow the repository's <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/gcp/README.md">GCP deployment guide</a>.</p></div>
         <div class="choice-card"><h3>Docker Compose</h3><p>Run the server, Postgres, and Caddy on a host you control. Follow the <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/compose/README.md">Compose guide</a>.</p></div>
         <div class="choice-card"><h3>AWS Terraform</h3><p>Use ECS Fargate, RDS Postgres, and an Application Load Balancer. Follow the <a href="https://github.com/cowcow02/fleetlens/blob/master/deploy/terraform/aws/README.md">AWS module guide</a>.</p></div>
@@ -90,18 +99,52 @@
       <div class="step-card"><span class="step-num">4</span><div><h3>Create the first account</h3><p>The first account becomes the administrator of the first team. Use a team-owned address and store the password in your normal password manager.</p></div></div>
       <div class="step-card"><span class="step-num">5</span><div><h3>Check the server settings</h3><p>Confirm the team name, public URL, database connection, and encryption key are stable before inviting members. Do not paste secrets into a ticket or chat channel.</p></div></div>
 
-      <h2 id="device-token">Issue a device token</h2>
-      <p>Members pair local Fleetlens daemons with a device token. After signing in, open the Team Edition settings area and create a token for the member or device. Send the token and server URL through a private channel.</p>
-      <div class="note note-amber"><strong>Tokens are credentials</strong><p>Do not put a token in a public issue, a screenshot, a shared document, or a shell history file that other users can read. If a token leaks, revoke it and create a replacement.</p></div>
-      <p>Give the member these three pieces of context:</p>
-      <ul>
-        <li>The exact server URL, including <code>https://</code>.</li>
-        <li>The device token.</li>
-        <li>Which repositories are allowed to sync, if your team has a data policy.</li>
-      </ul>
+      <h2 id="invite-members">Invite members and manage access</h2>
+      <p>Admin-only settings live at your team's Settings page, organized into tabs: Profile, Members, Invites &amp; sign-up, Integrations, and &mdash; for server staff only &mdash; Server. Anyone who isn't a team admin sees an "Admin only" notice instead of the tabs.</p>
+
+      <h3>Profile</h3>
+      <p>Rename the team from a single text field and a Save button. The team's URL slug is shown for reference but isn't editable here.</p>
+
+      <h3>Members</h3>
+      <p>A table lists every person on the team &mdash; name, email, role, and an active/revoked status badge &mdash; with a "Manage groups" link on each row that jumps to the group tools described in <a href="#groups">Groups</a>. Two actions live here:</p>
+      <div class="table-wrap"><table><thead><tr><th>Action</th><th>What happens</th></tr></thead><tbody>
+        <tr><td>Revoke</td><td>Behind a confirm dialog, since it's immediate: the member's next sync or sign-in attempt fails right away.</td></tr>
+        <tr><td>Reactivate</td><td>Restores a revoked member's access. If their pairing needs a fresh device token, one is minted automatically and shown inline for you to hand back to them.</td></tr>
+      </tbody></table></div>
+
+      <h3>Invites &amp; sign-up</h3>
+      <p>This is where you actually bring people onto the team &mdash; not by minting a device token yourself, but by creating a reusable <strong>invite link</strong>. A table lists every currently active link: the role it grants, which groups it auto-adds the new member to, who created it, its expiry, and how many people have redeemed it, with Copy link and Revoke actions on each row.</p>
+      <p>A "+ New link" button opens a form: pick the joining role, optionally choose one or more groups to place the invitee into, and set an expiry window (1&ndash;365 days, 90 by default). Choosing the admin role shows a warning, since anyone who redeems that link becomes a full team admin.</p>
+      <p>Below the link table, a sign-up policy control restricts which email domains can complete signup at all, whether they arrive through an invite link or public sign-up &mdash; enter a comma-separated list (for example <code>demo-team.com, contractors.demo-team.com</code>) and Save.</p>
+
+      <h3>Integrations</h3>
+      <p>Connect GitHub, Jira, and Linear for the whole team, or leave a provider to be connected per group instead &mdash; covered in <a href="#integrations">Connected tools</a> below.</p>
+
+      <h3>Server (staff only)</h3>
+      <p>If you're also server staff, this tab shows the same update-status panel described in <a href="#admin-area">Server administration</a>, so you don't have to leave your team's settings to notice a pending update.</p>
+
+      <div class="note note-amber"><strong>Invite links are not device tokens</strong><p>An invite link gets someone a team <em>account</em>. Pairing their local Fleetlens install is a separate, self-serve step each member does from their own Account page after they sign in &mdash; see <a href="#your-account">Your account page</a>. You never need to generate or hand out a device token on a member's behalf.</p></div>
+
+      <h2 id="joining-the-team">How members sign in and join</h2>
+      <p>Once you've created an invite link (or turned on public sign-up), here is exactly what the person on the other end sees.</p>
+
+      <h3>Signing in</h3>
+      <p>Returning members open <code>/login</code>: an email and password field, a Sign in button, and a red error banner on a wrong password. When sign-up is open, a link below the form offers a way to create an account instead.</p>
+
+      <h3>Joining with an invite link</h3>
+      <p>Opening your invite link takes them straight to sign-up with the invitation already resolved: their email field is pre-filled and locked, a badge reading something like "INVITED &middot; DEMO-TEAM" sits above the form, and the heading reads "Join demo-team" instead of a generic "Create your account." The submit button underneath still reads "Join team," not the team's own name. They only need to set a display name and password.</p>
+
+      <h3>Public sign-up</h3>
+      <p>If you've turned on public sign-up (Invites &amp; sign-up tab, above), anyone can complete the standard form and press "Create account" without ever receiving a link from you &mdash; useful for an internal tool everyone in the company already trusts, less so for anything you want to gatekeep.</p>
+
+      <h3>When sign-up is closed</h3>
+      <p>Without an invite link, without public sign-up on, and after a first admin already exists, visiting <code>/signup</code> just shows a "Signup closed" heading and a "Sign in instead" button. This is the expected state for most teams most of the time &mdash; it's what stops a stray link to your server from creating accounts.</p>
+
+      <h3>Right after creating an account</h3>
+      <p>Whichever path got them there, the very next screen &mdash; shown once &mdash; is their own device-pairing command: a copyable <code>fleetlens team join &lt;server&gt; &lt;token&gt;</code> block with a "shown once" warning and a "Continue to dashboard" button. Tell new members to copy that command into a terminal before clicking Continue; the token isn't shown again, though they can always mint a new one later from their Account page. From here, send them to <a href="team-member.html">the member join guide</a> to finish choosing which projects to sync.</p>
 
       <h2 id="verify-member">Verify the first member sync</h2>
-      <p>Send the member to <a href="team-member.html">Sync your first project</a>. Their local onboarding flow has three screens:</p>
+      <p>Send the member to <a href="team-member.html">Sync your first project</a>. Their local onboarding flow, summarized here:</p>
       <div class="flow">
         <div class="flow-step"><span class="flow-number">01</span><h3>What happens</h3><p>They review shared aggregates and the local-only boundary.</p></div>
         <div class="flow-step"><span class="flow-number">02</span><h3>Choose</h3><p>They select the projects this machine may send.</p></div>
@@ -110,6 +153,89 @@
         <div class="flow-step"><span class="flow-number">05</span><h3>Review</h3><p>The team dashboard receives derived rollups, not transcripts.</p></div>
       </div>
       <p>Ask the member to run <code>fleetlens team status</code> after the browser reports success. On the server, check the member's activity and the selected project rows.</p>
+
+      <h2 id="team-layout">The dashboard, roster, and member profiles</h2>
+      <p>Every page under your team's URL shares the same chrome: a newspaper-styled masthead with an issue and volume counter and the current active-member count, and a left-hand navigation whose links change by role. Admins and staff see Roster, Plan, and Settings; a group manager who isn't an admin sees a link straight to their own group; every signed-in member sees a footer with their email, a link to the changelog (with an unread dot when a new release hasn't been seen yet), and Sign out. The changelog itself lists every team-server release, grouped by date, each entry tagged with Added/Fixed/Changed/Removed pills and a "latest" marker on the newest one; it renders bare for anonymous visitors and inside the full navigation shell once you're signed in, so a link to it is safe to share either way.</p>
+
+      <h3>The roster</h3>
+      <p>Admins and staff land on the roster: a grid of one card per active member, plus a range picker (7D/30D/90D) and a "Live &middot; updates via SSE" indicator that means exactly what it says &mdash; the page refreshes itself the moment a member's daemon pushes a new sync, with nothing to click. A member who isn't an admin is redirected straight to their own group or their own profile instead of seeing the full roster.</p>
+      <p>Each roster card shows a name and email, chips for every group the person belongs to (a star marks one where they're the manager), a last-seen indicator, their local CLI version, a role badge, and a stat row of agent time, sessions, and tokens for the selected range. Click a card to open that member's profile.</p>
+      <div class="screenshot"><img src="assets/screenshots/team.png" alt="Team roster with per-member cards showing agent time, sessions, and tokens over the selected range" loading="lazy" decoding="async"></div>
+
+      <h3>Member profiles</h3>
+      <p>A member profile (visible to the member themselves, their group's manager, and any admin or staff) opens with an identity header &mdash; role, join date, plan tier, daemon status, CLI version &mdash; followed by a 30-day summary and a daily activity chart with its own range toggle; a collapsible "Daily breakdown" table underneath gives the exact numbers behind the bars.</p>
+      <p>Below that sits a plan-fit block: a plain-language verdict (something like "on track," "consider upgrading," or "urgent &mdash; will run out early") for this one person, next to a burndown chart of their current cycle &mdash; actual usage against an ideal-pace diagonal, with a "now" marker and a pace label &mdash; and a strip of bars for their last several weekly cycles, colored by how much of that cycle they used.</p>
+      <div class="screenshot"><img src="assets/screenshots/team-member-detail.png" alt="Member profile with identity header, activity chart, and the plan-fit burndown block" loading="lazy" decoding="async"></div>
+      <p>Admins and staff get one more control here: a kebab menu with two actions. <strong>View logs</strong> opens that member's sync-log modal &mdash; a live, newest-first feed of their daemon's recent sync attempts paired with a daemon-liveness badge, so a silent log next to a stale heartbeat reads unambiguously as "the connection is broken" rather than "nothing happened." <strong>Request 30-day backfill</strong> queues a command that the member's own daemon picks up on its next check-in and re-pushes 30 days of activity &mdash; the fix for a gap or a wrong historical number that doesn't require a server upgrade, and safe to run more than once since it upserts rather than duplicates.</p>
+
+      <h3 id="your-account">Your account page</h3>
+      <p>Every signed-in member &mdash; not just admins &mdash; has their own Account page. It's the self-serve way to pair a machine: a "Generate device token" button that mints a one-time token and shows the exact <code>fleetlens team join</code> command with a Copy button. Generating a new token immediately revokes whichever one came before it, so re-pairing a lost or replaced machine is a single click here rather than a request to an admin.</p>
+
+      <h2 id="groups">Groups</h2>
+      <p>Groups scope a project's people and their insight report together &mdash; for example, everyone on <code>orbit-shop</code> in one group and everyone on <code>fleet-dashboard</code> in another. Reached from Groups in the left nav.</p>
+
+      <h3>The groups list</h3>
+      <p>Admins and staff see every group: name, slug, member and manager counts, avatar stack, and Open / Settings links per row, plus a "+ Add new group" button. A manager who isn't an admin sees a shorter version scoped to just the group or groups they manage, each with a Settings link.</p>
+      <p>"+ Add new group" opens a compose modal: a name field (the URL slug follows it automatically), an embedded member picker for placing people into the group before it's created, and a Publish button. The member picker itself &mdash; a searchable checklist with per-row checkboxes, avatars, and a manager-role toggle, plus "Select shown" and "Clear" &mdash; is the same component used anywhere Fleetlens lets you add people to a group.</p>
+
+      <h3>Group detail page</h3>
+      <p>Opening a group (gated to its managers, admins, and staff) shows that group's own roster grid and summary stats with the same range picker used on the main roster, plus two buttons: <strong>Insight report</strong>, which opens the always-on momentum report described in <a href="#insight-report">The group insight report</a>, and <strong>Settings</strong>.</p>
+      <div class="screenshot"><img src="assets/screenshots/team-group.png" alt="Group detail page with its roster, combined stats, and the Insight report button" loading="lazy" decoding="async"></div>
+
+      <h3>Group settings</h3>
+      <p>The Settings button (or a deep link straight to a specific tab) opens a modal with four tabs:</p>
+      <div class="table-wrap"><table><thead><tr><th>Tab</th><th>What it's for</th></tr></thead><tbody>
+        <tr><td>Members</td><td>Add members, promote or demote managers, and remove people &mdash; a remove needs a double-click to confirm.</td></tr>
+        <tr><td>Invite links</td><td>Self-serve invite-link generation scoped to this group; a link can also place the invitee into other groups at the same time.</td></tr>
+        <tr><td>Integrations</td><td>The group-scoped view of every source feeding this group's report &mdash; see <a href="#integrations">Connected tools</a>.</td></tr>
+        <tr><td>General</td><td>Rename the group's display name (its slug stays fixed since report URLs are built from it), and a danger-zone delete that detaches members from the group without revoking their team access.</td></tr>
+      </tbody></table></div>
+      <p>A group manager can also reach invite creation directly, without opening the modal, through a standalone invite page scoped to their group with the role locked to member &mdash; useful for sharing one link with a new hire rather than walking them through team settings.</p>
+
+      <h2 id="integrations">Connected tools</h2>
+      <p>GitHub, Linear, and Jira connections add delivery context &mdash; merged pull requests, ticket velocity, cycle time &mdash; to member views and to every group's insight report. Each provider supports more than one simultaneous connection, and every connection is either owned by the whole team or scoped to one group.</p>
+
+      <h3>Team-level connections</h3>
+      <p>From Settings &rsaquo; Integrations, an admin adds a GitHub connection with a fine-grained personal access token and a repository picker, a Linear connection with an API key and a team picker, or a Jira connection with a site, email, and token plus a project picker. Each connection gets its own status card, and a mapping table lets you route a specific repository, Linear team, or Jira project to a particular group instead of leaving it team-wide. "+ Add another GitHub" (and the equivalent for Linear and Jira) adds a second, third, or further connection &mdash; useful when different parts of the org use different GitHub orgs or Jira sites.</p>
+
+      <h3>Group-scoped connections</h3>
+      <p>Open a group's Settings &rsaquo; Integrations tab to see exactly what counts toward that group's numbers: every relevant source, whether team-owned or connected directly by this group, each with a badge showing which. A group manager doesn't need org-level integration access to help their own group &mdash; a "Connect GitHub for this group" (or Linear, or Jira) button lets them add their own credential (with a label so it's identifiable later) scoped to just their group, and for a team-owned source they can still opt individual repositories or projects in or out of their group's report without owning the connection at all.</p>
+      <p>Every connection card, team-level or group-scoped, offers the same three actions: <strong>Sync now</strong> for an immediate pull outside the normal schedule, <strong>Disconnect</strong> (behind a confirm dialog &mdash; this deletes the stored credential and strips already-synced data), and an inline reconnect form if a token or credential has expired.</p>
+
+      <h2 id="insight-report">The group insight report</h2>
+      <p>Every group has a momentum report &mdash; a narrative-plus-numbers view of how that group works and how it's trending. It's always there once a group has members: no toggle, no preview mode, nothing to enable. Open it from a group's <strong>Insight report</strong> button; access is limited to that group's managers, team admins, and staff.</p>
+      <div class="screenshot"><img src="assets/screenshots/team-insight-report.png" alt="Group insight report header with momentum trend cards and metric provenance badges" loading="lazy" decoding="async"></div>
+      <p>A header at the top carries the group name, the reporting week with Prev/Next arrows (bounded to weeks that actually have data), how many of the group's members were active that week against the total roster, combined agent hours, the roster's names, and when the report was generated. An <strong>Export PDF</strong> button sits next to it &mdash; see below.</p>
+
+      <h3>Momentum: the four-week trend</h3>
+      <p>The report leads with a four-week, oldest-to-newest trajectory rather than a single week-over-week number, because one week's swing is noisy for a small group. Four cards &mdash; agent time, active members, PRs shipped, and sessions &mdash; each show a small bar chart, a direction arrow, and the change from the trend, with an info badge next to every metric explaining exactly what it measures.</p>
+
+      <h3>Using it</h3>
+      <p>An active-rate tile shows what share of the group's seats did anything at all this week versus over the trailing month. Alongside it, a row of pulse tiles covers combined agent time, session count, and parallel-execution minutes &mdash; each with a week-over-week change &mdash; plus the week's single peak-concurrency figure and the date it happened.</p>
+
+      <h3>Getting better</h3>
+      <p>This is the qualitative core of the report. A maturity mix shows how many of the group's members currently sit at each of five adoption levels, L0 (Unaware) through L4 (Multiplier), as a stacked distribution bar with a table underneath naming each member's level and the evidence behind it.</p>
+      <p>Below that, a per-member adoption portrait: one card per person with a level badge, a trend arrow, and an AI-written summary paragraph placing them on the ladder from their last 30 days of activity, backed by a stat strip (how often they work, how broadly across projects, how much of their own harness authorship shows up), chips for which path qualified them for their level and any near-miss on the next one up, and evidence lists with small glyphs pointing at the specific sessions behind each claim &mdash; for example Maya's card might cite a Friday session in <code>orbit-shop</code> where she authored her own subagent. A working-style note may sit alongside &mdash; for context only, it never affects the level.</p>
+      <div class="screenshot"><img src="assets/screenshots/team-insight-portraits.png" alt="Per-member adoption portrait card with level badge, narrative, stat strip, and evidence" loading="lazy" decoding="async"></div>
+      <p>Three more tiles round this section out: adoption of Claude Code's plan mode (share of active members using it this week, plus a session-count delta), long-autonomous-turn texture (count and total minutes of long unattended runs, with the longest single run called out), and, when the group's members use named skills, a paired this-week-vs-last-week bar per skill.</p>
+
+      <h3>Changing how we ship</h3>
+      <p>A PRs-shipped tile always renders, straight from transcript data &mdash; total PRs and a per-active-engineer rate, both with a week-over-week delta &mdash; regardless of whether any integration is connected. Connect GitHub, Linear, or Jira for this group (see <a href="#integrations">Connected tools</a>) and three more views light up: a GitHub delivery block (merged PRs, the AI-assisted share measured by commit co-author trailers, and cycle-time and review-wait medians for AI-assisted work versus the rest), a Linear velocity block (tickets completed &mdash; for example ORB-142 &mdash; AI-linked share, cycle and lead time), and the same shape again for Jira. A work-timeline chart &mdash; once both GitHub and Linear tickets are mapped together &mdash; splits completed work into build and review phases, cohorted by how big the ticket was, so a small fix and a multi-day feature aren't averaged into one meaningless number. A per-project time chart closes the section: this week versus last week's agent hours per resolved repository (for example <code>orbit-shop</code> and <code>fleet-dashboard</code>), with an "others" row for agent time that isn't tied to any resolvable GitHub repo. Any block that needs a connection you haven't made yet explains what's missing and links straight to team settings instead of showing a blank chart.</p>
+
+      <h3>Metric provenance</h3>
+      <p>Nearly every metric heading in the report carries a small "i" badge. Hover or focus it and a popover explains what the metric measures, which data source it comes from, whether that source is currently connected and healthy, and whether the number is computed deterministically or written by the model &mdash; the report's main trust mechanism, so you're never guessing whether a figure is a hard count or an AI estimate.</p>
+      <p>A one-line banner at the top of the report reminds you these badges exist and that every metric traces back to a rollup your members' daemons actually pushed.</p>
+
+      <h3>Seat right-sizing</h3>
+      <p>Deliberately separate from the momentum and maturity content above, a seat right-sizing table is a pure cost lens: it flags members whose plan usage has stayed low long enough to be a downgrade candidate, with a summary line totaling the potential savings. It's one-directional by design &mdash; it only ever surfaces under-used seats, never flags someone for using their plan heavily.</p>
+
+      <h3>Exporting a PDF</h3>
+      <p>The <strong>Export PDF</strong> button on the report renders the exact week you're looking at into a downloadable, print-ready PDF &mdash; the server renders the same report headlessly and streams the file back, so what you export always matches what's on screen for that week. The underlying page it captures isn't browsable on its own; visiting it directly without a valid export link 404s even for an admin.</p>
+
+      <h2 id="plan-page">Plan and seat utilization</h2>
+      <p>Where the group report's seat right-sizing table looks at one group, the Plan page (admin-only, from the left nav) looks at the whole team at once, with under-utilized seats surfaced first since they're the actionable ones. High use is treated as a good sign here, not a problem &mdash; it means someone is getting value out of their seat.</p>
+      <div class="screenshot"><img src="assets/screenshots/team-plan.png" alt="Plan page with per-member utilization table, burndown mini charts, and pace labels" loading="lazy" decoding="async"></div>
+      <p>A badge count at the top splits the team into light-use and high-use seats. Below it, a table lists every member with their plan tier, a compact burndown chart for their current cycle, their peak usage percentage, a pace label, and a strip of recent cycle bars &mdash; the same shape as the burndown on a member's own profile, shrunk to fit a table row. A member who hasn't reported enough usage history yet shows a "collecting data" placeholder row instead of a misleading chart.</p>
 
       <h2 id="stored-data">What Team Edition stores</h2>
       <div class="table-wrap"><table><thead><tr><th>Area</th><th>Purpose</th></tr></thead><tbody>
@@ -120,6 +246,19 @@
         <tr><td>Reports and integrations</td><td>Server-side team views and optional connected services.</td></tr>
       </tbody></table></div>
 
+      <h2 id="admin-area">Server administration</h2>
+      <p>Beyond team-level admin, Fleetlens has a separate, higher permission: <strong>staff</strong>, which administers the whole server rather than one team. Staff members get a <code>/admin</code> area, reached from a "SERVER ADMIN" badge and a "Back to team" link that returns to their own team; anyone who isn't staff is redirected straight to <code>/login</code> if they try to open it. Inside, three sections: Updates, Staff, and Logs.</p>
+
+      <h3>Staff access</h3>
+      <p>A table lists every user on the whole instance &mdash; email, name, join date, and whether they're staff &mdash; with a Promote or Revoke button per row and a "you" tag on your own row. You can't revoke your own staff access, and Fleetlens blocks revoking the very last remaining staff account entirely (the button is disabled with an explanatory hint), so the instance can never end up with nobody able to administer it.</p>
+
+      <h3>Server logs</h3>
+      <p>A live tail of the whole application's log &mdash; ingest, the scheduler, migrations, errors &mdash; with a search box, a level filter, a pause/live toggle, and auto-scroll that follows new lines until you scroll up yourself. It polls roughly every 2.5 seconds and caps at 5,000 lines. This is a different surface from <code>fleetlens daemon logs</code> on a member's own machine (covered in the <a href="operations.html">operations guide</a>) &mdash; that's one member's local sync history; this is the server's own application log, staff-only.</p>
+
+      <h3>Server updates</h3>
+      <p>A status panel shows the running version, whether a newer team-server image has been published, and when it last checked, with a manual <strong>Check now</strong> button outside the normal hourly poll. When an update is available, a banner appears with a Review link.</p>
+      <p>Review opens a per-version page with the changelog and every pending database migration's SQL shown up front, plus a note confirming the migration path doesn't drop data, before an <strong>Apply</strong> button commits it. This in-app review-and-apply flow is a second, separate upgrade path from redeploying a new image tag (described next) &mdash; use it on a deployment where you'd rather approve an update from the browser than touch your infrastructure's own deploy pipeline. The same panel also appears inside team Settings for any admin who is also staff, so it's hard to miss.</p>
+
       <h2 id="admin-checklist">Admin checklist</h2>
       <ul>
         <li>Use a stable HTTPS URL and keep <code>BASE_URL</code> aligned with it.</li>
@@ -129,10 +268,22 @@
         <li>Keep the team server and local member machines on supported Fleetlens versions.</li>
       </ul>
 
+      <h2 id="upgrades-and-backups">Upgrades, migrations, and backups</h2>
+      <p>This is the infrastructure-side upgrade path — redeploying a new image. If you'd rather approve an update from inside the app instead of touching your deploy pipeline, staff can use the in-app review-and-apply flow described in <a href="#admin-area">Server administration</a>; both paths run the same migrations.</p>
+      <ul>
+        <li><strong>Database migrations run automatically on boot</strong> on every deployment path — upgrading the image is the whole upgrade procedure; there is no separate migrate step.</li>
+        <li><strong>Pin a released image tag in production.</strong> <code>ghcr.io/cowcow02/fleetlens-team-server:latest</code> tracks the development branch; released versions are published as <code>:X.Y.Z</code> from <code>server-vX.Y.Z</code> tags.</li>
+        <li><strong>Back up two things:</strong> the Postgres database (regular <code>pg_dump</code> or your platform's automated backups) and the <code>FLEETLENS_ENCRYPTION_KEY</code> value. All team data restores from the database backup alone, but integration credentials (GitHub, Jira, Linear, email) are encrypted with the key — if the key is lost, reconnect the integrations after restore; nothing else is affected.</li>
+      </ul>
+
+      <h2 id="developing">Developing and contributing</h2>
+      <p>Team Edition is part of the open-source repository. To run the server locally, work on it, and author database migrations, start from the <a href="https://github.com/cowcow02/fleetlens/blob/master/packages/team-server/README.md">team-server development guide</a> and the repository's <a href="https://github.com/cowcow02/fleetlens/blob/master/CONTRIBUTING.md">contributing guide</a>. Security reports go through <a href="https://github.com/cowcow02/fleetlens/blob/master/SECURITY.md">private vulnerability reporting</a>.</p>
+      <p>The repository is set up for AI-assisted development: committed skills and subagents encode the dev loop, migration rules, and release runbooks so a coding agent (Claude Code, Codex, or others) can continue building the product from its first session — see the contributing guide's "Contributing with AI agents" section.</p>
+
       <div class="note note-purple"><strong>Next step</strong><p>Read the <a href="privacy.html">privacy model</a> for the exact local/team boundary, or send a member to the <a href="team-member.html">join guide</a>. Use the <a href="operations.html">operations guide</a> for logs, updates, and troubleshooting.</p></div>
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 1.0.0</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

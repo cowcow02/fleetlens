@@ -37,7 +37,7 @@ function dowMonStart(offsetDays) {
   return (d.getUTCDay() + 6) % 7;
 }
 
-const PROJECTS = ["amigo-api", "ca-revamp", "ops-runbooks", "dispatch-ml", "kipwise", "fleet-dashboard"];
+const PROJECTS = ["amigo-api", "ca-revamp", "ops-runbooks", "dispatch-ml", "orbit-shop", "fleet-dashboard"];
 const SKILLS = ["brainstorming", "test-driven-development", "harness-orchestrate", "code-review",
                 "release-ship-check", "systematic-debugging", "writing-plans"];
 const SUBAGENTS = ["reviewer", "implementer", "explorer", "researcher", "planner"];

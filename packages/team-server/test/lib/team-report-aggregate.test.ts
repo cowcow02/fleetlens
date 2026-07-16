@@ -3,7 +3,7 @@ import { resetDb } from "../helpers/db.js";
 import { linearVelocity } from "../../src/lib/team-report-aggregate.js";
 
 // The SQL fix adds `\m` (word boundary BEFORE the identifier) to the existing
-// `\M` after it. Without `\m`, `XKIP-315` matches `KIP-315`, falsely tagging
+// `\M` after it. Without `\m`, `XORB-315` matches `ORB-315`, falsely tagging
 // unrelated PRs as AI-linked to the ticket. This regression test inserts the
 // four title shapes that distinguish the buggy from fixed regex.
 describe("linearVelocity · ai-linked PR join (word-boundary regex)", () => {
@@ -22,17 +22,17 @@ describe("linearVelocity · ai-linked PR join (word-boundary regex)", () => {
       `INSERT INTO linear_issues
         (team_id, identifier, title, state_name, state_type, linear_team_key,
          created_at, started_at, completed_at)
-       VALUES ($1, 'KIP-315', 'Fix the bug', 'Done', 'completed', 'KIP',
+       VALUES ($1, 'ORB-315', 'Fix the bug', 'Done', 'completed', 'ORB',
          '2026-06-22T09:00:00Z', '2026-06-22T10:00:00Z', $2)`,
       [teamId, completed],
     );
 
     type Title = { title: string; expectLinked: boolean };
     const titles: Title[] = [
-      { title: "XKIP-315 unrelated work", expectLinked: false }, // bug trigger — fix must reject
-      { title: "fix KIP-315 bug", expectLinked: true }, // mid-string match
-      { title: "(KIP-315) refactor", expectLinked: true }, // paren is a word boundary
-      { title: "KIP-315: handle empty", expectLinked: true }, // start-of-string boundary
+      { title: "XORB-315 unrelated work", expectLinked: false }, // bug trigger — fix must reject
+      { title: "fix ORB-315 bug", expectLinked: true }, // mid-string match
+      { title: "(ORB-315) refactor", expectLinked: true }, // paren is a word boundary
+      { title: "ORB-315: handle empty", expectLinked: true }, // start-of-string boundary
     ];
     let prNumber = 1;
     for (const t of titles) {
@@ -46,7 +46,7 @@ describe("linearVelocity · ai-linked PR join (word-boundary regex)", () => {
 
     const integ = {
       provider: "linear",
-      config: { team_keys: ["KIP"] },
+      config: { team_keys: ["ORB"] },
       last_sync_at: "2026-06-23T12:00:00Z",
     };
     const result = await linearVelocity(teamId, { kind: "team-wide" }, weekMonday, pool, [integ]);
@@ -58,12 +58,12 @@ describe("linearVelocity · ai-linked PR join (word-boundary regex)", () => {
     // Three valid titles point at the same issue → ai_linked count stays 1, not 3.
     expect(result!.week.ai_linked).toBe(1);
 
-    // Drop the three matching PRs; only `XKIP-315` remains. With the fix in
+    // Drop the three matching PRs; only `XORB-315` remains. With the fix in
     // place, the issue should now be NOT ai-linked. Without the fix (no `\m`),
-    // the XKIP-315 title would still match KIP-315 and the count would stay 1.
+    // the XORB-315 title would still match ORB-315 and the count would stay 1.
     await pool.query(
       `DELETE FROM github_pull_requests
-       WHERE team_id = $1 AND title <> 'XKIP-315 unrelated work'`,
+       WHERE team_id = $1 AND title <> 'XORB-315 unrelated work'`,
       [teamId],
     );
     const after = await linearVelocity(teamId, { kind: "team-wide" }, weekMonday, pool, [integ]);

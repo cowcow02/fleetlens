@@ -3,12 +3,6 @@ variable "hostname" {
   type        = string
 }
 
-variable "admin_email" {
-  description = "Email address for the initial admin"
-  type        = string
-  default     = ""
-}
-
 variable "vpc_id" {
   description = "VPC ID for the deployment"
   type        = string
@@ -38,8 +32,14 @@ variable "database_url" {
   sensitive   = true
 }
 
+variable "encryption_key" {
+  description = "FLEETLENS_ENCRYPTION_KEY — 64 hex characters (32 bytes) for AES-256-GCM at-rest encryption of integration credentials. Generate with: openssl rand -hex 32"
+  type        = string
+  sensitive   = true
+}
+
 variable "image_tag" {
-  description = "Docker image tag for the team server"
+  description = "Docker image tag for the team server (GHCR publishes :latest on master and :X.Y.Z on server-vX.Y.Z releases — pin a release tag for production)"
   type        = string
   default     = "latest"
 }

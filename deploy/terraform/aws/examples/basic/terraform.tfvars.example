@@ -1,7 +1,8 @@
 aws_region = "us-east-1"
 
-hostname    = "fleetlens.example.com"
-admin_email = "admin@example.com"
+hostname       = "fleetlens.example.com"
+# Generate with: openssl rand -hex 32
+encryption_key = "replace-with-64-hex-chars"
 
 # VPC and subnets — use your existing infrastructure
 vpc_id            = "vpc-0123456789abcdef0"

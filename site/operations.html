@@ -38,6 +38,7 @@
       <p class="sidebar-label">Reference</p>
       <a class="side-link" aria-current="page" href="operations.html">Operations</a>
       <a class="side-link side-link-detail" href="#service-lifecycle">Service lifecycle</a>
+      <a class="side-link side-link-detail" href="#menu-bar-widget">Menu bar widget</a>
       <a class="side-link side-link-detail" href="#logs">Logs</a>
       <a class="side-link side-link-detail" href="#troubleshooting">Troubleshooting</a>
       <a class="side-link" href="reference.html">CLI and routes</a>
@@ -58,6 +59,29 @@
 fleetlens status
 fleetlens stop</code></pre>
       <p>Use <code>fleetlens daemon stop</code> when you want to stop only usage polling while leaving the dashboard available.</p>
+
+      <h2 id="menu-bar-widget">Menu bar widget</h2>
+      <p>On macOS, Fleetlens can add a small usage icon to the menu bar so plan utilization is visible without opening the dashboard. It is optional. Running any menu bar command on Linux or Windows prints a note pointing you back to the dashboard URL instead of failing silently.</p>
+      <div class="grid-3">
+        <article class="card"><span class="tag">Install</span><h3><code>fleetlens menubar install</code></h3><p>Adds the widget, opens it, and registers it to launch automatically the next time you log in.</p></article>
+        <article class="card"><span class="tag">Open or stop</span><h3><code>fleetlens menubar open</code></h3><p>Launches an installed widget that is not currently running. <code>fleetlens menubar stop</code> closes it without uninstalling.</p></article>
+        <article class="card"><span class="tag">Remove</span><h3><code>fleetlens menubar uninstall</code></h3><p>Closes the widget, removes it from login items, and deletes it.</p></article>
+      </div>
+      <pre><code>fleetlens menubar install
+fleetlens menubar status
+fleetlens menubar uninstall</code></pre>
+      <p>Add <code>--no-open</code> to install without launching immediately, or <code>--no-login</code> to skip the login registration. <code>fleetlens menubar status</code> reports whether the widget is installed, currently running, or only available to install from the current build.</p>
+      <p>Once installed, click the menu bar icon to open a popover with a utilization bar for every provider that has data — Claude Code, Codex, Copilot, Grok, and Z.ai — each with a countdown to its next reset. The widget does not poll on a fixed interval: it watches the local usage log directly, so every daemon poll (roughly every five minutes) or manual <code>fleetlens usage --save</code> updates the bars immediately.</p>
+      <p>The Settings page mirrors these commands with Install, Open, and Uninstall buttons, so day-to-day management does not require a terminal. Installing from Settings always skips the login registration, to avoid an unexpected permission prompt from a button click — run <code>fleetlens menubar install</code> from a terminal if you also want it to launch at login. Until the widget is installed, a dismissible banner at the top of the dashboard suggests installing it. A separate one-time banner appears the first time you open the dashboard after pairing with a Team Edition server, confirming what will sync; both banners stay dismissed once closed.</p>
+
+      <h2 id="digest-auto-fire">Automatic digest generation</h2>
+      <p>Two digests generate on their own, so Insights has something to show before you ask for it:</p>
+      <div class="grid-2">
+        <article class="card"><span class="tag">On daemon start</span><h3>Yesterday's day digest</h3><p>Generates once each time the daemon starts, if it is not already saved.</p></article>
+        <article class="card"><span class="tag">On daemon start, and first visit</span><h3>Last week's retrospective</h3><p>Generates once each time the daemon starts, and again the first time you open Insights that week if it is still missing.</p></article>
+      </div>
+      <p>If you run Fleetlens without the daemon (<code>fleetlens start --no-daemon</code>), opening the dashboard triggers the same yesterday's-digest generation once per day as a fallback. Month digests never generate automatically — open Insights and generate one when you want it.</p>
+      <p>Both auto-fire paths respect the AI feature settings on the Settings page. Turning off "Enable AI digests and enrichment" stops both, along with every other AI-generated screen. Two separate checkboxes let you opt out of just one path while keeping the other — "Auto-backfill yesterday's digest on daemon start" and "Auto-backfill last week's narrative on daemon start" — and all three are on by default. Auto-fire never regenerates a digest that already exists and never overlaps one that is currently in progress.</p>
 
       <h2 id="local-state">Local state directory</h2>
       <p>Fleetlens keeps its own state separate from provider transcript roots:</p>
@@ -91,6 +115,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build</code></pre>
+      <p><strong>Prerequisite for <code>pnpm test</code>:</strong> the Team Edition server's test suite needs a local Postgres with a dedicated test database — run <code>createdb fleetlens_test</code> once (migrations apply automatically). Without it, team-server tests fail with connection errors while every other package's tests pass. Details in the repository's <a href="https://github.com/cowcow02/fleetlens/blob/master/CONTRIBUTING.md">CONTRIBUTING.md</a>.</p>
       <p>For the bundled CLI build:</p>
       <pre><code>NEXT_OUTPUT=standalone pnpm build
 node scripts/prepare-cli.mjs
@@ -111,6 +136,6 @@ node packages/cli/dist/index.js start</code></pre>
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 1.0.0</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

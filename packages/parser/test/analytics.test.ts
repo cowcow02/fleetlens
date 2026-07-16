@@ -196,8 +196,8 @@ describe("groupByProject", () => {
       mkMeta("parent", "foo", "2026-04-10T10:00:00Z", "2026-04-10T11:00:00Z"),
       // Two worktrees of foo
       mkMeta("wt1", "foo", "2026-04-10T12:00:00Z", "2026-04-10T13:00:00Z", {
-        projectName: "/Users/me/Repo/foo/.worktrees/kip-148",
-        projectDir: "-Users-me-Repo-foo--worktrees-kip-148",
+        projectName: "/Users/me/Repo/foo/.worktrees/orb-148",
+        projectDir: "-Users-me-Repo-foo--worktrees-orb-148",
       }),
       mkMeta("wt2", "foo", "2026-04-10T14:00:00Z", "2026-04-10T15:00:00Z", {
         projectName: "/Users/me/Repo/foo/.worktrees/quality-wave",
@@ -212,7 +212,7 @@ describe("groupByProject", () => {
     expect(foo.sessions).toHaveLength(3);
     expect(foo.worktreeCount).toBe(2);
     expect(foo.rawProjectDirs).toContain("-Users-me-Repo-foo");
-    expect(foo.rawProjectDirs).toContain("-Users-me-Repo-foo--worktrees-kip-148");
+    expect(foo.rawProjectDirs).toContain("-Users-me-Repo-foo--worktrees-orb-148");
     expect(foo.rawProjectDirs).toContain(
       "-Users-me-Repo-foo--worktrees-quality-wave",
     );

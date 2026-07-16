@@ -7,16 +7,14 @@ import { groupMomentumTrend, resolveWeekMonday, visibleMembershipIds } from "../
 import { buildTeamInsightReport } from "../../../lib/team-report-aggregate";
 import { GroupMomentumReport } from "../../../components/group-momentum-report";
 import { ReportHeader } from "../../../components/report-header";
-import { buildMockGroupReport } from "../../../lib/mock-group-report";
 import { verifyRenderToken } from "../../../lib/render-token";
 
 export const dynamic = "force-dynamic";
 
 // PDF render target for the per-group momentum report. Insights are
 // group-scoped only, so `?group=<slug>` is required — there is no team-wide
-// report. Same layout the live group page shows; `?coaching=1` reveals
-// per-member portraits. Group access is guarded to admin/staff or the group's
-// manager.
+// report. Same layout the live group page shows, per-member portraits
+// included. Group access is guarded to admin/staff or the group's manager.
 //
 // Only the PDF route is meant to load this page: it mints a short-lived
 // `render` token over the exact scope, verified here before anything else so
@@ -27,13 +25,13 @@ export default async function ReportPage({
   searchParams,
 }: {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ group?: string; coaching?: string; mock?: string; week?: string; render?: string }>;
+  searchParams: Promise<{ group?: string; week?: string; render?: string }>;
 }) {
   const { slug } = await params;
   const sp = await searchParams;
 
   if (!sp?.group) notFound();
-  const renderScope = { slug, group: sp.group, coaching: sp.coaching === "1", mock: sp.mock === "1", week: sp.week };
+  const renderScope = { slug, group: sp.group, week: sp.week };
   if (!verifyRenderToken(sp.render, renderScope)) notFound();
 
   const pool = getPool();
@@ -63,44 +61,18 @@ export default async function ReportPage({
   const groupMemberIds = await visibleMembershipIds(teamId, scope, pool);
   const membersTotal = groupMemberIds.length;
   const weekMonday = resolveWeekMonday(sp?.week);
-  const coaching = sp.coaching === "1";
-  const mock = sp.mock === "1";
 
-  let report;
-  let trend;
-  let activeCount: number;
-  if (mock) {
-    const rosterRes = membersTotal === 0
-      ? { rows: [] as Array<{ id: string; name: string; tier: string }> }
-      : await pool.query<{ id: string; name: string; tier: string }>(
-          `SELECT m.id, COALESCE(NULLIF(ua.display_name, ''), split_part(ua.email, '@', 1)) AS name,
-                  m.plan_tier AS tier
-           FROM memberships m JOIN user_accounts ua ON ua.id = m.user_account_id
-           WHERE m.id = ANY($1::uuid[]) ORDER BY m.id`,
-          [groupMemberIds],
-        );
-    const md = buildMockGroupReport(rosterRes.rows.map((r) => ({ membershipId: r.id, name: r.name, tier: r.tier })));
-    report = md.report;
-    trend = md.trend;
-    activeCount = md.activeCount;
-  } else {
-    const [rep, tr] = await Promise.all([
-      buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
-      groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
-    ]);
-    report = rep;
-    trend = tr;
-    // Count only members with agent time this week (roster left-joins all
-    // visible members) so the header isn't a misleading N/N.
-    activeCount = rep.cross_edition.roster.filter((rm) => rm.agent_hours > 0).length;
-  }
+  const [report, trend] = await Promise.all([
+    buildTeamInsightReport(teamId, scope, pool, { teamSlug: slug, teamName, membersTotal }, weekMonday),
+    groupMomentumTrend(teamId, scope, weekMonday, pool, 4),
+  ]);
+  // Count only members with agent time this week (roster left-joins all
+  // visible members) so the header isn't a misleading N/N.
+  const activeCount = report.cross_edition.roster.filter((rm) => rm.agent_hours > 0).length;
+
   const ws = new Date(`${report.week_monday}T12:00:00`);
   const we = new Date(ws);
   we.setDate(ws.getDate() + 6);
-  const clientReport =
-    coaching || !report.live_extras
-      ? report
-      : { ...report, live_extras: { ...report.live_extras, member_portraits: undefined } };
   return (
     <>
       <ReportHeader
@@ -113,7 +85,7 @@ export default async function ReportPage({
         generatedAt={new Date()}
         roster={report.cross_edition.roster.map((m) => m.display_name)}
       />
-      <GroupMomentumReport report={clientReport} coaching={coaching} trend={trend} />
+      <GroupMomentumReport report={report} trend={trend} />
     </>
   );
 }

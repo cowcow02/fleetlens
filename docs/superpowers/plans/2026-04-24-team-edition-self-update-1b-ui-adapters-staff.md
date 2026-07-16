@@ -462,7 +462,7 @@ import { GcpCloudRunAdapter } from "../../../src/lib/self-update/gcp-cloud-run.j
 beforeEach(() => {
   process.env.K_SERVICE = "fleetlens-team-server";
   process.env.K_CONFIGURATION = "fleetlens-team-server";
-  process.env.GCP_PROJECT_ID = "kipwise";
+  process.env.GCP_PROJECT_ID = "orbit";
   // Cloud Run injects these at runtime; the installer in Chunk 7 sets GCP_PROJECT_ID + region.
   process.env.GCP_REGION = "asia-southeast1";
   mockGetService.mockReset();
@@ -482,7 +482,7 @@ describe("GcpCloudRunAdapter", () => {
   it("redeploy reads the current service, patches image, writes it back", async () => {
     mockGetService.mockResolvedValue([
       {
-        name: "projects/kipwise/locations/asia-southeast1/services/fleetlens-team-server",
+        name: "projects/orbit/locations/asia-southeast1/services/fleetlens-team-server",
         template: {
           containers: [{ image: "ghcr.io/cowcow02/fleetlens-team-server:0.4.2" }],
         },
@@ -1614,7 +1614,7 @@ git tag -a "server-v$V" -m "server-v$V"
 ### Task 8.4: Hand off to user
 
 When v0.5.0 is on GHCR + GitHub Release exists:
-- Give the user the `./deploy/gcp/install.sh` command to re-run against kipwise
+- Give the user the `./deploy/gcp/install.sh` command to re-run against orbit
 - Publish a trivial v0.5.1 (e.g., a one-line README tweak) via the same `npm version` + tag flow
 - User signs in (auto-promoted to staff via the 0001 migration), sees banner, clicks Apply, watches Cloud Run redeploy
 
@@ -1622,7 +1622,7 @@ When v0.5.0 is on GHCR + GitHub Release exists:
 
 ## Done
 
-At this point team-server v0.5.0 is on GHCR with the self-update UI live. The user's kipwise GCP deployment has the IAM binding, is running v0.5.0, and has v0.5.1 available to click toward. The final click-through demo completes the verification goal.
+At this point team-server v0.5.0 is on GHCR with the self-update UI live. The user's orbit GCP deployment has the IAM binding, is running v0.5.0, and has v0.5.1 available to click toward. The final click-through demo completes the verification goal.
 
 **Next (post-1b):**
 - Real-world smoke test via the user's click-through

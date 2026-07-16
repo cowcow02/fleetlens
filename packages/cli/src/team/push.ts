@@ -170,6 +170,15 @@ export function sessionTouchesDay(s: SessionMeta, day: string): boolean {
   return sessionDay(s) === day;
 }
 
+// UUIDs (Antigravity conversation ids) and bare 16-64 char hex strings
+// (Gemini tmp-dir hashes) are per-conversation identities, not projects.
+const SYNTHETIC_NAME_RE =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9a-f]{16,64})$/i;
+
+export function isSyntheticProjectName(name: string): boolean {
+  return SYNTHETIC_NAME_RE.test(name) || name === "cowork:unspaced" || name === "(unknown)";
+}
+
 // Compute per-day rich rollup blocks from raw sessions + cached Entries.
 // Sessions provide the parallelism-burst math; Entries provide the Entry-
 // derived counts, working_shape, skills, subagents. Every project the member
@@ -229,6 +238,17 @@ export function buildRichRollupBlocks(
     const canonical = canonicalProjectName(s.projectName);
     const name = projectKey(s.projectName);
     const repo = resolveRepo?.(canonical) ?? sessionRepo.get(s.id);
+    // Some adapters fall back to a synthetic per-conversation identity when
+    // no cwd is available: Antigravity reports its conversation UUID, Gemini
+    // its tmp-dir hash, Copilot "(unknown)", unspaced Cowork sessions the
+    // "cowork:unspaced" bucket. Those sessions still count toward day totals
+    // and concurrency, but minting a project row per bucket lands each one on
+    // the server as a distinct fake project and inflates the per-member
+    // distinct-project breadth counters (observed 2x on a real fleet: 28 of
+    // 56 reported "projects" were conversation UUIDs). Matched by shape, not
+    // by "isn't an absolute path" — a Gemini session can legitimately report
+    // a bare project slug like "fleetlens", which must keep its row.
+    if (!repo && isSyntheticProjectName(s.projectName)) continue;
     const key = repo ?? name;
     const ms = s.activeSegments!.reduce((sum, seg) => sum + (seg.endMs - seg.startMs), 0);
     const cur = projects.get(key) ?? { project: name, agentTimeMs: 0, sessions: 0, ...(repo ? { resolved: repo } : {}) };

@@ -3,25 +3,25 @@ import { normalizeGithubRepos, normalizeLinearTeams } from "../../src/lib/integr
 
 describe("normalizeGithubRepos", () => {
   it("upgrades the legacy string[] shape to mappings with all-groups default", () => {
-    expect(normalizeGithubRepos(["kipwise/a", " kipwise/b "])).toEqual([
-      { name: "kipwise/a", group_ids: [] },
-      { name: "kipwise/b", group_ids: [] },
+    expect(normalizeGithubRepos(["orbit/a", " orbit/b "])).toEqual([
+      { name: "orbit/a", group_ids: [] },
+      { name: "orbit/b", group_ids: [] },
     ]);
   });
 
   it("keeps explicit group mappings and drops malformed entries", () => {
     expect(
       normalizeGithubRepos([
-        { name: "kipwise/a", group_ids: ["g1", "g2"] },
-        { name: "kipwise/b" },
+        { name: "orbit/a", group_ids: ["g1", "g2"] },
+        { name: "orbit/b" },
         { name: "" },
         { group_ids: ["g1"] },
         42,
         null,
       ]),
     ).toEqual([
-      { name: "kipwise/a", group_ids: ["g1", "g2"] },
-      { name: "kipwise/b", group_ids: [] },
+      { name: "orbit/a", group_ids: ["g1", "g2"] },
+      { name: "orbit/b", group_ids: [] },
     ]);
   });
 
@@ -35,8 +35,8 @@ describe("normalizeGithubRepos", () => {
 
 describe("normalizeLinearTeams", () => {
   it("upgrades the legacy team_keys shape", () => {
-    expect(normalizeLinearTeams({ team_keys: ["KIP", " OPS "] })).toEqual([
-      { key: "KIP", group_ids: [] },
+    expect(normalizeLinearTeams({ team_keys: ["ORB", " OPS "] })).toEqual([
+      { key: "ORB", group_ids: [] },
       { key: "OPS", group_ids: [] },
     ]);
   });
@@ -44,10 +44,10 @@ describe("normalizeLinearTeams", () => {
   it("prefers explicit team mappings and drops malformed entries", () => {
     expect(
       normalizeLinearTeams({
-        teams: [{ key: "KIP", group_ids: ["g1"] }, { key: "" }, { group_ids: ["g2"] }, null],
+        teams: [{ key: "ORB", group_ids: ["g1"] }, { key: "" }, { group_ids: ["g2"] }, null],
         team_keys: ["IGNORED"],
       }),
-    ).toEqual([{ key: "KIP", group_ids: ["g1"] }]);
+    ).toEqual([{ key: "ORB", group_ids: ["g1"] }]);
   });
 
   it("returns empty for missing config", () => {

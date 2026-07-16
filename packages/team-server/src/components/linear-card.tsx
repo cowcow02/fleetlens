@@ -166,7 +166,7 @@ function LinearConnectForm({
       <p style={{ marginTop: 0, lineHeight: 1.6, maxWidth: 640 }}>
         Connect Linear to add <strong>ticket velocity</strong> to your insight reports: tickets completed per
         week, cycle and lead time, work in progress — and how much completed work ships through AI-assisted PRs
-        (joined to the GitHub integration by ticket refs like KIP-315).
+        (joined to the GitHub integration by ticket refs like ORB-315).
       </p>
       <ol className="steps-editorial">
         <li>
@@ -175,7 +175,7 @@ function LinearConnectForm({
             → Security &amp; access → API keys. Read access is enough.
           </span>
         </li>
-        <li><span>Paste it below, then pick the Linear teams to track (e.g. KIP).</span></li>
+        <li><span>Paste it below, then pick the Linear teams to track (e.g. ORB).</span></li>
       </ol>
       <div className="form-group" style={{ maxWidth: 420 }}>
         <label htmlFor="lin-label">Label <span className="optional">optional</span></label>

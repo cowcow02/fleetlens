@@ -3,7 +3,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"],
+      "env": ["NEXT_OUTPUT"]
     },
     "dev": {
       "cache": false,
@@ -17,7 +18,6 @@
     },
     "test": {
       "dependsOn": ["^build"],
-      "outputs": ["coverage/**"],
       "env": ["DATABASE_URL", "NODE_ENV", "FLEETLENS_ENCRYPTION_KEY", "BASE_URL"]
     },
     "test:coverage": {

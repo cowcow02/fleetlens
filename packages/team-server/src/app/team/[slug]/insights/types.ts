@@ -743,7 +743,7 @@ export type V5PipelinePhase = {
 };
 
 export type V5TicketLifecycle = {
-  id: string; // KIP-148
+  id: string; // ORB-148
   title: string;
   status: "in-flight" | "merged" | "deployed" | "shipped" | "blocked";
   cycle_min: number;

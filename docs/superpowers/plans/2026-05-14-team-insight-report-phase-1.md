@@ -301,7 +301,7 @@ export const mockTeamInsightReport: TeamInsightReport = {
     ],
     user_skills: [
       { name: "harness-orchestrate", members_using: 3, total_uses: 11 },
-      { name: "kipwise-migration-guard", members_using: 1, total_uses: 5 },
+      { name: "orbit-migration-guard", members_using: 1, total_uses: 5 },
       { name: "release-ship-check", members_using: 2, total_uses: 4 },
     ],
     user_subagents: [
@@ -319,8 +319,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
       shipped_count: 3,
     },
     {
-      name: "kipwise-v1",
-      display_name: "kipwise-v1",
+      name: "orbit-shop",
+      display_name: "orbit-shop",
       agent_hours: 5.1,
       members: ["Bob"],
       shipped_count: 2,
@@ -357,8 +357,8 @@ export const mockTeamInsightReport: TeamInsightReport = {
       author: "Bob",
       title: "A migration that didn't need a rework cycle",
       body:
-        "Bob spent most of the week on a single sustained build on kipwise-v1: a column-not-null migration on a 50M-row table. Two long autonomous turns on Wednesday (4.2h and 2.8h) carried the migration end-to-end without a rework cycle, which is unusual for a flag-touching change — typically these come back twice before shipping.\n\nThe load-bearing piece was Bob's kipwise-migration-guard skill, loaded at the start of each session. It gates risky operations (DROP COLUMN, ALTER TABLE, anything touching the audit_log) behind explicit confirmation prompts, and on Wednesday it caught two would-be early commits before they landed. The pattern that emerged: long autonomous runs become safe when there's a deterministic guardrail catching the irreversible moves, even when the LLM is otherwise in a build-fast mode. Worth studying as a template for any future migration touching live tables.",
-      evidence: "Wed long-autonomous turns · 4.2h, 2.8h on kipwise-v1 · kipwise-migration-guard loaded ×5",
+        "Bob spent most of the week on a single sustained build on orbit-shop: a column-not-null migration on a 50M-row table. Two long autonomous turns on Wednesday (4.2h and 2.8h) carried the migration end-to-end without a rework cycle, which is unusual for a flag-touching change — typically these come back twice before shipping.\n\nThe load-bearing piece was Bob's orbit-migration-guard skill, loaded at the start of each session. It gates risky operations (DROP COLUMN, ALTER TABLE, anything touching the audit_log) behind explicit confirmation prompts, and on Wednesday it caught two would-be early commits before they landed. The pattern that emerged: long autonomous runs become safe when there's a deterministic guardrail catching the irreversible moves, even when the LLM is otherwise in a build-fast mode. Worth studying as a template for any future migration touching live tables.",
+      evidence: "Wed long-autonomous turns · 4.2h, 2.8h on orbit-shop · orbit-migration-guard loaded ×5",
     },
     {
       id: "spotlight-strength-alice",

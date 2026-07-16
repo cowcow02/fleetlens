@@ -4,6 +4,8 @@
 
 Click the button. Cloud Shell opens with the repo cloned and a guided walkthrough. The whole deploy takes ~5 minutes and costs ~$10–25/mo.
 
+Fleetlens including Team Edition is MIT-licensed open source — no license keys, no seat gating.
+
 The installer runs in two phases: a **preflight** that inspects your environment (account, project, region, billing, which APIs and resources already exist) and prints every change it would make, then an explicit confirmation prompt before any mutation. Skip the prompt with `--yes` or `ASSUME_YES=1`.
 
 ## Three ways to install
@@ -20,7 +22,7 @@ The installer runs in two phases: a **preflight** that inspects your environment
 - **Cloud SQL Postgres 15** — `db-f1-micro` by default, connected over Unix socket (no VPC required)
 - **Secret Manager** — DB password, encryption key, scheduler shared-secret
 - **Cloud Scheduler** — hourly prune of `ingest_log` (Cloud Run request-based CPU makes `setInterval` unreliable)
-- **Container image** — `ghcr.io/cowcow02/fleetlens-team-server:latest`, published on every master push by the `publish-team-server-image` workflow
+- **Container image** — `ghcr.io/cowcow02/fleetlens-team-server:latest`, published on every master push by the `publish-team-server-image` workflow. `:latest` tracks master HEAD; for production, pin a release tag such as `ghcr.io/cowcow02/fleetlens-team-server:X.Y.Z` (published from `server-vX.Y.Z` tags — the GHCR tag is the version number without the `server-v` prefix).
 
 ## Why this architecture
 

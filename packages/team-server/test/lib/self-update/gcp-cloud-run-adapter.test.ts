@@ -17,7 +17,7 @@ import { GcpCloudRunAdapter } from "../../../src/lib/self-update/gcp-cloud-run.j
 beforeEach(() => {
   process.env.K_SERVICE = "fleetlens-team-server";
   process.env.K_CONFIGURATION = "fleetlens-team-server";
-  process.env.GCP_PROJECT_ID = "kipwise";
+  process.env.GCP_PROJECT_ID = "orbit";
   // Cloud Run injects these at runtime; the installer in Chunk 7 sets GCP_PROJECT_ID + region.
   process.env.GCP_REGION = "asia-southeast1";
   mockGetService.mockReset();
@@ -35,12 +35,12 @@ describe("GcpCloudRunAdapter", () => {
   });
 
   it("redeploy derives the image repo from the current image (Artifact Registry case)", async () => {
-    // Mirrors the real kipwise GCP deployment: image lives in Artifact Registry.
+    // Mirrors the real orbit GCP deployment: image lives in Artifact Registry.
     mockGetService.mockResolvedValue([
       {
-        name: "projects/kipwise/locations/asia-southeast1/services/fleetlens-team-server",
+        name: "projects/orbit/locations/asia-southeast1/services/fleetlens-team-server",
         template: {
-          containers: [{ image: "asia-southeast1-docker.pkg.dev/kipwise/fleetlens/team-server:0.5.0" }],
+          containers: [{ image: "asia-southeast1-docker.pkg.dev/orbit/fleetlens/team-server:0.5.0" }],
         },
         serviceAccount: "1234-compute@developer.gserviceaccount.com",
       },
@@ -56,7 +56,7 @@ describe("GcpCloudRunAdapter", () => {
     const [arg] = mockUpdateService.mock.calls[0];
     // Target image uses the SAME repo as the current image, just with the new tag.
     expect(arg.service.template.containers[0].image).toBe(
-      "asia-southeast1-docker.pkg.dev/kipwise/fleetlens/team-server:0.5.1",
+      "asia-southeast1-docker.pkg.dev/orbit/fleetlens/team-server:0.5.1",
     );
     expect(arg.service.serviceAccount).toBe("1234-compute@developer.gserviceaccount.com");
     expect(result.revisionId).toBe("fleetlens-team-server-00008-xyz");
@@ -84,7 +84,7 @@ describe("GcpCloudRunAdapter", () => {
     const adapter = new GcpCloudRunAdapter();
     await expect(adapter.getCurrentImage()).rejects.toThrow(/GCP_PROJECT_ID/);
 
-    process.env.GCP_PROJECT_ID = "kipwise";
+    process.env.GCP_PROJECT_ID = "orbit";
     delete process.env.GCP_REGION;
     await expect(adapter.redeploy("0.5.0")).rejects.toThrow(/GCP_REGION/);
 

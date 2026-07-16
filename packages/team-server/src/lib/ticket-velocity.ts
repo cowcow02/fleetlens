@@ -81,8 +81,8 @@ export function linearWeekVelocity(rows: LinearIssueAggRow[]): LinearWeekVelocit
 // Ticket velocity from the Linear integration. Linear teams are group-mapped
 // like repos (empty group_ids = all groups); group-scoped reports only see
 // their mapped teams' issues. AI linkage joins a completed ticket to any
-// AI-assisted synced PR whose title carries the ticket ref ("KIP-315" + word
-// boundary, so KIP-3150 doesn't match). Null when not connected; connected
+// AI-assisted synced PR whose title carries the ticket ref ("ORB-315" + word
+// boundary, so ORB-3150 doesn't match). Null when not connected; connected
 // with zero mapped teams returns empty-keys stats so the widget can point the
 // admin at the mapping.
 export async function linearVelocity(

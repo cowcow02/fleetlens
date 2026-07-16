@@ -4,6 +4,26 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.0] — 2026-07-15
+
+Fleetlens 1.0 — a maturity milestone, **not a breaking change**. Upgrading from any 0.16.x is safe: no CLI, state-directory, or data-format changes. This release marks Fleetlens as stable and ready for community use.
+
+### Added
+- **Open-source governance baseline.** `SECURITY.md` (vulnerability reporting via GitHub Security Advisories), `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and GitHub issue/PR templates.
+- **Team Edition development guide.** `packages/team-server/README.md` now covers local development (Postgres setup, env vars, seeding), running the test suite, and an architecture orientation; `MIGRATIONS.md` documents the real (hand-authored) migration workflow.
+- **Agent-ready contributor tooling.** Committed project skills (`.claude/skills/`: dev loop, add an agent source, Team Edition development, release runbook, issue filing) and subagents (`.claude/agents/`: smoke-qa, migration-reviewer) encode this repo's hard-won workflows for Claude Code; `AGENTS.md` indexes them for Codex and other agents.
+
+### Fixed
+- **Team sync no longer inflates the per-member project count with synthetic identities.** Sessions with no real project identity (Antigravity conversations without a working directory report their conversation UUID; Gemini chats without a project mapping report a hash; unspaced Cowork sessions report a shared bucket) no longer mint a project row in the daily rollups pushed to Team Edition — on a real fleet these fakes doubled the "distinct projects, 30d" breadth counter on the insight report. Matched by identity shape, so real project names stay counted. Day totals and concurrency are unaffected. Already-pushed history corrects itself after upgrading when the member re-pushes a 30-day backfill.
+- **First-run empty state pointed at a nonexistent command.** The usage sidebar now says `fleetlens daemon start` (was `cclens daemon start`, a leftover from a pre-rename era).
+- **The npm package now ships its README and LICENSE.** The published tarball previously carried neither, so the npmjs.com page rendered empty and installs had no license text.
+- **Privacy copy matches behavior.** The Agent page's empty state no longer claims "nothing leaves this machine" for a feature whose synthesis step uses your local `claude` CLI (your existing Claude Code account); the Z.ai key notice now states the key is sent only with calls to Z.ai's own usage API.
+
+### Changed
+- **LICENSE copyright holder updated to Fleetlens contributors**, and the `fleetlens` npm package now carries `keywords`, `author`, and `homepage` metadata.
+- **`NEXT_OUTPUT` is now part of the build cache key**, so the documented standalone CLI build no longer silently reuses a stale non-standalone web bundle.
+- **The team-server test suite defaults to a dedicated `fleetlens_test` database and refuses to run against a database whose name doesn't contain "test"** — its reset step truncates every table, which previously could wipe a conventionally-named local dev database.
+
 ## [0.16.9] — 2026-07-15
 
 Safe upgrade from 0.16.8. The dashboard and native menu-bar app now keep Fleetlens usage polling alive without manual daemon restarts.
@@ -204,7 +224,7 @@ A quality-and-correctness release rolled up from a full code audit, plus the tim
 - **Searchable project filter on the sessions list.** The `<select>` project picker is replaced with a filterable combobox: type to filter, arrow keys + Enter/Escape to navigate, Tab to close. Painful with dozens of project folders before; now a few keystrokes. (PR #73)
 - **Six correctness bugs surfaced by a full audit:**
   - `INSTRUCTION_RE` in `extractUserInstructions` leaked `lastIndex` across calls. Once a turn hit the 5-cap break, later entries got truncated or empty `user_instructions` until the module re-loaded. Fixed; regression test added.
-  - Linear/Jira ticket-ref matching was anchored only at the end of the identifier, so `\m` matched `XKIP-315` against `KIP-315` — inflating AI-linked PR share and joining unrelated PRs into work-timeline cycle stats. Both `\m` and `\M` now anchor both sides.
+  - Linear/Jira ticket-ref matching was anchored only at the end of the identifier, so `\m` matched `XORB-315` against `ORB-315` — inflating AI-linked PR share and joining unrelated PRs into work-timeline cycle stats. Both `\m` and `\M` now anchor both sides.
   - **Usage dedup re-introduced 2–3× token inflation** on transcripts where two JSONL lines for the same `message.id` differed in whether they carried `requestId` (`msg_1:` vs `msg_1:req_a` keyed as distinct messages). Dedup now keys on `mid` alone — the comment already called it the stable identifier. Regression test added.
   - `loadUsageByDay`'s early break assumed strictly chronological JSONL; out-of-order timestamps from sleep-resume clock skew or backfill silently terminated the scan and dropped later in-range snapshots. Switched to a continue.
   - `enrichmentStatusBySession` depended on filesystem iteration order — a session whose newest day was pending could surface as enriched (or vice versa). Now reads from the most-recent entry after explicitly sorting by `local_day` desc.

@@ -211,7 +211,7 @@ Wed Apr 22 · 647m · 4 PRs shipped
   │ Spec-review-loop · 3 sessions                        │
   │   3 reviewer dispatches + 1 implementer + 1 explorer │
   │   Skills: superpowers:brainstorming ×2, harness-engine│
-  │   Comm style: 2 long prompts, 1 external KIP ref     │
+  │   Comm style: 2 long prompts, 1 external ORB ref     │
   │   No Plan Mode · 0 mid-run redirects                 │
   └──────────────────────────────────────────────────────┘
 

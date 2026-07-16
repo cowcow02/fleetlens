@@ -14,10 +14,19 @@ npm-debug.log*
 pnpm-debug.log*
 .superpowers/
 .worktrees/
-.claude/
+# .claude is local state EXCEPT the committed project skills/agents
+.claude/*
+!.claude/skills/
+!.claude/agents/
 .harness/
 .antigravitycli/
 .playwright-mcp/
 .qa/
 .tmp-browsertest/
-/output/pdf/
+.commandcode/
+.conductor/
+/output/
+/tmp/
+# CI copies these into the npm package at publish time
+packages/cli/README.md
+packages/cli/LICENSE

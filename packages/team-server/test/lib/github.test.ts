@@ -26,7 +26,7 @@ describe("isAiCommitMessage", () => {
   });
 
   it("does not flag human co-authors or mentions in prose", () => {
-    expect(isAiCommitMessage("fix\n\nCo-Authored-By: Jane Doe <jane@kipwise.com>")).toBe(false);
+    expect(isAiCommitMessage("fix\n\nCo-Authored-By: Jane Doe <jane@example.com>")).toBe(false);
     expect(isAiCommitMessage("docs: explain how claude code sessions are parsed")).toBe(false);
     expect(isAiCommitMessage("plain commit")).toBe(false);
   });

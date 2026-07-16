@@ -41,7 +41,7 @@ export type EntrySubagent = {
 };
 
 /** External-system reference kinds detected in first_user. */
-export type ExternalRefKind = "linear-kip" | "github-issue-pr" | "branch-ref" | "url";
+export type ExternalRefKind = "ticket-ref" | "github-issue-pr" | "branch-ref" | "url";
 
 /** Deterministic per-Entry classification — computed at Entry-build time. */
 export type EntrySignals = {
@@ -512,12 +512,12 @@ export type WeekInteractionGrammar = {
       very_long: number;    // > 2000
     };
     /** Sessions whose first_user references an external system rather than
-     *  spelling out the work — Linear KIP-N, GitHub #N, branch refs, URLs.
+     *  spelling out the work — ticket ids (ENG-123), GitHub #N, branch refs, URLs.
      *  High count = high delegation ("go look it up yourself"). */
     external_context_refs: Array<{
       date: string;
       session_id: string;
-      ref_kind: "linear-kip" | "github-issue-pr" | "branch-ref" | "url";
+      ref_kind: "ticket-ref" | "github-issue-pr" | "branch-ref" | "url";
       preview: string;
     }>;
     /** Steering intensity — corrections during execution. */

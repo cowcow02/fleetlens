@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { mintRenderToken, verifyRenderToken, type RenderScope } from "../../src/lib/render-token";
 
-const scope: RenderScope = { slug: "acme", group: "platform", coaching: false, mock: false };
+const scope: RenderScope = { slug: "acme", group: "platform" };
 
 describe("render token", () => {
   it("round-trips for the same scope", () => {
@@ -19,8 +19,6 @@ describe("render token", () => {
     const t = mintRenderToken(scope);
     expect(verifyRenderToken(t, { ...scope, group: "growth" })).toBe(false);
     expect(verifyRenderToken(t, { ...scope, slug: "other" })).toBe(false);
-    expect(verifyRenderToken(t, { ...scope, coaching: true })).toBe(false);
-    expect(verifyRenderToken(t, { ...scope, mock: true })).toBe(false);
     expect(verifyRenderToken(t, { ...scope, week: "2026-06-01" })).toBe(false);
   });
 

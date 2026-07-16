@@ -4,10 +4,8 @@
 // deterministic or LLM-generated (and if so, exactly how).
 //
 // `status` describes the PIPELINE, not today's data:
-//   live      — computed from members' pushed rollups (seeded with mock data in
-//               this demo, real once the daemon pushes).
-//   templated — a placeholder generated from deterministic signals; LLM-authored
-//               in production but NOT an LLM call in this build.
+//   live      — computed from members' pushed rollups.
+//   templated — prose assembled from deterministic signals, no model call.
 //   planned   — not built yet.
 export type MetricStatus = "live" | "templated" | "planned";
 
@@ -21,8 +19,8 @@ export type MetricProvenance = {
 };
 
 export const STATUS_LABEL: Record<MetricStatus, string> = {
-  live: "Live pipeline · seeded with mock data in this demo",
-  templated: "Templated placeholder · LLM-authored in production",
+  live: "Live pipeline · computed from members' pushed rollups",
+  templated: "Templated prose · assembled from deterministic signals, no model call",
   planned: "Planned · not built yet",
 };
 
@@ -78,10 +76,10 @@ export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
     llm: false,
   },
   "live-member-portraits": {
-    description: "Per-member narrative portrait and the 'why this level' reasoning. The LEVEL and the stat strips are deterministic; the prose is the part that is templated today.",
+    description: "Per-member narrative portrait and the 'why this level' reasoning. The LEVEL and the stat strips are deterministic; the prose is assembled from the same deterministic signals — no model call.",
     source: `same signals as the L0–L4 mix`,
     status: "templated",
-    llm: "In production: each session is tagged by `claude -p` (SessionActionTags), then a per-member portrait is synthesized monthly from those tags. In this build the prose is templated from the deterministic signals — no model call yet.",
+    llm: false,
   },
   "live-plan-mode": {
     description: "How many members used plan-mode this week and the adoption rate — an autonomy/steering signal.",
@@ -109,14 +107,14 @@ export const METRIC_PROVENANCE: Record<string, MetricProvenance> = {
   },
   "github-delivery": {
     description:
-      "Merge-confirmed delivery from the GitHub integration: merged PRs WoW, AI-assisted share, and median cycle (first commit → merge) / review-wait (created → first review) hours split AI vs non-AI. Team-wide, not group-scoped — synced PRs carry no member mapping yet. AI attribution is Co-Authored-By-trailer based and undercounts squash-merges that strip trailers.",
+      "Merge-confirmed delivery from the GitHub integration: merged PRs WoW, AI-assisted share, and median cycle (first commit → merge) / review-wait (created → first review) hours split AI vs non-AI. Counts only the repositories mapped into this report's scope; synced PRs carry no member mapping yet. AI attribution is Co-Authored-By-trailer based and undercounts squash-merges that strip trailers.",
     source: "github_pull_requests (hourly poll of the GitHub API via the team's encrypted token)",
     status: "live",
     llm: false,
   },
   "linear-velocity": {
     description:
-      "Ticket velocity from the Linear integration: completed tickets WoW, median cycle (started → done) and lead (created → done) hours from Linear's native timestamps, WIP count, and the share of completed tickets shipped via AI-assisted PRs (joined by ticket ref in synced PR titles — undercounts refless PRs). Team-level, not group-scoped.",
+      "Ticket velocity from the Linear integration: completed tickets WoW, median cycle (started → done) and lead (created → done) hours from Linear's native timestamps, WIP count, and the share of completed tickets shipped via AI-assisted PRs (joined by ticket ref in synced PR titles — undercounts refless PRs). Counts only the Linear teams mapped into this report's scope.",
     source: "linear_issues + github_pull_requests (hourly poll via the team's encrypted Linear API key)",
     status: "live",
     llm: false,

@@ -45,7 +45,7 @@
     </aside>
 
     <article class="doc-content">
-      <div class="doc-meta"><span class="meta-chip teal">Reference</span><span class="meta-chip">Fleetlens 0.16.5</span><span class="meta-chip">Keep nearby</span></div>
+      <div class="doc-meta"><span class="meta-chip teal">Reference</span><span class="meta-chip">Fleetlens 1.0.0</span><span class="meta-chip">Keep nearby</span></div>
       <h1>Commands, routes, sources, and local state.</h1>
       <p class="intro">Use this page when you already know what you want to do. For a first setup, start with the <a href="getting-started.html">beginner walkthrough</a> instead.</p>
 
@@ -56,17 +56,16 @@
         <tr><td><code>fleetlens status</code></td><td>Show server, daemon, port, version, and latest snapshot state.</td></tr>
         <tr><td><code>fleetlens update</code></td><td>Install the latest published CLI and restart stale services.</td></tr>
         <tr><td><code>fleetlens web [page] [--open]</code></td><td>Open a dashboard page without managing the daemon.</td></tr>
-        <tr><td><code>fleetlens stats [--week|--4weeks|--since D --until D|--days N] [--json|--pretty]</code></td><td>Print period aggregates used by the local Insights pipeline.</td></tr>
-        <tr><td><code>fleetlens capsules [--days N|--since D|--until D] [--full] [--json|--pretty]</code></td><td>Export bounded local session capsules for a period.</td></tr>
-        <tr><td><code>fleetlens usage [--save]</code></td><td>Print or save a current provider plan-utilization snapshot.</td></tr>
+        <tr><td><code>fleetlens runs [--watch] [--json] [--since 24h]</code></td><td>Live local LLM call activity and token spend in the terminal.</td></tr>
+        <tr><td><code>fleetlens usage [--save]</code></td><td>Print a live Claude Code plan-utilization snapshot in the terminal as colored progress bars — 5-hour and 7-day windows, plus Opus, Sonnet, OAuth-app, and Cowork breakdowns and any pay-as-you-go extra usage. <code>--save</code> also records this snapshot to local history and, in the background, saves one for every other configured provider (Codex, Copilot, Grok, Z.ai) even though their windows aren't part of this terminal view.</td></tr>
         <tr><td><code>fleetlens usage --history [-s D] [--days N]</code></td><td>Print historical usage and cost rows.</td></tr>
         <tr><td><code>fleetlens entries --day D|--session ID|--all</code></td><td>Inspect day-scoped local perception entries.</td></tr>
-        <tr><td><code>fleetlens digest day|week|month ...</code></td><td>Generate or read local digest artifacts.</td></tr>
+        <tr><td><code>fleetlens digest day [--date D|--today] [--force] [--json]</code><br><code>fleetlens digest week [--week D|--this-week] [--force] [--json]</code><br><code>fleetlens digest month [--month YYYY-MM|--this-month] [--force] [--json]</code></td><td>Generate or read a day, week, or month digest from the terminal — the same narrative shown at <code>/day</code> and <code>/insights</code>. Without a date flag, each targets the last completed period (cached to disk); <code>--today</code>/<code>--this-week</code>/<code>--this-month</code> target the still-running current period instead. <code>--force</code> regenerates past a cached result. <code>--json</code> prints the same structure the dashboard reads.</td></tr>
         <tr><td><code>fleetlens daemon start|stop|status|logs</code></td><td>Manage the usage and team-sync worker separately.</td></tr>
         <tr><td><code>fleetlens team join &lt;url&gt; &lt;token&gt;</code></td><td>Pair a local machine and open the browser onboarding flow.</td></tr>
-        <tr><td><code>fleetlens team status|sync|backfill|logs|leave</code></td><td>Inspect, trigger, backfill, diagnose, or end Team Edition sync.</td></tr>
+        <tr><td><code>fleetlens team status|sync|backfill|logs|leave</code></td><td><code>status</code> reports pairing details and actively checks the connection, so a revoked token shows up immediately instead of waiting for the next scheduled sync. <code>sync</code> pushes activity right now rather than waiting for the next cycle. <code>backfill</code> force-reuploads your full local plan-utilization history — useful when the team dashboard's history views need to be repopulated. <code>logs</code> shows the outcome of recent sync attempts. <code>leave</code> unpairs this machine; local data is unaffected.</td></tr>
         <tr><td><code>fleetlens autostart install|uninstall|status</code></td><td>Manage daemon start at login on supported macOS setups.</td></tr>
-        <tr><td><code>fleetlens menubar install|uninstall|open|status</code></td><td>Manage the optional native macOS usage widget.</td></tr>
+        <tr><td><code>fleetlens menubar install|uninstall|open|stop|status [--no-open] [--no-login]</code></td><td>Manage the optional native macOS usage widget. <code>install</code> places it in Applications, opens it, and registers it to launch at login; <code>--no-open</code> installs quietly and <code>--no-login</code> skips the login registration. The Settings page has matching Install/Open/Uninstall buttons, but an install triggered from there always skips login registration — use the terminal command if you want the widget to start automatically at login. A dismissible dashboard banner also offers to install it the first time it notices the widget isn't set up.</td></tr>
       </tbody></table></div>
 
       <h2 id="dashboard-routes">Dashboard routes</h2>
@@ -79,7 +78,7 @@
         <tr><td><code>/day</code></td><td>Open daily activity, the timeline, idle gaps, and concurrency.</td></tr>
         <tr><td><code>/usage</code></td><td>Historical provider utilization.</td></tr>
         <tr><td><code>/insights</code></td><td>Review a structured weekly retrospective when entries and AI features are available.</td></tr>
-        <tr><td><code>/digest</code></td><td>Browse local day, week, and month digest artifacts.</td></tr>
+        <tr><td><code>/digest</code>, <code>/parallelism</code></td><td>Older links, kept for bookmarks — both redirect straight into <code>/day</code> (<code>/parallelism</code> lands on its timeline section).</td></tr>
         <tr><td><code>/agent</code></td><td>Ask questions over local history and create handoffs.</td></tr>
         <tr><td><code>/runs</code></td><td>Watch live local LLM runs and their streamed events.</td></tr>
         <tr><td><code>/settings</code></td><td>Local service, menu bar, credentials, and AI settings.</td></tr>
@@ -112,12 +111,36 @@
         <tr><td>Z.ai</td><td>Configured API key</td><td>Usage-only source; it is not a transcript adapter.</td></tr>
       </tbody></table></div>
 
+      <h3 id="usage-coverage">Plan-utilization coverage</h3>
+      <p>Fleetlens polls each source's plan-utilization data independently — a missing or expired credential for one source never slows or hides the others on <code>/usage</code> or the menu bar widget. (The sidebar's current-usage gauge only ever shows Claude Code.)</p>
+      <div class="table-wrap"><table><thead><tr><th>Source</th><th>Usage tracked</th><th>Windows shown</th></tr></thead><tbody>
+        <tr><td>Claude Code</td><td>Yes</td><td>5-hour and 7-day, plus separate 7-day figures for Opus, Sonnet, OAuth apps, and Cowork, and optional pay-as-you-go extra usage.</td></tr>
+        <tr><td>Codex</td><td>Yes</td><td>5-hour and 7-day.</td></tr>
+        <tr><td>GitHub Copilot CLI</td><td>Yes</td><td>Monthly AI-credit or premium-request allowance only — no 5-hour or 7-day window.</td></tr>
+        <tr><td>Grok Build</td><td>Yes</td><td>7-day shared pool only — no 5-hour window.</td></tr>
+        <tr><td>Z.ai</td><td>Yes</td><td>5-hour and 7-day token windows, plus a separate monthly web-search meter.</td></tr>
+        <tr><td>Gemini CLI</td><td>No</td><td>Session activity only.</td></tr>
+        <tr><td>Antigravity</td><td>No</td><td>Session activity only.</td></tr>
+        <tr><td>Cowork</td><td>No</td><td>Session activity only — usage already counts against the paired Claude Code account above.</td></tr>
+      </tbody></table></div>
+      <p>Gemini CLI and Antigravity don't expose plan-utilization data to poll — this is a deliberate omission, not a temporary gap.</p>
+
       <h2 id="environment-variables">Environment variables</h2>
       <div class="table-wrap"><table><thead><tr><th>Variable</th><th>Default</th><th>Purpose</th></tr></thead><tbody>
         <tr><td><code>CCLENS_PORT</code></td><td><code>3321</code></td><td>Default local dashboard port.</td></tr>
         <tr><td><code>CCLENS_HOME</code></td><td><code>~/.cclens</code></td><td>Local Fleetlens state directory.</td></tr>
         <tr><td><code>GROK_HOME</code></td><td><code>~/.grok</code></td><td>Alternate Grok Build home.</td></tr>
         <tr><td><code>NEXT_OUTPUT</code></td><td>unset</td><td>Set to <code>standalone</code> when building the bundled web app.</td></tr>
+      </tbody></table></div>
+
+      <h3 id="team-server-environment">Team Edition server environment</h3>
+      <p>These configure the self-hosted team-server (Docker image). The deploy guides pre-wire them; defaults and generation commands live in each path's README in <a href="https://github.com/cowcow02/fleetlens/tree/master/deploy">deploy/</a>.</p>
+      <div class="table-wrap"><table><thead><tr><th>Variable</th><th>Required</th><th>Purpose</th></tr></thead><tbody>
+        <tr><td><code>DATABASE_URL</code></td><td>Yes</td><td>Postgres connection string; migrations run against it automatically on boot.</td></tr>
+        <tr><td><code>BASE_URL</code></td><td>Yes</td><td>Public base URL of the deployed server; used for pairing links and redirects.</td></tr>
+        <tr><td><code>FLEETLENS_ENCRYPTION_KEY</code></td><td>Yes</td><td>Encrypts integration credentials (GitHub, Jira, Linear, email) at rest. Keep it stable — rotating it makes stored credentials unreadable.</td></tr>
+        <tr><td><code>FLEETLENS_EXTERNAL_SCHEDULER</code></td><td>No</td><td>Set to <code>1</code> to disable the in-process scheduler when running an external cron.</td></tr>
+        <tr><td><code>FLEETLENS_SCHEDULER_SECRET</code></td><td>No</td><td>Shared secret for the external scheduler endpoint.</td></tr>
       </tbody></table></div>
 
       <h2 id="local-state">Local state</h2>
@@ -137,6 +160,6 @@
     </article>
   </main>
 
-  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 0.16.5</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
+  <footer class="footer"><div class="wrap footer-inner"><span>Fleetlens Documentation &middot; 1.0.0</span><nav class="footer-nav" aria-label="Footer navigation"><a href="index.html">Home</a><a href="local-edition.html">Local Edition</a><a href="team-edition.html">Team Edition</a><a href="reference.html">Reference</a><a href="https://github.com/cowcow02/fleetlens">GitHub</a></nav></div></footer>
 </body>
 </html>

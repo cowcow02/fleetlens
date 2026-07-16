@@ -11,10 +11,8 @@ import { BLOCK_CATALOG, defaultWidthFor } from "./insights-variants/v7-builder-b
 // framework questions and aggregate-first. No builder chrome, no localStorage,
 // no team-wide PDF button — the group page owns its own group-scoped export.
 //
-// The per-member portraits (the deep coaching detail) are only rendered when
-// `coaching` is true. The caller is responsible for stripping
-// report.live_extras.member_portraits when coaching is off, so that data never
-// reaches the client in the default aggregate view.
+// Per-member portraits and metric provenance notes always render; the page
+// itself is only reachable by admin/staff or the group's manager.
 
 type Section = { key: string; heading: string; framing: string; blockIds: string[] };
 
@@ -79,16 +77,10 @@ function TrendCard({
 
 export function GroupMomentumReport({
   report,
-  coaching,
   trend,
-  explain = false,
-  mock = false,
 }: {
   report: TeamInsightReport;
-  coaching: boolean;
   trend?: MomentumTrendWeek[];
-  explain?: boolean;
-  mock?: boolean;
 }) {
   const sections: Section[] = [
     {
@@ -106,9 +98,7 @@ export function GroupMomentumReport({
         "(authored skills / sub-agents / CLAUDE.md that teammates adopt), autonomy " +
         "(less steering: plan-mode, long autonomous runs), and outcome velocity (work that ships). " +
         "Grading is observable-action driven and deliberately excludes raw session/token volume.",
-      blockIds: coaching
-        ? ["live-maturity-mix", "live-member-portraits", "live-plan-mode", "long-autonomous-texture", "skill-usage-wow-bars"]
-        : ["live-maturity-mix", "live-plan-mode", "long-autonomous-texture", "skill-usage-wow-bars"],
+      blockIds: ["live-maturity-mix", "live-member-portraits", "live-plan-mode", "long-autonomous-texture", "skill-usage-wow-bars"],
     },
     {
       key: "shipping",
@@ -143,26 +133,16 @@ export function GroupMomentumReport({
 
   return (
     <div className="group-momentum">
-      {explain && (
-        <div className="explain-banner">
-          <strong>Explain mode.</strong>{" "}
-          {mock ? (
-            <>
-              This dashboard is populated with representative <em>mock</em> data for alignment. In production every
-              metric is computed from members&rsquo; pushed rollups.{" "}
-            </>
-          ) : (
-            <>Every metric below is computed from members&rsquo; pushed rollups.{" "}</>
-          )}
-          Hover any &#9432; for its data source, pipeline status, and whether it&rsquo;s deterministic or LLM-generated.
-        </div>
-      )}
+      <div className="explain-banner">
+        Every metric below is computed from members&rsquo; pushed rollups or the delivery sources connected to this group.{" "}
+        Hover any &#9432; for its data source, pipeline status, and whether it&rsquo;s deterministic or LLM-generated.
+      </div>
       {trend && trend.length > 0 && (
         <section className="live-section" style={{ marginTop: 28 }}>
           <div className="subsection-head">
             <h2>
               <em>Momentum · last {trend.length} weeks</em>
-              {explain && <ExplainBadge p={provenanceFor("momentum-trend")} />}
+              <ExplainBadge p={provenanceFor("momentum-trend")} />
             </h2>
           </div>
           <p className="kicker" style={{ marginTop: 4, marginBottom: 14, maxWidth: 760, lineHeight: 1.5 }}>
@@ -171,10 +151,10 @@ export function GroupMomentumReport({
             are secondary context.
           </p>
           <div className="builder-grid group-momentum-grid">
-            <TrendCard label="Agent time" unit="h" values={trend.map((t) => t.agentHours)} fmt={(v) => v.toFixed(1)} explainId={explain ? "trend-agent-time" : undefined} />
-            <TrendCard label="Active members" values={trend.map((t) => t.activeMembers)} fmt={(v) => String(Math.round(v))} explainId={explain ? "trend-active-members" : undefined} />
-            <TrendCard label="PRs shipped" values={trend.map((t) => t.prs)} fmt={(v) => String(Math.round(v))} explainId={explain ? "trend-prs" : undefined} />
-            <TrendCard label="Sessions" values={trend.map((t) => t.sessions)} fmt={(v) => String(Math.round(v))} explainId={explain ? "trend-sessions" : undefined} />
+            <TrendCard label="Agent time" unit="h" values={trend.map((t) => t.agentHours)} fmt={(v) => v.toFixed(1)} explainId="trend-agent-time" />
+            <TrendCard label="Active members" values={trend.map((t) => t.activeMembers)} fmt={(v) => String(Math.round(v))} explainId="trend-active-members" />
+            <TrendCard label="PRs shipped" values={trend.map((t) => t.prs)} fmt={(v) => String(Math.round(v))} explainId="trend-prs" />
+            <TrendCard label="Sessions" values={trend.map((t) => t.sessions)} fmt={(v) => String(Math.round(v))} explainId="trend-sessions" />
           </div>
         </section>
       )}
@@ -202,7 +182,7 @@ export function GroupMomentumReport({
                     <div className="builder-widget-titlewrap">
                       <h3 className="builder-widget-title">
                         {block.title}
-                        {explain && <ExplainBadge p={provenanceFor(id)} />}
+                        <ExplainBadge p={provenanceFor(id)} />
                       </h3>
                     </div>
                   </header>

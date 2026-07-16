@@ -37,7 +37,7 @@ export function UsageSidebar({ snapshot }: { snapshot: UsageSnapshot | null }) {
           Usage
         </div>
         <div>
-          Run <code style={{ fontFamily: "var(--font-mono)" }}>cclens daemon start</code> to collect metrics.
+          Run <code style={{ fontFamily: "var(--font-mono)" }}>fleetlens daemon start</code> to collect metrics.
         </div>
       </div>
     );

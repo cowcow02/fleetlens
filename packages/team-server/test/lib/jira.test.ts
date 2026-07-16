@@ -299,8 +299,8 @@ const CREDS = ["https://acme.atlassian.net", "me@acme.dev", "tok"] as const;
 
 describe("validateJiraCredentials", () => {
   it("returns the viewer name/email from /myself", async () => {
-    stubFetch([["/rest/api/3/myself", { displayName: "Charlie Mak", emailAddress: "c@acme.dev" }]]);
-    expect(await validateJiraCredentials(...CREDS)).toEqual({ name: "Charlie Mak", email: "c@acme.dev" });
+    stubFetch([["/rest/api/3/myself", { displayName: "Jamie Lee", emailAddress: "c@acme.dev" }]]);
+    expect(await validateJiraCredentials(...CREDS)).toEqual({ name: "Jamie Lee", email: "c@acme.dev" });
   });
 
   it("throws a credentials error on 401", async () => {

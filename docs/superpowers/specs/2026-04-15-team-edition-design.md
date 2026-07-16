@@ -4,14 +4,14 @@
 **Date:** 2026-04-15
 **Author:** brainstorming session (cowcow02 + Claude)
 
-> **Note**: This monolithic spec captured the original brainstorming, architectural exploration, and kipwise validation experiment for Fleetlens Team Edition. After three review iterations, it was decided that the design is easier to execute as four sequential, focused specs where each ships a standalone usable product. This document remains as reference material for "the why" — decisions, experiment data, and broader context — but the specs an implementer should follow are:
+> **Note**: This monolithic spec captured the original brainstorming, architectural exploration, and orbit validation experiment for Fleetlens Team Edition. After three review iterations, it was decided that the design is easier to execute as four sequential, focused specs where each ships a standalone usable product. This document remains as reference material for "the why" — decisions, experiment data, and broader context — but the specs an implementer should follow are:
 >
 > 1. **[Doc 1 — Foundation](./2026-04-16-team-edition-01-foundation-design.md)**: Deployable team server + member daemon pairing + basic profile pages. The walking skeleton.
 > 2. **[Doc 2 — Plan Utilization](./2026-04-16-team-edition-02-plan-utilization-design.md)**: Finance view with plan-optimizer recommendations. Depends on Doc 1.
 > 3. **[Doc 3 — Team Timeline](./2026-04-16-team-edition-03-timeline-design.md)**: Per-member Gantt with session-level blocks (no ticket correlation yet). Depends on Doc 1.
 > 4. **[Doc 4 — Tickets + Insights](./2026-04-16-team-edition-04-tickets-insights-design.md)**: Signal hierarchy, auto-detection, ticket correlation, pluggable matcher/enricher, insights feed. Depends on Docs 1 and 3.
 >
-> Each split doc is self-contained and has been independently reviewed. The kipwise experiment data is duplicated into Doc 4 where it directly validates the signal hierarchy.
+> Each split doc is self-contained and has been independently reviewed. The orbit experiment data is duplicated into Doc 4 where it directly validates the signal hierarchy.
 
 ## Overview
 
@@ -62,10 +62,10 @@ The hero view is a team Gantt timeline. Rows are team members; the x-axis is tim
 ```
             Mon      Tue      Wed      Thu      Fri
           ┌─────────────────────────────────────────┐
-   Alice  │ [KIP-148 ──────] [KIP-151 ──────][K-155]│*
-    Bob   │ [KIP-145 ──] [KIP-147 ──────] [K-150]*  │
-   Carol  │ [infra ─────────────]    [KIP-149 ──]   │
-    Dan   │                 [KIP-152 ──────]*       │
+   Alice  │ [ORB-148 ──────] [ORB-151 ──────][K-155]│*
+    Bob   │ [ORB-145 ──] [ORB-147 ──────] [K-150]*  │
+   Carol  │ [infra ─────────────]    [ORB-149 ──]   │
+    Dan   │                 [ORB-152 ──────]*       │
           └─────────────────────────────────────────┘
 ```
 
@@ -93,13 +93,13 @@ The core technical problem is correlating a Claude Code session (which Fleetlens
 | Tier | Signal | Precision | Use as |
 |---|---|---|---|
 | **Tier 0** | URL extraction from agent/tool output (`github.com/<org>/<repo>/pull/N`, `linear.app/<team>/issue/<ID>`, `*.atlassian.net/browse/<ID>`) | ~100% on single-URL sessions; requires disambiguation on multi-URL sessions (see below) | Primary |
-| **Tier 1** | cwd path is a ticket-named worktree (`/.worktrees/kip-148/`) | 100% | Gold fallback |
+| **Tier 1** | cwd path is a ticket-named worktree (`/.worktrees/orb-148/`) | 100% | Gold fallback |
 | **Tier 2** | `agentName` / `teamName` fields stamped by the session producer (Claude Code's native team-orchestration fields when the session ran under a `TeamCreate`/`SendMessage` orchestrator) | 100% when present; not all sessions have these fields | Gold fallback |
 | **Tier 3** | Content frequency scan (dominant ticket mention in session) | ~95% | Silver, use alone if gold absent |
 | **Tier 4** | `/implement <TICKET>` slash command in first user message | ~89% | Silver, use alone if gold absent |
 | **Tier 5** | Git branch matches ticket-prefix regex | ~78% | Bronze — confirmation only, never sole source |
 
-**A note on Tier 2**: the `agentName` / `teamName` top-level JSONL fields are set by Claude Code itself when a session runs as part of a lead/member orchestration (see the `2026-04-15-team-orchestration-view-design.md` spec for the protocol). Teams that never use orchestration will not have this signal; the tier silently degrades to absent rather than failing. Custom orchestrators (e.g., kipwise's in-house framework) can use the same fields and also benefit from this tier. Teams with no orchestration at all get a 5-tier stack (0, 1, 3, 4, 5) — Tier 2 is a free upgrade for orchestrated workflows, not a requirement.
+**A note on Tier 2**: the `agentName` / `teamName` top-level JSONL fields are set by Claude Code itself when a session runs as part of a lead/member orchestration (see the `2026-04-15-team-orchestration-view-design.md` spec for the protocol). Teams that never use orchestration will not have this signal; the tier silently degrades to absent rather than failing. Custom orchestrators (e.g., orbit's in-house framework) can use the same fields and also benefit from this tier. Teams with no orchestration at all get a 5-tier stack (0, 1, 3, 4, 5) — Tier 2 is a free upgrade for orchestrated workflows, not a requirement.
 
 **Resolution rule:**
 
@@ -137,7 +137,7 @@ interface TicketMatcher {
   matchSession(session: ParsedSession, git: GitContext): TicketMatch | null;
 }
 interface TicketMatch {
-  id: string;              // "KIP-123", "ENG-4567", "sc-1234"
+  id: string;              // "ORB-123", "ENG-4567", "sc-1234"
   confidence: number;      // 0-1
   source: "url" | "cwd-worktree" | "agent-field" | "content" | "slash-command" | "branch";
 }
@@ -160,7 +160,7 @@ interface TicketMetadata {
 }
 ```
 
-- **Default enricher in v1: `gh pr list`** — zero auth beyond existing `gh` login, works on any repo with PR history, covered 91% of tickets in the kipwise validation experiment.
+- **Default enricher in v1: `gh pr list`** — zero auth beyond existing `gh` login, works on any repo with PR history, covered 91% of tickets in the orbit validation experiment.
 - **Future enrichers (pluggable interface in v1, implementations deferred to v2)**: Linear API, Jira API, GitHub Issues, Shortcut, custom internal systems.
 - **Null enricher is valid** — blocks show ticket ID + branch slug as title; still legible.
 
@@ -168,7 +168,7 @@ interface TicketMetadata {
 
 ## Auto-detection of team ticket configuration
 
-No team should need to type `KIP` or `ENG` into a config form. Fleetlens auto-detects the team's ticket prefix, provider, team slug, and home GitHub repo by scanning session logs on first run.
+No team should need to type `ORB` or `ENG` into a config form. Fleetlens auto-detects the team's ticket prefix, provider, team slug, and home GitHub repo by scanning session logs on first run.
 
 ### Scoring
 
@@ -190,19 +190,19 @@ A blacklist drops common all-caps false positives (`HTTP`, `SHA`, `UTF`, `JSON`,
 - **MEDIUM (branch/content only)**: No URL evidence but ratio ≥ 10×
 - **LOW**: ambiguous — surface both candidates in the admin UI
 
-### Example — empirical result on kipwise data
+### Example — empirical result on orbit data
 
-Scanning 413 kipwise JSONL sessions with zero manual input:
+Scanning 413 orbit JSONL sessions with zero manual input:
 
 | Prefix | Score | URL sessions | Branch | AgentNm | Content | Provider |
 |---|---|---|---|---|---|---|
-| **KIP** | **2279** | **211** | 148 | 148 | 336 | Linear (`kipwise`) |
+| **ORB** | **2279** | **211** | 148 | 148 | 336 | Linear (`orbit`) |
 | CHECK | 6 | 0 | 0 | 2 | 0 | — |
 | LOGIN | 6 | 0 | 0 | 2 | 0 | — |
 
-KIP dominates with a score ratio of **380×** to the next candidate. Runners-up are all agent-name debris (`login-test-agent`, `review-*-agent`) with zero URL evidence, filtered out by the `urlSessions > 0` gate.
+ORB dominates with a score ratio of **380×** to the next candidate. Runners-up are all agent-name debris (`login-test-agent`, `review-*-agent`) with zero URL evidence, filtered out by the `urlSessions > 0` gate.
 
-Home GitHub repo detection is equally clean: `kipwise/agentic-knowledge-system` appears in 184 sessions vs. 15 for the next-highest (a third-party reference pattern). Same-repo filtering falls out naturally.
+Home GitHub repo detection is equally clean: `orbit/agentic-knowledge-system` appears in 184 sessions vs. 15 for the next-highest (a third-party reference pattern). Same-repo filtering falls out naturally.
 
 **Result**: HIGH confidence, zero config. The team's full ticket configuration auto-detected on first run.
 
@@ -210,9 +210,9 @@ Home GitHub repo detection is equally clean: `kipwise/agentic-knowledge-system` 
 
 Teams that use two systems (e.g., Linear for product work, Jira for infra) will show **two high-scoring candidates**. The detector returns both; the admin UI displays them as a multi-prefix team with independent provider resolvers per prefix. No forced single-winner.
 
-## Validation: kipwise experiment
+## Validation: orbit experiment
 
-The signal hierarchy and auto-detection were validated against 413 real JSONL sessions from the kipwise `agentic-knowledge-system` repo. Key findings:
+The signal hierarchy and auto-detection were validated against 413 real JSONL sessions from the orbit `agentic-knowledge-system` repo. Key findings:
 
 ### Coverage on URL-less sessions (182 sessions)
 
@@ -221,7 +221,7 @@ The signal hierarchy and auto-detection were validated against 413 real JSONL se
 | cwd worktree dir | 4 | 2.2% |
 | `agentName` field | 12 | 6.6% |
 | `gitBranch` field | 17 | 9.3% |
-| `/implement KIP-N` slash | 14 | 7.7% |
+| `/implement ORB-N` slash | 14 | 7.7% |
 | Content frequency scan | **122** | **67.0%** |
 | **Combined (any strategy)** | **122** | **67.0%** |
 | **Still unknown (no signal)** | **60** | **33.0%** |
@@ -233,7 +233,7 @@ The signal hierarchy and auto-detection were validated against 413 real JSONL se
 | cwd worktree dir | 8 | 6 | 0 | **100.0%** |
 | `agentName` field | 137 | 134 | 0 | **100.0%** |
 | `gitBranch` field | 129 | 100 | 29 | **77.5%** |
-| `/implement KIP-N` slash | 148 | 124 | 15 | **89.2%** |
+| `/implement ORB-N` slash | 148 | 124 | 15 | **89.2%** |
 | Content frequency scan | 229 | 200 | 11 | **94.8%** |
 
 ### Combined coverage across all 413 sessions
@@ -251,7 +251,7 @@ Inspection of the 60 no-signal sessions revealed they are all research sessions,
 
 ### Caveat
 
-The kipwise sessions were produced by a workflow that stacks three reinforcing signals: Linear MCP integration, Linear-prefix branch discipline, and an orchestration framework that stamps `agentName` on every event. Most teams will not have this confluence. The 85.5% combined coverage is the *best case*, not a universal guarantee. The design's reliance on the tiered resolution rule (not any single signal) is what makes it robust to teams that have only some of these signals.
+The orbit sessions were produced by a workflow that stacks three reinforcing signals: Linear MCP integration, Linear-prefix branch discipline, and an orchestration framework that stamps `agentName` on every event. Most teams will not have this confluence. The 85.5% combined coverage is the *best case*, not a universal guarantee. The design's reliance on the tiered resolution rule (not any single signal) is what makes it robust to teams that have only some of these signals.
 
 ## URL extraction — primary ticket discovery mechanism
 
@@ -259,11 +259,11 @@ URL extraction deserves its own section because it is the signal that makes zero
 
 ### Discovery
 
-When an agent creates a PR via `gh pr create`, the command's stdout (captured as a `tool_result` event in the JSONL) contains the full PR URL: `https://github.com/kipwise/agentic-knowledge-system/pull/194`. When an agent uses a Linear MCP tool, the tool response contains `https://linear.app/kipwise/issue/KIP-148`. These URLs are self-identifying — the ticket ID is in the URL path. No ticket prefix config is needed.
+When an agent creates a PR via `gh pr create`, the command's stdout (captured as a `tool_result` event in the JSONL) contains the full PR URL: `https://github.com/orbit/agentic-knowledge-system/pull/194`. When an agent uses a Linear MCP tool, the tool response contains `https://linear.app/orbit/issue/ORB-148`. These URLs are self-identifying — the ticket ID is in the URL path. No ticket prefix config is needed.
 
 ### Where the URLs come from
 
-Scanning the kipwise sessions by event source:
+Scanning the orbit sessions by event source:
 
 | Event source | URL mentions |
 |---|---|
@@ -290,9 +290,9 @@ A single session can legitimately contain multiple same-repo URLs: the primary P
 
 Each candidate is then same-repo-filtered per the rule above. `tool_use` input URLs (e.g., `WebFetch` targets) are excluded entirely — they are references, not ticket assignments.
 
-When two URLs tie under this rule (equal frequency, equal position), the session is flagged as "multi-ticket" and both are stored in `ticket_sessions` as separate per-member contributions. This is rare but legitimate: the kipwise validation experiment contained 12 sessions that touched two real tickets (e.g., `PR #116 → KIP-119 + KIP-37`). The resolution rule's "pick one" fallback is wrong for those sessions; the multi-ticket flag preserves fidelity.
+When two URLs tie under this rule (equal frequency, equal position), the session is flagged as "multi-ticket" and both are stored in `ticket_sessions` as separate per-member contributions. This is rare but legitimate: the orbit validation experiment contained 12 sessions that touched two real tickets (e.g., `PR #116 → ORB-119 + ORB-37`). The resolution rule's "pick one" fallback is wrong for those sessions; the multi-ticket flag preserves fidelity.
 
-**Empirical precision** of the disambiguation rule against the kipwise dataset: 100% on single-URL sessions (by definition), and 98.3% on multi-URL sessions where a single ticket was the actual work (11 disagreements out of 651 multi-URL sessions, all of which were correctly handled by the multi-ticket flag). The "~100%" label in the tier table should be read as "100% with the disambiguation rule applied, never as raw URL frequency."
+**Empirical precision** of the disambiguation rule against the orbit dataset: 100% on single-URL sessions (by definition), and 98.3% on multi-URL sessions where a single ticket was the actual work (11 disagreements out of 651 multi-URL sessions, all of which were correctly handled by the multi-ticket flag). The "~100%" label in the tier table should be read as "100% with the disambiguation rule applied, never as raw URL frequency."
 
 ### Passive PR ↔ ticket index
 
@@ -300,11 +300,11 @@ When a session contains both a PR URL and a Linear/Jira/Shortcut URL, the co-occ
 
 ```
 Session 0c56ed06:
-  PR:     https://github.com/kipwise/agentic-knowledge-system/pull/58
-  Linear: https://linear.app/kipwise/issue/KIP-66
+  PR:     https://github.com/orbit/agentic-knowledge-system/pull/58
+  Linear: https://linear.app/orbit/issue/ORB-66
 ```
 
-PR #58 maps to KIP-66, observed passively. 163 of 231 URL-bearing kipwise sessions contained both sides, giving us that many mappings for free. A later session that contains only one side of the pair can be enriched from this index without any network call.
+PR #58 maps to ORB-66, observed passively. 163 of 231 URL-bearing orbit sessions contained both sides, giving us that many mappings for free. A later session that contains only one side of the pair can be enriched from this index without any network call.
 
 This is stored in the `pr_ticket_map` table described below.
 
@@ -687,11 +687,11 @@ When multiple members submit rollups for the same `(team_id, ticket_id)`, the se
 | `provider` / `provider_slug` | Derived from the winning `ticket_url` |
 | `signal_tier` | Highest tier observed across members (gold > silver > bronze). **Upgrades always accepted on subsequent ingests; downgrades never applied.** |
 
-Per-member contribution rows in `ticket_sessions` are upserted independently and never merged — Alice's and Bob's contributions to KIP-148 are two distinct rows.
+Per-member contribution rows in `ticket_sessions` are upserted independently and never merged — Alice's and Bob's contributions to ORB-148 are two distinct rows.
 
 ### `pr_ticket_map` conflict resolution
 
-When two independent sessions observe contradictory PR → ticket pairings (e.g. `PR #58 → KIP-66` and `PR #58 → KIP-70`), both rows are stored with `canonical = false`. A background job (or the next ingest transaction) sets `canonical = true` on the winner using this rule, enforced by the partial unique index on `(team_id, pr_url) WHERE canonical = true`:
+When two independent sessions observe contradictory PR → ticket pairings (e.g. `PR #58 → ORB-66` and `PR #58 → ORB-70`), both rows are stored with `canonical = false`. A background job (or the next ingest transaction) sets `canonical = true` on the winner using this rule, enforced by the partial unique index on `(team_id, pr_url) WHERE canonical = true`:
 
 1. **Most frequent observation** — the pairing with the highest `session_count` wins.
 2. **Tiebreak**: the pairing with the earliest `first_observed_at` (the one that has been stable longest).
@@ -719,11 +719,11 @@ Request body:
   "observedAt": "2026-04-15T10:30:00Z",
   "tickets": [
     {
-      "ticketId": "KIP-148",
+      "ticketId": "ORB-148",
       "provider": "linear",
-      "providerSlug": "kipwise",
-      "ticketUrl": "https://linear.app/kipwise/issue/KIP-148",
-      "prUrl": "https://github.com/kipwise/agentic-knowledge-system/pull/194",
+      "providerSlug": "orbit",
+      "ticketUrl": "https://linear.app/orbit/issue/ORB-148",
+      "prUrl": "https://github.com/orbit/agentic-knowledge-system/pull/194",
       "prNumber": 194,
       "prTitle": "feat(cli): CLI members command",
       "firstTouch": "2026-04-12T09:15:00Z",
@@ -788,7 +788,7 @@ The daemon polls this endpoint **once per ingest cycle** (i.e. every 5 minutes a
   "policyVersion": 7,
   "stripPRTitle": false,
   "skillTagDenyList": ["^project-falcon-", "^acme-"],
-  "ticketPrefixOverrides": ["KIP", "ENG"],
+  "ticketPrefixOverrides": ["ORB", "ENG"],
   "lastUpdated": "2026-04-15T09:00:00Z"
 }
 ```
@@ -910,7 +910,7 @@ The precise line between what stays on the developer's laptop and what is shippe
 
 ### Shipped to the team server (aggregate metadata only)
 
-- Ticket IDs (e.g., `KIP-148`)
+- Ticket IDs (e.g., `ORB-148`)
 - Ticket URLs (public within the customer's Linear/Jira/etc. workspace — not world-public for private workspaces)
 - PR URLs (public within the customer's GitHub/GitLab workspace — not world-public for private repos)
 - PR titles (⚠ see "known leak surfaces" below — can be stripped via Settings toggle)
@@ -927,7 +927,7 @@ The precise line between what stays on the developer's laptop and what is shippe
 
 ### What this guarantees
 
-A developer running a session on ACME's proprietary billing logic: the team server sees `KIP-148, 3 sessions, 2.3h agent time, 342 tool calls, shipped Thursday`. It does **not** see the SQL, the customer schema, the code, the error messages, the file paths, or the commit messages.
+A developer running a session on ACME's proprietary billing logic: the team server sees `ORB-148, 3 sessions, 2.3h agent time, 342 tool calls, shipped Thursday`. It does **not** see the SQL, the customer schema, the code, the error messages, the file paths, or the commit messages.
 
 ### What this does NOT fully guarantee — known leak surfaces
 

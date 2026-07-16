@@ -2,6 +2,8 @@
   "name": "@claude-lens/team-server",
   "version": "0.15.7",
   "private": true,
+  "description": "Fleetlens Team Edition server — self-hosted team dashboard, shipped as a Docker image",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "next dev --port 3322",

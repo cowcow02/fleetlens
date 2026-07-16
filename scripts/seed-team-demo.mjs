@@ -71,7 +71,7 @@ async function seed(client) {
   const passwordHash = hashPassword("demo1234");
   await client.query(
     `INSERT INTO user_accounts (id, email, password_hash, display_name, is_staff)
-     VALUES ($1, 'demo-admin@example.com', $2, 'Charlie', false)`,
+     VALUES ($1, 'demo-admin@example.com', $2, 'Erin', false)`,
     [adminId, passwordHash],
   );
 
@@ -94,7 +94,7 @@ async function seed(client) {
     { name: "Eve", email: "eve@example.com", tier: "pro-max-20x" },
     { name: "Frank", email: "frank@example.com", tier: "pro" },
   ];
-  const memberIds = { Charlie: charlieMembership };
+  const memberIds = { Erin: charlieMembership };
   for (const o of others) {
     const userId = randomUUID();
     await client.query(
@@ -115,7 +115,7 @@ async function seed(client) {
   // exercises the "upgrade urgent" recommendation regardless of the new
   // tone scheme — throttling is bad in any framing.
   const profiles = {
-    Charlie: { peakRange: [80, 95], midCyclePct: 50 }, // full
+    Erin: { peakRange: [80, 95], midCyclePct: 50 }, // full
     Diana: { peakRange: [45, 62], midCyclePct: 32 }, // moderate
     Eve: { peakRange: [10, 32], midCyclePct: 15 }, // under
     Frank: { peakRange: [88, 100], midCyclePct: 60 }, // at-the-cap

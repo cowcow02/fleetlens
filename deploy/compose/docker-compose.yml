@@ -8,6 +8,7 @@ services:
     environment:
       - DATABASE_URL=postgres://fleetlens:${POSTGRES_PASSWORD}@postgres:5432/fleetlens
       - BASE_URL=${BASE_URL:-http://localhost:3322}
+      - FLEETLENS_ENCRYPTION_KEY=${FLEETLENS_ENCRYPTION_KEY}
     depends_on:
       postgres:
         condition: service_healthy
