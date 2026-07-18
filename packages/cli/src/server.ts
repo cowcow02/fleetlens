@@ -163,10 +163,51 @@ export async function startServer(
   // Wait for server to be healthy. 30s, not 10: `team join` cold-starts this
   // on brand-new installs (first-ever Next boot, nothing cached) and a slow
   // machine blowing the budget gets a misleading "could not start" error
-  // while the server finishes booting seconds later.
+  // while the server finishes booting seconds later. Deliberately gates on
+  // `/`, not /api/health: a broken dashboard bundle must fail the boot
+  // loudly here, while the cheap health route stays for recurring probes.
   await waitForHealth(`http://localhost:${port}`, 30_000);
 
   return { pid, port };
+}
+
+/** True when the server answers HTTP within `timeoutMs`. Probes /api/health,
+ *  not `/` — the homepage is a full server render and a recurring probe must
+ *  not add that load (or misread a slow render). ANY completed response
+ *  counts as alive, status ignored: pre-1.0.2 bundles have no /api/health
+ *  and 404 it, while a wedged event loop can't produce a response at all —
+ *  only a timeout or refused connection means dead. */
+export async function probeServerHealth(port: number, timeoutMs: number): Promise<boolean> {
+  try {
+    await fetch(`http://localhost:${port}/api/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Replace a wedged server with a fresh one on the same port. Straight to
+ *  SIGKILL: a GC-livelocked event loop never runs a SIGTERM handler — the
+ *  2026-07-18 wedge survived `fleetlens stop` and needed kill -9. Unlike
+ *  ensureCurrentServer's stale-cycle path there is no orphan to re-track on
+ *  a failed relaunch: SIGKILL guarantees the old pid is gone, so an absent
+ *  pid file ("not running") is then the truth and `fleetlens start` heals.
+ *  autoStartDaemon stays default-on so the relaunched dashboard keeps the
+ *  SSE daemon-recovery path (0.16.9); with the daemon alive it's a no-op. */
+export async function restartWedgedServer(
+  pid: number,
+  port: number,
+): Promise<{ pid: number; port: number }> {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Already gone
+  }
+  removePid(PID_FILE);
+  await waitForPortFree(port, 5_000);
+  return startServer({ port });
 }
 
 export function stopServer(): { stopped: boolean; pid?: number } {

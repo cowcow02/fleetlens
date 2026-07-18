@@ -213,6 +213,7 @@ async function main() {
   ]);
 
   const results = [];
+  results.push(await hit("/api/health", "Health probe API"));
   results.push(await hit("/", "Dashboard (all)"));
   results.push(await hit("/?range=7d", "Dashboard (7D)"));
   results.push(await hit("/?range=30d", "Dashboard (30D)"));
