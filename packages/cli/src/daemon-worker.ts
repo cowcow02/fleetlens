@@ -30,6 +30,8 @@ import { runTeamSync } from "./team/sync.js";
 import { runPerceptionSweep } from "./perception/worker.js";
 import { backfillLastWeekDigest, backfillYesterdayDigest } from "./perception/backfill.js";
 import { getUpdateAvailability } from "./updater.js";
+import { getServerStatus, probeServerHealth, restartWedgedServer } from "./server.js";
+import { ServerWatchdog, type WatchdogVerdict } from "./watchdog.js";
 
 const USAGE_LOG = cclensPath("usage.jsonl");
 const DAEMON_LOG = cclensPath("daemon.log");
@@ -38,6 +40,8 @@ const UPDATE_STATE = cclensPath("daemon-update.json");
 // within a few seconds instead of waiting out a 5-minute interval.
 const WATCHDOG_INTERVAL_MS = 5 * 1000;
 const AUTO_UPDATE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const SERVER_HEALTH_INTERVAL_MS = 60 * 1000;
+const SERVER_HEALTH_TIMEOUT_MS = 10 * 1000;
 
 mkdirSync(dirname(USAGE_LOG), { recursive: true });
 
@@ -48,6 +52,7 @@ function log(level: "info" | "warn" | "error", message: string): void {
 let nextPollAtMs = 0;
 let nextAuxPollAtMs = 0;
 let nextTeamSyncAtMs = 0;
+let nextServerHealthAtMs = 0;
 // First team sync after this daemon booted is tagged trigger="boot" in the
 // [sync] summary line; every tick after is "auto".
 let firstTeamSync = true;
@@ -206,6 +211,45 @@ async function runDaemonUpdateCheck(): Promise<void> {
     updateCheckInFlight = false;
     nextUpdateCheckAtMs = Date.now() + AUTO_UPDATE_INTERVAL_MS;
   }
+}
+
+const serverWatchdog = new ServerWatchdog();
+let lastServerVerdict: WatchdogVerdict = "ok";
+
+/**
+ * Health-check the web server over HTTP. Process liveness is not enough: a
+ * GC-livelocked next-server keeps its pid and port while serving nothing
+ * (2026-07-18 wedge). No pid file → intentionally stopped → not ours to
+ * touch. The ServerWatchdog decides when failures become a restart and
+ * caps restart flapping when the wedge trigger (e.g. a browser tab holding
+ * a huge session page) immediately re-wedges each fresh server.
+ */
+async function runServerHealthCheck(): Promise<void> {
+  const status = getServerStatus();
+  if (!status.running) return;
+
+  const ok = await probeServerHealth(status.port, SERVER_HEALTH_TIMEOUT_MS);
+  const verdict = serverWatchdog.onProbe(ok, Date.now());
+
+  if (verdict === "failing") {
+    log("warn", `[watchdog] server pid=${status.pid} not answering on port ${status.port}`);
+  } else if (verdict === "restart") {
+    log("warn", `[watchdog] server pid=${status.pid} wedged; force-restarting on port ${status.port}`);
+    try {
+      const fresh = await restartWedgedServer(status.pid, status.port);
+      log("info", `[watchdog] server restarted (pid=${fresh.pid}, port=${fresh.port})`);
+    } catch (err) {
+      log("error", `[watchdog] restart failed: ${(err as Error).message}`);
+    }
+  } else if (verdict === "gave-up" && lastServerVerdict !== "gave-up") {
+    log(
+      "error",
+      `[watchdog] server keeps wedging after 3 restarts within the hour; standing down — run 'fleetlens start' to restart manually`,
+    );
+  } else if (verdict === "ok" && lastServerVerdict !== "ok") {
+    log("info", `[watchdog] server responding again (pid=${status.pid})`);
+  }
+  lastServerVerdict = verdict;
 }
 
 async function pollAuxiliaryUsage(): Promise<void> {
@@ -424,6 +468,10 @@ async function runLoop(): Promise<void> {
     }
     if (Date.now() >= nextUpdateCheckAtMs) {
       await runDaemonUpdateCheck();
+    }
+    if (Date.now() >= nextServerHealthAtMs) {
+      await runServerHealthCheck();
+      nextServerHealthAtMs = Date.now() + SERVER_HEALTH_INTERVAL_MS;
     }
     await sleep(WATCHDOG_INTERVAL_MS);
   }

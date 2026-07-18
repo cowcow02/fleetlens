@@ -4,6 +4,15 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.2] — 2026-07-18
+
+### Fixed
+- **The daemon now detects and force-restarts a wedged web server.** A GC-livelocked `next-server` keeps its PID and port while serving nothing, so everything looked "running" while the dashboard was dead. The daemon now probes the new `/api/health` endpoint every minute; three consecutive failed probes trigger a SIGKILL + relaunch on the same port (SIGTERM is useless here — a starved event loop never runs the handler). Restarts are capped at 3 per hour so a page that immediately re-wedges each fresh server can't cause a restart flap loop; at the cap the daemon stands down with a loud `[watchdog]` log line until the window slides.
+- **`fleetlens status` no longer reports a wedged server as healthy.** It probes HTTP and prints "running but UNRESPONSIVE" with recovery guidance when the process is alive but not answering.
+
+### Added
+- **`/api/health`** — cheap liveness endpoint (`{ok, version}`). The CLI's startup health wait and the daemon watchdog both use it, so liveness checks no longer trigger (or misread) a full homepage server render.
+
 ## [1.0.1] — 2026-07-16
 
 ### Fixed

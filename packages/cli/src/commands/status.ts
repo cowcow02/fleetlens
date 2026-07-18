@@ -1,4 +1,4 @@
-import { getServerStatus, isServerStale } from "../server.js";
+import { getServerStatus, isServerStale, probeServerHealth } from "../server.js";
 import { getDaemonStatusInfo } from "./daemon.js";
 
 declare const CLI_VERSION: string;
@@ -14,7 +14,18 @@ export async function status(): Promise<void> {
   if (server.running) {
     const url = `http://localhost:${server.port}`;
     const ver = server.version ?? "unknown";
-    console.log(`Server:  running on ${url} (PID ${server.pid}, v${ver})`);
+    // A live pid is not a live server — a GC-livelocked next-server keeps
+    // its pid and port while answering nothing. Probe HTTP so status can't
+    // report "running" for a wedged server (2026-07-18 incident).
+    const responsive = await probeServerHealth(server.port, 3_000);
+    if (responsive) {
+      console.log(`Server:  running on ${url} (PID ${server.pid}, v${ver})`);
+    } else {
+      console.log(`Server:  running but UNRESPONSIVE on ${url} (PID ${server.pid}, v${ver})`);
+      console.log(
+        "  ⚠  process is alive but not answering HTTP — if the daemon is running its watchdog will force-restart it within ~3 minutes, or run 'fleetlens start' now",
+      );
+    }
     if (isServerStale(server)) {
       console.log(
         `  ⚠  serving stale ${ver} (CLI is ${CLI_VERSION}) — run 'fleetlens start' to restart on the current version`,

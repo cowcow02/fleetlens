@@ -164,9 +164,40 @@ export async function startServer(
   // on brand-new installs (first-ever Next boot, nothing cached) and a slow
   // machine blowing the budget gets a misleading "could not start" error
   // while the server finishes booting seconds later.
-  await waitForHealth(`http://localhost:${port}`, 30_000);
+  await waitForHealth(`http://localhost:${port}/api/health`, 30_000);
 
   return { pid, port };
+}
+
+/** True when the server answers HTTP within `timeoutMs`. Probes /api/health,
+ *  not `/` — the homepage is a full server render and a probe must not add
+ *  that load (or misread a slow render) every tick. */
+export async function probeServerHealth(port: number, timeoutMs: number): Promise<boolean> {
+  try {
+    const res = await fetch(`http://localhost:${port}/api/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Replace a wedged server with a fresh one on the same port. Straight to
+ *  SIGKILL: a GC-livelocked event loop never runs a SIGTERM handler — the
+ *  2026-07-18 wedge survived `fleetlens stop` and needed kill -9. */
+export async function restartWedgedServer(
+  pid: number,
+  port: number,
+): Promise<{ pid: number; port: number }> {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Already gone
+  }
+  removePid(PID_FILE);
+  await waitForPortFree(port, 5_000);
+  return startServer({ port });
 }
 
 export function stopServer(): { stopped: boolean; pid?: number } {

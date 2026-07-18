@@ -208,6 +208,12 @@ Each migration SQL file must begin with a `-- description: ...` header so the ma
 
 ---
 
+## Server watchdog
+
+The daemon HTTP-probes the web server's `/api/health` every 60 s (`runServerHealthCheck` in `daemon-worker.ts`; verdict logic in `watchdog.ts`, unit-tested). Process liveness is never trusted — a GC-livelocked next-server keeps its pid and port while serving nothing (2026-07-18 incident). Three consecutive failed probes → SIGKILL + relaunch on the same port; SIGTERM is pointless because a starved event loop never runs the handler. Restarts cap at 3/hour (re-wedging pages would otherwise cause flap loops), then the watchdog stands down until the window slides. No pid file = intentionally stopped = never touched. `fleetlens status` runs the same probe and reports "running but UNRESPONSIVE" instead of trusting the pid.
+
+---
+
 ## Insights pipeline (V2 perception layer)
 
 `/insights` renders weekly and monthly digests synthesized from per-day
