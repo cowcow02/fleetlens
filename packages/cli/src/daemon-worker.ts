@@ -215,18 +215,27 @@ async function runDaemonUpdateCheck(): Promise<void> {
 
 const serverWatchdog = new ServerWatchdog();
 let lastServerVerdict: WatchdogVerdict = "ok";
+let lastServerPid: number | null = null;
 
-/**
- * Health-check the web server over HTTP. Process liveness is not enough: a
- * GC-livelocked next-server keeps its pid and port while serving nothing
- * (2026-07-18 wedge). No pid file → intentionally stopped → not ours to
- * touch. The ServerWatchdog decides when failures become a restart and
- * caps restart flapping when the wedge trigger (e.g. a browser tab holding
- * a huge session page) immediately re-wedges each fresh server.
- */
+/** HTTP-probe the web server and act on the ServerWatchdog verdict (see
+ *  watchdog.ts for the wedge story). No pid file → intentionally stopped →
+ *  not ours to touch. */
 async function runServerHealthCheck(): Promise<void> {
   const status = getServerStatus();
-  if (!status.running) return;
+  if (!status.running) {
+    if (lastServerPid !== null) {
+      serverWatchdog.noteServerGone();
+      lastServerPid = null;
+    }
+    return;
+  }
+  if (status.pid !== lastServerPid) {
+    // Probe failures must not carry across server instances: a fresh
+    // server inheriting the old one's failure run could be killed on its
+    // first slow probe.
+    serverWatchdog.noteNewInstance();
+    lastServerPid = status.pid;
+  }
 
   const ok = await probeServerHealth(status.port, SERVER_HEALTH_TIMEOUT_MS);
   const verdict = serverWatchdog.onProbe(ok, Date.now());

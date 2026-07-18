@@ -59,6 +59,38 @@ describe("ServerWatchdog", () => {
     expect(dog.onProbe(false, later)).toBe("restart");
   });
 
+  it("noteNewInstance clears the failure run so a fresh server gets full grace", () => {
+    const dog = new ServerWatchdog();
+    dog.onProbe(false, T0);
+    dog.onProbe(false, T0 + MIN);
+    dog.noteNewInstance();
+    expect(dog.onProbe(false, T0 + 2 * MIN)).toBe("failing");
+    expect(dog.onProbe(false, T0 + 3 * MIN)).toBe("failing");
+    expect(dog.onProbe(false, T0 + 4 * MIN)).toBe("restart");
+  });
+
+  it("noteNewInstance keeps the restart cap — watchdog restarts must not re-arm it", () => {
+    const dog = new ServerWatchdog();
+    failTimes(dog, 3, T0);
+    dog.noteNewInstance();
+    failTimes(dog, 3, T0 + 3 * MIN);
+    dog.noteNewInstance();
+    failTimes(dog, 3, T0 + 6 * MIN);
+    dog.noteNewInstance();
+    expect(failTimes(dog, 3, T0 + 9 * MIN)).toBe("gave-up");
+  });
+
+  it("noteServerGone fully re-arms — an operator stop/start is a fresh story", () => {
+    const dog = new ServerWatchdog();
+    failTimes(dog, 3, T0);
+    failTimes(dog, 3, T0 + 3 * MIN);
+    failTimes(dog, 3, T0 + 6 * MIN);
+    expect(failTimes(dog, 3, T0 + 9 * MIN)).toBe("gave-up");
+    dog.noteServerGone();
+    expect(dog.onProbe(false, T0 + 12 * MIN)).toBe("failing");
+    expect(failTimes(dog, 2, T0 + 13 * MIN)).toBe("restart");
+  });
+
   it("recovery after give-up returns to ok and normal thresholds", () => {
     const dog = new ServerWatchdog();
     failTimes(dog, 3, T0);

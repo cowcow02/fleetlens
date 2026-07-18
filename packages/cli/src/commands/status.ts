@@ -23,7 +23,7 @@ export async function status(): Promise<void> {
     } else {
       console.log(`Server:  running but UNRESPONSIVE on ${url} (PID ${server.pid}, v${ver})`);
       console.log(
-        "  ⚠  process is alive but not answering HTTP — if the daemon is running its watchdog will force-restart it within ~3 minutes, or run 'fleetlens start' now",
+        "  ⚠  process is alive but not answering HTTP — a running daemon's watchdog force-restarts a wedged server ('fleetlens daemon logs' shows its verdicts), or run 'fleetlens start' now",
       );
     }
     if (isServerStale(server)) {

@@ -11,7 +11,7 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 - **`fleetlens status` no longer reports a wedged server as healthy.** It probes HTTP and prints "running but UNRESPONSIVE" with recovery guidance when the process is alive but not answering.
 
 ### Added
-- **`/api/health`** — cheap liveness endpoint (`{ok, version}`). The CLI's startup health wait and the daemon watchdog both use it, so liveness checks no longer trigger (or misread) a full homepage server render.
+- **`/api/health`** — cheap liveness endpoint (`{ok, version}`) probed by the daemon watchdog and `fleetlens status`, so recurring liveness checks don't trigger (or misread) a full homepage server render. Any completed HTTP response counts as alive — a still-running pre-1.0.2 server that predates the route can't be misread as wedged after a CLI upgrade. Startup still gates on the full dashboard render, so a broken bundle keeps failing `fleetlens start` loudly.
 
 ## [1.0.1] — 2026-07-16
 
