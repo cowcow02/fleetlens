@@ -10,6 +10,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { cclensPath } from "@claude-lens/parser/fs";
+import { resolveClaudeBin, claudeSpawnEnv, ClaudeBinNotFoundError } from "@claude-lens/entries/node";
 import { applyRunEvent, writeChat, type Chat, type RunEvent, type RunEventBody, type StoredMessage } from "./chat-store";
 import { agentSystemPrompt, buildUserPrompt, type ChatMessage } from "./prompt";
 
@@ -274,9 +275,17 @@ export function startRun(chat: Chat, opts: { model: string; mcpUrl: string }): v
 
     const trace = newTrace(opts.model, userPrompt.length, agentSystemPrompt(), userPrompt);
     const startMs = Date.now();
-    const proc = spawn("claude", args, {
+    const claudeBin = resolveClaudeBin();
+    if (!claudeBin) {
+      const err = new ClaudeBinNotFoundError();
+      emit({ type: "error", message: err.message });
+      trace.end({ runtime: "detached", elapsed_ms: 0, exit_code: -1, error: err.message });
+      finish();
+      return;
+    }
+    const proc = spawn(claudeBin, args, {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env },
+      env: claudeSpawnEnv(claudeBin),
       cwd: runtimeDir,
     });
     run.kill = () => {

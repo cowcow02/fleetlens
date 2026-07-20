@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { z } from "zod";
 import type { LLMResponse } from "./enrich.js";
 import { cclensPath } from "@claude-lens/parser/fs";
+import { resolveClaudeBin, claudeSpawnEnv, ClaudeBinNotFoundError } from "./claude-bin.js";
 import {
   runClaudeUnderTmux,
   tmuxRunnerAvailable,
@@ -197,7 +198,14 @@ export function runClaudePrintMode(args: RunSubprocessArgs): Promise<LLMResponse
       "--effort", "medium",
       "--append-system-prompt", args.systemPrompt,
     ];
-    const proc = spawn("claude", claudeArgs, { stdio: ["pipe", "pipe", "pipe"], env: { ...process.env } });
+    const claudeBin = resolveClaudeBin();
+    if (!claudeBin) {
+      const err = new ClaudeBinNotFoundError();
+      safeAppend(trace, JSON.stringify({ _meta: { type: "spawn_error", run_id: runId, ts: new Date().toISOString(), error: err.message } }) + "\n");
+      reject(err);
+      return;
+    }
+    const proc = spawn(claudeBin, claudeArgs, { stdio: ["pipe", "pipe", "pipe"], env: claudeSpawnEnv(claudeBin) });
 
     // Update _meta with the spawned PID so the runs CLI can correlate ps output.
     safeAppend(trace, JSON.stringify({ _meta: { type: "spawned", run_id: runId, pid: proc.pid } }) + "\n");

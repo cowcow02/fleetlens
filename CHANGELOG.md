@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.3] — 2026-07-20
+
+### Fixed
+- **AI features work again when Fleetlens starts at login.** Every `claude -p` call was dying instantly with `spawn claude ENOENT` — entry enrichment, day/week/month digests, `/agent` chat, and Ask-about-this-session all silently produced nothing, and the `/runs` board showed a wall of red `-2` exit codes with no explanation. Fleetlens spawned `claude` by bare name, which resolves through `PATH`; started at login it inherits launchd's bare `/usr/bin:/bin:/usr/sbin:/sbin`, and `claude` installs to `~/.local/bin`. Started from a terminal it worked, which is why this hid for so long. Fleetlens now resolves `claude` to an absolute path — `PATH` first, then `~/.local/bin`, `~/.claude/local`, the npm global bin, and homebrew — and puts its own Node directory on the child's `PATH` so `claude`'s hooks stop failing with `node: command not found`. When `claude` genuinely isn't installed, the error now says where Fleetlens looked instead of surfacing as an anonymous `-2`.
+
 ## [1.0.2] — 2026-07-18
 
 ### Fixed
