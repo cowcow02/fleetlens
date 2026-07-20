@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import type { LLMResponse } from "./enrich.js";
+import { resolveClaudeBin } from "./claude-bin.js";
 
 export type TmuxRunArgs = {
   systemPrompt: string;
@@ -59,7 +60,7 @@ function which(bin: string): string | undefined {
 /** Probe for tmux + claude. Cheap — call at boot to pick a runtime path. */
 export function tmuxRunnerAvailable(): { ok: true } | { ok: false; reason: string } {
   if (!which("tmux")) return { ok: false, reason: "tmux not on PATH" };
-  if (!which("claude")) return { ok: false, reason: "claude not on PATH" };
+  if (!resolveClaudeBin()) return { ok: false, reason: "claude CLI not found" };
   return { ok: true };
 }
 
@@ -123,8 +124,8 @@ export function runClaudeUnderTmux(args: TmuxRunArgs): Promise<LLMResponse> {
 async function runClaudeUnderTmuxImpl(args: TmuxRunArgs): Promise<LLMResponse> {
   const tmuxBin = args.tmuxBin ?? which("tmux");
   if (!tmuxBin) throw new TmuxUnavailableError("tmux not on PATH");
-  const claudeBin = args.claudeBin ?? which("claude");
-  if (!claudeBin) throw new TmuxUnavailableError("claude not on PATH");
+  const claudeBin = args.claudeBin ?? resolveClaudeBin();
+  if (!claudeBin) throw new TmuxUnavailableError("claude CLI not found");
   if (args.signal?.aborted) throw new TmuxRunError("aborted before spawn");
 
   const cwd = runtimeCwd();

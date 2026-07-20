@@ -23,6 +23,7 @@ export {
   type TmuxRunArgs,
 } from "./tmux-runner.js";
 export { runClaudeSubprocess, type RunSubprocessArgs } from "./llm-runner.js";
+export { resolveClaudeBin, claudeSpawnEnv, ClaudeBinNotFoundError } from "./claude-bin.js";
 export {
   readDayDigest, writeDayDigest, getTodayDigestFromCache, setTodayDigestInCache,
   readWeekDigest, writeWeekDigest, listWeekDigestKeys,
