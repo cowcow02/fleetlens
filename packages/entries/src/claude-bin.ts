@@ -44,6 +44,8 @@ export function claudeSpawnEnv(
   execPath: string = process.execPath,
 ): NodeJS.ProcessEnv {
   const parts = (env.PATH ?? "").split(delimiter).filter(Boolean);
+  // Reverse order: each unshift lands in front of the previous, so claude's own
+  // directory ends up ahead of node's.
   for (const dir of [dirname(execPath), dirname(bin)]) {
     if (!parts.includes(dir)) parts.unshift(dir);
   }
@@ -54,8 +56,8 @@ export class ClaudeBinNotFoundError extends Error {
   constructor() {
     super(
       "claude CLI not found. Looked on PATH and in ~/.local/bin, ~/.claude/local, " +
-        "the npm global bin, and homebrew. Install it, or if Fleetlens was started " +
-        "by the autostart LaunchAgent, restart it from a terminal: fleetlens stop && fleetlens start",
+        "the npm global bin, homebrew, and /usr/local/bin. Install it, or if Fleetlens " +
+        "was started at login, restart it from a terminal: fleetlens stop && fleetlens start",
     );
     this.name = "ClaudeBinNotFoundError";
   }

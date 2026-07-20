@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveClaudeBin, claudeSpawnEnv } from "../src/claude-bin.js";
+import { resolveClaudeBin, claudeSpawnEnv, ClaudeBinNotFoundError } from "../src/claude-bin.js";
 
 /** Build an `exists` predicate over a fixed set of present paths. */
 function existsIn(...present: string[]) {
@@ -79,6 +79,18 @@ describe("resolveClaudeBin", () => {
       exists: existsIn("/home/tester/.local/bin/claude"),
     });
     expect(bin).toBe("/home/tester/.local/bin/claude");
+  });
+});
+
+describe("ClaudeBinNotFoundError", () => {
+  // The message and the resolver's candidate list drifted apart once already —
+  // /usr/local/bin was checked but never mentioned, so a user with an install
+  // there would read "we didn't look" when we had.
+  it("names every location the resolver actually checks", () => {
+    const { message } = new ClaudeBinNotFoundError();
+    for (const location of ["PATH", "~/.local/bin", "~/.claude/local", "npm global", "homebrew", "/usr/local/bin"]) {
+      expect(message).toContain(location);
+    }
   });
 });
 
