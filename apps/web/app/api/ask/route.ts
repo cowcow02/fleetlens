@@ -17,6 +17,7 @@
 
 import { getSession } from "@claude-lens/parser/fs";
 import { summarizeSessionForAI } from "@/lib/ai/session-summary";
+import { resolveClaudeBin, claudeSpawnEnv, ClaudeBinNotFoundError } from "@claude-lens/entries/node";
 import { spawn } from "node:child_process";
 import {
   runClaudeUnderTmux,
@@ -115,7 +116,12 @@ export async function POST(request: Request) {
       })();
 
       function runPrintModeFallback() {
-        const claudeBin = "claude";
+        const claudeBin = resolveClaudeBin();
+        if (!claudeBin) {
+          send({ type: "error", message: new ClaudeBinNotFoundError().message });
+          finish();
+          return;
+        }
 
         const args = [
           "-p",
@@ -136,7 +142,7 @@ export async function POST(request: Request) {
 
         const proc = spawn(claudeBin, args, {
           stdio: ["pipe", "pipe", "pipe"],
-          env: { ...process.env },
+          env: claudeSpawnEnv(claudeBin),
         });
 
         proc.stdin.write(fullPrompt);
