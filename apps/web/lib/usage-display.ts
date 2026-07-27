@@ -48,7 +48,19 @@ export function sidebarUsageRows(
   if (!snapshot) return [];
 
   if (agent === "copilot") {
-    return [{ label: "Monthly", window: snapshot.monthly ?? null, windowMs: MONTHLY_MS }];
+    // Calendar-month length (same rule as UsageChart.cycleStart for monthly).
+    // A fixed 30d window mis-colors pace near ±15pp in Feb / 31-day months.
+    const monthly = snapshot.monthly ?? null;
+    let windowMs = MONTHLY_MS;
+    if (monthly?.resets_at) {
+      const endMs = new Date(monthly.resets_at).getTime();
+      if (Number.isFinite(endMs)) {
+        const reset = new Date(endMs);
+        const startMs = Date.UTC(reset.getUTCFullYear(), reset.getUTCMonth() - 1, 1);
+        windowMs = Math.max(HOUR, endMs - startMs);
+      }
+    }
+    return [{ label: "Monthly", window: monthly, windowMs }];
   }
   if (agent === "grok") {
     return [{ label: "7d", window: snapshot.seven_day ?? null, windowMs: SEVEN_DAYS_MS }];

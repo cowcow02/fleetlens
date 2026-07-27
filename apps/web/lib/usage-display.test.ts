@@ -71,6 +71,18 @@ describe("sidebarUsageRows", () => {
       sidebarUsageRows("grok", { seven_day: win(80) }).map((r) => r.label),
     ).toEqual(["7d"]);
   });
+
+  it("derives Copilot monthly windowMs from the calendar month of resets_at", () => {
+    // resets_at = Mar 1 00:00 UTC → previous month is February (non-leap 2026)
+    const febMs =
+      Date.UTC(2026, 2, 1) - Date.UTC(2026, 1, 1); // Mar 1 − Feb 1
+    const rows = sidebarUsageRows("copilot", {
+      monthly: { utilization: 20, resets_at: "2026-03-01T00:00:00.000Z" },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.windowMs).toBe(febMs);
+    expect(rows[0]!.windowMs).toBe(28 * 24 * 3_600_000);
+  });
 });
 
 describe("copilotQuotaPresentation", () => {
