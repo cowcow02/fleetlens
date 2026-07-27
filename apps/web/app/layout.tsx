@@ -11,7 +11,7 @@ import { JobQueueWidget } from "@/components/job-queue-widget";
 import { MenubarInstallBanner } from "@/components/menubar-install-banner";
 import { groupByProject } from "@claude-lens/parser";
 import { listSessions } from "@/lib/data";
-import { latestUsageSnapshot } from "@/lib/usage-data";
+import { latestUsageSnapshotsByAgent } from "@/lib/usage-data";
 import { readTeamConnection } from "@/lib/team-data";
 import { buildEntriesIndex } from "@/lib/entries-index";
 import { LATEST_VERSION as LATEST_CHANGELOG_VERSION } from "@/lib/changelog";
@@ -66,7 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     lastActiveMs: p.lastActiveMs,
     worktreeCount: p.worktreeCount,
   }));
-  const currentUsage = latestUsageSnapshot();
+  const usageByAgent = latestUsageSnapshotsByAgent();
   const teamConnection = readTeamConnection();
 
   // Project to the minimal shape the widget needs so we don't ship
@@ -118,7 +118,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <Sidebar
             projects={projects}
             totalSessions={totalSessions}
-            currentUsage={currentUsage}
+            usageByAgent={usageByAgent}
             version={pkg.version}
             latestChangelogVersion={LATEST_CHANGELOG_VERSION}
             teamConnection={teamConnection}

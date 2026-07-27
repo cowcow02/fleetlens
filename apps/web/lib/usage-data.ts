@@ -70,20 +70,25 @@ export const readUsageSnapshots = cache((): UsageSnapshot[] => {
   return snapshots;
 });
 
-export const latestUsageSnapshot = cache((): UsageSnapshot | null => {
+/** Latest snapshot per agent (last line wins for each agent tag). */
+export const latestUsageSnapshotsByAgent = cache((): Partial<Record<AgentKind, UsageSnapshot>> => {
   const all = readUsageSnapshots();
-  // Sidebar's "current usage" widget is Claude-tier specific (extra_usage,
-  // per-model 7d windows). Filter to Claude only so a Codex snapshot doesn't
-  // accidentally end up as the latest source.
-  const claude = all.filter((s) => (s.agent ?? "claude-code") === "claude-code");
-  return claude.length > 0 ? claude[claude.length - 1]! : null;
+  const byAgent: Partial<Record<AgentKind, UsageSnapshot>> = {};
+  for (const s of all) {
+    const agent = (s.agent ?? "claude-code") as AgentKind;
+    byAgent[agent] = s;
+  }
+  return byAgent;
+});
+
+/** Claude-only latest. Kept for callers that still want the default plan. */
+export const latestUsageSnapshot = cache((): UsageSnapshot | null => {
+  return latestUsageSnapshotsByAgent()["claude-code"] ?? null;
 });
 
 export const latestUsageSnapshotByAgent = cache(
   (agent: AgentKind): UsageSnapshot | null => {
-    const all = readUsageSnapshots();
-    const filtered = all.filter((s) => (s.agent ?? "claude-code") === agent);
-    return filtered.length > 0 ? filtered[filtered.length - 1]! : null;
+    return latestUsageSnapshotsByAgent()[agent] ?? null;
   },
 );
 
