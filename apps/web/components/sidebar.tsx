@@ -21,6 +21,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { UsageSidebar } from "@/components/usage-sidebar";
 import { ChangelogIcon } from "@/components/changelog-icon";
 import { TeamChip } from "@/components/team-chip";
+import type { AgentKind } from "@claude-lens/parser";
 import type { UsageSnapshot } from "@/lib/usage-data";
 import type { TeamConnection } from "@/lib/team-data";
 
@@ -58,14 +59,14 @@ function savePins(pins: Set<string>) {
 export function Sidebar({
   projects,
   totalSessions,
-  currentUsage,
+  usageByAgent,
   version,
   latestChangelogVersion,
   teamConnection,
 }: {
   projects: ProjectRef[];
   totalSessions: number;
-  currentUsage: UsageSnapshot | null;
+  usageByAgent: Partial<Record<AgentKind, UsageSnapshot>>;
   version: string;
   latestChangelogVersion: string | null;
   teamConnection: TeamConnection;
@@ -263,7 +264,7 @@ export function Sidebar({
         />
       </div>
 
-      <UsageSidebar snapshot={currentUsage} />
+      <UsageSidebar latestByAgent={usageByAgent} />
 
       <TeamChip connection={teamConnection} />
 

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   copilotQuotaPresentation,
   copilotUnitLabel,
+  sidebarUsageRows,
+  sortUsageAgents,
   visibleUsageAgents,
 } from "./usage-display";
 
@@ -23,6 +25,51 @@ describe("visibleUsageAgents", () => {
 
   it("treats legacy snapshots without an agent as Claude Code", () => {
     expect(visibleUsageAgents([{}])).toEqual(["claude-code"]);
+  });
+});
+
+describe("sortUsageAgents", () => {
+  it("puts Claude first and sorts the rest alphabetically", () => {
+    expect(sortUsageAgents(["grok", "claude-code", "codex", "zai"])).toEqual([
+      "claude-code",
+      "codex",
+      "grok",
+      "zai",
+    ]);
+  });
+});
+
+describe("sidebarUsageRows", () => {
+  const win = (u: number) => ({ utilization: u, resets_at: null });
+
+  it("returns empty when there is no snapshot", () => {
+    expect(sidebarUsageRows("claude-code", null)).toEqual([]);
+  });
+
+  it("shows 5h + 7d for Claude, and optional Sonnet", () => {
+    const snap = {
+      five_hour: win(10),
+      seven_day: win(40),
+      seven_day_sonnet: win(12),
+    };
+    expect(sidebarUsageRows("claude-code", snap).map((r) => r.label)).toEqual(["5h", "7d"]);
+    expect(
+      sidebarUsageRows("claude-code", snap, { showSonnet: true }).map((r) => r.label),
+    ).toEqual(["5h", "7d", "Sonnet 7d"]);
+  });
+
+  it("hides the retired Codex 5h meter when utilization is null", () => {
+    const snap = { five_hour: { utilization: null, resets_at: null }, seven_day: win(55) };
+    expect(sidebarUsageRows("codex", snap).map((r) => r.label)).toEqual(["7d"]);
+  });
+
+  it("uses monthly for Copilot and 7d-only for Grok", () => {
+    expect(
+      sidebarUsageRows("copilot", { monthly: win(3) }).map((r) => r.label),
+    ).toEqual(["Monthly"]);
+    expect(
+      sidebarUsageRows("grok", { seven_day: win(80) }).map((r) => r.label),
+    ).toEqual(["7d"]);
   });
 });
 
