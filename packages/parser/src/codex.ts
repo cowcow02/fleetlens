@@ -122,6 +122,11 @@ function stripCodexMemCitation(text: string): string {
   return (cut >= 0 ? text.slice(0, cut) : text).trim();
 }
 
+/** Normalize assistant bodies for dual-channel equality (trim + drop citation). */
+function normalizeCodexAgentBody(text: string): string {
+  return stripCodexMemCitation(text);
+}
+
 function agentEventText(ev: SessionEvent): string {
   for (const b of ev.blocks) {
     if (b?.type === "text" && typeof b.text === "string") return b.text;
@@ -129,28 +134,28 @@ function agentEventText(ev: SessionEvent): string {
   return ev.preview ?? "";
 }
 
-/**
- * Codex writes the same assistant turn as event_msg/agent_message then
- * response_item/message. Bodies match exactly, or the response_item body is
- * the event_msg body plus an <oai-mem-citation> trailer. Either way, drop the
- * second copy so the session timeline doesn't show every agent step twice.
- */
-function isDuplicateCodexAgentMessage(events: SessionEvent[], text: string): boolean {
+function lastAgentEventIndex(events: SessionEvent[]): number {
   for (let i = events.length - 1; i >= 0; i--) {
-    const prev = events[i]!;
-    if (prev.role !== "agent") continue;
-    if (prev.rawType !== "event_msg/agent_message") return false;
-    const prevText = agentEventText(prev);
-    if (!prevText && !text) return true;
-    if (prevText === text) return true;
-    // response_item often appends <oai-mem-citation>… after the same body.
-    if (text.startsWith(prevText) && stripCodexMemCitation(text) === prevText.trim()) {
-      return true;
-    }
-    return false;
+    if (events[i]!.role === "agent") return i;
   }
-  return false;
+  return -1;
 }
+
+function sameCodexAgentBody(a: string, b: string): boolean {
+  const na = normalizeCodexAgentBody(a);
+  const nb = normalizeCodexAgentBody(b);
+  if (!na && !nb) return true;
+  if (!na || !nb) return false;
+  return na === nb;
+}
+
+/**
+ * Codex dual-emits the same assistant turn on both channels, in either order:
+ *   - common: event_msg/agent_message then response_item/message
+ *   - rare (review-mode): response_item/message then event_msg/agent_message
+ * response_item may also append an <oai-mem-citation> trailer. Prefer the
+ * event_msg form (cleaner body) and keep only one timeline row per turn.
+ */
 
 function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
   const events: SessionEvent[] = [];
@@ -238,6 +243,36 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     if (type === "event_msg" && subtype === "agent_message") {
       const text = typeof payload.message === "string" ? payload.message : "";
       const preview = previewOf(text);
+      // Reverse dual-emit order: response_item landed first. Prefer this
+      // cleaner event_msg body and replace the twin already on the timeline.
+      const lastIdx = lastAgentEventIndex(events);
+      if (lastIdx >= 0) {
+        const prev = events[lastIdx]!;
+        if (
+          prev.rawType === "response_item/message" &&
+          sameCodexAgentBody(agentEventText(prev), text)
+        ) {
+          events[lastIdx] = {
+            ...prev,
+            timestamp: ts ?? prev.timestamp,
+            rawType: "event_msg/agent_message",
+            preview,
+            blocks: text ? [{ type: "text", text }] : [],
+            model,
+            raw: obj,
+          };
+          if (text) lastAgentPreview = preview;
+          continue;
+        }
+        // Same channel twice with equal body is still a dual-emit artifact
+        // (e.g. whitespace-only drift between copies) — keep one.
+        if (
+          prev.rawType === "event_msg/agent_message" &&
+          sameCodexAgentBody(agentEventText(prev), text)
+        ) {
+          continue;
+        }
+      }
       if (text) lastAgentPreview = preview;
       events.push({
         index: idx++,
@@ -284,7 +319,8 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
         .map((c) => (typeof c.text === "string" ? c.text : ""))
         .join("\n")
         .trim();
-      if (isDuplicateCodexAgentMessage(events, text)) {
+      const lastIdx = lastAgentEventIndex(events);
+      if (lastIdx >= 0 && sameCodexAgentBody(agentEventText(events[lastIdx]!), text)) {
         continue;
       }
       const preview = previewOf(text);

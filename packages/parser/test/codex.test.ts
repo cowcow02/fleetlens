@@ -242,6 +242,76 @@ describe("codex parser", () => {
     expect(agents[2]!.preview).toContain("proposed_plan");
     expect(detail!.lastAgentPreview).toContain("proposed_plan");
   });
+
+  it("dedupes reverse-order dual emit and trailing-whitespace drift", async () => {
+    // Review-mode rollouts can emit response_item first; agent_message may also
+    // keep a trailing newline that the response_item body already trimmed.
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-dedup-rev-"));
+    const dir = path.join(root, "2026", "06", "03");
+    await fs.mkdir(dir, { recursive: true });
+    const sessionId = "019e8c33-edc7-78a3-b7bd-b191e963eb88";
+    const file = path.join(dir, `rollout-2026-06-03T14-37-54-${sessionId}.jsonl`);
+    const body = "The patch introduces a privacy regression.";
+    const lines = [
+      {
+        timestamp: "2026-06-03T14:37:54.000Z",
+        type: "session_meta",
+        payload: {
+          id: sessionId,
+          timestamp: "2026-06-03T14:37:54.000Z",
+          cwd: "/Users/me/Repo/example",
+          cli_version: "0.140.0",
+          model_provider: "openai",
+        },
+      },
+      {
+        timestamp: "2026-06-03T14:37:55.000Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "review this" },
+      },
+      // Reverse order: response_item first
+      {
+        timestamp: "2026-06-03T14:37:56.000Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: body }],
+        },
+      },
+      {
+        timestamp: "2026-06-03T14:37:56.001Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: body + "\n" },
+      },
+      // Forward order with trailing whitespace on event_msg only
+      {
+        timestamp: "2026-06-03T14:37:57.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: "Looks good to ship.  \n" },
+      },
+      {
+        timestamp: "2026-06-03T14:37:57.001Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Looks good to ship." }],
+        },
+      },
+    ];
+    await fs.writeFile(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+
+    const detail = await getCodexSession(sessionId, { root });
+    expect(detail).not.toBeNull();
+    const agents = detail!.events.filter((e) => e.role === "agent");
+    expect(agents).toHaveLength(2);
+    // Reverse pair collapsed to preferred event_msg form
+    expect(agents[0]!.rawType).toBe("event_msg/agent_message");
+    expect(agents[0]!.preview).toContain("privacy regression");
+    expect(agents[1]!.rawType).toBe("event_msg/agent_message");
+    expect(agents[1]!.preview).toContain("Looks good to ship");
+  });
 });
 
 describe("codex multi-agent v2 subagent grouping", () => {
