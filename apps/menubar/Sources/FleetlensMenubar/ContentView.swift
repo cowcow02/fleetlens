@@ -18,6 +18,10 @@ struct ContentView: View {
         .padding(16)
       }
       Divider()
+      stripVisibility
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+      Divider()
       footer
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -27,6 +31,37 @@ struct ContentView: View {
 
   private var orderedKinds: [AgentKind] {
     store.snapshots.keys.sorted(by: { $0.rawValue < $1.rawValue })
+  }
+
+  /// Per-agent toggles for which pins appear in the menu-bar strip. Agents
+  /// without a current snapshot stay toggleable so the choice survives a
+  /// temporary gap in polling.
+  private var stripVisibility: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Menu bar icons")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+      ForEach(AgentKind.allCases, id: \.self) { kind in
+        Toggle(isOn: Binding(
+          get: { store.visibleAgents.contains(kind) },
+          set: { store.setAgentVisible(kind, visible: $0) }
+        )) {
+          HStack(spacing: 6) {
+            ProviderIcon(kind: kind, size: 12, template: true)
+            Text(kind.displayName)
+              .font(.caption)
+            if store.snapshots[kind] == nil {
+              Text("no data")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+            }
+          }
+        }
+        .toggleStyle(.checkbox)
+        .controlSize(.small)
+        .focusEffectDisabled()
+      }
+    }
   }
 
   private var emptyState: some View {
