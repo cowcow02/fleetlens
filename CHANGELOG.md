@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.5] — 2026-07-27
+
+### Added
+- **Sidebar usage agent picker.** The “Current usage” widget was locked to Claude Code. It now lists every agent with snapshots on disk (Claude / Codex / Grok / Z.ai / Copilot / …); pick one to see that provider’s meters. Selection is remembered, and click-through opens `/usage?agent=…`.
+
 ## [1.0.4] — 2026-07-27
 
 ### Fixed
