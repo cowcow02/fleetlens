@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.4] — 2026-07-27
+
+### Fixed
+- **Codex session timelines no longer show every Agent step twice.** Codex dual-emits each assistant turn as both `event_msg/agent_message` and `response_item/message` (sometimes with an `<oai-mem-citation>` trailer, and occasionally in reverse order in review-mode rollouts). The parser kept both copies, so the session view rendered a duplicate Agent row for every step. Fleetlens now collapses the pair and prefers the clean `event_msg` form.
+
 ## [1.0.3] — 2026-07-20
 
 ### Fixed
