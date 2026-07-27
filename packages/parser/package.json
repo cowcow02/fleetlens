@@ -1,6 +1,6 @@
 {
   "name": "@claude-lens/parser",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Parse Claude Code JSONL transcripts into structured, displayable events. Includes analytics helpers for dashboards.",
   "license": "MIT",
   "type": "module",
