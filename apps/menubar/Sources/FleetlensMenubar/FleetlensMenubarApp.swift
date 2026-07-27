@@ -37,9 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     store.ensureDaemonRunning()
 
     redraw()
-    cancellable = store.$snapshots
+    // Snapshots *and* visibility preferences both rebuild the strip image.
+    cancellable = Publishers.CombineLatest(store.$snapshots, store.$visibleAgents)
       .receive(on: DispatchQueue.main)
-      .sink { [weak self] _ in self?.redraw() }
+      .sink { [weak self] _, _ in self?.redraw() }
 
     if let button = statusItem.button {
       button.action = #selector(togglePopover(_:))
@@ -48,11 +49,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// Re-render the strip to an NSImage and push it onto the status item. Runs
-  /// once at launch and on every usage update (Combine sink on store).
+  /// once at launch and on every usage / visibility update.
   private func redraw() {
     guard let button = statusItem?.button else { return }
-    let view = StripLabel(snapshots: store.snapshots, hasData: store.hasData)
-      .fixedSize()
+    let view = StripLabel(
+      snapshots: store.snapshots,
+      visible: store.visibleAgents,
+      hasData: store.hasData
+    )
+    .fixedSize()
     let renderer = ImageRenderer(content: view)
     renderer.scale = NSScreen.main?.backingScaleFactor ?? 2
     if let image = renderer.nsImage {
@@ -73,19 +78,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 }
 
-/// The menu-bar strip. Every present provider renders as a "detailed" pin;
-/// providers without a 5h window show their active 7d or monthly allowance.
-/// Text and icons are white — the strip is a baked-color image on the dark
-/// menu bar (isTemplate=false), so white reads cleanly there.
+/// The menu-bar strip. Every present *and visible* provider renders as a
+/// "detailed" pin; providers without a 5h window show their active 7d or
+/// monthly allowance. Text and icons are white — the strip is a baked-color
+/// image on the dark menu bar (isTemplate=false), so white reads cleanly there.
 private struct StripLabel: View {
   let snapshots: [AgentKind: UsageSnapshot]
+  let visible: Set<AgentKind>
   let hasData: Bool
 
   private var ordered: [AgentKind] {
-    let priority: [AgentKind] = [.claudeCode, .codex, .copilot]
-    let present = priority.filter { snapshots[$0] != nil }
-    let extras = snapshots.keys.filter { !present.contains($0) }.sorted(by: { $0.rawValue < $1.rawValue })
-    return present + extras
+    stripAgents(snapshots: snapshots, visible: visible)
   }
 
   var body: some View {

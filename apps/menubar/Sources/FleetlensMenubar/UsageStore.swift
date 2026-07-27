@@ -43,6 +43,9 @@ struct CliLaunch: Codable {
 final class UsageStore: ObservableObject {
   @Published var snapshots: [AgentKind: UsageSnapshot] = [:]
   @Published var paces: [AgentKind: Double] = [:]
+  /// Agents allowed to appear as pins in the menu-bar strip. Toggle from the
+  /// popover; persisted in UserDefaults under MenubarPreferences.
+  @Published var visibleAgents: Set<AgentKind>
   @Published var lastRefreshed: Date?
   @Published var lastError: String?
   @Published var refreshing = false
@@ -50,8 +53,11 @@ final class UsageStore: ObservableObject {
   private var watcher: UsageLogWatcher?
   private var watchdog: AnyCancellable?
   private var daemonStartInFlight = false
+  private let defaults: UserDefaults
 
-  init(watchdogInterval: TimeInterval = 60) {
+  init(watchdogInterval: TimeInterval = 60, defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    self.visibleAgents = MenubarPreferences.loadVisible(from: defaults)
     reload()
     watcher = UsageLogWatcher(url: SnapshotIO.usageLogURL()) { [weak self] in
       Task { @MainActor in self?.reload() }
@@ -62,6 +68,16 @@ final class UsageStore: ObservableObject {
       .sink { [weak self] now in
         Task { @MainActor in self?.recoverDaemonIfStale(now: now) }
       }
+  }
+
+  /// Toggle strip visibility for one agent and persist.
+  func setAgentVisible(_ kind: AgentKind, visible: Bool) {
+    if visible {
+      visibleAgents.insert(kind)
+    } else {
+      visibleAgents.remove(kind)
+    }
+    MenubarPreferences.saveVisible(visibleAgents, to: defaults)
   }
 
   /// Headline value for the menu bar — Claude 5h, falling back to Codex 7d.
