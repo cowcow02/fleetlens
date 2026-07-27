@@ -116,6 +116,47 @@ function previewOf(text: string): string {
   return text.replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
+/** Strip Codex memory-citation trailer so body comparison ignores harness noise. */
+function stripCodexMemCitation(text: string): string {
+  const cut = text.search(/<oai-mem-citation\b/i);
+  return (cut >= 0 ? text.slice(0, cut) : text).trim();
+}
+
+/** Normalize assistant bodies for dual-channel equality (trim + drop citation). */
+function normalizeCodexAgentBody(text: string): string {
+  return stripCodexMemCitation(text);
+}
+
+function agentEventText(ev: SessionEvent): string {
+  for (const b of ev.blocks) {
+    if (b?.type === "text" && typeof b.text === "string") return b.text;
+  }
+  return ev.preview ?? "";
+}
+
+function lastAgentEventIndex(events: SessionEvent[]): number {
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]!.role === "agent") return i;
+  }
+  return -1;
+}
+
+function sameCodexAgentBody(a: string, b: string): boolean {
+  const na = normalizeCodexAgentBody(a);
+  const nb = normalizeCodexAgentBody(b);
+  if (!na && !nb) return true;
+  if (!na || !nb) return false;
+  return na === nb;
+}
+
+/**
+ * Codex dual-emits the same assistant turn on both channels, in either order:
+ *   - common: event_msg/agent_message then response_item/message
+ *   - rare (review-mode): response_item/message then event_msg/agent_message
+ * response_item may also append an <oai-mem-citation> trailer. Prefer the
+ * event_msg form (cleaner body) and keep only one timeline row per turn.
+ */
+
 function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
   const events: SessionEvent[] = [];
   let firstTimestamp: string | undefined;
@@ -202,6 +243,36 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
     if (type === "event_msg" && subtype === "agent_message") {
       const text = typeof payload.message === "string" ? payload.message : "";
       const preview = previewOf(text);
+      // Reverse dual-emit order: response_item landed first. Prefer this
+      // cleaner event_msg body and replace the twin already on the timeline.
+      const lastIdx = lastAgentEventIndex(events);
+      if (lastIdx >= 0) {
+        const prev = events[lastIdx]!;
+        if (
+          prev.rawType === "response_item/message" &&
+          sameCodexAgentBody(agentEventText(prev), text)
+        ) {
+          events[lastIdx] = {
+            ...prev,
+            timestamp: ts ?? prev.timestamp,
+            rawType: "event_msg/agent_message",
+            preview,
+            blocks: text ? [{ type: "text", text }] : [],
+            model,
+            raw: obj,
+          };
+          if (text) lastAgentPreview = preview;
+          continue;
+        }
+        // Same channel twice with equal body is still a dual-emit artifact
+        // (e.g. whitespace-only drift between copies) — keep one.
+        if (
+          prev.rawType === "event_msg/agent_message" &&
+          sameCodexAgentBody(agentEventText(prev), text)
+        ) {
+          continue;
+        }
+      }
       if (text) lastAgentPreview = preview;
       events.push({
         index: idx++,
@@ -233,15 +304,25 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       });
       continue;
     }
-    // Codex emits some assistant prose as response_item/message with
-    // role="assistant"; other roles duplicate user_message or carry
-    // developer instructions and stay as meta.
+    // Codex dual-emits assistant prose on both channels for the same turn:
+    //   1. event_msg/agent_message  (UI stream — clean text)
+    //   2. response_item/message role=assistant  (history item; may append
+    //      <oai-mem-citation> … noise after the same body)
+    // Prefer the event_msg form. Keep response_item only when it is not a
+    // duplicate of the most recent agent event (e.g. proposed_plan items that
+    // never got an event_msg twin). Other roles on response_item/message
+    // (user, developer) duplicate user_message or carry system instructions
+    // and stay as meta.
     if (type === "response_item" && subtype === "message" && payload.role === "assistant") {
       const items = (payload.content ?? []) as Array<Record<string, unknown>>;
       const text = items
         .map((c) => (typeof c.text === "string" ? c.text : ""))
         .join("\n")
         .trim();
+      const lastIdx = lastAgentEventIndex(events);
+      if (lastIdx >= 0 && sameCodexAgentBody(agentEventText(events[lastIdx]!), text)) {
+        continue;
+      }
       const preview = previewOf(text);
       if (text) lastAgentPreview = preview;
       events.push({
