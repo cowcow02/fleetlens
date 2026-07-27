@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.7] — 2026-07-27
+
+### Changed
+- **Menu bar settings live under a gear icon.** Agent strip visibility is no longer a checkbox block on the main popover — click the gear next to Quit for a slide-over Settings pane (switch rows + Done/back). Footer actions stay compact so the version and refresh age still fit.
+
 ## [1.0.6] — 2026-07-27
 
 ### Added
