@@ -116,6 +116,42 @@ function previewOf(text: string): string {
   return text.replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
+/** Strip Codex memory-citation trailer so body comparison ignores harness noise. */
+function stripCodexMemCitation(text: string): string {
+  const cut = text.search(/<oai-mem-citation\b/i);
+  return (cut >= 0 ? text.slice(0, cut) : text).trim();
+}
+
+function agentEventText(ev: SessionEvent): string {
+  for (const b of ev.blocks) {
+    if (b?.type === "text" && typeof b.text === "string") return b.text;
+  }
+  return ev.preview ?? "";
+}
+
+/**
+ * Codex writes the same assistant turn as event_msg/agent_message then
+ * response_item/message. Bodies match exactly, or the response_item body is
+ * the event_msg body plus an <oai-mem-citation> trailer. Either way, drop the
+ * second copy so the session timeline doesn't show every agent step twice.
+ */
+function isDuplicateCodexAgentMessage(events: SessionEvent[], text: string): boolean {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const prev = events[i]!;
+    if (prev.role !== "agent") continue;
+    if (prev.rawType !== "event_msg/agent_message") return false;
+    const prevText = agentEventText(prev);
+    if (!prevText && !text) return true;
+    if (prevText === text) return true;
+    // response_item often appends <oai-mem-citation>… after the same body.
+    if (text.startsWith(prevText) && stripCodexMemCitation(text) === prevText.trim()) {
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+
 function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
   const events: SessionEvent[] = [];
   let firstTimestamp: string | undefined;
@@ -233,15 +269,24 @@ function parseRollout(file: RolloutFile, lines: unknown[]): Parsed {
       });
       continue;
     }
-    // Codex emits some assistant prose as response_item/message with
-    // role="assistant"; other roles duplicate user_message or carry
-    // developer instructions and stay as meta.
+    // Codex dual-emits assistant prose on both channels for the same turn:
+    //   1. event_msg/agent_message  (UI stream — clean text)
+    //   2. response_item/message role=assistant  (history item; may append
+    //      <oai-mem-citation> … noise after the same body)
+    // Prefer the event_msg form. Keep response_item only when it is not a
+    // duplicate of the most recent agent event (e.g. proposed_plan items that
+    // never got an event_msg twin). Other roles on response_item/message
+    // (user, developer) duplicate user_message or carry system instructions
+    // and stay as meta.
     if (type === "response_item" && subtype === "message" && payload.role === "assistant") {
       const items = (payload.content ?? []) as Array<Record<string, unknown>>;
       const text = items
         .map((c) => (typeof c.text === "string" ? c.text : ""))
         .join("\n")
         .trim();
+      if (isDuplicateCodexAgentMessage(events, text)) {
+        continue;
+      }
       const preview = previewOf(text);
       if (text) lastAgentPreview = preview;
       events.push({

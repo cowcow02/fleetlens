@@ -138,6 +138,110 @@ describe("codex parser", () => {
     const list = await listCodexSessions({ root });
     expect(list).toEqual([]);
   });
+
+  it("dedupes dual-emitted agent_message + response_item/message pairs", async () => {
+    // Codex writes every assistant turn twice: event_msg/agent_message then
+    // response_item/message (sometimes with an <oai-mem-citation> trailer).
+    // Without dedup the session timeline shows every agent step twice.
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "codex-dedup-"));
+    const dir = path.join(root, "2026", "07", "21");
+    await fs.mkdir(dir, { recursive: true });
+    const sessionId = "019f855a-3aae-77a3-8ff6-ce31ae5a78df";
+    const file = path.join(dir, `rollout-2026-07-21T12-00-00-${sessionId}.jsonl`);
+
+    const body = "Scoped checks are clean: web TypeScript has zero errors.";
+    const lines = [
+      {
+        timestamp: "2026-07-21T12:00:00.000Z",
+        type: "session_meta",
+        payload: {
+          id: sessionId,
+          timestamp: "2026-07-21T12:00:00.000Z",
+          cwd: "/Users/me/Repo/example",
+          cli_version: "0.150.0",
+          model_provider: "openai",
+        },
+      },
+      {
+        timestamp: "2026-07-21T12:00:01.000Z",
+        type: "event_msg",
+        payload: { type: "user_message", message: "run the checks" },
+      },
+      // Exact dual emit
+      {
+        timestamp: "2026-07-21T12:00:02.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", message: body },
+      },
+      {
+        timestamp: "2026-07-21T12:00:02.001Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: body }],
+        },
+      },
+      // Dual emit with mem-citation trailer on the response_item only
+      {
+        timestamp: "2026-07-21T12:00:03.000Z",
+        type: "event_msg",
+        payload: {
+          type: "agent_message",
+          message: "New Company Memory journeys are passing.",
+        },
+      },
+      {
+        timestamp: "2026-07-21T12:00:03.001Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "output_text",
+              text:
+                "New Company Memory journeys are passing.\n<oai-mem-citation>\n<citation_entries>\nMEMORY.md:1-2|note=[ctx]\n</citation_entries>\n</oai-mem-citation>",
+            },
+          ],
+        },
+      },
+      // response_item-only assistant (no event_msg twin) must still appear
+      {
+        timestamp: "2026-07-21T12:00:04.000Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "output_text",
+              text: "<proposed_plan>\n# Plan\n\nDo the thing.\n</proposed_plan>",
+            },
+          ],
+        },
+      },
+    ];
+    await fs.writeFile(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+
+    const detail = await getCodexSession(sessionId, { root });
+    expect(detail).not.toBeNull();
+    const agents = detail!.events.filter((e) => e.role === "agent");
+    expect(agents).toHaveLength(3);
+    expect(agents.map((e) => e.rawType)).toEqual([
+      "event_msg/agent_message",
+      "event_msg/agent_message",
+      "response_item/message",
+    ]);
+    expect(agents[0]!.preview).toContain("Scoped checks are clean");
+    expect(agents[1]!.preview).toContain("Company Memory journeys");
+    // Clean event_msg body — not the citation-bloated twin
+    expect(agents[1]!.blocks.some((b) => b.type === "text" && b.text.includes("oai-mem-citation"))).toBe(
+      false,
+    );
+    expect(agents[2]!.preview).toContain("proposed_plan");
+    expect(detail!.lastAgentPreview).toContain("proposed_plan");
+  });
 });
 
 describe("codex multi-agent v2 subagent grouping", () => {
