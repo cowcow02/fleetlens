@@ -2,8 +2,27 @@ import SwiftUI
 
 struct ContentView: View {
   @EnvironmentObject var store: UsageStore
+  @State private var showSettings = false
 
   var body: some View {
+    ZStack {
+      mainPopover
+        .opacity(showSettings ? 0 : 1)
+        .allowsHitTesting(!showSettings)
+
+      if showSettings {
+        SettingsPane(onClose: { showSettings = false })
+          .transition(.asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity),
+            removal: .move(edge: .trailing).combined(with: .opacity)
+          ))
+      }
+    }
+    .frame(width: 340)
+    .animation(.easeInOut(duration: 0.16), value: showSettings)
+  }
+
+  private var mainPopover: some View {
     VStack(alignment: .leading, spacing: 0) {
       if store.snapshots.isEmpty {
         emptyState.padding(16)
@@ -18,50 +37,14 @@ struct ContentView: View {
         .padding(16)
       }
       Divider()
-      stripVisibility
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-      Divider()
       footer
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
-    .frame(width: 340)
   }
 
   private var orderedKinds: [AgentKind] {
     store.snapshots.keys.sorted(by: { $0.rawValue < $1.rawValue })
-  }
-
-  /// Per-agent toggles for which pins appear in the menu-bar strip. Agents
-  /// without a current snapshot stay toggleable so the choice survives a
-  /// temporary gap in polling.
-  private var stripVisibility: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text("Menu bar icons")
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
-      ForEach(AgentKind.allCases, id: \.self) { kind in
-        Toggle(isOn: Binding(
-          get: { store.visibleAgents.contains(kind) },
-          set: { store.setAgentVisible(kind, visible: $0) }
-        )) {
-          HStack(spacing: 6) {
-            ProviderIcon(kind: kind, size: 12, template: true)
-            Text(kind.displayName)
-              .font(.caption)
-            if store.snapshots[kind] == nil {
-              Text("no data")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-            }
-          }
-        }
-        .toggleStyle(.checkbox)
-        .controlSize(.small)
-        .focusEffectDisabled()
-      }
-    }
   }
 
   private var emptyState: some View {
@@ -130,6 +113,16 @@ struct ContentView: View {
       .help(store.refreshing ? "Polling…" : "Force a fresh poll now")
 
       Button {
+        showSettings = true
+      } label: {
+        Image(systemName: "gearshape")
+      }
+      .buttonStyle(.borderless)
+      .foregroundStyle(.secondary)
+      .focusEffectDisabled()
+      .help("Settings")
+
+      Button {
         NSApplication.shared.terminate(nil)
       } label: {
         Image(systemName: "power")
@@ -143,6 +136,96 @@ struct ContentView: View {
 
   private var appVersion: String? {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+  }
+}
+
+// MARK: - Settings overlay
+
+/// Separate pane inside the popover (slide-over) so the main usage view stays
+/// clean. Gear in the footer opens it; Done / chevron returns.
+struct SettingsPane: View {
+  @EnvironmentObject var store: UsageStore
+  let onClose: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      HStack(spacing: 8) {
+        Button(action: onClose) {
+          Image(systemName: "chevron.left")
+            .font(.system(size: 12, weight: .semibold))
+        }
+        .buttonStyle(.borderless)
+        .focusEffectDisabled()
+        .help("Back")
+
+        Text("Settings")
+          .font(.subheadline.weight(.semibold))
+        Spacer()
+        Button("Done", action: onClose)
+          .buttonStyle(.bordered)
+          .controlSize(.small)
+          .focusEffectDisabled()
+          .keyboardShortcut(.defaultAction)
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 12)
+
+      Divider()
+
+      ScrollView {
+        VStack(alignment: .leading, spacing: 14) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text("Menu bar icons")
+              .font(.caption.weight(.semibold))
+              .foregroundStyle(.secondary)
+              .textCase(.uppercase)
+            Text("Choose which agents appear as pins in the menu bar strip.")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+
+          VStack(spacing: 0) {
+            ForEach(Array(AgentKind.allCases.enumerated()), id: \.element) { index, kind in
+              if index > 0 {
+                Divider().padding(.leading, 36)
+              }
+              agentRow(kind)
+            }
+          }
+          .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+        }
+        .padding(16)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .background(.background)
+  }
+
+  private func agentRow(_ kind: AgentKind) -> some View {
+    Toggle(isOn: Binding(
+      get: { store.visibleAgents.contains(kind) },
+      set: { store.setAgentVisible(kind, visible: $0) }
+    )) {
+      HStack(spacing: 10) {
+        ProviderIcon(kind: kind, size: 16, template: true)
+          .frame(width: 20, height: 20)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(kind.displayName)
+            .font(.callout)
+          if store.snapshots[kind] == nil {
+            Text("No recent sample")
+              .font(.caption2)
+              .foregroundStyle(.tertiary)
+          }
+        }
+      }
+    }
+    .toggleStyle(.switch)
+    .controlSize(.small)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 10)
+    .focusEffectDisabled()
   }
 }
 
