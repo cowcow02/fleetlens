@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.6] — 2026-07-27
+
+### Added
+- **Menu bar agent visibility.** Click the Fleetlens menu-bar widget and use **Menu bar icons** to choose which agents appear as pins in the strip (Claude / Codex / Copilot / Z.ai / Grok). Choices persist; default is still every agent with data.
+
 ## [1.0.5] — 2026-07-27
 
 ### Added
