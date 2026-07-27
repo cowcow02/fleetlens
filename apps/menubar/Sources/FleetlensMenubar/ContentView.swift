@@ -63,28 +63,34 @@ struct ContentView: View {
   /// the right. Keeps the popover to two blocks (agents + this bar) instead of
   /// three.
   private var footer: some View {
-    HStack(spacing: 8) {
+    // Keep the fixed 340pt popover footer from clipping: branding on the left,
+    // then compact actions (Dashboard is icon-only so gear + quit still fit
+    // when the version string is present).
+    HStack(spacing: 6) {
       Image(systemName: "gauge.high.fill")
         .foregroundStyle(.tint)
         .font(.subheadline)
       Text("Fleetlens")
         .font(.subheadline.weight(.semibold))
+        .lineLimit(1)
       if let v = appVersion, !v.isEmpty {
         Text("v\(v)")
           .font(.caption2)
           .foregroundStyle(.secondary)
+          .lineLimit(1)
       }
-      Spacer()
+      Spacer(minLength: 4)
       Button {
         // Overview lists every agent; Usage covers each provider that exposes
         // a plan allowance, including Copilot's monthly credits.
         NSWorkspace.shared.open(URL(string: "http://localhost:3321/")!)
       } label: {
-        Label("Dashboard", systemImage: "chart.bar.xaxis")
+        Image(systemName: "chart.bar.xaxis")
       }
       .buttonStyle(.bordered)
       .controlSize(.small)
       .focusEffectDisabled()
+      .help("Open dashboard")
 
       Button {
         store.forceRefresh()
