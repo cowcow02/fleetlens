@@ -251,7 +251,6 @@ async function runWatch(opts: {
 
   const tty = Boolean(process.stdout.isTTY);
   let stopping = false;
-  let timer: ReturnType<typeof setInterval> | undefined;
 
   const leaveScreen = () => {
     if (!tty) return;
@@ -259,17 +258,6 @@ async function runWatch(opts: {
     // scrollback is restored exactly like top/htop/less.
     process.stdout.write("\x1b[?25h\x1b[?1049l");
   };
-
-  const stop = () => {
-    if (stopping) return;
-    stopping = true;
-    if (timer) clearInterval(timer);
-    leaveScreen();
-    process.stdout.write("\n");
-    process.exit(0);
-  };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
 
   if (tty) {
     // Enter alt buffer + hide cursor. Frames are drawn in place; without the
@@ -317,7 +305,18 @@ async function runWatch(opts: {
   }
 
   draw();
-  timer = setInterval(draw, opts.intervalSec * 1000);
+  const timer = setInterval(draw, opts.intervalSec * 1000);
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    clearInterval(timer);
+    leaveScreen();
+    process.stdout.write("\n");
+    process.exit(0);
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+
   // Keep the process alive until signal handlers fire.
   await new Promise<void>(() => {
     // Intentionally never resolves; SIGINT/SIGTERM exit.
