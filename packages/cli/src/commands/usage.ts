@@ -138,8 +138,10 @@ async function collectSnapshots(opts: {
   return { byAgent, saved };
 }
 
-/** Stable agent-order for JSON output (matches terminal multi-agent view). */
+/** Stable agent-order for machine output (matches terminal multi-agent view). */
 const JSON_AGENT_ORDER = ["claude-code", "codex", "copilot", "zai", "grok"];
+
+type TaggedSnapshot = UsageSnapshot & { agent: string };
 
 /**
  * Agent-friendly payload for `usage --json`. One object per agent with the
@@ -147,19 +149,8 @@ const JSON_AGENT_ORDER = ["claude-code", "codex", "copilot", "zai", "grok"];
  */
 export function usageJsonPayload(
   byAgent: Record<string, UsageSnapshot>,
-): {
-  agents: Array<UsageSnapshot & { agent: string }>;
-} {
-  const keys = Object.keys(byAgent).sort((a, b) => {
-    const ia = JSON_AGENT_ORDER.indexOf(a);
-    const ib = JSON_AGENT_ORDER.indexOf(b);
-    if (ia !== -1 || ib !== -1) {
-      if (ia === -1) return 1;
-      if (ib === -1) return -1;
-      return ia - ib;
-    }
-    return a.localeCompare(b);
-  });
+): { agents: TaggedSnapshot[] } {
+  const keys = Object.keys(byAgent).sort(compareAgentKeys);
   return {
     agents: keys.map((k) => {
       const s = byAgent[k]!;
@@ -168,8 +159,96 @@ export function usageJsonPayload(
   };
 }
 
+function compareAgentKeys(a: string, b: string): number {
+  const ia = JSON_AGENT_ORDER.indexOf(a);
+  const ib = JSON_AGENT_ORDER.indexOf(b);
+  if (ia !== -1 || ib !== -1) {
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  }
+  return a.localeCompare(b);
+}
+
+/** Drop null/undefined recursively — RTK-style: no padding empty fields. */
+export function omitNulls(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value
+      .map(omitNulls)
+      .filter((v) => v !== null && v !== undefined);
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v === null || v === undefined) continue;
+      const next = omitNulls(v);
+      // Drop empty objects left after stripping (e.g. five_hour with only nulls).
+      if (
+        next &&
+        typeof next === "object" &&
+        !Array.isArray(next) &&
+        Object.keys(next as object).length === 0
+      ) {
+        continue;
+      }
+      out[k] = next;
+    }
+    return out;
+  }
+  return value;
+}
+
+function shortAgentId(agent: string): string {
+  return agent === "claude-code" ? "claude" : agent;
+}
+
+/** Truncate ISO timestamps for dense agent output (minute precision). */
+export function shortIso(iso: string): string {
+  // 2026-07-28T08:14:04.429Z → 2026-07-28T08:14
+  const m = iso.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/);
+  return m ? m[1]! : iso.slice(0, 16);
+}
+
+/**
+ * Ultra-dense columnar text for coding agents (~10× smaller than pretty JSON).
+ * TOON-inspired: header declares columns; one row per agent; `-` = absent.
+ *
+ * Example:
+ *   agents[3]{agent,5h,7d,mo,plan,sampled}:
+ *   claude,3,20,-,-,2026-07-28T08:14
+ *   codex,-,2,-,prolite,2026-07-28T08:10
+ */
+export function usageCompactText(byAgent: Record<string, UsageSnapshot>): string {
+  const agents = usageJsonPayload(byAgent).agents;
+  const cell = (v: number | null | undefined): string =>
+    v === null || v === undefined ? "-" : String(v);
+
+  const rows = agents.map((a) => {
+    const id = shortAgentId(a.agent);
+    const fh = a.five_hour?.utilization;
+    const sd = a.seven_day?.utilization;
+    const mo = a.monthly?.utilization;
+    // Prefer short plan labels; spaces → underscores so rows stay single-field CSV-ish.
+    const plan = (a.plan_type ?? "-").replace(/\s+/g, "_");
+    const at = a.captured_at ? shortIso(a.captured_at) : "-";
+    return `${id},${cell(fh)},${cell(sd)},${cell(mo)},${plan},${at}`;
+  });
+
+  return `agents[${rows.length}]{agent,5h,7d,mo,plan,sampled}:\n${rows.join("\n")}\n`;
+}
+
 function emitJson(payload: unknown): void {
-  process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+  // Minified + null-stripped: agents pay per token, not for pretty-print.
+  process.stdout.write(JSON.stringify(omitNulls(payload)) + "\n");
+}
+
+function emitMachineError(
+  mode: "json" | "compact" | "text",
+  msg: string,
+): void {
+  if (mode === "json") emitJson({ error: msg, agents: [] });
+  else if (mode === "compact") process.stdout.write(`error:${msg}\n`);
+  else console.error(`Error: ${msg}`);
 }
 
 export async function usage(args: string[]): Promise<void> {
@@ -177,13 +256,16 @@ export async function usage(args: string[]): Promise<void> {
     console.log(`fleetlens usage — plan utilization (all agents)
 
 Usage:
-  fleetlens usage [--agent KIND] [--json]  Multi-agent snapshot (from daemon log + live Claude)
-  fleetlens usage --watch [-a KIND]        Live top-style view until Ctrl+C
-  fleetlens usage --save                   Poll every provider and append to the usage log
+  fleetlens usage [--agent KIND]             Human TTY bars
+  fleetlens usage --compact [-a KIND]        Dense table for coding agents (token-cheap)
+  fleetlens usage --json [-a KIND]           Minified JSON, nulls omitted
+  fleetlens usage --watch [-a KIND]          Live top-style view until Ctrl+C
+  fleetlens usage --save                     Poll every provider and append to the usage log
   fleetlens usage --history [-s D] [--days N]
-                                           Daily token / cost history table
+                                             Daily token / cost history table
 
-  --json           Machine-readable snapshot (mutually exclusive with --watch)
+  --compact        Ultra-dense columnar text (recommended for agents / LLM context)
+  --json           Machine JSON (minified, nulls stripped; exclusive with --watch/--compact)
   --agent / -a     Filter to one provider (claude | codex | copilot | zai | grok)
 
 Watch options:
@@ -203,20 +285,27 @@ stays fresh without hammering provider APIs.`);
   const save = args.includes("--save");
   const watch = args.includes("--watch") || args.includes("-w");
   const json = args.includes("--json");
+  const compact = args.includes("--compact");
+  const machineMode: "json" | "compact" | "text" = json
+    ? "json"
+    : compact
+      ? "compact"
+      : "text";
   const agentFilter = parseAgentFilter(args);
   if (agentFilter && !isAgentKind(agentFilter)) {
     const msg = `unknown agent "${agentFilter}". Use claude, codex, copilot, zai, or grok.`;
-    if (json) {
-      emitJson({ error: msg, agents: [] });
-    } else {
-      console.error(`Error: ${msg}`);
-    }
+    emitMachineError(machineMode, msg);
     process.exitCode = 1;
     return;
   }
 
-  if (watch && json) {
-    console.error("Error: --json and --watch are mutually exclusive");
+  if (watch && (json || compact)) {
+    console.error("Error: --watch cannot be combined with --json or --compact");
+    process.exitCode = 2;
+    return;
+  }
+  if (json && compact) {
+    console.error("Error: --json and --compact are mutually exclusive");
     process.exitCode = 2;
     return;
   }
@@ -233,36 +322,43 @@ stays fresh without hammering provider APIs.`);
   const byAgent = filterAgents(collected.byAgent, agentFilter);
 
   if (save && collected.saved === 0 && Object.keys(byAgent).length === 0) {
-    const msg = "could not poll any provider and no samples are on disk.";
-    if (json) emitJson({ error: msg, agents: [] });
-    else console.error(`Error: ${msg}`);
+    emitMachineError(machineMode, "could not poll any provider and no samples are on disk.");
     process.exitCode = 1;
     return;
   }
   if (save && collected.saved === 0) {
     const msg = "every usage poll failed (showing last samples from disk only).";
     if (json) {
-      // Still emit samples so agents get data; flag the partial failure.
       emitJson({ ...usageJsonPayload(byAgent), warning: msg });
-    } else {
-      console.error(`Error: ${msg}`);
+      process.exitCode = 1;
+      return;
     }
+    if (compact) {
+      // Still emit the table; warning as a comment-ish first line.
+      process.stdout.write(`# warning:${msg}\n`);
+      process.stdout.write(usageCompactText(byAgent));
+      process.exitCode = 1;
+      return;
+    }
+    console.error(`Error: ${msg}`);
     process.exitCode = 1;
-    if (json) return;
   }
 
   if (Object.keys(byAgent).length === 0) {
     const msg = agentFilter
       ? `no usage samples for ${agentFilter}. Run \`fleetlens usage --save\` or start the daemon.`
       : "no usage samples yet. Run `fleetlens daemon start` or `fleetlens usage --save`.";
-    if (json) emitJson({ error: msg, agents: [] });
-    else console.error(`Error: ${msg}`);
+    emitMachineError(machineMode, msg);
     process.exitCode = 1;
     return;
   }
 
   if (json) {
     emitJson(usageJsonPayload(byAgent));
+    return;
+  }
+  if (compact) {
+    process.stdout.write(usageCompactText(byAgent));
     return;
   }
 
@@ -278,8 +374,8 @@ stays fresh without hammering provider APIs.`);
       (columns === undefined && parseInt(process.env.COLUMNS ?? "", 10) < 48);
     process.stdout.write(
       narrow
-        ? "  (tip: --watch · --history · --save · --json)\n"
-        : "  (tip: --watch for a live view · --history for the token table · --save to poll APIs · --json for agents)\n",
+        ? "  (tip: --watch · --compact · --json · --save)\n"
+        : "  (tip: --watch live · --compact for agents · --json · --history · --save)\n",
     );
   }
 }
