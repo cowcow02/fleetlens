@@ -138,18 +138,54 @@ async function collectSnapshots(opts: {
   return { byAgent, saved };
 }
 
+/** Stable agent-order for JSON output (matches terminal multi-agent view). */
+const JSON_AGENT_ORDER = ["claude-code", "codex", "copilot", "zai", "grok"];
+
+/**
+ * Agent-friendly payload for `usage --json`. One object per agent with the
+ * same fields as a usage.jsonl line, plus a guaranteed `agent` tag.
+ */
+export function usageJsonPayload(
+  byAgent: Record<string, UsageSnapshot>,
+): {
+  agents: Array<UsageSnapshot & { agent: string }>;
+} {
+  const keys = Object.keys(byAgent).sort((a, b) => {
+    const ia = JSON_AGENT_ORDER.indexOf(a);
+    const ib = JSON_AGENT_ORDER.indexOf(b);
+    if (ia !== -1 || ib !== -1) {
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    }
+    return a.localeCompare(b);
+  });
+  return {
+    agents: keys.map((k) => {
+      const s = byAgent[k]!;
+      return { ...s, agent: s.agent ?? k };
+    }),
+  };
+}
+
+function emitJson(payload: unknown): void {
+  process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+}
+
 export async function usage(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`fleetlens usage — plan utilization (all agents)
 
 Usage:
-  fleetlens usage [--agent KIND]           Multi-agent snapshot (from daemon log + live Claude)
+  fleetlens usage [--agent KIND] [--json]  Multi-agent snapshot (from daemon log + live Claude)
   fleetlens usage --watch [-a KIND]        Live top-style view until Ctrl+C
   fleetlens usage --save                   Poll every provider and append to the usage log
   fleetlens usage --history [-s D] [--days N]
                                            Daily token / cost history table
 
-Agents: claude | codex | copilot | zai | grok  (or full ids like claude-code)
+  --json           Machine-readable snapshot (mutually exclusive with --watch)
+  --agent / -a     Filter to one provider (claude | codex | copilot | zai | grok)
+
 Watch options:
   --interval N   Redraw every N seconds (default 2; reads ~/.cclens/usage.jsonl)
 
@@ -166,12 +202,22 @@ stays fresh without hammering provider APIs.`);
 
   const save = args.includes("--save");
   const watch = args.includes("--watch") || args.includes("-w");
+  const json = args.includes("--json");
   const agentFilter = parseAgentFilter(args);
   if (agentFilter && !isAgentKind(agentFilter)) {
-    console.error(
-      `Error: unknown agent "${agentFilter}". Use claude, codex, copilot, zai, or grok.`,
-    );
+    const msg = `unknown agent "${agentFilter}". Use claude, codex, copilot, zai, or grok.`;
+    if (json) {
+      emitJson({ error: msg, agents: [] });
+    } else {
+      console.error(`Error: ${msg}`);
+    }
     process.exitCode = 1;
+    return;
+  }
+
+  if (watch && json) {
+    console.error("Error: --json and --watch are mutually exclusive");
+    process.exitCode = 2;
     return;
   }
 
@@ -187,30 +233,36 @@ stays fresh without hammering provider APIs.`);
   const byAgent = filterAgents(collected.byAgent, agentFilter);
 
   if (save && collected.saved === 0 && Object.keys(byAgent).length === 0) {
-    console.error(
-      "Error: could not poll any provider and no samples are on disk.",
-    );
+    const msg = "could not poll any provider and no samples are on disk.";
+    if (json) emitJson({ error: msg, agents: [] });
+    else console.error(`Error: ${msg}`);
     process.exitCode = 1;
     return;
   }
   if (save && collected.saved === 0) {
-    console.error(
-      "Error: every usage poll failed (showing last samples from disk only).",
-    );
+    const msg = "every usage poll failed (showing last samples from disk only).";
+    if (json) {
+      // Still emit samples so agents get data; flag the partial failure.
+      emitJson({ ...usageJsonPayload(byAgent), warning: msg });
+    } else {
+      console.error(`Error: ${msg}`);
+    }
     process.exitCode = 1;
+    if (json) return;
   }
 
   if (Object.keys(byAgent).length === 0) {
-    if (agentFilter) {
-      console.error(
-        `Error: no usage samples for ${agentFilter}. Run \`fleetlens usage --save\` or start the daemon.`,
-      );
-    } else {
-      console.error(
-        "Error: no usage samples yet. Run `fleetlens daemon start` or `fleetlens usage --save`.",
-      );
-    }
+    const msg = agentFilter
+      ? `no usage samples for ${agentFilter}. Run \`fleetlens usage --save\` or start the daemon.`
+      : "no usage samples yet. Run `fleetlens daemon start` or `fleetlens usage --save`.";
+    if (json) emitJson({ error: msg, agents: [] });
+    else console.error(`Error: ${msg}`);
     process.exitCode = 1;
+    return;
+  }
+
+  if (json) {
+    emitJson(usageJsonPayload(byAgent));
     return;
   }
 
@@ -226,8 +278,8 @@ stays fresh without hammering provider APIs.`);
       (columns === undefined && parseInt(process.env.COLUMNS ?? "", 10) < 48);
     process.stdout.write(
       narrow
-        ? "  (tip: --watch · --history · --save)\n"
-        : "  (tip: --watch for a live view · --history for the token table · --save to poll APIs)\n",
+        ? "  (tip: --watch · --history · --save · --json)\n"
+        : "  (tip: --watch for a live view · --history for the token table · --save to poll APIs · --json for agents)\n",
     );
   }
 }
