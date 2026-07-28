@@ -209,31 +209,37 @@ struct SettingsPane: View {
   }
 
   private func agentRow(_ kind: AgentKind) -> some View {
-    Toggle(isOn: Binding(
-      get: { store.visibleAgents.contains(kind) },
-      set: { store.setAgentVisible(kind, visible: $0) }
-    )) {
-      HStack(spacing: 10) {
-        // Brand-tinted (not monochrome template) so each row matches the
-        // menu-bar pin and missing SVGs are obvious vs SF-Symbol fallbacks.
-        ProviderIcon(kind: kind, size: 16, tint: BrandIcon.brandColor(for: kind))
-          .frame(width: 20, height: 20)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(kind.displayName)
-            .font(.callout)
-          if store.snapshots[kind] == nil {
-            Text("No recent sample")
-              .font(.caption2)
-              .foregroundStyle(.tertiary)
-          }
+    // Full-width row: title cluster left, switch right on a shared edge.
+    // Default Toggle(label:) centers content and misaligns switches across rows.
+    HStack(spacing: 10) {
+      ProviderIcon(kind: kind, size: 16, tint: BrandIcon.brandColor(for: kind))
+        .frame(width: 20, height: 20)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(kind.displayName)
+          .font(.callout)
+          .multilineTextAlignment(.leading)
+        if store.snapshots[kind] == nil {
+          Text("No recent sample")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
         }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      Toggle("Visible", isOn: Binding(
+        get: { store.visibleAgents.contains(kind) },
+        set: { store.setAgentVisible(kind, visible: $0) }
+      ))
+      .labelsHidden()
+      .toggleStyle(.switch)
+      .controlSize(.small)
+      .focusEffectDisabled()
+      .accessibilityLabel(kind.displayName)
     }
-    .toggleStyle(.switch)
-    .controlSize(.small)
+    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
-    .focusEffectDisabled()
+    .contentShape(Rectangle())
   }
 }
 
