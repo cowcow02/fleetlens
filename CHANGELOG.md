@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.10] — 2026-07-28
+
+### Added
+- **`fleetlens usage --json`.** Machine-readable multi-agent plan utilization for scripts and coding agents. Shape: `{ "agents": [ { "agent": "claude-code", "five_hour": {...}, "seven_day": {...}, ... } ] }`. Works with `--agent`; exclusive with `--watch`.
+
 ## [1.0.9] — 2026-07-28
 
 ### Fixed
