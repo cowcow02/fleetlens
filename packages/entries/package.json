@@ -1,6 +1,6 @@
 {
   "name": "@claude-lens/entries",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Day-scoped Entry primitive for Fleetlens — one artifact per (session × local-day).",
   "license": "MIT",
   "type": "module",
