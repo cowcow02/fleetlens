@@ -210,13 +210,8 @@ export function shortIso(iso: string): string {
 }
 
 /**
- * Ultra-dense columnar text for coding agents (~10× smaller than pretty JSON).
- * TOON-inspired: one legend line (self-describing for blind agent reads), then a
- * schema header + one CSV row per agent. `-` = window not reported for that plan.
- *
- * Blind-tested (sterile cwd, no product docs) against Claude / Codex / Grok:
- * without the legend, Codex+Grok refuse unit/direction; with it, all three
- * answer used% / busiest / headroom correctly. ~15 extra tokens for the legend.
+ * Ultra-dense TOON-like table for agents. Leading legend makes unit/direction
+ * self-describing without product docs (~15 tokens); `-` = window n/a.
  *
  * Example:
  *   # % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a
@@ -234,14 +229,13 @@ export function usageCompactText(byAgent: Record<string, UsageSnapshot>): string
     const fh = a.five_hour?.utilization;
     const sd = a.seven_day?.utilization;
     const mo = a.monthly?.utilization;
-    // Prefer short plan labels; spaces → underscores so rows stay single-field CSV-ish.
+    // Spaces → underscores so plan stays a single CSV field.
     const plan = (a.plan_type ?? "-").replace(/\s+/g, "_");
     const at = a.captured_at ? shortIso(a.captured_at) : "-";
     return `${id},${cell(fh)},${cell(sd)},${cell(mo)},${plan},${at}`;
   });
 
-  // Legend first: unit + direction + window meaning + dash semantics.
-  // Keep under ~60 chars — agents pay per token on every --compact call.
+  // Self-describing legend so blind agents don't have to guess unit/direction.
   const legend = "# % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a";
   return `${legend}\nagents[${rows.length}]{agent,5h,7d,mo,plan,sampled}:\n${rows.join("\n")}\n`;
 }

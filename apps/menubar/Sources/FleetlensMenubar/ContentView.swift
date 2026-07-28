@@ -214,7 +214,9 @@ struct SettingsPane: View {
       set: { store.setAgentVisible(kind, visible: $0) }
     )) {
       HStack(spacing: 10) {
-        ProviderIcon(kind: kind, size: 16, template: true)
+        // Brand-tinted (not monochrome template) so each row matches the
+        // menu-bar pin and missing SVGs are obvious vs SF-Symbol fallbacks.
+        ProviderIcon(kind: kind, size: 16, tint: BrandIcon.brandColor(for: kind))
           .frame(width: 20, height: 20)
         VStack(alignment: .leading, spacing: 1) {
           Text(kind.displayName)
