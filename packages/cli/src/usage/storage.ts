@@ -63,3 +63,16 @@ export function latestClaudeCodeSnapshot(filePath: string): UsageSnapshot | null
   }
   return null;
 }
+
+/** Freshest snapshot per agent tag (legacy untagged lines count as claude-code). */
+export function latestSnapshotsByAgent(
+  filePath: string,
+): Record<string, UsageSnapshot> {
+  const all = readSnapshots(filePath);
+  const byAgent: Record<string, UsageSnapshot> = {};
+  for (const s of all) {
+    const agent = s.agent ?? "claude-code";
+    byAgent[agent] = s;
+  }
+  return byAgent;
+}
