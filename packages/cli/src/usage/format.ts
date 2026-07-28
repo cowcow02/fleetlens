@@ -31,22 +31,55 @@ type Layout = {
   barWidth: number;
   labelWidth: number;
   shortLabels: boolean;
+  /** Total columns used for layout math (clamped). */
+  columns: number;
 };
+
+/**
+ * Meter row budget:
+ *   "  " + label + bar + "  " + "  N.N%"
+ * so barWidth = columns - 2 - labelWidth - 2 - 6.
+ * Bars always eat the remaining width (no artificial 28/40 cap) so phones
+ * and wide desktops both fill edge-to-edge.
+ */
+function barWidthFor(columns: number, labelWidth: number): number {
+  // left pad 2 + label + gap 2 + pct field 6
+  return Math.max(4, columns - labelWidth - 10);
+}
 
 /** Pure helper — exported for unit tests. */
 export function layoutForColumns(columns: number): Layout {
   const cols = Number.isFinite(columns) && columns > 0 ? Math.floor(columns) : 80;
-  // Phone portrait (Termius/Blink ~30–45): no bar, short labels, stack pct.
-  if (cols < 48) {
-    return { mode: "narrow", barWidth: 0, labelWidth: 4, shortLabels: true };
+  // Very tight phones: no bar, short labels, inline pct (fits ~30 cols).
+  if (cols < 36) {
+    return {
+      mode: "narrow",
+      barWidth: 0,
+      labelWidth: 4,
+      shortLabels: true,
+      columns: cols,
+    };
   }
-  // Tablet / landscape: shrink bar to fit label + pct + padding.
+  // Phone / tablet: short labels, bar fills the rest of the line.
   if (cols < 72) {
-    const barWidth = Math.max(8, Math.min(28, cols - 22));
-    return { mode: "medium", barWidth, labelWidth: 6, shortLabels: true };
+    const labelWidth = 4;
+    return {
+      mode: "medium",
+      barWidth: barWidthFor(cols, labelWidth),
+      labelWidth,
+      shortLabels: true,
+      columns: cols,
+    };
   }
-  const barWidth = Math.max(20, Math.min(40, cols - 28));
-  return { mode: "wide", barWidth, labelWidth: 16, shortLabels: false };
+  // Desktop: long labels, bar still fills remaining width.
+  const labelWidth = 16;
+  return {
+    mode: "wide",
+    barWidth: barWidthFor(cols, labelWidth),
+    labelWidth,
+    shortLabels: false,
+    columns: cols,
+  };
 }
 
 function resolveColumns(explicit?: number): number {
@@ -206,17 +239,19 @@ function formatMeterRow(
     : `${utilization.toFixed(1)}%`.padStart(6);
   const labelStr = label.padEnd(layout.labelWidth);
 
-  if (layout.mode === "narrow") {
-    // Phone: "  5h   2.0%  r4h" — no bar, reset inline when present.
+  if (layout.mode === "narrow" && layout.barWidth <= 0) {
+    // Ultra-narrow: "  5h   2.0%  r4h" — no bar, reset inline when present.
     const reset = resetsAt
       ? `  ${DIM}r${formatRelativeShort(resetsAt)}${RESET}`
       : "";
     return [`  ${labelStr}${BOLD}${pctStr}${RESET}${reset}`];
   }
 
+  // Full-width bar: label |████····|  3.0%  — bar consumes every leftover cell.
   const bar = renderBar(utilization, layout.barWidth);
   const lines = [`  ${labelStr}${bar}  ${BOLD}${pctStr}${RESET}`];
   if (resetsAt) {
+    // Indent under the bar (after label), not under the whole row.
     lines.push(
       `  ${" ".repeat(layout.labelWidth)}${DIM}resets ${formatRelative(resetsAt)}${RESET}`,
     );

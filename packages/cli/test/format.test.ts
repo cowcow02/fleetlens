@@ -167,7 +167,7 @@ describe("formatMultiAgentUsage", () => {
     expect(out).toContain("Grok Build");
   });
 
-  it("uses a compact no-bar layout on phone-width columns", () => {
+  it("uses a compact no-bar layout on ultra-narrow columns", () => {
     const out = strip(
       formatMultiAgentUsage(
         {
@@ -177,29 +177,52 @@ describe("formatMultiAgentUsage", () => {
             seven_day: { utilization: 40, resets_at: null },
           }),
         },
-        { columns: 36 },
+        { columns: 32 },
       ),
     );
     expect(out).toContain("Claude"); // shortLabel
     expect(out).toContain("5h");
     expect(out).toContain("7d");
     expect(out).toContain("12.0%");
-    // No full-width bar glyphs on narrow.
+    // Ultra-narrow: no bar glyphs.
     expect(out).not.toContain("█");
-    // Every content line should fit a 36-col phone (allow small pad).
     for (const line of out.split("\n")) {
-      expect(line.length).toBeLessThanOrEqual(40);
+      expect(line.length).toBeLessThanOrEqual(36);
     }
+  });
+
+  it("fills meter rows to the terminal width on phone-sized columns", () => {
+    const cols = 42;
+    const out = strip(
+      formatMultiAgentUsage(
+        {
+          "claude-code": baseSnapshot({
+            agent: "claude-code",
+            five_hour: { utilization: 12, resets_at: null },
+          }),
+        },
+        { columns: cols },
+      ),
+    );
+    const meter = out.split("\n").find((l) => l.includes("12.0%"));
+    expect(meter).toBeDefined();
+    // "  " + label(4) + bar + "  " + " 12.0%" ≈ columns (ANSI already stripped)
+    expect(meter!.length).toBeGreaterThanOrEqual(cols - 2);
+    expect(meter!.length).toBeLessThanOrEqual(cols);
+    expect(meter).toMatch(/[█·]/); // has a bar
   });
 });
 
 describe("layoutForColumns", () => {
-  it("classifies narrow / medium / wide", () => {
-    expect(layoutForColumns(36).mode).toBe("narrow");
-    expect(layoutForColumns(36).barWidth).toBe(0);
-    expect(layoutForColumns(60).mode).toBe("medium");
-    expect(layoutForColumns(60).barWidth).toBeGreaterThan(0);
+  it("classifies narrow / medium / wide and fills remaining width", () => {
+    expect(layoutForColumns(32).mode).toBe("narrow");
+    expect(layoutForColumns(32).barWidth).toBe(0);
+    expect(layoutForColumns(42).mode).toBe("medium");
+    // bar = cols - labelWidth(4) - 10
+    expect(layoutForColumns(42).barWidth).toBe(42 - 4 - 10);
+    expect(layoutForColumns(60).barWidth).toBe(60 - 4 - 10);
     expect(layoutForColumns(100).mode).toBe("wide");
-    expect(layoutForColumns(100).barWidth).toBe(40);
+    // wide: label 16, bar = 100 - 16 - 10
+    expect(layoutForColumns(100).barWidth).toBe(100 - 16 - 10);
   });
 });
