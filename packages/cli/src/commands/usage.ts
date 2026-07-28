@@ -211,9 +211,15 @@ export function shortIso(iso: string): string {
 
 /**
  * Ultra-dense columnar text for coding agents (~10× smaller than pretty JSON).
- * TOON-inspired: header declares columns; one row per agent; `-` = absent.
+ * TOON-inspired: one legend line (self-describing for blind agent reads), then a
+ * schema header + one CSV row per agent. `-` = window not reported for that plan.
+ *
+ * Blind-tested (sterile cwd, no product docs) against Claude / Codex / Grok:
+ * without the legend, Codex+Grok refuse unit/direction; with it, all three
+ * answer used% / busiest / headroom correctly. ~15 extra tokens for the legend.
  *
  * Example:
+ *   # % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a
  *   agents[3]{agent,5h,7d,mo,plan,sampled}:
  *   claude,3,20,-,-,2026-07-28T08:14
  *   codex,-,2,-,prolite,2026-07-28T08:10
@@ -234,7 +240,10 @@ export function usageCompactText(byAgent: Record<string, UsageSnapshot>): string
     return `${id},${cell(fh)},${cell(sd)},${cell(mo)},${plan},${at}`;
   });
 
-  return `agents[${rows.length}]{agent,5h,7d,mo,plan,sampled}:\n${rows.join("\n")}\n`;
+  // Legend first: unit + direction + window meaning + dash semantics.
+  // Keep under ~60 chars — agents pay per token on every --compact call.
+  const legend = "# % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a";
+  return `${legend}\nagents[${rows.length}]{agent,5h,7d,mo,plan,sampled}:\n${rows.join("\n")}\n`;
 }
 
 function emitJson(payload: unknown): void {
