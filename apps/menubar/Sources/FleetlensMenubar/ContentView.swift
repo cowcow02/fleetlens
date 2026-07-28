@@ -236,10 +236,13 @@ struct SettingsPane: View {
       .focusEffectDisabled()
       .accessibilityLabel(kind.displayName)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
+    // Full-row hit target — Toggle alone only covers the switch after labelsHidden.
     .contentShape(Rectangle())
+    .onTapGesture {
+      store.setAgentVisible(kind, visible: !store.visibleAgents.contains(kind))
+    }
   }
 }
 
