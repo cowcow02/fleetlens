@@ -81,6 +81,7 @@ describe("usageCompactText", () => {
     });
     expect(text).toBe(
       [
+        "# % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a",
         "agents[2]{agent,5h,7d,mo,plan,sampled}:",
         "claude,2,20,-,-,2026-07-28T12:00",
         "codex,-,40,-,pro_lite,2026-07-28T12:00",

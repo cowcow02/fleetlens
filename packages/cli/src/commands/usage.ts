@@ -210,10 +210,11 @@ export function shortIso(iso: string): string {
 }
 
 /**
- * Ultra-dense columnar text for coding agents (~10× smaller than pretty JSON).
- * TOON-inspired: header declares columns; one row per agent; `-` = absent.
+ * Ultra-dense TOON-like table for agents. Leading legend makes unit/direction
+ * self-describing without product docs (~15 tokens); `-` = window n/a.
  *
  * Example:
+ *   # % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a
  *   agents[3]{agent,5h,7d,mo,plan,sampled}:
  *   claude,3,20,-,-,2026-07-28T08:14
  *   codex,-,2,-,prolite,2026-07-28T08:10
@@ -228,13 +229,15 @@ export function usageCompactText(byAgent: Record<string, UsageSnapshot>): string
     const fh = a.five_hour?.utilization;
     const sd = a.seven_day?.utilization;
     const mo = a.monthly?.utilization;
-    // Prefer short plan labels; spaces → underscores so rows stay single-field CSV-ish.
+    // Spaces → underscores so plan stays a single CSV field.
     const plan = (a.plan_type ?? "-").replace(/\s+/g, "_");
     const at = a.captured_at ? shortIso(a.captured_at) : "-";
     return `${id},${cell(fh)},${cell(sd)},${cell(mo)},${plan},${at}`;
   });
 
-  return `agents[${rows.length}]{agent,5h,7d,mo,plan,sampled}:\n${rows.join("\n")}\n`;
+  // Self-describing legend so blind agents don't have to guess unit/direction.
+  const legend = "# % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a";
+  return `${legend}\nagents[${rows.length}]{agent,5h,7d,mo,plan,sampled}:\n${rows.join("\n")}\n`;
 }
 
 function emitJson(payload: unknown): void {
