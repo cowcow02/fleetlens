@@ -191,7 +191,7 @@ describe("formatMultiAgentUsage", () => {
     }
   });
 
-  it("fills meter rows to the terminal width on phone-sized columns", () => {
+  it("fills meter rows to the terminal width with matching side padding", () => {
     const cols = 42;
     const out = strip(
       formatMultiAgentUsage(
@@ -206,9 +206,10 @@ describe("formatMultiAgentUsage", () => {
     );
     const meter = out.split("\n").find((l) => l.includes("12.0%"));
     expect(meter).toBeDefined();
-    // "  " + label(4) + bar + "  " + " 12.0%" ≈ columns (ANSI already stripped)
-    expect(meter!.length).toBeGreaterThanOrEqual(cols - 2);
-    expect(meter!.length).toBeLessThanOrEqual(cols);
+    // Exact full-width: left pad 2 + label 4 + bar + gap 2 + pct 6 + right pad 2
+    expect([...meter!].length).toBe(cols);
+    expect(meter!.startsWith("  ")).toBe(true);
+    expect(meter!.endsWith("  ")).toBe(true);
     expect(meter).toMatch(/[█·]/); // has a bar
   });
 });
@@ -218,11 +219,11 @@ describe("layoutForColumns", () => {
     expect(layoutForColumns(32).mode).toBe("narrow");
     expect(layoutForColumns(32).barWidth).toBe(0);
     expect(layoutForColumns(42).mode).toBe("medium");
-    // bar = cols - labelWidth(4) - 10
-    expect(layoutForColumns(42).barWidth).toBe(42 - 4 - 10);
-    expect(layoutForColumns(60).barWidth).toBe(60 - 4 - 10);
+    // bar = cols - labelWidth(4) - 12 (includes matching right pad)
+    expect(layoutForColumns(42).barWidth).toBe(42 - 4 - 12);
+    expect(layoutForColumns(60).barWidth).toBe(60 - 4 - 12);
     expect(layoutForColumns(100).mode).toBe("wide");
-    // wide: label 16, bar = 100 - 16 - 10
-    expect(layoutForColumns(100).barWidth).toBe(100 - 16 - 10);
+    // wide: label 16, bar = 100 - 16 - 12
+    expect(layoutForColumns(100).barWidth).toBe(100 - 16 - 12);
   });
 });

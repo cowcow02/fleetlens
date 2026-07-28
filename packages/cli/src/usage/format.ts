@@ -36,15 +36,13 @@ type Layout = {
 };
 
 /**
- * Meter row budget:
- *   "  " + label + bar + "  " + "  N.N%"
- * so barWidth = columns - 2 - labelWidth - 2 - 6.
- * Bars always eat the remaining width (no artificial 28/40 cap) so phones
- * and wide desktops both fill edge-to-edge.
+ * Meter row budget (symmetric side padding):
+ *   "  " + label + bar + "  " + "  N.N%" + "  "
+ * left pad 2 + label + gap 2 + pct 6 + right pad 2  →  labelWidth + 12
+ * Bar eats everything left so the row spans full width with matching gutters.
  */
 function barWidthFor(columns: number, labelWidth: number): number {
-  // left pad 2 + label + gap 2 + pct field 6
-  return Math.max(4, columns - labelWidth - 10);
+  return Math.max(4, columns - labelWidth - 12);
 }
 
 /** Pure helper — exported for unit tests. */
@@ -247,9 +245,9 @@ function formatMeterRow(
     return [`  ${labelStr}${BOLD}${pctStr}${RESET}${reset}`];
   }
 
-  // Full-width bar: label |████····|  3.0%  — bar consumes every leftover cell.
+  // Full-width bar: "  " label bar "  " pct "  " — matching left/right gutters.
   const bar = renderBar(utilization, layout.barWidth);
-  const lines = [`  ${labelStr}${bar}  ${BOLD}${pctStr}${RESET}`];
+  const lines = [`  ${labelStr}${bar}  ${BOLD}${pctStr}${RESET}  `];
   if (resetsAt) {
     // Indent under the bar (after label), not under the whole row.
     lines.push(
