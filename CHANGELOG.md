@@ -4,6 +4,12 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.8] — 2026-07-28
+
+### Added
+- **Multi-agent `fleetlens usage`.** The CLI snapshot now lists every provider with plan samples (Claude / Codex / Copilot / Z.ai / Grok), not only Claude Code — same data as the menu-bar strip.
+- **`fleetlens usage --watch`.** Top-style live view that redraws from the daemon log until Ctrl+C. Filter with `--agent codex` (etc.); tune with `--interval N`.
+
 ## [1.0.7] — 2026-07-27
 
 ### Changed
