@@ -62,14 +62,6 @@ export function formatMultiAgentUsage(
     lines.push(...formatAgentBlock(kind, snap));
   }
 
-  const newest = kinds
-    .map((k) => byAgent[k]!.captured_at)
-    .filter(Boolean)
-    .sort()
-    .at(-1);
-  if (newest) {
-    lines.push(`  ${DIM}newest sample ${formatRelative(newest)}${RESET}`);
-  }
   lines.push("");
   return lines.join("\n");
 }
@@ -80,8 +72,10 @@ function formatAgentBlock(kind: string, snapshot: UsageSnapshot): string[] {
   const plan = snapshot.plan_type ? `  ${DIM}${snapshot.plan_type}${RESET}` : "";
   lines.push(`  ${BOLD}${title}${RESET}${plan}`);
 
+  let renderedMeter = false;
   for (const [label, window] of agentWindows(kind, snapshot)) {
     if (!window || window.utilization === null) continue;
+    renderedMeter = true;
     const pct = window.utilization;
     const bar = renderBar(pct);
     const pctStr = `${pct.toFixed(1)}%`.padStart(6);
@@ -94,6 +88,7 @@ function formatAgentBlock(kind: string, snapshot: UsageSnapshot): string[] {
 
   // Claude-only extras that still matter in a multi view.
   if ((kind === "claude-code" || !kind) && snapshot.extra_usage?.is_enabled) {
+    renderedMeter = true;
     const extra = snapshot.extra_usage;
     if (extra.utilization !== null) {
       lines.push(
@@ -110,22 +105,39 @@ function formatAgentBlock(kind: string, snapshot: UsageSnapshot): string[] {
   if (kind === "zai" && snapshot.web_search_quota) {
     const used = snapshot.web_search_quota.used;
     if (used !== null && used !== undefined) {
+      renderedMeter = true;
       lines.push(
         `  ${"Web search".padEnd(16)}${renderBar(used)}  ${BOLD}${used.toFixed(0)}%${RESET}`,
       );
     }
   }
 
-  if (kind === "copilot" && snapshot.monthly_quota && !snapshot.monthly_quota.unlimited) {
+  if (kind === "copilot" && snapshot.monthly_quota) {
     const q = snapshot.monthly_quota;
-    if (q.used !== null && q.limit !== null) {
-      const unit = q.unit === "premium-requests" ? "premium requests" : "AI credits";
+    const unit = q.unit === "premium-requests" ? "premium requests" : "AI credits";
+    if (q.unlimited) {
+      renderedMeter = true;
+      lines.push(`  ${"Monthly".padEnd(16)}${BOLD}Limit not reported${RESET}`);
+      if (q.used !== null) {
+        lines.push(
+          `  ${" ".repeat(16)}${DIM}${q.used.toLocaleString("en-US")} ${unit} reported by Copilot${RESET}`,
+        );
+      }
+    } else if (q.used !== null && q.limit !== null) {
       lines.push(
         `  ${" ".repeat(16)}${DIM}${q.used} / ${q.limit} ${unit}${RESET}`,
       );
     }
   }
 
+  if (!renderedMeter) {
+    lines.push(`  ${DIM}(no utilization windows)${RESET}`);
+  }
+
+  // Per-agent age so a live Claude poll can't make stale Codex look "now".
+  lines.push(
+    `  ${DIM}sampled ${formatRelative(snapshot.captured_at)}${RESET}`,
+  );
   lines.push("");
   return lines;
 }
@@ -155,6 +167,12 @@ function agentWindows(
     }
     if (snapshot.seven_day_sonnet?.utilization != null) {
       rows.push(["7 day (Sonnet)", snapshot.seven_day_sonnet]);
+    }
+    if (snapshot.seven_day_oauth_apps?.utilization != null) {
+      rows.push(["7 day (OAuth apps)", snapshot.seven_day_oauth_apps]);
+    }
+    if (snapshot.seven_day_cowork?.utilization != null) {
+      rows.push(["7 day (Cowork)", snapshot.seven_day_cowork]);
     }
   }
   return rows;

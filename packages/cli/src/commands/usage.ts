@@ -5,6 +5,7 @@ import { fetchUsage, UsageApiError, type UsageSnapshot } from "../usage/api.js";
 import { fetchGrokUsage, GrokApiError } from "../usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "../usage/codex.js";
 import { fetchCopilotUsage, CopilotApiError } from "../usage/copilot.js";
+import { fetchZaiUsage, ZaiApiError } from "../usage/zai.js";
 import { formatMultiAgentUsage } from "../usage/format.js";
 import {
   appendSnapshot,
@@ -66,6 +67,16 @@ async function saveAuxiliarySnapshots(): Promise<number> {
       console.warn(`grok usage: ${(err as Error).message}`);
     }
   }
+  // Z.ai is daemon-polled but not on AgentSource.usagePoller — include it so
+  // `usage --save` / cold `--watch --save` can seed a Z.ai-only machine.
+  try {
+    appendSnapshot(USAGE_LOG, await fetchZaiUsage());
+    saved += 1;
+  } catch (err) {
+    if (!(err instanceof ZaiApiError) || err.code !== "no_key") {
+      console.warn(`zai usage: ${(err as Error).message}`);
+    }
+  }
   return saved;
 }
 
@@ -99,16 +110,18 @@ function filterAgents(
 async function collectSnapshots(opts: {
   save: boolean;
   preferLiveClaude: boolean;
-}): Promise<Record<string, UsageSnapshot>> {
+}): Promise<{ byAgent: Record<string, UsageSnapshot>; saved: number }> {
+  let saved = 0;
   if (opts.save) {
     try {
       const snapshot = await fetchUsage();
       appendSnapshot(USAGE_LOG, snapshot);
+      saved += 1;
     } catch (err) {
       if (!(err instanceof UsageApiError)) throw err;
       // Copilot-only machines: still save auxiliaries below.
     }
-    await saveAuxiliarySnapshots();
+    saved += await saveAuxiliarySnapshots();
   }
 
   const byAgent = latestSnapshotsByAgent(USAGE_LOG);
@@ -122,7 +135,7 @@ async function collectSnapshots(opts: {
     }
   }
 
-  return byAgent;
+  return { byAgent, saved };
 }
 
 export async function usage(args: string[]): Promise<void> {
@@ -170,10 +183,22 @@ stays fresh without hammering provider APIs.`);
     return;
   }
 
-  const byAgent = filterAgents(
-    await collectSnapshots({ save, preferLiveClaude: true }),
-    agentFilter,
-  );
+  const collected = await collectSnapshots({ save, preferLiveClaude: true });
+  const byAgent = filterAgents(collected.byAgent, agentFilter);
+
+  if (save && collected.saved === 0 && Object.keys(byAgent).length === 0) {
+    console.error(
+      "Error: could not poll any provider and no samples are on disk.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (save && collected.saved === 0) {
+    console.error(
+      "Error: every usage poll failed (showing last samples from disk only).",
+    );
+    process.exitCode = 1;
+  }
 
   if (Object.keys(byAgent).length === 0) {
     if (agentFilter) {
@@ -204,7 +229,14 @@ async function runWatch(opts: {
 }): Promise<void> {
   if (opts.saveOnce) {
     // One poll up front so the first frame isn't empty on a cold machine.
-    await collectSnapshots({ save: true, preferLiveClaude: false });
+    const { saved } = await collectSnapshots({ save: true, preferLiveClaude: false });
+    if (saved === 0 && Object.keys(latestSnapshotsByAgent(USAGE_LOG)).length === 0) {
+      console.error(
+        "Error: could not poll any provider and no samples are on disk.",
+      );
+      process.exitCode = 1;
+      return;
+    }
   }
 
   let stopping = false;

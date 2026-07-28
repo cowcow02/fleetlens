@@ -40,9 +40,8 @@ describe("formatUsage", () => {
     const out = strip(formatUsage(baseSnapshot()));
     expect(out).toContain("Fleetlens Usage");
     expect(out).toContain("Claude Code");
-    // No utilization rows because every window is null. The 'newest sample'
-    // footer is always emitted.
-    expect(out).toContain("newest sample");
+    // Per-agent age is always emitted so multi-agent stale data is obvious.
+    expect(out).toContain("sampled");
     expect(out).not.toMatch(/%/);
   });
 

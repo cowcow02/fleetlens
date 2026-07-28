@@ -1,4 +1,14 @@
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  appendFileSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  existsSync,
+  openSync,
+  readSync,
+  fstatSync,
+  closeSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import type { UsageSnapshot } from "./api.js";
 
@@ -64,15 +74,63 @@ export function latestClaudeCodeSnapshot(filePath: string): UsageSnapshot | null
   return null;
 }
 
-/** Freshest snapshot per agent tag (legacy untagged lines count as claude-code). */
+/**
+ * Freshest snapshot per agent tag (legacy untagged lines count as claude-code).
+ *
+ * Reads only a tail chunk of the log (default 256KB, enough for days of 5-min
+ * multi-agent polls) and walks newest-first so --watch can redraw without
+ * re-parsing multi-MB histories every tick. Falls back to a full read when
+ * the file is smaller than the tail window.
+ */
 export function latestSnapshotsByAgent(
   filePath: string,
+  opts: { tailBytes?: number } = {},
 ): Record<string, UsageSnapshot> {
-  const all = readSnapshots(filePath);
+  if (!existsSync(filePath)) return {};
+  const tailBytes = opts.tailBytes ?? 262_144;
+  const raw = readTail(filePath, tailBytes);
   const byAgent: Record<string, UsageSnapshot> = {};
-  for (const s of all) {
-    const agent = s.agent ?? "claude-code";
-    byAgent[agent] = s;
+  // Walk newest → oldest so the first hit per agent wins.
+  const lines = raw.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]!.trim();
+    if (!line) continue;
+    try {
+      const s = JSON.parse(line) as UsageSnapshot;
+      const agent = s.agent ?? "claude-code";
+      if (byAgent[agent] === undefined) byAgent[agent] = s;
+    } catch {
+      // skip corrupt
+    }
   }
   return byAgent;
+}
+
+function readTail(filePath: string, maxBytes: number): string {
+  let fd: number | undefined;
+  try {
+    fd = openSync(filePath, "r");
+    const size = fstatSync(fd).size;
+    if (size <= 0) return "";
+    const start = Math.max(0, size - maxBytes);
+    const len = size - start;
+    const buf = Buffer.alloc(len);
+    readSync(fd, buf, 0, len, start);
+    let text = buf.toString("utf8");
+    // If we mid-line'd the start of the chunk, drop the partial first line.
+    if (start > 0) {
+      const nl = text.indexOf("\n");
+      if (nl !== -1) text = text.slice(nl + 1);
+    }
+    return text;
+  } catch {
+    // Fallback: full read for tiny/racy files.
+    try {
+      return readFileSync(filePath, "utf8");
+    } catch {
+      return "";
+    }
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
 }
