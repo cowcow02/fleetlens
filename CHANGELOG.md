@@ -4,6 +4,15 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.11] — 2026-07-28
+
+### Added
+- **`fleetlens usage --compact`.** Ultra-dense columnar output for coding agents (~10× smaller than pretty JSON), TOON-style:
+  `agents[N]{agent,5h,7d,mo,plan,sampled}:` then one row per provider.
+
+### Changed
+- **`fleetlens usage --json` is leaner.** Minified, with null/empty fields stripped (RTK-style), so scripts and agents pay less for the same snapshot.
+
 ## [1.0.10] — 2026-07-28
 
 ### Added
