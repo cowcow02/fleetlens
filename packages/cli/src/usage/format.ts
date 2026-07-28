@@ -8,7 +8,6 @@ const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
 
-const BAR_WIDTH = 40;
 const EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 
 /** Claude first, then priority peers, then alphabetical — matches menubar strip. */
@@ -19,7 +18,49 @@ export type MultiUsageFormatOpts = {
   watch?: boolean;
   /** Seconds between redraws (watch mode). */
   intervalSec?: number;
+  /**
+   * Terminal width in columns. Defaults to process.stdout.columns or 80.
+   * Narrow phones (~30–47) use a stacked compact layout; medium scales the
+   * bar; wide keeps the desktop bar row.
+   */
+  columns?: number;
 };
+
+type Layout = {
+  mode: "narrow" | "medium" | "wide";
+  barWidth: number;
+  labelWidth: number;
+  shortLabels: boolean;
+};
+
+/** Pure helper — exported for unit tests. */
+export function layoutForColumns(columns: number): Layout {
+  const cols = Number.isFinite(columns) && columns > 0 ? Math.floor(columns) : 80;
+  // Phone portrait (Termius/Blink ~30–45): no bar, short labels, stack pct.
+  if (cols < 48) {
+    return { mode: "narrow", barWidth: 0, labelWidth: 4, shortLabels: true };
+  }
+  // Tablet / landscape: shrink bar to fit label + pct + padding.
+  if (cols < 72) {
+    const barWidth = Math.max(8, Math.min(28, cols - 22));
+    return { mode: "medium", barWidth, labelWidth: 6, shortLabels: true };
+  }
+  const barWidth = Math.max(20, Math.min(40, cols - 28));
+  return { mode: "wide", barWidth, labelWidth: 16, shortLabels: false };
+}
+
+function resolveColumns(explicit?: number): number {
+  if (explicit !== undefined && Number.isFinite(explicit) && explicit > 0) {
+    return Math.floor(explicit);
+  }
+  // Prefer the live TTY size; fall back to COLUMNS (ssh/mobile clients often
+  // export it even when the ioctl width is stale or missing).
+  const c = process.stdout.columns;
+  if (typeof c === "number" && c > 0) return c;
+  const env = parseInt(process.env.COLUMNS ?? "", 10);
+  if (Number.isFinite(env) && env > 0) return env;
+  return 80;
+}
 
 /**
  * Render a compact usage snapshot suitable for a terminal. Each row spans
@@ -29,9 +70,9 @@ export type MultiUsageFormatOpts = {
  *
  * Single-agent (Claude) formatter kept for tests and --agent=claude-code.
  */
-export function formatUsage(snapshot: UsageSnapshot): string {
+export function formatUsage(snapshot: UsageSnapshot, opts: MultiUsageFormatOpts = {}): string {
   const agent = snapshot.agent ?? "claude-code";
-  return formatMultiAgentUsage({ [agent]: snapshot });
+  return formatMultiAgentUsage({ [agent]: snapshot }, opts);
 }
 
 /**
@@ -45,45 +86,55 @@ export function formatMultiAgentUsage(
   const kinds = Object.keys(byAgent).sort(compareAgents);
   if (kinds.length === 0) return "";
 
+  const layout = layoutForColumns(resolveColumns(opts.columns));
   const lines: string[] = [];
   lines.push("");
   if (opts.watch) {
     const sec = opts.intervalSec ?? 2;
     lines.push(
-      `  ${BOLD}Fleetlens Usage${RESET}  ${DIM}live · every ${sec}s · Ctrl+C to quit${RESET}`,
+      layout.mode === "narrow"
+        ? `  ${BOLD}Usage${RESET} ${DIM}live ${sec}s · ^C quit${RESET}`
+        : `  ${BOLD}Fleetlens Usage${RESET}  ${DIM}live · every ${sec}s · Ctrl+C to quit${RESET}`,
     );
   } else {
-    lines.push(`  ${BOLD}Fleetlens Usage${RESET}`);
+    lines.push(
+      layout.mode === "narrow"
+        ? `  ${BOLD}Usage${RESET}`
+        : `  ${BOLD}Fleetlens Usage${RESET}`,
+    );
   }
   lines.push("");
 
   for (const kind of kinds) {
     const snap = byAgent[kind]!;
-    lines.push(...formatAgentBlock(kind, snap));
+    lines.push(...formatAgentBlock(kind, snap, layout));
   }
 
   lines.push("");
   return lines.join("\n");
 }
 
-function formatAgentBlock(kind: string, snapshot: UsageSnapshot): string[] {
+function formatAgentBlock(
+  kind: string,
+  snapshot: UsageSnapshot,
+  layout: Layout,
+): string[] {
   const lines: string[] = [];
-  const title = agentTitle(kind);
-  const plan = snapshot.plan_type ? `  ${DIM}${snapshot.plan_type}${RESET}` : "";
+  const title =
+    layout.shortLabels && isAgentKind(kind)
+      ? (getAgentMetadata(kind)?.shortLabel ?? agentTitle(kind))
+      : agentTitle(kind);
+  const plan =
+    snapshot.plan_type && layout.mode !== "narrow"
+      ? `  ${DIM}${snapshot.plan_type}${RESET}`
+      : "";
   lines.push(`  ${BOLD}${title}${RESET}${plan}`);
 
   let renderedMeter = false;
-  for (const [label, window] of agentWindows(kind, snapshot)) {
+  for (const [label, window] of agentWindows(kind, snapshot, layout.shortLabels)) {
     if (!window || window.utilization === null) continue;
     renderedMeter = true;
-    const pct = window.utilization;
-    const bar = renderBar(pct);
-    const pctStr = `${pct.toFixed(1)}%`.padStart(6);
-    const labelStr = label.padEnd(16);
-    lines.push(`  ${labelStr}${bar}  ${BOLD}${pctStr}${RESET}`);
-    if (window.resets_at) {
-      lines.push(`  ${" ".repeat(16)}${DIM}resets ${formatRelative(window.resets_at)}${RESET}`);
-    }
+    lines.push(...formatMeterRow(label, window.utilization, window.resets_at, layout));
   }
 
   // Claude-only extras that still matter in a multi view.
@@ -91,13 +142,13 @@ function formatAgentBlock(kind: string, snapshot: UsageSnapshot): string[] {
     renderedMeter = true;
     const extra = snapshot.extra_usage;
     if (extra.utilization !== null) {
-      lines.push(
-        `  ${"Extra usage".padEnd(16)}${renderBar(extra.utilization)}  ${BOLD}${extra.utilization.toFixed(1)}%${RESET}`,
-      );
+      const label = layout.shortLabels ? "xtra" : "Extra usage";
+      lines.push(...formatMeterRow(label, extra.utilization, null, layout));
     }
     if (extra.used_credits !== null && extra.monthly_limit !== null) {
+      const pad = layout.mode === "narrow" ? 2 : layout.labelWidth + 2;
       lines.push(
-        `  ${" ".repeat(16)}${DIM}${extra.used_credits} / ${extra.monthly_limit} credits${RESET}`,
+        `  ${" ".repeat(pad)}${DIM}${extra.used_credits} / ${extra.monthly_limit} credits${RESET}`,
       );
     }
   }
@@ -106,26 +157,27 @@ function formatAgentBlock(kind: string, snapshot: UsageSnapshot): string[] {
     const used = snapshot.web_search_quota.used;
     if (used !== null && used !== undefined) {
       renderedMeter = true;
-      lines.push(
-        `  ${"Web search".padEnd(16)}${renderBar(used)}  ${BOLD}${used.toFixed(0)}%${RESET}`,
-      );
+      const label = layout.shortLabels ? "web" : "Web search";
+      lines.push(...formatMeterRow(label, used, null, layout, { wholePct: true }));
     }
   }
 
   if (kind === "copilot" && snapshot.monthly_quota) {
     const q = snapshot.monthly_quota;
     const unit = q.unit === "premium-requests" ? "premium requests" : "AI credits";
+    const pad = layout.mode === "narrow" ? 2 : layout.labelWidth + 2;
     if (q.unlimited) {
       renderedMeter = true;
-      lines.push(`  ${"Monthly".padEnd(16)}${BOLD}Limit not reported${RESET}`);
+      const lab = layout.shortLabels ? "mo" : "Monthly";
+      lines.push(`  ${lab.padEnd(layout.labelWidth)}${BOLD}Limit not reported${RESET}`);
       if (q.used !== null) {
         lines.push(
-          `  ${" ".repeat(16)}${DIM}${q.used.toLocaleString("en-US")} ${unit} reported by Copilot${RESET}`,
+          `  ${" ".repeat(pad)}${DIM}${q.used.toLocaleString("en-US")} ${unit}${RESET}`,
         );
       }
     } else if (q.used !== null && q.limit !== null) {
       lines.push(
-        `  ${" ".repeat(16)}${DIM}${q.used} / ${q.limit} ${unit}${RESET}`,
+        `  ${" ".repeat(pad)}${DIM}${q.used} / ${q.limit} ${unit}${RESET}`,
       );
     }
   }
@@ -142,37 +194,80 @@ function formatAgentBlock(kind: string, snapshot: UsageSnapshot): string[] {
   return lines;
 }
 
+function formatMeterRow(
+  label: string,
+  utilization: number,
+  resetsAt: string | null | undefined,
+  layout: Layout,
+  opts: { wholePct?: boolean } = {},
+): string[] {
+  const pctStr = opts.wholePct
+    ? `${utilization.toFixed(0)}%`.padStart(5)
+    : `${utilization.toFixed(1)}%`.padStart(6);
+  const labelStr = label.padEnd(layout.labelWidth);
+
+  if (layout.mode === "narrow") {
+    // Phone: "  5h   2.0%  r4h" — no bar, reset inline when present.
+    const reset = resetsAt
+      ? `  ${DIM}r${formatRelativeShort(resetsAt)}${RESET}`
+      : "";
+    return [`  ${labelStr}${BOLD}${pctStr}${RESET}${reset}`];
+  }
+
+  const bar = renderBar(utilization, layout.barWidth);
+  const lines = [`  ${labelStr}${bar}  ${BOLD}${pctStr}${RESET}`];
+  if (resetsAt) {
+    lines.push(
+      `  ${" ".repeat(layout.labelWidth)}${DIM}resets ${formatRelative(resetsAt)}${RESET}`,
+    );
+  }
+  return lines;
+}
+
 function agentWindows(
   kind: string,
   snapshot: UsageSnapshot,
+  shortLabels: boolean,
 ): Array<[string, UsageWindow | null | undefined]> {
+  const L = shortLabels
+    ? { five: "5h", seven: "7d", monthly: "mo", opus: "opus", sonnet: "son", oauth: "oath", cowork: "cowk" }
+    : {
+        five: "5 hour",
+        seven: "7 day",
+        monthly: "Monthly",
+        opus: "7 day (Opus)",
+        sonnet: "7 day (Sonnet)",
+        oauth: "7 day (OAuth apps)",
+        cowork: "7 day (Cowork)",
+      };
+
   if (kind === "copilot") {
-    return [["Monthly", snapshot.monthly]];
+    return [[L.monthly, snapshot.monthly]];
   }
   if (kind === "grok") {
-    return [["7 day", snapshot.seven_day]];
+    return [[L.seven, snapshot.seven_day]];
   }
   // Codex accounts that dropped the 5h limit only report 7d.
   if (kind === "codex" && snapshot.five_hour?.utilization == null) {
-    return [["7 day", snapshot.seven_day]];
+    return [[L.seven, snapshot.seven_day]];
   }
 
   const rows: Array<[string, UsageWindow | null | undefined]> = [
-    ["5 hour", snapshot.five_hour],
-    ["7 day", snapshot.seven_day],
+    [L.five, snapshot.five_hour],
+    [L.seven, snapshot.seven_day],
   ];
   if (kind === "claude-code" || !snapshot.agent) {
     if (snapshot.seven_day_opus?.utilization != null) {
-      rows.push(["7 day (Opus)", snapshot.seven_day_opus]);
+      rows.push([L.opus, snapshot.seven_day_opus]);
     }
     if (snapshot.seven_day_sonnet?.utilization != null) {
-      rows.push(["7 day (Sonnet)", snapshot.seven_day_sonnet]);
+      rows.push([L.sonnet, snapshot.seven_day_sonnet]);
     }
     if (snapshot.seven_day_oauth_apps?.utilization != null) {
-      rows.push(["7 day (OAuth apps)", snapshot.seven_day_oauth_apps]);
+      rows.push([L.oauth, snapshot.seven_day_oauth_apps]);
     }
     if (snapshot.seven_day_cowork?.utilization != null) {
-      rows.push(["7 day (Cowork)", snapshot.seven_day_cowork]);
+      rows.push([L.cowork, snapshot.seven_day_cowork]);
     }
   }
   return rows;
@@ -201,17 +296,18 @@ function compareAgents(a: string, b: string): number {
  * Each full block is `█`, partial fill uses `▏▎▍▌▋▊▉` for 1/8 granularity.
  * Empty cells use a dim `·` so the filled portion visually pops.
  */
-function renderBar(utilization: number): string {
+function renderBar(utilization: number, barWidth: number): string {
+  if (barWidth <= 0) return "";
   const clamped = Math.max(0, Math.min(100, utilization));
   const color = clamped >= 90 ? RED : clamped >= 70 ? YELLOW : GREEN;
 
-  // Convert to eighth-cells (8 eighths per character × BAR_WIDTH).
-  const totalEighths = Math.round((clamped / 100) * BAR_WIDTH * 8);
+  // Convert to eighth-cells (8 eighths per character × barWidth).
+  const totalEighths = Math.round((clamped / 100) * barWidth * 8);
   const fullBlocks = Math.floor(totalEighths / 8);
   const remainder = totalEighths % 8;
   const partial = EIGHTHS[remainder];
   const filledCells = fullBlocks + (partial ? 1 : 0);
-  const emptyCells = BAR_WIDTH - filledCells;
+  const emptyCells = Math.max(0, barWidth - filledCells);
 
   const filled = "█".repeat(fullBlocks) + partial;
   const empty = "·".repeat(emptyCells);
@@ -242,4 +338,15 @@ function formatRelative(iso: string): string {
   }
 
   return past ? `${value} ago` : `in ${value}`;
+}
+
+/** Compact duration for narrow phones (paired with an "r" prefix for resets). */
+function formatRelativeShort(iso: string): string {
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const abs = Math.abs(Math.round((then - now) / 1000));
+  if (abs < 60) return `${abs}s`;
+  if (abs < 3600) return `${Math.floor(abs / 60)}m`;
+  if (abs < 86400) return `${Math.floor(abs / 3600)}h`;
+  return `${Math.floor(abs / 86400)}d`;
 }

@@ -214,10 +214,20 @@ stays fresh without hammering provider APIs.`);
     return;
   }
 
-  process.stdout.write(formatMultiAgentUsage(byAgent));
+  // Omit columns when unknown so format falls back to COLUMNS env / 80.
+  const columns =
+    typeof process.stdout.columns === "number" && process.stdout.columns > 0
+      ? process.stdout.columns
+      : undefined;
+  process.stdout.write(formatMultiAgentUsage(byAgent, { columns }));
   if (!save) {
+    const narrow =
+      (columns !== undefined && columns < 48) ||
+      (columns === undefined && parseInt(process.env.COLUMNS ?? "", 10) < 48);
     process.stdout.write(
-      "  (tip: --watch for a live view · --history for the token table · --save to poll APIs)\n",
+      narrow
+        ? "  (tip: --watch · --history · --save)\n"
+        : "  (tip: --watch for a live view · --history for the token table · --save to poll APIs)\n",
     );
   }
 }
@@ -239,30 +249,55 @@ async function runWatch(opts: {
     }
   }
 
+  const tty = Boolean(process.stdout.isTTY);
   let stopping = false;
+  let timer: ReturnType<typeof setInterval> | undefined;
+
+  const leaveScreen = () => {
+    if (!tty) return;
+    // Show cursor and leave the alternate screen buffer so the user's
+    // scrollback is restored exactly like top/htop/less.
+    process.stdout.write("\x1b[?25h\x1b[?1049l");
+  };
+
   const stop = () => {
     if (stopping) return;
     stopping = true;
-    process.stdout.write("\x1b[?25h"); // show cursor
+    if (timer) clearInterval(timer);
+    leaveScreen();
     process.stdout.write("\n");
     process.exit(0);
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
 
-  // Hide cursor while live; redraw by clearing the screen each tick.
-  if (process.stdout.isTTY) process.stdout.write("\x1b[?25l");
+  if (tty) {
+    // Enter alt buffer + hide cursor. Frames are drawn in place; without the
+    // alt buffer, clear sequences often just scroll and the output appends.
+    process.stdout.write("\x1b[?1049h\x1b[?25l");
+  }
 
   const draw = () => {
     if (stopping) return;
     const byAgent = filterAgents(latestSnapshotsByAgent(USAGE_LOG), opts.agentFilter);
-    if (process.stdout.isTTY) {
-      process.stdout.write("\x1b[2J\x1b[H");
+    // Prefer live TTY width; leave undefined so format can honor COLUMNS.
+    const columns =
+      typeof process.stdout.columns === "number" && process.stdout.columns > 0
+        ? process.stdout.columns
+        : undefined;
+
+    if (tty) {
+      // Home cursor + clear whole screen (inside the alt buffer).
+      process.stdout.write("\x1b[H\x1b[2J");
+    } else {
+      // Piped/non-TTY: can't redraw in place — print a separator between frames.
+      process.stdout.write("\n────────\n");
     }
+
     if (Object.keys(byAgent).length === 0) {
       process.stdout.write(
         `\n  ${opts.agentFilter ? `No samples for ${opts.agentFilter}` : "Waiting for usage samples…"}` +
-          `\n  ${" ".repeat(0)}Start the daemon: fleetlens daemon start\n` +
+          `\n  Start the daemon: fleetlens daemon start\n` +
           `\n  live · every ${opts.intervalSec}s · Ctrl+C to quit\n`,
       );
       return;
@@ -271,15 +306,20 @@ async function runWatch(opts: {
       formatMultiAgentUsage(byAgent, {
         watch: true,
         intervalSec: opts.intervalSec,
+        columns,
       }),
     );
   };
 
+  // Redraw immediately on terminal resize (mobile rotate, pane drag).
+  if (tty) {
+    process.stdout.on("resize", draw);
+  }
+
   draw();
-  const timer = setInterval(draw, opts.intervalSec * 1000);
+  timer = setInterval(draw, opts.intervalSec * 1000);
   // Keep the process alive until signal handlers fire.
   await new Promise<void>(() => {
     // Intentionally never resolves; SIGINT/SIGTERM exit.
-    void timer;
   });
 }
