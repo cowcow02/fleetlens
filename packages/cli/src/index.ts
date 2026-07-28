@@ -87,7 +87,7 @@ Common:
   update                            Update to the latest version
 
 Terminal:
-  usage [--save]                             Plan utilization snapshot (5h/7d)
+  usage [--agent KIND] [--watch] [--save]    Plan utilization (all agents; --watch is live)
   usage --history [-s D] [--days N]          Daily token/cost table
   entries [--day D|--session ID|--all] [--json]    Perception-layer entries
   digest day   [--date D|--yesterday|--today] [--json]    Day digest

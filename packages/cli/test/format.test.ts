@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { formatUsage } from "../src/usage/format.js";
+import { formatMultiAgentUsage, formatUsage } from "../src/usage/format.js";
 import type { UsageSnapshot, UsageWindow } from "../src/usage/api.js";
 
 const emptyWindow: UsageWindow = { utilization: null, resets_at: null };
@@ -38,10 +38,10 @@ describe("formatUsage", () => {
 
   it("renders the header even when no windows have data", () => {
     const out = strip(formatUsage(baseSnapshot()));
-    expect(out).toContain("Claude Code Usage");
-    // No utilization rows because every window is null. The 'captured' footer
-    // is always emitted.
-    expect(out).toContain("captured");
+    expect(out).toContain("Fleetlens Usage");
+    expect(out).toContain("Claude Code");
+    // Per-agent age is always emitted so multi-agent stale data is obvious.
+    expect(out).toContain("sampled");
     expect(out).not.toMatch(/%/);
   });
 
@@ -86,6 +86,7 @@ describe("formatUsage", () => {
 
   it("renders the extra_usage section when enabled, including credits", () => {
     const out = strip(formatUsage(baseSnapshot({
+      agent: "claude-code",
       extra_usage: {
         is_enabled: true,
         utilization: 75,
@@ -96,5 +97,59 @@ describe("formatUsage", () => {
     expect(out).toContain("Extra usage");
     expect(out).toContain("75.0%");
     expect(out).toContain("100 / 200 credits");
+  });
+});
+
+describe("formatMultiAgentUsage", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-24T12:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("orders Claude before Codex and shows agent-specific windows", () => {
+    const out = strip(
+      formatMultiAgentUsage({
+        codex: baseSnapshot({
+          agent: "codex",
+          five_hour: { utilization: null, resets_at: null },
+          seven_day: { utilization: 40, resets_at: null },
+        }),
+        "claude-code": baseSnapshot({
+          agent: "claude-code",
+          five_hour: { utilization: 10, resets_at: null },
+          seven_day: { utilization: 20, resets_at: null },
+        }),
+        copilot: baseSnapshot({
+          agent: "copilot",
+          monthly: { utilization: 2, resets_at: null },
+        }),
+      }),
+    );
+    expect(out).toContain("Fleetlens Usage");
+    // Claude block before Codex in the string.
+    expect(out.indexOf("Claude Code")).toBeLessThan(out.indexOf("Codex"));
+    expect(out).toContain("GitHub Copilot");
+    expect(out).toContain("Monthly");
+    expect(out).toContain("40.0%");
+    expect(out).toContain("10.0%");
+  });
+
+  it("marks watch mode in the header", () => {
+    const out = strip(
+      formatMultiAgentUsage(
+        {
+          grok: baseSnapshot({
+            agent: "grok",
+            seven_day: { utilization: 16, resets_at: null },
+          }),
+        },
+        { watch: true, intervalSec: 3 },
+      ),
+    );
+    expect(out).toContain("live · every 3s · Ctrl+C to quit");
+    expect(out).toContain("Grok Build");
   });
 });

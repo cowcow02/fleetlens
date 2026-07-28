@@ -1,10 +1,16 @@
-import { fetchUsage, UsageApiError } from "../usage/api.js";
+import { isAgentKind } from "@claude-lens/parser";
+import { agentSources, cclensPath } from "@claude-lens/parser/fs";
+import { flag } from "../args.js";
+import { fetchUsage, UsageApiError, type UsageSnapshot } from "../usage/api.js";
 import { fetchGrokUsage, GrokApiError } from "../usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "../usage/codex.js";
 import { fetchCopilotUsage, CopilotApiError } from "../usage/copilot.js";
-import { formatUsage } from "../usage/format.js";
-import { appendSnapshot } from "../usage/storage.js";
-import { agentSources, cclensPath } from "@claude-lens/parser/fs";
+import { fetchZaiUsage, ZaiApiError } from "../usage/zai.js";
+import { formatMultiAgentUsage } from "../usage/format.js";
+import {
+  appendSnapshot,
+  latestSnapshotsByAgent,
+} from "../usage/storage.js";
 
 const USAGE_LOG = cclensPath("usage.jsonl");
 
@@ -61,17 +67,94 @@ async function saveAuxiliarySnapshots(): Promise<number> {
       console.warn(`grok usage: ${(err as Error).message}`);
     }
   }
+  // Z.ai is daemon-polled but not on AgentSource.usagePoller — include it so
+  // `usage --save` / cold `--watch --save` can seed a Z.ai-only machine.
+  try {
+    appendSnapshot(USAGE_LOG, await fetchZaiUsage());
+    saved += 1;
+  } catch (err) {
+    if (!(err instanceof ZaiApiError) || err.code !== "no_key") {
+      console.warn(`zai usage: ${(err as Error).message}`);
+    }
+  }
   return saved;
+}
+
+function parseAgentFilter(args: string[]): string | undefined {
+  const raw = flag(args, "--agent") ?? flag(args, "-a");
+  if (!raw) return undefined;
+  const kind = raw.toLowerCase();
+  // Accept short labels users type naturally.
+  const aliases: Record<string, string> = {
+    claude: "claude-code",
+    "claude-code": "claude-code",
+    codex: "codex",
+    copilot: "copilot",
+    zai: "zai",
+    "z.ai": "zai",
+    grok: "grok",
+  };
+  return aliases[kind] ?? kind;
+}
+
+function filterAgents(
+  byAgent: Record<string, UsageSnapshot>,
+  agentFilter: string | undefined,
+): Record<string, UsageSnapshot> {
+  if (!agentFilter) return byAgent;
+  const hit = byAgent[agentFilter];
+  return hit ? { [agentFilter]: hit } : {};
+}
+
+/** Build the multi-agent map: log samples, optionally refreshed by a live Claude poll. */
+async function collectSnapshots(opts: {
+  save: boolean;
+  preferLiveClaude: boolean;
+}): Promise<{ byAgent: Record<string, UsageSnapshot>; saved: number }> {
+  let saved = 0;
+  if (opts.save) {
+    try {
+      const snapshot = await fetchUsage();
+      appendSnapshot(USAGE_LOG, snapshot);
+      saved += 1;
+    } catch (err) {
+      if (!(err instanceof UsageApiError)) throw err;
+      // Copilot-only machines: still save auxiliaries below.
+    }
+    saved += await saveAuxiliarySnapshots();
+  }
+
+  const byAgent = latestSnapshotsByAgent(USAGE_LOG);
+
+  if (opts.preferLiveClaude && !opts.save) {
+    try {
+      const live = await fetchUsage();
+      byAgent["claude-code"] = live;
+    } catch {
+      // Keep log sample (or nothing) for Claude.
+    }
+  }
+
+  return { byAgent, saved };
 }
 
 export async function usage(args: string[]): Promise<void> {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(`fleetlens usage — plan utilization snapshot
+    console.log(`fleetlens usage — plan utilization (all agents)
 
 Usage:
-  fleetlens usage [--save]        Current 5h/7d plan utilization
-  fleetlens usage --history [-s YYYYMMDD | --days N]
-                                  Daily token / cost history table`);
+  fleetlens usage [--agent KIND]           Multi-agent snapshot (from daemon log + live Claude)
+  fleetlens usage --watch [-a KIND]        Live top-style view until Ctrl+C
+  fleetlens usage --save                   Poll every provider and append to the usage log
+  fleetlens usage --history [-s D] [--days N]
+                                           Daily token / cost history table
+
+Agents: claude | codex | copilot | zai | grok  (or full ids like claude-code)
+Watch options:
+  --interval N   Redraw every N seconds (default 2; reads ~/.cclens/usage.jsonl)
+
+Tip: leave the usage daemon running (\`fleetlens daemon start\`) so --watch
+stays fresh without hammering provider APIs.`);
     return;
   }
 
@@ -82,27 +165,121 @@ Usage:
   }
 
   const save = args.includes("--save");
-  let snapshot: Awaited<ReturnType<typeof fetchUsage>>;
-  try {
-    snapshot = await fetchUsage();
-    if (save) appendSnapshot(USAGE_LOG, snapshot);
-    process.stdout.write(formatUsage(snapshot));
-  } catch (err) {
-    if (!save || !(err instanceof UsageApiError)) {
-      if (!(err instanceof UsageApiError)) throw err;
-      console.error(`Error: ${err.message}`);
+  const watch = args.includes("--watch") || args.includes("-w");
+  const agentFilter = parseAgentFilter(args);
+  if (agentFilter && !isAgentKind(agentFilter)) {
+    console.error(
+      `Error: unknown agent "${agentFilter}". Use claude, codex, copilot, zai, or grok.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const intervalRaw = flag(args, "--interval");
+  const intervalSec = Math.max(1, parseInt(intervalRaw ?? "2", 10) || 2);
+
+  if (watch) {
+    await runWatch({ agentFilter, intervalSec, saveOnce: save });
+    return;
+  }
+
+  const collected = await collectSnapshots({ save, preferLiveClaude: true });
+  const byAgent = filterAgents(collected.byAgent, agentFilter);
+
+  if (save && collected.saved === 0 && Object.keys(byAgent).length === 0) {
+    console.error(
+      "Error: could not poll any provider and no samples are on disk.",
+    );
+    process.exitCode = 1;
+    return;
+  }
+  if (save && collected.saved === 0) {
+    console.error(
+      "Error: every usage poll failed (showing last samples from disk only).",
+    );
+    process.exitCode = 1;
+  }
+
+  if (Object.keys(byAgent).length === 0) {
+    if (agentFilter) {
+      console.error(
+        `Error: no usage samples for ${agentFilter}. Run \`fleetlens usage --save\` or start the daemon.`,
+      );
+    } else {
+      console.error(
+        "Error: no usage samples yet. Run `fleetlens daemon start` or `fleetlens usage --save`.",
+      );
+    }
+    process.exitCode = 1;
+    return;
+  }
+
+  process.stdout.write(formatMultiAgentUsage(byAgent));
+  if (!save) {
+    process.stdout.write(
+      "  (tip: --watch for a live view · --history for the token table · --save to poll APIs)\n",
+    );
+  }
+}
+
+async function runWatch(opts: {
+  agentFilter: string | undefined;
+  intervalSec: number;
+  saveOnce: boolean;
+}): Promise<void> {
+  if (opts.saveOnce) {
+    // One poll up front so the first frame isn't empty on a cold machine.
+    const { saved } = await collectSnapshots({ save: true, preferLiveClaude: false });
+    if (saved === 0 && Object.keys(latestSnapshotsByAgent(USAGE_LOG)).length === 0) {
+      console.error(
+        "Error: could not poll any provider and no samples are on disk.",
+      );
       process.exitCode = 1;
       return;
     }
-    // `--save` powers the menu-bar refresh. Keep polling independent agents
-    // even on a Copilot-only machine with no Claude Code OAuth token.
-    const saved = await saveAuxiliarySnapshots();
-    if (saved === 0) {
-      console.error(`Error: ${err.message}`);
-      process.exitCode = 1;
-    }
-    return;
   }
-  if (save) await saveAuxiliarySnapshots();
-  process.stdout.write("\n  (tip: run with --history for the daily token/cost table)\n");
+
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    process.stdout.write("\x1b[?25h"); // show cursor
+    process.stdout.write("\n");
+    process.exit(0);
+  };
+  process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+
+  // Hide cursor while live; redraw by clearing the screen each tick.
+  if (process.stdout.isTTY) process.stdout.write("\x1b[?25l");
+
+  const draw = () => {
+    if (stopping) return;
+    const byAgent = filterAgents(latestSnapshotsByAgent(USAGE_LOG), opts.agentFilter);
+    if (process.stdout.isTTY) {
+      process.stdout.write("\x1b[2J\x1b[H");
+    }
+    if (Object.keys(byAgent).length === 0) {
+      process.stdout.write(
+        `\n  ${opts.agentFilter ? `No samples for ${opts.agentFilter}` : "Waiting for usage samples…"}` +
+          `\n  ${" ".repeat(0)}Start the daemon: fleetlens daemon start\n` +
+          `\n  live · every ${opts.intervalSec}s · Ctrl+C to quit\n`,
+      );
+      return;
+    }
+    process.stdout.write(
+      formatMultiAgentUsage(byAgent, {
+        watch: true,
+        intervalSec: opts.intervalSec,
+      }),
+    );
+  };
+
+  draw();
+  const timer = setInterval(draw, opts.intervalSec * 1000);
+  // Keep the process alive until signal handlers fire.
+  await new Promise<void>(() => {
+    // Intentionally never resolves; SIGINT/SIGTERM exit.
+    void timer;
+  });
 }
