@@ -4,6 +4,15 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.9] — 2026-07-28
+
+### Fixed
+- **`fleetlens usage --watch` redraws in place** (alternate screen buffer, like `top`) instead of appending frames.
+- **Usage meters fill the terminal width** on phones and desktops, with matching left/right gutters so the `%` is not flush to the edge.
+
+### Changed
+- **`fleetlens usage` layout is width-aware** — short labels on narrow terminals; full-width bars when space allows; ultra-narrow drops the bar.
+
 ## [1.0.8] — 2026-07-28
 
 ### Added
