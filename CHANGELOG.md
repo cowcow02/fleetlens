@@ -4,6 +4,14 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.12] — 2026-07-28
+
+### Added
+- **Self-describing `fleetlens usage --compact` legend.** One line (`# % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a`) so agents can parse the table with zero product context.
+
+### Fixed
+- **Menubar Settings: Copilot brand icon.** Bundled the missing `copilot.svg` (was falling back to an SF Symbol infinity). Settings rows use brand-tinted glyphs to match the menu-bar pins.
+
 ## [1.0.11] — 2026-07-28
 
 ### Added
