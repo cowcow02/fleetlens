@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.13] — 2026-07-28
+
+### Fixed
+- **Menubar Settings toggle alignment.** Agent rows are full-width: titles left-aligned, switches stacked on a shared trailing edge (no more center-aligned layout).
+
 ## [1.0.12] — 2026-07-28
 
 ### Added
