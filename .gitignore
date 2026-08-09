@@ -30,3 +30,4 @@ pnpm-debug.log*
 # CI copies these into the npm package at publish time
 packages/cli/README.md
 packages/cli/LICENSE
+.codegraph/

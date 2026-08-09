@@ -8,30 +8,14 @@ Brand: **Fleetlens** (capitalized, proper noun, displayed in UI). CLI binary and
 
 ## Architecture
 
-pnpm + Turborepo monorepo. Three packages that build in order: `parser → web → cli`.
+**Ask CodeGraph, not this file.** The repo is indexed (`.codegraph/`); `codegraph explore "<question>"` returns the relevant symbols' verbatim source, call paths, and blast radius — it answers "where/how does X work" better than prose can (verified 2026-08-09: live-update SSE chain, prepare-cli mechanics, daemon worker internals all graph-sufficient). What the graph can NOT carry is below: build topology, packaging edges, and process knowledge.
 
-```
-fleetlens/                            ← github.com/cowcow02/fleetlens
-├── packages/
-│   ├── parser/   (@claude-lens/parser)   Pure JSONL parser + analytics. No fs, no network.
-│   └── cli/      (fleetlens)             Published to npm. Bundles parser + web standalone.
-├── apps/
-│   └── web/      (@claude-lens/web)      Next.js 16 dashboard. Bundled into CLI as standalone output.
-├── scripts/
-│   ├── prepare-cli.mjs                   Copies .next/standalone into packages/cli/app/
-│   ├── version-sync.mjs                  Propagates root version → all sub-packages
-│   ├── smoke.mjs                         Hits each route on a running dev server, fails on 5xx
-│   └── generate-mock-usage.mjs           30 days of realistic fake usage snapshots
-└── .github/workflows/release.yml         Tag-driven release pipeline
-```
+pnpm + Turborepo monorepo, `github.com/cowcow02/fleetlens`. Three packages build **in order: `parser → web → cli`**, plus `packages/team-server` (separate Next.js service for the hosted Team Edition; ships as a Docker image to GHCR `ghcr.io/cowcow02/fleetlens-team-server`; own release track — see Versioning).
 
-**Parser (`packages/parser`)** — zero-dependency TypeScript. `claude-code.ts` turns a Claude Code JSONL line into a `SessionEvent`. `codex.ts` does the same for Codex CLI rollouts; `gemini.ts` for Gemini CLI chat transcripts. `analytics.ts` aggregates sessions into daily buckets, parallelism points, concurrency bursts, project rollups (works on any agent source). `fs.ts` is the Node-only filesystem scanner (exposed as `@claude-lens/parser/fs` so pure browser consumers don't accidentally pull in `node:fs`) and hosts the `AgentSource` registry — adding the next agent (OpenCode, …) is a new file plus one push to `agentSources` plus one entry in `agent-metadata.ts`.
-
-**CLI (`packages/cli`)** — esbuild-bundled. `dist/index.js` is the entry binary; `dist/daemon-worker.js` is the detached usage-polling worker. Both get shipped inside a single npm package along with the Next.js standalone output.
-
-**Web (`apps/web`)** — Next 16 App Router. Server components read from `@claude-lens/parser/fs` per request, `LiveRefresher` subscribes to `/api/events` SSE and calls `router.refresh()` on file changes.
-
-**Team-server (`packages/team-server`)** — separate Next.js service for the hosted Team Edition. Ships as a Docker image to GHCR (`ghcr.io/cowcow02/fleetlens-team-server`). Has its own release track: `server-v*` tags, self-contained `packages/team-server/package.json` version, migrations under `src/db/migrations/` managed by Drizzle. See the "Versioning" and "Release process" sections below.
+Constraints and packaging edges the graph doesn't represent:
+- **parser** (`@claude-lens/parser`) is deliberately zero-dependency, no fs, no network. The Node-only filesystem scanner is exposed as `@claude-lens/parser/fs` so pure browser consumers never pull in `node:fs` — new parser exports must respect this split. `fs.ts` hosts the `AgentSource` registry: adding the next agent = a new file + one push to `agentSources` + one entry in `agent-metadata.ts`.
+- **cli → web is a packaging edge, not an import edge**: web builds with `NEXT_OUTPUT=standalone`, and `scripts/prepare-cli.mjs` copies `.next/standalone` into `packages/cli/app/`. `dist/index.js` (entry binary) and `dist/daemon-worker.js` (detached usage-polling worker) are separate esbuild outputs; both ship inside the single npm package along with the Next standalone output.
+- Other scripts: `version-sync.mjs` (root version → sub-packages), `smoke.mjs` (route 5xx check), `generate-mock-usage.mjs`. Release pipeline: `.github/workflows/release.yml`, tag-driven.
 
 ---
 
@@ -46,10 +30,10 @@ A session's raw timestamps are split into **active segments** wherever there's a
 Computed in `parser.ts` at parse time and stored on `SessionMeta.activeSegments`. Uses **all timestamped events**, not just conversational — system/summary/sidechain events count too (consistency bug fix in v0.2.x: the earlier conversational-only filter undercounted by up to 100x on sessions with heavy tool use).
 
 ### Daily activity bucketing
-`dailyActivity(sessions)` in `analytics.ts` splits each session's active segments across **every local day they touch**, not just the day the session started. A session that ran 11 PM → 3 AM contributes to both day-1 and day-2 buckets, weighted by clipped segment duration.
+`dailyActivity(sessions)` splits each session's active segments across **every local day they touch**, not just the day the session started. A session that ran 11 PM → 3 AM contributes to both day-1 and day-2 buckets, weighted by clipped segment duration.
 
 ### Concurrency bursts
-Raw parallel-run detection produces dozens of sub-minute fragments (every 3-min pause creates a new "run"). `computeParallelismBursts` in `analytics.ts` collapses these with two rules:
+Raw parallel-run detection produces dozens of sub-minute fragments (every 3-min pause creates a new "run"). `computeParallelismBursts` collapses these with two rules:
 1. **Drop overlaps < 1 minute** — kills tab-switch artifacts
 2. **Merge overlaps within 10 minutes of each other** — fuses morning bursts into one
 
@@ -178,7 +162,7 @@ Pushing a `server-v*` tag triggers `.github/workflows/publish-team-server-image.
 4. Publishes the image to GHCR as `:<X.Y.Z>` + `:latest` + `:<sha7>`.
 5. Builds `migrations-manifest.json` from `packages/team-server/src/db/migrations/` and publishes it as a GitHub Release asset on `server-v<version>`.
 
-Each migration SQL file must begin with a `-- description: ...` header so the manifest captures a human-readable summary. See `packages/team-server/src/db/MIGRATIONS.md` for the author workflow and expand/contract rules.
+Each migration SQL file must begin with a `-- description: ...` header so the manifest captures a human-readable summary. See `packages/team-server/src/db/MIGRATIONS.md` for the author workflow and expand/contract rules. Migrations are managed by Drizzle and run at server boot (`runMigrations` via `instrumentation.ts`).
 
 ### Publishing gotchas (learned the hard way)
 - **npm's similarity check rejects names close to existing packages.** `cclens` was blocked by `cc-lens`, then `claudelens` was blocked by `claude-lens`. The fix is either (a) a scoped package `@<user>/<name>` or (b) a distinctively different name. `fleetlens` passed because no `fleet-lens` existed.
@@ -189,22 +173,12 @@ Each migration SQL file must begin with a `-- description: ...` header so the ma
 
 ## Auto-update
 
-`checkForUpdate()` runs at the start of `fleetlens start` (skipped in dev mode, detected by the `packages/cli/` path in `argv[1]`). Flow:
+Mechanism lives in `checkForUpdate()` / `reExec()` (`packages/cli`) — ask the graph for the current flow. The scar tissue that shaped it:
 
-1. Query `registry.npmjs.org/fleetlens/latest` with a 3-second timeout
-2. If newer version exists:
-   - **Stop any running web server + daemon** (so the re-exec lands on fresh processes, not a zombie server on old code)
-   - `npm install -g fleetlens@latest`
-   - `reportInstallOutcome()` prints where it actually landed and warns if `PATH` resolves to a different install (nvm / homebrew / system multi-Node trap)
-   - `reExec()` spawns the freshly-installed `<npm root -g>/fleetlens/dist/index.js` directly — bypasses PATH and shell command hashes entirely
-3. The re-exec'd process sees `__FLEETLENS_UPDATED=1`, skips the update check, and proceeds to launch server + daemon normally
-
-`fleetlens update` (forceUpdate) behaves the same way but only tears down running services on a real version bump — reinstalling the same version is a no-op and shouldn't disrupt an open dashboard tab.
-
-### Why auto-update used to be broken
-- **"Updated to X.Y.Z" but `--version` still showed old** — the running process is itself the old binary. `reExec` now uses the freshly-installed file path directly so the handoff is reliable.
-- **False-positive "DIFFERENT install" warning** — earlier version compared the bin symlink (`<prefix>/bin/fleetlens`) against the package dir (`<prefix>/lib/node_modules/fleetlens`) with `startsWith`. They're siblings, not parent/child. Fixed by following the symlink via `realpathSync` and checking if it lands inside the package dir.
-- **Zombie old server** — old flow installed the new binary but left the old server running. New flow stops server + daemon before installing so the re-exec'd new binary brings up everything fresh.
+- **"Updated to X.Y.Z" but `--version` still showed old** — the running process is itself the old binary. `reExec` now uses the freshly-installed file path directly (bypassing PATH and shell hashes) so the handoff is reliable.
+- **False-positive "DIFFERENT install" warning** — earlier version compared the bin symlink against the package dir with `startsWith`; they're siblings. Fixed via `realpathSync`.
+- **Zombie old server** — old flow installed the new binary but left the old server running. New flow stops server + daemon before installing so the re-exec'd binary brings everything up fresh.
+- `fleetlens update` (forceUpdate) only tears down running services on a real version bump — reinstalling the same version must not disrupt an open dashboard tab.
 
 ---
 
@@ -216,9 +190,7 @@ The daemon HTTP-probes the web server's `/api/health` every 60 s (`runServerHeal
 
 ## Insights pipeline (V2 perception layer)
 
-`/insights` renders weekly and monthly digests synthesized from per-day
-perception entries. The chain is strictly hierarchical so each layer only
-talks to the one immediately below it:
+`/insights` renders weekly and monthly digests synthesized from per-day perception entries. The chain is strictly hierarchical so each layer only talks to the one immediately below it (file locations: ask the graph — `packages/entries/src/*`, digest routes under `apps/web/app/api/digest/`):
 
 ```
 JSONL (~/.claude/projects)    ──► parseTranscript ──► SessionDetail
@@ -229,25 +201,11 @@ DayDigest[] for Mon-Sun       ──► generateWeekDigest  ──► WeekDigest
 WeekDigest[] for a month      ──► generateMonthDigest ──► MonthDigest (trajectory, standout weeks)
 ```
 
-Files:
-- `packages/entries/src/build.ts` — `SessionDetail → Entry[]`, deterministic.
-- `packages/entries/src/enrich.ts` — `Entry → enriched Entry` via `claude -p`.
-- `packages/entries/src/digest-day.ts` — `Entry[] → DayDigest`.
-- `packages/entries/src/digest-week.ts` — `DayDigest[] → WeekDigest`.
-- `packages/entries/src/digest-month.ts` — `WeekDigest[] → MonthDigest`.
-- `packages/entries/src/digest-{day,week,month}-pipeline.ts` — async-generator SSE pipelines that auto-fill missing dependencies, persist past-period digests to disk, and stream events to the route handler.
-- `apps/web/app/api/digest/{day,week,month}/[key]/route.ts` — GET (read cached) + POST (run pipeline, stream SSE).
-- `apps/web/app/api/digest/{week,month}-index/route.ts` — picker source for the history list.
-- `apps/web/app/insights/page.tsx` — server component. Auto-fires last-completed-week digest when the cache is empty and no interactive pipeline lock is currently fresh.
-- `packages/cli/src/perception/backfill.ts` — daemon-side counterpart: after the first successful perception sweep on each boot, fires both the week-digest pipeline (last completed ISO week) and the day-digest pipeline (yesterday) if AI is on, the digest isn't cached, entries exist, and no interactive lock is fresh. Opt-out via `ai_features.auto_backfill_last_week` and `ai_features.auto_backfill_yesterday` respectively. The homepage `AutoGenerateYesterday` trigger remains as a fallback so users running with `--no-daemon` still get yesterday's digest on first homepage visit.
-- `apps/web/components/{week,month}-digest.tsx` — presentational. Pure functions of their digest type.
-- `apps/web/components/{week,month}-digest-view.tsx` — client wrappers that handle SSE generation + force-regen.
-
 Key invariants:
 - **Raw JSONL enters the pipeline only at entry-build time.** After that, every layer sees the digest one level below it — never raw transcripts, never sessions.
 - **Past-period digests are immutable on disk.** `~/.cclens/digests/{day,week,month}/<key>.json`. Schema-version bump is the only permitted regeneration trigger.
 - **Current period uses 10-min in-memory TTL.** Today's day digest, this week's week digest, this month's month digest are never persisted; they live in-process and recompute on expiry.
-- **Auto-fire covers yesterday + last week.** Yesterday's day digest auto-fires on daemon boot (and on homepage load as a fallback for `--no-daemon`). Last week's week digest auto-fires on daemon boot and on first `/insights` visit while its cache is empty. Monthly stays manual. The interactive pipeline lock (`~/.cclens/llm-interactive.lock`, heartbeat-refreshed every 30 s) is the single source of truth for "currently running" across all auto-fire paths — there's no separate fire-once file. A half-completed run leaves no digest and no fresh lock, so the next caller naturally retries.
+- **Auto-fire covers yesterday + last week.** Yesterday's day digest auto-fires on daemon boot (and on homepage load as a fallback for `--no-daemon`). Last week's week digest auto-fires on daemon boot and on first `/insights` visit while its cache is empty. Monthly stays manual. The interactive pipeline lock (`~/.cclens/llm-interactive.lock`, heartbeat-refreshed every 30 s) is the single source of truth for "currently running" across all auto-fire paths — there's no separate fire-once file. A half-completed run leaves no digest and no fresh lock, so the next caller naturally retries. Daemon-side backfill opt-outs: `ai_features.auto_backfill_last_week` / `ai_features.auto_backfill_yesterday`.
 - **Persistence keys are sortable.** `week-YYYY-MM-DD` (Monday) / `month-YYYY-MM`. Lexical sort = reverse-chronological.
 
 ## State directory
@@ -268,36 +226,12 @@ Dashboard / Timeline / Calendar all read session JSONL from `~/.claude/projects/
 
 ## CLI command surface
 
-```bash
-fleetlens start [--port N] [--open] [--no-daemon]
-fleetlens stop
-fleetlens status
-fleetlens update
-fleetlens entries [--day D|--session ID|--all] [--json]
-fleetlens digest day   [--date D|--yesterday|--today] [--json]
-fleetlens digest week  [--week D|--last-week|--this-week] [--json]
-fleetlens digest month [--month YYYY-MM|--last-month|--this-month] [--json]
-fleetlens usage [--save]
-fleetlens usage --history [-s D] [--days N]
-fleetlens web [page] [--open]
-fleetlens daemon <start|stop|status|logs>
-fleetlens version
-```
+Full surface: `fleetlens --help`. Design decisions that aren't in the help text:
 
-**Design:** `start` and `stop` manage **both** the web server AND the usage daemon in one call. That's the "common path" — almost everyone wants them together. Power users who want to manage them separately can use `fleetlens daemon <subcommand>` directly, or pass `--no-daemon` to `start`.
-
-`fleetlens web [page]` ensures the dashboard server is running, then prints the requested page URL. Opening that URL establishes the live connection that can recover a stopped daemon; the command itself does not start the daemon. Pass `--open` to also launch the URL in a browser; the default is print-only because auto-opening a browser surprised users in some terminals.
-
-**`fleetlens digest week` / `month` reproduce the same digests served at `/insights`.** Each consumes the layer immediately below — `digest week` reads day digests (auto-filling missing past-day digests), `digest month` reads week digests. Use `--json` for byte-equal output to the corresponding `/api/digest/{week,month}/<key>` GET response.
-
-```bash
-fleetlens digest week --json    # last completed week
-fleetlens digest week --week 2026-04-13 --json
-fleetlens digest month --json   # last completed month
-```
-
-### Port
-Default 3321. Override with `--port N` or `CCLENS_PORT` env var.
+- **`start` and `stop` manage both the web server AND the usage daemon in one call.** That's the common path. Power users manage them separately via `fleetlens daemon <subcommand>` or `--no-daemon`.
+- `fleetlens web [page]` ensures the dashboard server is running, then **prints** the page URL (default print-only — auto-opening a browser surprised users in some terminals; `--open` to launch).
+- **`fleetlens digest week` / `month` reproduce the same digests served at `/insights`.** Each consumes the layer immediately below — `digest week` reads day digests (auto-filling missing past-day digests), `digest month` reads week digests. `--json` is byte-equal to the corresponding `/api/digest/{week,month}/<key>` GET response.
+- Port: default 3321. Override with `--port N` or `CCLENS_PORT`.
 
 ---
 
