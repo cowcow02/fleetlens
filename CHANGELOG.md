@@ -4,7 +4,7 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
-## [Unreleased]
+## [1.0.14] — 2026-08-20
 
 ### Added
 - **Command Code usage.** The daemon polls `cmd`'s monthly plan credits plus 5-hour and weekly rolling windows (same alpha billing endpoints as the CLI `/usage` overlay). The menu-bar widget, `/usage?agent=command-code`, and `fleetlens usage` (TTY / `--json` / `--compact`) show all three meters including remaining credits (`12.17 / 70 credits`). Requires `cmd login`.
