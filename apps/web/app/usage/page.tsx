@@ -76,6 +76,8 @@ export default async function UsagePage({
   const cycles7d = calibration ? previousCyclesTrend(calibration, "7d", 12) : [];
   const isGrok = selected === "grok";
   const isCopilot = selected === "copilot";
+  const isCommandCode = selected === "command-code";
+  const commandCodeAccent = agentAccent("command-code");
   const codexWeeklyOnly =
     selected === "codex" && latest?.five_hour?.utilization == null;
 
@@ -175,6 +177,26 @@ export default async function UsagePage({
             </span>
           </span>
         )}
+        {isCommandCode && latest?.plan_type && (
+          <span
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 12,
+              padding: "4px 10px",
+              border: "1px solid var(--af-border-subtle)",
+              borderRadius: 999,
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            <span style={{ color: "var(--af-text-tertiary)" }}>plan</span>
+            <span style={{ color: "var(--af-text)", fontWeight: 600 }}>
+              Command Code · {latest.plan_type}
+            </span>
+          </span>
+        )}
         {selected === "zai" && latest?.plan_type && (
           <span
             style={{
@@ -225,6 +247,21 @@ export default async function UsagePage({
               planType={latest.plan_type}
             />
           )}
+          {isCommandCode && (
+            <>
+              <CommandCodeRateLimitsCard
+                fiveHour={latest.five_hour}
+                weekly={latest.seven_day}
+              />
+              {latest.monthly && (
+                <CommandCodeMonthlyCard
+                  window={latest.monthly}
+                  quota={latest.monthly_quota}
+                  planType={latest.plan_type}
+                />
+              )}
+            </>
+          )}
           {isCopilot && latest.monthly && (
             <CopilotMonthlyCard
               window={latest.monthly}
@@ -259,6 +296,27 @@ export default async function UsagePage({
                         colorVar: agentAccent("copilot"),
                       },
                     ]
+                : isCommandCode
+                  ? [
+                      {
+                        key: "five_hour",
+                        label: "5h utilization",
+                        windowMs: 5 * 60 * 60 * 1000,
+                        colorVar: "var(--af-success)",
+                      },
+                      {
+                        key: "seven_day",
+                        label: "Weekly utilization",
+                        windowMs: 7 * 24 * 60 * 60 * 1000,
+                        colorVar: commandCodeAccent,
+                      },
+                      {
+                        key: "monthly",
+                        label: "Monthly credit utilization",
+                        windowMs: 30 * 24 * 60 * 60 * 1000,
+                        colorVar: commandCodeAccent,
+                      },
+                    ]
                 : codexWeeklyOnly
                   ? [
                       {
@@ -270,7 +328,7 @@ export default async function UsagePage({
                     ]
                 : undefined
             }
-            hideSonnet={isGrok || isCopilot || selected === "codex"}
+            hideSonnet={isGrok || isCopilot || isCommandCode || selected === "codex"}
           />
           {selected === "zai" && latest?.web_search_quota && (
             <WebSearchQuotaCard quota={latest.web_search_quota} />
@@ -287,6 +345,7 @@ export default async function UsagePage({
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
             {isGrok ? " · weekly shared-pool % (no 5h window)" : ""}
             {isCopilot ? " · monthly AI-credit allowance (no 5h/7d windows)" : ""}
+            {isCommandCode ? " · monthly credits + 5-hour and weekly windows" : ""}
             {codexWeeklyOnly ? " · weekly-only Codex limit" : ""}
           </div>
         </>
@@ -506,6 +565,172 @@ function AgentTabs({ agents, selected }: { agents: AgentKind[]; selected: AgentK
   );
 }
 
+function CommandCodeRateLimitsCard({
+  fiveHour,
+  weekly,
+}: {
+  fiveHour: { utilization: number | null; resets_at: string | null };
+  weekly: { utilization: number | null; resets_at: string | null };
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gap: 12,
+      }}
+    >
+      <CommandCodeWindowCard
+        label="5-hour window"
+        window={fiveHour}
+        hint="Rolling 5-hour rate limit on this plan."
+      />
+      <CommandCodeWindowCard
+        label="Weekly window"
+        window={weekly}
+        hint="Rolling 7-day rate limit. Extra purchased credits bypass this cap."
+      />
+    </div>
+  );
+}
+
+function CommandCodeWindowCard({
+  label,
+  window,
+  hint,
+}: {
+  label: string;
+  window: { utilization: number | null; resets_at: string | null };
+  hint: string;
+}) {
+  const has = window.utilization != null;
+  const pct = has ? Math.min(100, Math.max(0, window.utilization!)) : 0;
+  return (
+    <div className="af-card" style={{ padding: "16px 18px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 600,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          marginTop: 8,
+          letterSpacing: "-0.02em",
+          lineHeight: 1.1,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {has ? `${pct.toFixed(1)}%` : "—"}
+      </div>
+      <div
+        style={{
+          marginTop: 10,
+          height: 8,
+          borderRadius: 999,
+          background: "var(--af-border-subtle)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: has ? `${pct}%` : "0%",
+            height: "100%",
+            borderRadius: 999,
+            background: agentAccent("command-code"),
+          }}
+        />
+      </div>
+      <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
+        {hint}
+        {window.resets_at ? ` Resets ${new Date(window.resets_at).toLocaleString()}.` : ""}
+      </p>
+    </div>
+  );
+}
+
+function CommandCodeMonthlyCard({
+  window,
+  quota,
+  planType,
+}: {
+  window: { utilization: number | null; resets_at: string | null };
+  quota?: CopilotMonthlyQuota | null;
+  planType?: string | null;
+}) {
+  const pct = window.utilization;
+  const presentation = copilotQuotaPresentation(pct, quota);
+  return (
+    <div className="af-card" style={{ padding: "16px 18px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--af-text-tertiary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+          fontWeight: 600,
+        }}
+      >
+        Monthly credits
+        {planType ? (
+          <span style={{ marginLeft: 8, fontWeight: 500, textTransform: "none" }}>
+            · {planType}
+          </span>
+        ) : null}
+      </div>
+      <div
+        style={{
+          fontSize: 28,
+          fontWeight: 700,
+          marginTop: 8,
+          letterSpacing: "-0.02em",
+          lineHeight: 1.1,
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {presentation.headline}
+      </div>
+      {presentation.detail && (
+        <div style={{ marginTop: 6, fontSize: 12, color: "var(--af-text-secondary)" }}>
+          {presentation.detail}
+        </div>
+      )}
+      {pct !== null && (
+        <div
+          style={{
+            marginTop: 10,
+            height: 8,
+            borderRadius: 999,
+            background: "var(--af-border-subtle)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.min(100, Math.max(0, pct))}%`,
+              height: "100%",
+              borderRadius: 999,
+              background: agentAccent("command-code"),
+            }}
+          />
+        </div>
+      )}
+      <p style={{ fontSize: 12, color: "var(--af-text-tertiary)", marginTop: 10, marginBottom: 0 }}>
+        Plan credit allocation for this billing cycle. Extra purchased credits sit on top and are not
+        in this meter.
+        {window.resets_at ? ` Resets ${new Date(window.resets_at).toLocaleString()}.` : ""}
+      </p>
+    </div>
+  );
+}
+
 function GrokWeeklyCard({
   utilization,
   resetsAt,
@@ -596,6 +821,44 @@ function EmptyState({ agent }: { agent: AgentKind }) {
         >
           Run <code style={{ fontSize: 11 }}>copilot login</code>, then start the Fleetlens daemon.
           Fleetlens reads the monthly AI-credit quota through Copilot CLI&apos;s authenticated local SDK server.
+        </p>
+        <pre
+          style={{
+            display: "inline-block",
+            marginTop: 14,
+            background: "var(--background)",
+            border: "1px solid var(--af-border-subtle)",
+            padding: "8px 16px",
+            borderRadius: 6,
+            fontSize: 13,
+            fontFamily: "var(--font-mono)",
+            color: "var(--af-text)",
+          }}
+        >
+          fleetlens daemon start
+        </pre>
+      </div>
+    );
+  }
+  if (agent === "command-code") {
+    return (
+      <div className="af-card" style={{ padding: "48px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--af-text)" }}>
+          No Command Code usage samples yet
+        </div>
+        <p
+          style={{
+            fontSize: 12,
+            color: "var(--af-text-tertiary)",
+            margin: "8px auto 0",
+            maxWidth: 520,
+            lineHeight: 1.5,
+          }}
+        >
+          The daemon polls Command Code&apos;s monthly credits plus 5-hour and
+          weekly windows (the same billing API the <code style={{ fontSize: 11 }}>cmd</code>{" "}
+          /usage overlay uses). Run <code style={{ fontSize: 11 }}>cmd login</code> if needed,
+          then start the daemon.
         </p>
         <pre
           style={{

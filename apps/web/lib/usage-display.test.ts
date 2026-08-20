@@ -21,6 +21,10 @@ describe("visibleUsageAgents", () => {
       "grok",
       "claude-code",
     ]);
+    expect(visibleUsageAgents([{ agent: "command-code" }])).toEqual([
+      "command-code",
+      "claude-code",
+    ]);
   });
 
   it("treats legacy snapshots without an agent as Claude Code", () => {
@@ -70,6 +74,16 @@ describe("sidebarUsageRows", () => {
     expect(
       sidebarUsageRows("grok", { seven_day: win(80) }).map((r) => r.label),
     ).toEqual(["7d"]);
+  });
+
+  it("shows monthly + 5h + weekly for Command Code", () => {
+    expect(
+      sidebarUsageRows("command-code", {
+        monthly: win(59.6),
+        five_hour: win(0.3),
+        seven_day: win(99.5),
+      }).map((r) => r.label),
+    ).toEqual(["5h", "wk", "Monthly"]);
   });
 
   it("derives Copilot monthly windowMs from the calendar month of resets_at", () => {
@@ -134,5 +148,6 @@ describe("copilotQuotaPresentation", () => {
   it("uses one unit mapping for headings and quota details", () => {
     expect(copilotUnitLabel("ai-credits")).toBe("AI credits");
     expect(copilotUnitLabel("premium-requests")).toBe("premium requests");
+    expect(copilotUnitLabel("credits")).toBe("credits");
   });
 });

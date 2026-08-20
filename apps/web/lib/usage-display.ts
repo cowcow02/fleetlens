@@ -65,6 +65,23 @@ export function sidebarUsageRows(
   if (agent === "grok") {
     return [{ label: "7d", window: snapshot.seven_day ?? null, windowMs: SEVEN_DAYS_MS }];
   }
+  if (agent === "command-code") {
+    const monthly = snapshot.monthly ?? null;
+    let monthlyMs = MONTHLY_MS;
+    if (monthly?.resets_at) {
+      const endMs = new Date(monthly.resets_at).getTime();
+      if (Number.isFinite(endMs)) {
+        const reset = new Date(endMs);
+        const startMs = Date.UTC(reset.getUTCFullYear(), reset.getUTCMonth() - 1, 1);
+        monthlyMs = Math.max(HOUR, endMs - startMs);
+      }
+    }
+    return [
+      { label: "5h", window: snapshot.five_hour ?? null, windowMs: FIVE_HOURS_MS },
+      { label: "wk", window: snapshot.seven_day ?? null, windowMs: SEVEN_DAYS_MS },
+      { label: "Monthly", window: monthly, windowMs: monthlyMs },
+    ];
+  }
   // Codex accounts that dropped the 5h limit only report 7d.
   if (agent === "codex" && snapshot.five_hour?.utilization == null) {
     return [{ label: "7d", window: snapshot.seven_day ?? null, windowMs: SEVEN_DAYS_MS }];
@@ -88,14 +105,16 @@ export type CopilotMonthlyQuota = {
   used: number | null;
   limit: number | null;
   remaining: number | null;
-  unit: "ai-credits" | "premium-requests";
+  unit: "ai-credits" | "premium-requests" | "credits";
   unlimited: boolean;
 };
 
 export function copilotUnitLabel(
   unit?: CopilotMonthlyQuota["unit"],
-): "AI credits" | "premium requests" {
-  return unit === "premium-requests" ? "premium requests" : "AI credits";
+): "AI credits" | "premium requests" | "credits" {
+  if (unit === "premium-requests") return "premium requests";
+  if (unit === "credits") return "credits";
+  return "AI credits";
 }
 
 export function copilotQuotaPresentation(

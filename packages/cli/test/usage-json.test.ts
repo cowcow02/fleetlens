@@ -38,6 +38,7 @@ describe("usageJsonPayload", () => {
     ]);
     expect(payload.agents[0]!.five_hour.utilization).toBe(2);
     expect(payload.agents[1]!.seven_day.utilization).toBe(40);
+    expect(payload.legend).toMatch(/delta_pp/);
   });
 
   it("fills missing agent tags from the map key", () => {
@@ -49,7 +50,58 @@ describe("usageJsonPayload", () => {
   });
 
   it("returns an empty list when there is no data", () => {
-    expect(usageJsonPayload({})).toEqual({ agents: [] });
+    const payload = usageJsonPayload({});
+    expect(payload.agents).toEqual([]);
+    expect(payload.legend).toMatch(/on_track/);
+  });
+
+  it("attaches 7d/30d pace and keeps Command Code monthly credits", () => {
+    const now = Date.parse("2026-08-20T03:12:00Z");
+    const payload = usageJsonPayload(
+      {
+        "command-code": snap("command-code", {
+          plan_type: "GOAT",
+          five_hour: { utilization: 2.8, resets_at: "2026-08-20T05:59:25Z" },
+          seven_day: { utilization: 34.8, resets_at: "2026-08-24T03:09:15Z" },
+          monthly: { utilization: 17.4, resets_at: "2026-09-17T03:06:55Z" },
+          monthly_quota: {
+            used: 12.17,
+            limit: 70,
+            remaining: 57.83,
+            unit: "credits",
+            unlimited: false,
+          },
+        }),
+        copilot: snap("copilot", {
+          seven_day: empty,
+          monthly: { utilization: 0, resets_at: "2026-09-01T00:00:00Z" },
+          monthly_quota: {
+            used: 0,
+            limit: 200,
+            remaining: 200,
+            unit: "ai-credits",
+            unlimited: false,
+          },
+        }),
+      },
+      { nowMs: now },
+    );
+    const cmd = payload.agents.find((a) => a.agent === "command-code")!;
+    expect(cmd.monthly?.utilization).toBe(17.4);
+    expect(cmd.monthly_quota).toEqual({
+      used: 12.17,
+      limit: 70,
+      remaining: 57.83,
+      unit: "credits",
+      unlimited: false,
+    });
+    expect(cmd.pace?.seven_day?.verdict).toBe("on_track");
+    expect(cmd.pace?.monthly?.verdict).toBe("on_track");
+    expect(cmd.pace?.monthly?.used_pct).toBe(17.4);
+
+    const copilot = payload.agents.find((a) => a.agent === "copilot")!;
+    expect(copilot.pace?.monthly?.verdict).toBe("slow");
+    expect(copilot.pace?.seven_day).toBeUndefined();
   });
 });
 
@@ -81,13 +133,37 @@ describe("usageCompactText", () => {
     });
     expect(text).toBe(
       [
-        "# % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a",
-        "agents[2]{agent,5h,7d,mo,plan,sampled}:",
-        "claude,2,20,-,-,2026-07-28T12:00",
-        "codex,-,40,-,pro_lite,2026-07-28T12:00",
+        "# % of plan quota used ↑busier | 5h/7d/mo | 7d_pace/mo_pace=elapsed%-used% (+slow/-fast; |15|=on_track) | -=n/a",
+        "agents[2]{agent,5h,7d,mo,7d_pace,mo_pace,plan,sampled}:",
+        "claude,2,20,-,-,-,-,2026-07-28T12:00",
+        "codex,-,40,-,-,-,pro_lite,2026-07-28T12:00",
         "",
       ].join("\n"),
     );
+  });
+
+  it("includes Command Code monthly credits and signed 7d/30d pace", () => {
+    const now = Date.parse("2026-08-20T03:12:00Z");
+    const text = usageCompactText(
+      {
+        "command-code": snap("command-code", {
+          captured_at: "2026-08-20T03:12:06.331Z",
+          plan_type: "GOAT",
+          five_hour: { utilization: 2.768, resets_at: "2026-08-20T05:59:25Z" },
+          seven_day: { utilization: 34.758, resets_at: "2026-08-24T03:09:15Z" },
+          monthly: { utilization: 17.386, resets_at: "2026-09-17T03:06:55Z" },
+        }),
+      },
+      { nowMs: now },
+    );
+    const lines = text.trimEnd().split("\n");
+    expect(lines[1]).toBe("agents[1]{agent,5h,7d,mo,7d_pace,mo_pace,plan,sampled}:");
+    expect(lines[2]).toMatch(/^cmd,2\.8,34\.8,17\.4,/);
+    expect(lines[2]).toContain(",GOAT,2026-08-20T03:12");
+    // 5h is not paced; 7d and monthly carry signed elapsed%-used%.
+    const cells = lines[2]!.split(",");
+    expect(cells[4]).toMatch(/^[+-]?\d+$/);
+    expect(cells[5]).toMatch(/^[+-]?\d+$/);
   });
 
   it("shortens ISO timestamps to minute precision", () => {

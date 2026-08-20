@@ -269,6 +269,28 @@ struct AgentSection: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
         }
+      } else if kind == .commandCode {
+        if snapshot.fiveHour.utilization != nil {
+          WindowRow(label: "5-hour window", window: snapshot.fiveHour,
+                    color: thresholdColor(snapshot.fiveHour.utilization),
+                    totalDuration: 5 * 3_600)
+        }
+        if snapshot.sevenDay.utilization != nil {
+          WindowRow(label: "7-day window (weekly)", window: snapshot.sevenDay,
+                    color: thresholdColor(snapshot.sevenDay.utilization),
+                    totalDuration: 7 * 86_400)
+        }
+        if let monthly = snapshot.monthly {
+          WindowRow(label: "Monthly credits", window: monthly,
+                    color: thresholdColor(monthly.utilization),
+                    totalDuration: monthlyDuration(resetsAt: monthly.resetsAtDate))
+          if let quota = snapshot.monthlyQuota, !quota.unlimited,
+             let used = quota.used, let limit = quota.limit {
+            Text(String(format: "$%.2f of $%.0f credits used", used, limit))
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
+        }
       } else {
         // Weekly-only Codex payloads no longer have a 5h window. Keep the old
         // row for legacy snapshots, but don't render a misleading empty meter.

@@ -6,7 +6,9 @@ import { fetchGrokUsage, GrokApiError } from "../usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "../usage/codex.js";
 import { fetchCopilotUsage, CopilotApiError } from "../usage/copilot.js";
 import { fetchZaiUsage, ZaiApiError } from "../usage/zai.js";
+import { fetchCommandCodeUsage, CommandCodeApiError } from "../usage/command-code.js";
 import { formatMultiAgentUsage } from "../usage/format.js";
+import { PACE_LEGEND, paceForSnapshot, type SnapshotPace, type WindowPace } from "../usage/pace.js";
 import {
   appendSnapshot,
   latestSnapshotsByAgent,
@@ -77,6 +79,14 @@ async function saveAuxiliarySnapshots(): Promise<number> {
       console.warn(`zai usage: ${(err as Error).message}`);
     }
   }
+  try {
+    appendSnapshot(USAGE_LOG, await fetchCommandCodeUsage());
+    saved += 1;
+  } catch (err) {
+    if (!(err instanceof CommandCodeApiError) || err.code !== "no_auth") {
+      console.warn(`command-code usage: ${(err as Error).message}`);
+    }
+  }
   return saved;
 }
 
@@ -93,6 +103,9 @@ function parseAgentFilter(args: string[]): string | undefined {
     zai: "zai",
     "z.ai": "zai",
     grok: "grok",
+    "command-code": "command-code",
+    commandcode: "command-code",
+    cmd: "command-code",
   };
   return aliases[kind] ?? kind;
 }
@@ -139,22 +152,29 @@ async function collectSnapshots(opts: {
 }
 
 /** Stable agent-order for machine output (matches terminal multi-agent view). */
-const JSON_AGENT_ORDER = ["claude-code", "codex", "copilot", "zai", "grok"];
+const JSON_AGENT_ORDER = ["claude-code", "codex", "copilot", "zai", "grok", "command-code"];
 
-type TaggedSnapshot = UsageSnapshot & { agent: string };
+type TaggedSnapshot = UsageSnapshot & {
+  agent: string;
+  pace?: SnapshotPace;
+};
 
 /**
  * Agent-friendly payload for `usage --json`. One object per agent with the
- * same fields as a usage.jsonl line, plus a guaranteed `agent` tag.
+ * same fields as a usage.jsonl line, plus a guaranteed `agent` tag and
+ * time-adjusted 7d/30d burn rate (`pace`).
  */
 export function usageJsonPayload(
   byAgent: Record<string, UsageSnapshot>,
-): { agents: TaggedSnapshot[] } {
+  opts?: { nowMs?: number },
+): { legend: string; agents: TaggedSnapshot[] } {
   const keys = Object.keys(byAgent).sort(compareAgentKeys);
   return {
+    legend: PACE_LEGEND,
     agents: keys.map((k) => {
       const s = byAgent[k]!;
-      return { ...s, agent: s.agent ?? k };
+      const pace = paceForSnapshot(s, opts?.nowMs);
+      return { ...s, agent: s.agent ?? k, ...(pace ? { pace } : {}) };
     }),
   };
 }
@@ -199,7 +219,9 @@ export function omitNulls(value: unknown): unknown {
 }
 
 function shortAgentId(agent: string): string {
-  return agent === "claude-code" ? "claude" : agent;
+  if (agent === "claude-code") return "claude";
+  if (agent === "command-code") return "cmd";
+  return agent;
 }
 
 /** Truncate ISO timestamps for dense agent output (minute precision). */
@@ -211,18 +233,19 @@ export function shortIso(iso: string): string {
 
 /**
  * Ultra-dense TOON-like table for agents. Leading legend makes unit/direction
- * self-describing without product docs (~15 tokens); `-` = window n/a.
+ * self-describing without product docs; `-` = window n/a.
  *
  * Example:
- *   # % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a
- *   agents[3]{agent,5h,7d,mo,plan,sampled}:
- *   claude,3,20,-,-,2026-07-28T08:14
- *   codex,-,2,-,prolite,2026-07-28T08:10
+ *   # % of plan quota used ↑busier | 5h/7d/mo | 7d_pace/mo_pace=elapsed%-used% (+slow/-fast; |15|=on_track) | -=n/a
+ *   agents[3]{agent,5h,7d,mo,7d_pace,mo_pace,plan,sampled}:
+ *   claude,3,20,-,+5,-,-,2026-07-28T08:14
+ *   cmd,2.8,34.8,17.4,-3,+8,GOAT,2026-07-28T08:10
  */
-export function usageCompactText(byAgent: Record<string, UsageSnapshot>): string {
-  const agents = usageJsonPayload(byAgent).agents;
-  const cell = (v: number | null | undefined): string =>
-    v === null || v === undefined ? "-" : String(v);
+export function usageCompactText(
+  byAgent: Record<string, UsageSnapshot>,
+  opts?: { nowMs?: number },
+): string {
+  const agents = usageJsonPayload(byAgent, opts).agents;
 
   const rows = agents.map((a) => {
     const id = shortAgentId(a.agent);
@@ -232,12 +255,33 @@ export function usageCompactText(byAgent: Record<string, UsageSnapshot>): string
     // Spaces → underscores so plan stays a single CSV field.
     const plan = (a.plan_type ?? "-").replace(/\s+/g, "_");
     const at = a.captured_at ? shortIso(a.captured_at) : "-";
-    return `${id},${cell(fh)},${cell(sd)},${cell(mo)},${plan},${at}`;
+    return [
+      id,
+      cellPct(fh),
+      cellPct(sd),
+      cellPct(mo),
+      cellPace(a.pace?.seven_day),
+      cellPace(a.pace?.monthly),
+      plan,
+      at,
+    ].join(",");
   });
 
-  // Self-describing legend so blind agents don't have to guess unit/direction.
-  const legend = "# % of plan quota used ↑busier | 5h/7d/mo windows | -=n/a";
-  return `${legend}\nagents[${rows.length}]{agent,5h,7d,mo,plan,sampled}:\n${rows.join("\n")}\n`;
+  const legend =
+    "# % of plan quota used ↑busier | 5h/7d/mo | 7d_pace/mo_pace=elapsed%-used% (+slow/-fast; |15|=on_track) | -=n/a";
+  return `${legend}\nagents[${rows.length}]{agent,5h,7d,mo,7d_pace,mo_pace,plan,sampled}:\n${rows.join("\n")}\n`;
+}
+
+function cellPct(v: number | null | undefined): string {
+  if (v === null || v === undefined) return "-";
+  const r = Math.round(v * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}
+
+function cellPace(p: WindowPace | undefined): string {
+  if (!p) return "-";
+  const n = Math.round(p.delta_pp);
+  return n > 0 ? `+${n}` : String(n);
 }
 
 function emitJson(payload: unknown): void {
@@ -269,7 +313,7 @@ Usage:
 
   --compact        Ultra-dense columnar text (recommended for agents / LLM context)
   --json           Machine JSON (minified, nulls stripped; exclusive with --watch/--compact)
-  --agent / -a     Filter to one provider (claude | codex | copilot | zai | grok)
+  --agent / -a     Filter to one provider (claude | codex | copilot | zai | grok | cmd)
 
 Watch options:
   --interval N   Redraw every N seconds (default 2; reads ~/.cclens/usage.jsonl)
@@ -296,7 +340,7 @@ stays fresh without hammering provider APIs.`);
       : "text";
   const agentFilter = parseAgentFilter(args);
   if (agentFilter && !isAgentKind(agentFilter)) {
-    const msg = `unknown agent "${agentFilter}". Use claude, codex, copilot, zai, or grok.`;
+    const msg = `unknown agent "${agentFilter}". Use claude, codex, copilot, zai, grok, or cmd.`;
     emitMachineError(machineMode, msg);
     process.exitCode = 1;
     return;

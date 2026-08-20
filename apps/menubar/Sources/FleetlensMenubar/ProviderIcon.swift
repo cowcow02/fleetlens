@@ -13,6 +13,7 @@ enum BrandIcon {
     case .copilot: name = "copilot"
     case .zai: name = "zai"
     case .grok: name = "grok"
+    case .commandCode: name = "command-code"
     }
     // Load the SVG directly — NSImage rasterizes it on draw with true
     // transparency. (PNG-converted via qlmanage came out as a fully-opaque
@@ -53,6 +54,8 @@ enum BrandIcon {
     case .grok:
       // Slate-400 — matches web GROK_METADATA accent (visible on dark chrome).
       return NSColor(calibratedRed: 100 / 255, green: 116 / 255, blue: 139 / 255, alpha: 1)
+    case .commandCode:
+      return NSColor(calibratedRed: 132 / 255, green: 204 / 255, blue: 22 / 255, alpha: 1)
     }
   }
 }

@@ -36,14 +36,14 @@ export type UsageSnapshot = {
   agent?: AgentKind;
   five_hour: UsageWindow;
   seven_day: UsageWindow;
-  /** Monthly allowance (currently GitHub Copilot AI credits). Optional so
-   *  existing JSONL snapshots and 5h/7d providers remain compatible. */
+  /** Monthly allowance (Copilot AI credits, Command Code plan credits).
+   *  Optional so existing JSONL snapshots and 5h/7d providers remain compatible. */
   monthly?: UsageWindow | null;
   monthly_quota?: {
     used: number | null;
     limit: number | null;
     remaining: number | null;
-    unit: "ai-credits" | "premium-requests";
+    unit: "ai-credits" | "premium-requests" | "credits";
     /** Raw Copilot SDK entitlement flag. It can mean no personal ceiling was
      *  disclosed for an organization pool, not that use is unbounded. */
     unlimited: boolean;

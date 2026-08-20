@@ -214,6 +214,91 @@ describe("formatMultiAgentUsage", () => {
   });
 });
 
+describe("command-code format", () => {
+  it("shows monthly credits plus 5h and weekly windows", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-24T12:00:00Z"));
+    const out = strip(
+      formatUsage(
+        baseSnapshot({
+          agent: "command-code",
+          plan_type: "Go",
+          five_hour: { utilization: 0.3, resets_at: null },
+          seven_day: { utilization: 99.5, resets_at: null },
+          monthly: { utilization: 59.6, resets_at: "2026-09-05T15:55:49.000Z" },
+          monthly_quota: {
+            used: 5.96,
+            limit: 10,
+            remaining: 4.04,
+            unit: "credits",
+            unlimited: false,
+          },
+        }),
+        { columns: 100 },
+      ),
+    );
+    expect(out).toContain("Command Code");
+    expect(out).toContain("Go");
+    expect(out).toContain("Monthly");
+    expect(out).toContain("59.6%");
+    expect(out).toContain("5.96 / 10 credits");
+    expect(out).toContain("5 hour");
+    expect(out).toContain("0.3%");
+    expect(out).toContain("weekly");
+    expect(out).toContain("99.5%");
+    vi.useRealTimers();
+  });
+
+  it("annotates 7d and monthly meters with time-adjusted pace", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-20T03:12:00Z"));
+    const out = strip(
+      formatMultiAgentUsage(
+        {
+          "claude-code": baseSnapshot({
+            agent: "claude-code",
+            seven_day: { utilization: 45, resets_at: "2026-08-24T12:00:00Z" },
+          }),
+          copilot: baseSnapshot({
+            agent: "copilot",
+            monthly: { utilization: 0, resets_at: "2026-09-01T00:00:00Z" },
+            monthly_quota: {
+              used: 0,
+              limit: 200,
+              remaining: 200,
+              unit: "ai-credits",
+              unlimited: false,
+            },
+          }),
+          "command-code": baseSnapshot({
+            agent: "command-code",
+            plan_type: "GOAT",
+            five_hour: { utilization: 2.8, resets_at: "2026-08-20T05:59:25Z" },
+            seven_day: { utilization: 34.8, resets_at: "2026-08-24T03:09:15Z" },
+            monthly: { utilization: 17.4, resets_at: "2026-09-17T03:06:55Z" },
+            monthly_quota: {
+              used: 12.17,
+              limit: 70,
+              remaining: 57.83,
+              unit: "credits",
+              unlimited: false,
+            },
+          }),
+        },
+        { columns: 100 },
+      ),
+    );
+    expect(out).toContain("12.17 / 70 credits");
+    expect(out).toContain("0 / 200 AI credits");
+    expect(out).toMatch(/on track/);
+    expect(out).toMatch(/slow /);
+    // 5h is a burst limiter — reset countdown only, no pace verdict.
+    const fiveHourBlock = out.split("\n").filter((l) => l.includes("5 hour") || l.includes("resets in 2h"));
+    expect(fiveHourBlock.join("\n")).not.toMatch(/on track|slow |fast /);
+    vi.useRealTimers();
+  });
+});
+
 describe("layoutForColumns", () => {
   it("classifies narrow / medium / wide and fills remaining width", () => {
     expect(layoutForColumns(32).mode).toBe("narrow");

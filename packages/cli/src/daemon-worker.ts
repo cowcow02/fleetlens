@@ -21,6 +21,7 @@ import { fetchZaiUsage, ZaiApiError } from "./usage/zai.js";
 import { fetchGrokUsage, GrokApiError } from "./usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "./usage/codex.js";
 import { fetchCopilotUsage, CopilotApiError } from "./usage/copilot.js";
+import { fetchCommandCodeUsage, CommandCodeApiError } from "./usage/command-code.js";
 import { appendSnapshot, pruneAgent } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
@@ -377,6 +378,29 @@ async function pollAuxiliaryUsage(): Promise<void> {
       }
     } else {
       log("warn", `grok poll failed: ${(err as Error).message}`);
+    }
+  }
+  // Command Code 5h + weekly rolling windows — same alpha billing endpoints
+  // as the cmd `/usage` overlay. Independent of Claude backoff.
+  try {
+    const cmdSnapshot = await fetchCommandCodeUsage();
+    appendSnapshot(USAGE_LOG, cmdSnapshot);
+    const monthly = cmdSnapshot.monthly?.utilization === null || cmdSnapshot.monthly?.utilization === undefined
+      ? "—"
+      : `${cmdSnapshot.monthly.utilization}%`;
+    const fiveHour = cmdSnapshot.five_hour.utilization === null
+      ? "—"
+      : `${cmdSnapshot.five_hour.utilization}%`;
+    const sevenDay = cmdSnapshot.seven_day.utilization === null
+      ? "—"
+      : `${cmdSnapshot.seven_day.utilization}%`;
+    log("info", `command-code snapshot monthly=${monthly} 5h=${fiveHour} 7d=${sevenDay}`);
+  } catch (err) {
+    if (err instanceof CommandCodeApiError && err.code === "no_auth") {
+      pruneAgent(USAGE_LOG, "command-code");
+      // Quiet when Command Code simply isn't logged in on this machine.
+    } else {
+      log("warn", `command-code poll failed: ${(err as Error).message}`);
     }
   }
 }

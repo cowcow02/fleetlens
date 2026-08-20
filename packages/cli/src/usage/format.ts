@@ -1,5 +1,6 @@
 import { getAgentMetadata, isAgentKind } from "@claude-lens/parser";
 import type { UsageSnapshot, UsageWindow } from "./api.js";
+import { paceForWindow, type PaceVerdict, type WindowPace } from "./pace.js";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -11,7 +12,7 @@ const RED = "\x1b[31m";
 const EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 
 /** Claude first, then priority peers, then alphabetical — matches menubar strip. */
-const AGENT_PRIORITY = ["claude-code", "codex", "copilot", "zai", "grok"];
+const AGENT_PRIORITY = ["claude-code", "codex", "copilot", "zai", "grok", "command-code"];
 
 export type MultiUsageFormatOpts = {
   /** When true, header says "live" and reminds Ctrl+C. */
@@ -162,10 +163,17 @@ function formatAgentBlock(
   lines.push(`  ${BOLD}${title}${RESET}${plan}`);
 
   let renderedMeter = false;
-  for (const [label, window] of agentWindows(kind, snapshot, layout.shortLabels)) {
-    if (!window || window.utilization === null) continue;
+  for (const meter of agentWindows(kind, snapshot, layout.shortLabels)) {
+    if (!meter.window || meter.window.utilization === null) continue;
     renderedMeter = true;
-    lines.push(...formatMeterRow(label, window.utilization, window.resets_at, layout));
+    const pace = meter.paceKind
+      ? paceForWindow(meter.window, meter.paceKind)
+      : null;
+    lines.push(
+      ...formatMeterRow(meter.label, meter.window.utilization, meter.window.resets_at, layout, {
+        pace,
+      }),
+    );
   }
 
   // Claude-only extras that still matter in a multi view.
@@ -193,9 +201,14 @@ function formatAgentBlock(
     }
   }
 
-  if (kind === "copilot" && snapshot.monthly_quota) {
+  if ((kind === "copilot" || kind === "command-code") && snapshot.monthly_quota) {
     const q = snapshot.monthly_quota;
-    const unit = q.unit === "premium-requests" ? "premium requests" : "AI credits";
+    const unit =
+      q.unit === "premium-requests"
+        ? "premium requests"
+        : q.unit === "credits"
+          ? "credits"
+          : "AI credits";
     const pad = layout.mode === "narrow" ? 2 : layout.labelWidth + 2;
     if (q.unlimited) {
       renderedMeter = true;
@@ -230,38 +243,72 @@ function formatMeterRow(
   utilization: number,
   resetsAt: string | null | undefined,
   layout: Layout,
-  opts: { wholePct?: boolean } = {},
+  opts: { wholePct?: boolean; pace?: WindowPace | null } = {},
 ): string[] {
   const pctStr = opts.wholePct
     ? `${utilization.toFixed(0)}%`.padStart(5)
     : `${utilization.toFixed(1)}%`.padStart(6);
   const labelStr = label.padEnd(layout.labelWidth);
+  const pace = opts.pace ?? null;
 
   if (layout.mode === "narrow" && layout.barWidth <= 0) {
     // Ultra-narrow: "  5h   2.0%  r4h" — no bar, reset inline when present.
     const reset = resetsAt
       ? `  ${DIM}r${formatRelativeShort(resetsAt)}${RESET}`
       : "";
-    return [`  ${labelStr}${BOLD}${pctStr}${RESET}${reset}`];
+    const paceBit = pace
+      ? ` ${paceColor(pace.verdict)}${formatPace(pace, layout)}${RESET}`
+      : "";
+    return [`  ${labelStr}${BOLD}${pctStr}${RESET}${reset}${paceBit}`];
   }
 
   // Full-width bar: "  " label bar "  " pct "  " — matching left/right gutters.
   const bar = renderBar(utilization, layout.barWidth);
   const lines = [`  ${labelStr}${bar}  ${BOLD}${pctStr}${RESET}  `];
   if (resetsAt) {
+    const paceBit = pace
+      ? `${DIM} · ${RESET}${paceColor(pace.verdict)}${formatPace(pace, layout)}${RESET}`
+      : "";
     // Indent under the bar (after label), not under the whole row.
     lines.push(
-      `  ${" ".repeat(layout.labelWidth)}${DIM}resets ${formatRelative(resetsAt)}${RESET}`,
+      `  ${" ".repeat(layout.labelWidth)}${DIM}resets ${formatRelative(resetsAt)}${RESET}${paceBit}`,
     );
   }
   return lines;
 }
 
+function paceColor(verdict: PaceVerdict): string {
+  if (verdict === "fast") return RED;
+  if (verdict === "slow") return YELLOW;
+  return GREEN;
+}
+
+function formatPace(pace: WindowPace, layout: Layout): string {
+  const n = Math.round(pace.delta_pp);
+  const signed = n > 0 ? `+${n}pp` : `${n}pp`;
+  if (layout.mode === "narrow") {
+    if (pace.verdict === "slow") return `slow${n > 0 ? `+${n}` : String(n)}`;
+    if (pace.verdict === "fast") return `fast${n > 0 ? `+${n}` : String(n)}`;
+    return `ok${n > 0 ? `+${n}` : String(n)}`;
+  }
+  const vsEven = layout.mode === "wide" ? " vs even" : "";
+  if (pace.verdict === "slow") return `slow ${signed}${vsEven}`;
+  if (pace.verdict === "fast") return `fast ${signed}${vsEven}`;
+  return `on track ${signed}${vsEven}`;
+}
+
+type MeterKind = {
+  label: string;
+  window: UsageWindow | null | undefined;
+  /** 7d / monthly only — 5h is a burst limiter and is not scored. */
+  paceKind?: "seven_day" | "monthly";
+};
+
 function agentWindows(
   kind: string,
   snapshot: UsageSnapshot,
   shortLabels: boolean,
-): Array<[string, UsageWindow | null | undefined]> {
+): MeterKind[] {
   const L = shortLabels
     ? { five: "5h", seven: "7d", monthly: "mo", opus: "opus", sonnet: "son", oauth: "oath", cowork: "cowk" }
     : {
@@ -275,32 +322,43 @@ function agentWindows(
       };
 
   if (kind === "copilot") {
-    return [[L.monthly, snapshot.monthly]];
+    return [{ label: L.monthly, window: snapshot.monthly, paceKind: "monthly" }];
+  }
+  if (kind === "command-code") {
+    return [
+      { label: L.five, window: snapshot.five_hour },
+      {
+        label: shortLabels ? "wk" : "weekly",
+        window: snapshot.seven_day,
+        paceKind: "seven_day",
+      },
+      { label: L.monthly, window: snapshot.monthly, paceKind: "monthly" },
+    ];
   }
   if (kind === "grok") {
-    return [[L.seven, snapshot.seven_day]];
+    return [{ label: L.seven, window: snapshot.seven_day, paceKind: "seven_day" }];
   }
   // Codex accounts that dropped the 5h limit only report 7d.
   if (kind === "codex" && snapshot.five_hour?.utilization == null) {
-    return [[L.seven, snapshot.seven_day]];
+    return [{ label: L.seven, window: snapshot.seven_day, paceKind: "seven_day" }];
   }
 
-  const rows: Array<[string, UsageWindow | null | undefined]> = [
-    [L.five, snapshot.five_hour],
-    [L.seven, snapshot.seven_day],
+  const rows: MeterKind[] = [
+    { label: L.five, window: snapshot.five_hour },
+    { label: L.seven, window: snapshot.seven_day, paceKind: "seven_day" },
   ];
   if (kind === "claude-code" || !snapshot.agent) {
     if (snapshot.seven_day_opus?.utilization != null) {
-      rows.push([L.opus, snapshot.seven_day_opus]);
+      rows.push({ label: L.opus, window: snapshot.seven_day_opus, paceKind: "seven_day" });
     }
     if (snapshot.seven_day_sonnet?.utilization != null) {
-      rows.push([L.sonnet, snapshot.seven_day_sonnet]);
+      rows.push({ label: L.sonnet, window: snapshot.seven_day_sonnet, paceKind: "seven_day" });
     }
     if (snapshot.seven_day_oauth_apps?.utilization != null) {
-      rows.push([L.oauth, snapshot.seven_day_oauth_apps]);
+      rows.push({ label: L.oauth, window: snapshot.seven_day_oauth_apps, paceKind: "seven_day" });
     }
     if (snapshot.seven_day_cowork?.utilization != null) {
-      rows.push([L.cowork, snapshot.seven_day_cowork]);
+      rows.push({ label: L.cowork, window: snapshot.seven_day_cowork, paceKind: "seven_day" });
     }
   }
   return rows;

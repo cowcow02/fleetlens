@@ -47,12 +47,13 @@ final class StripVisibilityTests: XCTestCase {
       .zai: Self.dummySnap(agent: "zai"),
       .codex: Self.dummySnap(agent: "codex"),
       .copilot: Self.dummySnap(agent: "copilot"),
+      .commandCode: Self.dummySnap(agent: "command-code"),
     ]
 
-    // All visible → priority first, then alphabetical extras (grok, zai).
+    // All visible → priority first, then alphabetical extras.
     XCTAssertEqual(
       stripAgents(snapshots: snaps, visible: Set(AgentKind.allCases)),
-      [.claudeCode, .codex, .copilot, .grok, .zai]
+      [.claudeCode, .codex, .copilot, .commandCode, .grok, .zai]
     )
 
     // Hide Codex + Grok.

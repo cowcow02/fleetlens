@@ -95,6 +95,15 @@ export const GROK_METADATA: AgentMetadata = {
   iconChar: "◈",
 };
 
+export const COMMAND_CODE_METADATA: AgentMetadata = {
+  kind: "command-code",
+  displayName: "Command Code",
+  shortLabel: "Cmd",
+  // Lime — distinct from Codex teal and Claude terracotta.
+  accentColor: "rgb(132, 204, 22)",
+  iconChar: ">",
+};
+
 /** Ordered list of registered agent metadata. UI iterates this for
  *  badges, tabs, and prompt-template generation. */
 export const agentMetadata: AgentMetadata[] = [
@@ -106,6 +115,7 @@ export const agentMetadata: AgentMetadata[] = [
   COWORK_METADATA,
   ZAI_METADATA,
   GROK_METADATA,
+  COMMAND_CODE_METADATA,
 ];
 
 /** Browser-safe metadata lookup. Returns undefined for unknown kinds. */

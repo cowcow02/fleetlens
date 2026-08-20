@@ -56,6 +56,7 @@ extension UsageSnapshot {
     case "copilot": return .copilot
     case "zai": return .zai
     case "grok": return .grok
+    case "command-code", "cmd": return .commandCode
     default: return .claudeCode
     }
   }
@@ -70,9 +71,8 @@ enum AgentKind: String, Codable, CaseIterable {
   case codex
   case copilot
   case zai
-  /// Grok Build sessions are viewed on the dashboard; plan-window snapshots
-  /// are not polled today. Kept so a future usage line decodes cleanly.
   case grok
+  case commandCode = "command-code"
 
   var displayName: String {
     switch self {
@@ -81,6 +81,7 @@ enum AgentKind: String, Codable, CaseIterable {
     case .copilot: return "GitHub Copilot"
     case .zai: return "Z.ai"
     case .grok: return "Grok Build"
+    case .commandCode: return "Command Code"
     }
   }
 
@@ -91,6 +92,7 @@ enum AgentKind: String, Codable, CaseIterable {
     case .copilot: return "infinity.circle.fill"
     case .zai: return "z.circle.fill"
     case .grok: return "g.circle.fill"
+    case .commandCode: return "chevron.right.circle.fill"
     }
   }
 
@@ -101,6 +103,7 @@ enum AgentKind: String, Codable, CaseIterable {
     case .copilot: return .purple
     case .zai: return .blue
     case .grok: return .primary
+    case .commandCode: return Color(red: 132 / 255, green: 204 / 255, blue: 22 / 255)
     }
   }
 }
