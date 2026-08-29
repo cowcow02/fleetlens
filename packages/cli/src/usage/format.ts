@@ -14,6 +14,10 @@ const EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 /** Claude first, then priority peers, then alphabetical — matches menubar strip. */
 const AGENT_PRIORITY = ["claude-code", "codex", "copilot", "zai", "grok", "command-code"];
 
+function isClaudeAgent(kind: string): boolean {
+  return kind === "claude-code" || kind.startsWith("claude-code:") || !kind;
+}
+
 export type MultiUsageFormatOpts = {
   /** When true, header says "live" and reminds Ctrl+C. */
   watch?: boolean;
@@ -152,10 +156,13 @@ function formatAgentBlock(
   layout: Layout,
 ): string[] {
   const lines: string[] = [];
-  const title =
-    layout.shortLabels && isAgentKind(kind)
-      ? (getAgentMetadata(kind)?.shortLabel ?? agentTitle(kind))
-      : agentTitle(kind);
+  const title = layout.shortLabels
+    ? kind.startsWith("claude-code:")
+      ? `Claude (${kind.slice("claude-code:".length)})`
+      : isAgentKind(kind)
+        ? (getAgentMetadata(kind)?.shortLabel ?? agentTitle(kind))
+        : agentTitle(kind)
+    : agentTitle(kind);
   const plan =
     snapshot.plan_type && layout.mode !== "narrow"
       ? `  ${DIM}${snapshot.plan_type}${RESET}`
@@ -177,7 +184,7 @@ function formatAgentBlock(
   }
 
   // Claude-only extras that still matter in a multi view.
-  if ((kind === "claude-code" || !kind) && snapshot.extra_usage?.is_enabled) {
+  if (isClaudeAgent(kind) && snapshot.extra_usage?.is_enabled) {
     renderedMeter = true;
     const extra = snapshot.extra_usage;
     if (extra.utilization !== null) {
@@ -347,7 +354,7 @@ function agentWindows(
     { label: L.five, window: snapshot.five_hour },
     { label: L.seven, window: snapshot.seven_day, paceKind: "seven_day" },
   ];
-  if (kind === "claude-code" || !snapshot.agent) {
+  if (isClaudeAgent(kind) || !snapshot.agent) {
     if (snapshot.seven_day_opus?.utilization != null) {
       rows.push({ label: L.opus, window: snapshot.seven_day_opus, paceKind: "seven_day" });
     }
@@ -365,6 +372,9 @@ function agentWindows(
 }
 
 function agentTitle(kind: string): string {
+  if (kind.startsWith("claude-code:")) {
+    return `Claude Code (${kind.slice("claude-code:".length)})`;
+  }
   if (isAgentKind(kind)) {
     return getAgentMetadata(kind)?.displayName ?? kind;
   }
@@ -372,6 +382,16 @@ function agentTitle(kind: string): string {
 }
 
 function compareAgents(a: string, b: string): number {
+  const aClaude = isClaudeAgent(a);
+  const bClaude = isClaudeAgent(b);
+  if (aClaude || bClaude) {
+    if (aClaude && bClaude) {
+      if (a === "claude-code") return -1;
+      if (b === "claude-code") return 1;
+      return a.localeCompare(b);
+    }
+    return aClaude ? -1 : 1;
+  }
   const ia = AGENT_PRIORITY.indexOf(a);
   const ib = AGENT_PRIORITY.indexOf(b);
   if (ia !== -1 || ib !== -1) {

@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Added
+- **Multiple Claude Code logins on `fleetlens usage`.** Discovers every Claude Code config dir (`~/.claude`, `~/.claude-<slug>`, `$CLAUDE_CONFIG_DIR`), reads the matching macOS Keychain item (or `.credentials.json`), and reports a usage row per account. Compact ids: `claude` for the default home, `claude-work` for `~/.claude-work`. `--agent claude` includes every login; `--agent claude-<slug>` filters to one. Extra accounts render as `Claude (<slug>)` in the TTY view.
+
 ## [1.0.14] — 2026-08-20
 
 ### Added

@@ -214,6 +214,65 @@ describe("formatMultiAgentUsage", () => {
   });
 });
 
+describe("multi Claude accounts", () => {
+  it("renders extra CLAUDE_CONFIG_DIR logins as Claude Code (slug)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-24T12:00:00Z"));
+    const out = strip(
+      formatMultiAgentUsage(
+        {
+          "claude-code": baseSnapshot({
+            agent: "claude-code",
+            five_hour: { utilization: 4, resets_at: null },
+          }),
+          "claude-code:work": baseSnapshot({
+            agent: "claude-code:work",
+            account: "work",
+            five_hour: { utilization: 86, resets_at: null },
+          }),
+        },
+        { columns: 100 },
+      ),
+    );
+    expect(out).toContain("Claude Code");
+    expect(out).toContain("Claude Code (work)");
+    expect(out).toContain("4.0%");
+    expect(out).toContain("86.0%");
+    const titles = out
+      .split("\n")
+      .filter((l) => l.includes("Claude Code"));
+    expect(titles[0]).toContain("Claude Code");
+    expect(titles[0]).not.toContain("work");
+    expect(titles[1]).toContain("work");
+    vi.useRealTimers();
+  });
+
+  it("uses Claude (slug) on the compact phone layout", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-24T12:00:00Z"));
+    const out = strip(
+      formatMultiAgentUsage(
+        {
+          "claude-code": baseSnapshot({
+            agent: "claude-code",
+            five_hour: { utilization: 2, resets_at: null },
+          }),
+          "claude-code:work": baseSnapshot({
+            agent: "claude-code:work",
+            account: "work",
+            five_hour: { utilization: 0, resets_at: null },
+          }),
+        },
+        { columns: 50 },
+      ),
+    );
+    expect(out).toContain("Claude");
+    expect(out).toContain("Claude (work)");
+    expect(out).not.toMatch(/^\s+work\s*$/m);
+    vi.useRealTimers();
+  });
+});
+
 describe("command-code format", () => {
   it("shows monthly credits plus 5h and weekly windows", () => {
     vi.useFakeTimers();

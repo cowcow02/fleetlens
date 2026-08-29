@@ -41,6 +41,20 @@ describe("usageJsonPayload", () => {
     expect(payload.legend).toMatch(/delta_pp/);
   });
 
+  it("sorts extra Claude logins immediately after the default Claude row", () => {
+    const payload = usageJsonPayload({
+      grok: snap("grok"),
+      "claude-code:work": snap("claude-code:work", { account: "work" }),
+      "claude-code": snap("claude-code"),
+    });
+    expect(payload.agents.map((a) => a.agent)).toEqual([
+      "claude-code",
+      "claude-code:work",
+      "grok",
+    ]);
+    expect(payload.agents[1]!.account).toBe("work");
+  });
+
   it("fills missing agent tags from the map key", () => {
     const legacy = snap("claude-code");
     delete (legacy as { agent?: string }).agent;
@@ -140,6 +154,24 @@ describe("usageCompactText", () => {
         "",
       ].join("\n"),
     );
+  });
+
+  it("lists extra Claude logins as claude-<slug> after the default", () => {
+    const text = usageCompactText({
+      "claude-code:work": snap("claude-code:work", {
+        account: "work",
+        five_hour: { utilization: 86, resets_at: null },
+        seven_day: { utilization: 17, resets_at: null },
+      }),
+      "claude-code": snap("claude-code", {
+        five_hour: { utilization: 4, resets_at: null },
+        seven_day: { utilization: 9, resets_at: null },
+      }),
+    });
+    const lines = text.trimEnd().split("\n");
+    expect(lines[1]).toBe("agents[2]{agent,5h,7d,mo,7d_pace,mo_pace,plan,sampled}:");
+    expect(lines[2]).toBe("claude,4,9,-,-,-,-,2026-07-28T12:00");
+    expect(lines[3]).toBe("claude-work,86,17,-,-,-,-,2026-07-28T12:00");
   });
 
   it("includes Command Code monthly credits and signed 7d/30d pace", () => {

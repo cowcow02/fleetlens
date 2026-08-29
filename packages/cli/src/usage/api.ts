@@ -1,4 +1,5 @@
-import { readOAuthCredentials } from "./token.js";
+import { discoverClaudeAccounts, snapshotAgentKey } from "./accounts.js";
+import { readOAuthCredentials, type OAuthCredentials } from "./token.js";
 
 /**
  * Treat a token as already-expired this many ms before its nominal expiry.
@@ -60,6 +61,12 @@ export type UsageSnapshot = {
   /** Monthly web-search / web-reader / Zread quota. Z.ai-only (its
    *  TIME_LIMIT entry); null for all other agents. */
   web_search_quota?: { used: number | null; limit: number | null } | null;
+  /**
+   * Extra Claude Code login slug (`work` from `~/.claude-work`). Absent on
+   * the default `~/.claude` account so historical `agent: "claude-code"`
+   * lines stay unchanged.
+   */
+  account?: string | null;
 };
 
 export class UsageApiError extends Error {
@@ -79,8 +86,15 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
       "no_token",
     );
   }
+  return fetchUsageWithCredentials(creds, { agent: "claude-code" });
+}
 
-  if (creds.expiresAt - EXPIRY_SKEW_MS <= Date.now()) {
+export async function fetchUsageWithCredentials(
+  creds: OAuthCredentials,
+  opts: { agent?: AgentKind; account?: string | null; nowMs?: number } = {},
+): Promise<UsageSnapshot> {
+  const nowMs = opts.nowMs ?? Date.now();
+  if (creds.expiresAt - EXPIRY_SKEW_MS <= nowMs) {
     throw new UsageApiError(
       "Claude Code OAuth token expired. Open Claude Code to refresh it.",
       "expired",
@@ -117,9 +131,10 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
   }
 
   const b = body as Record<string, unknown>;
+  const account = opts.account ?? null;
   return {
     captured_at: new Date().toISOString(),
-    agent: "claude-code",
+    agent: opts.agent ?? snapshotAgentKey(account),
     five_hour: normalizeWindow(b.five_hour) ?? { utilization: null, resets_at: null },
     seven_day: normalizeWindow(b.seven_day) ?? { utilization: null, resets_at: null },
     seven_day_opus: normalizeWindow(b.seven_day_opus),
@@ -128,7 +143,52 @@ export async function fetchUsage(): Promise<UsageSnapshot> {
     seven_day_cowork: normalizeWindow(b.seven_day_cowork),
     extra_usage: normalizeExtra(b.extra_usage),
     plan_type: null,
+    ...(account ? { account } : {}),
   };
+}
+
+export type ClaudeUsageBatch = {
+  snapshots: UsageSnapshot[];
+  errors: Array<{ slug: string | null; code: UsageApiError["code"]; message: string }>;
+};
+
+/**
+ * Poll every discovered Claude Code login. Duplicate tokens are already
+ * collapsed in discovery (two dirs, one OAuth login → one row).
+ */
+export async function fetchAllClaudeUsage(opts: {
+  nowMs?: number;
+  accounts?: ReturnType<typeof discoverClaudeAccounts>;
+  fetchOne?: typeof fetchUsageWithCredentials;
+} = {}): Promise<ClaudeUsageBatch> {
+  const accounts = opts.accounts ?? discoverClaudeAccounts({ nowMs: opts.nowMs });
+  const fetchOne = opts.fetchOne ?? fetchUsageWithCredentials;
+  const snapshots: UsageSnapshot[] = [];
+  const errors: ClaudeUsageBatch["errors"] = [];
+
+  for (const account of accounts) {
+    try {
+      snapshots.push(
+        await fetchOne(account.creds, {
+          agent: snapshotAgentKey(account.slug),
+          account: account.slug,
+          nowMs: opts.nowMs,
+        }),
+      );
+    } catch (err) {
+      if (err instanceof UsageApiError) {
+        errors.push({ slug: account.slug, code: err.code, message: err.message });
+      } else {
+        errors.push({
+          slug: account.slug,
+          code: "parse",
+          message: (err as Error).message,
+        });
+      }
+    }
+  }
+
+  return { snapshots, errors };
 }
 
 function normalizeWindow(raw: unknown): UsageWindow | null {

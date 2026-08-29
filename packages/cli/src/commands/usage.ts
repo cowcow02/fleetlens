@@ -1,7 +1,7 @@
 import { isAgentKind } from "@claude-lens/parser";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { flag } from "../args.js";
-import { fetchUsage, UsageApiError, type UsageSnapshot } from "../usage/api.js";
+import { fetchAllClaudeUsage, UsageApiError, type UsageSnapshot } from "../usage/api.js";
 import { fetchGrokUsage, GrokApiError } from "../usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "../usage/codex.js";
 import { fetchCopilotUsage, CopilotApiError } from "../usage/copilot.js";
@@ -107,7 +107,17 @@ function parseAgentFilter(args: string[]): string | undefined {
     commandcode: "command-code",
     cmd: "command-code",
   };
-  return aliases[kind] ?? kind;
+  if (aliases[kind]) return aliases[kind];
+  // `claude-work` (from ~/.claude-work) → storage key `claude-code:work`.
+  if (kind.startsWith("claude-") && kind !== "claude-code") {
+    return `claude-code:${kind.slice("claude-".length)}`;
+  }
+  return kind;
+}
+
+function isKnownUsageAgent(kind: string): boolean {
+  if (kind.startsWith("claude-code:")) return true;
+  return isAgentKind(kind);
 }
 
 function filterAgents(
@@ -115,8 +125,28 @@ function filterAgents(
   agentFilter: string | undefined,
 ): Record<string, UsageSnapshot> {
   if (!agentFilter) return byAgent;
+  if (agentFilter === "claude-code") {
+    const hits: Record<string, UsageSnapshot> = {};
+    for (const [key, snap] of Object.entries(byAgent)) {
+      if (key === "claude-code" || key.startsWith("claude-code:")) hits[key] = snap;
+    }
+    return hits;
+  }
   const hit = byAgent[agentFilter];
   return hit ? { [agentFilter]: hit } : {};
+}
+
+function applyLiveClaudeSnapshots(
+  byAgent: Record<string, UsageSnapshot>,
+  snapshots: UsageSnapshot[],
+): void {
+  if (snapshots.length === 0) return;
+  for (const key of Object.keys(byAgent)) {
+    if (key === "claude-code" || key.startsWith("claude-code:")) delete byAgent[key];
+  }
+  for (const snapshot of snapshots) {
+    byAgent[snapshot.agent ?? "claude-code"] = snapshot;
+  }
 }
 
 /** Build the multi-agent map: log samples, optionally refreshed by a live Claude poll. */
@@ -127,9 +157,11 @@ async function collectSnapshots(opts: {
   let saved = 0;
   if (opts.save) {
     try {
-      const snapshot = await fetchUsage();
-      appendSnapshot(USAGE_LOG, snapshot);
-      saved += 1;
+      const { snapshots } = await fetchAllClaudeUsage();
+      for (const snapshot of snapshots) {
+        appendSnapshot(USAGE_LOG, snapshot);
+        saved += 1;
+      }
     } catch (err) {
       if (!(err instanceof UsageApiError)) throw err;
       // Copilot-only machines: still save auxiliaries below.
@@ -141,8 +173,8 @@ async function collectSnapshots(opts: {
 
   if (opts.preferLiveClaude && !opts.save) {
     try {
-      const live = await fetchUsage();
-      byAgent["claude-code"] = live;
+      const { snapshots } = await fetchAllClaudeUsage();
+      applyLiveClaudeSnapshots(byAgent, snapshots);
     } catch {
       // Keep log sample (or nothing) for Claude.
     }
@@ -180,6 +212,16 @@ export function usageJsonPayload(
 }
 
 function compareAgentKeys(a: string, b: string): number {
+  const aClaude = a === "claude-code" || a.startsWith("claude-code:");
+  const bClaude = b === "claude-code" || b.startsWith("claude-code:");
+  if (aClaude || bClaude) {
+    if (aClaude && bClaude) {
+      if (a === "claude-code") return -1;
+      if (b === "claude-code") return 1;
+      return a.localeCompare(b);
+    }
+    return aClaude ? -1 : 1;
+  }
   const ia = JSON_AGENT_ORDER.indexOf(a);
   const ib = JSON_AGENT_ORDER.indexOf(b);
   if (ia !== -1 || ib !== -1) {
@@ -220,6 +262,7 @@ export function omitNulls(value: unknown): unknown {
 
 function shortAgentId(agent: string): string {
   if (agent === "claude-code") return "claude";
+  if (agent.startsWith("claude-code:")) return `claude-${agent.slice("claude-code:".length)}`;
   if (agent === "command-code") return "cmd";
   return agent;
 }
@@ -313,7 +356,8 @@ Usage:
 
   --compact        Ultra-dense columnar text (recommended for agents / LLM context)
   --json           Machine JSON (minified, nulls stripped; exclusive with --watch/--compact)
-  --agent / -a     Filter to one provider (claude | codex | copilot | zai | grok | cmd)
+  --agent / -a     Filter to one provider (claude | claude-<slug> | codex | copilot | zai | grok | cmd).
+                   \`claude\` includes every discovered Claude Code login.
 
 Watch options:
   --interval N   Redraw every N seconds (default 2; reads ~/.cclens/usage.jsonl)
@@ -339,8 +383,8 @@ stays fresh without hammering provider APIs.`);
       ? "compact"
       : "text";
   const agentFilter = parseAgentFilter(args);
-  if (agentFilter && !isAgentKind(agentFilter)) {
-    const msg = `unknown agent "${agentFilter}". Use claude, codex, copilot, zai, grok, or cmd.`;
+  if (agentFilter && !isKnownUsageAgent(agentFilter)) {
+    const msg = `unknown agent "${agentFilter}". Use claude, claude-<slug>, codex, copilot, zai, grok, or cmd.`;
     emitMachineError(machineMode, msg);
     process.exitCode = 1;
     return;

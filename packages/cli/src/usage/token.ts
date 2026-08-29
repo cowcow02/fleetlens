@@ -24,21 +24,36 @@ export type OAuthCredentials = {
  * instead of pointlessly hitting the usage endpoint with dead credentials
  * (which earns 401s and eventually 429s from Anthropic's rate limiter).
  */
+export const DEFAULT_KEYCHAIN_SERVICE = "Claude Code-credentials";
+
 export function readOAuthCredentials(): OAuthCredentials | null {
   if (platform() === "darwin") {
-    return readFromMacKeychain() ?? readFromCredentialsFile();
+    return readFromMacKeychain(DEFAULT_KEYCHAIN_SERVICE) ?? readFromCredentialsFile();
   }
   return readFromCredentialsFile();
 }
 
-function readFromMacKeychain(): OAuthCredentials | null {
+/**
+ * Read one Claude Code Keychain item by service name. Extra CLAUDE_CONFIG_DIR
+ * homes use `Claude Code-credentials-<sha256(absPath)[:8]>`; the default
+ * `~/.claude` home uses {@link DEFAULT_KEYCHAIN_SERVICE}.
+ */
+export function readFromMacKeychain(service: string): OAuthCredentials | null {
   try {
     const blob = execFileSync(
       "security",
-      ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
+      ["find-generic-password", "-s", service, "-w"],
       { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" },
     );
     return extractCredentials(blob);
+  } catch {
+    return null;
+  }
+}
+
+export function readCredentialsFile(path: string): OAuthCredentials | null {
+  try {
+    return extractCredentials(readFileSync(path, "utf8"));
   } catch {
     return null;
   }
@@ -50,13 +65,8 @@ function readFromCredentialsFile(): OAuthCredentials | null {
     join(homedir(), ".config", "claude", "credentials.json"),
   ];
   for (const path of candidates) {
-    try {
-      const blob = readFileSync(path, "utf8");
-      const creds = extractCredentials(blob);
-      if (creds) return creds;
-    } catch {
-      // Try the next candidate
-    }
+    const creds = readCredentialsFile(path);
+    if (creds) return creds;
   }
   return null;
 }

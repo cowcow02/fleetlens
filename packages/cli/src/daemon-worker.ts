@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fetchUsage, UsageApiError } from "./usage/api.js";
+import { fetchAllClaudeUsage, UsageApiError } from "./usage/api.js";
 import { fetchZaiUsage, ZaiApiError } from "./usage/zai.js";
 import { fetchGrokUsage, GrokApiError } from "./usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "./usage/codex.js";
@@ -25,7 +25,7 @@ import { fetchCommandCodeUsage, CommandCodeApiError } from "./usage/command-code
 import { appendSnapshot, pruneAgent } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
-import { isUsable, readOAuthCredentials } from "./usage/token.js";
+import { discoverClaudeAccounts } from "./usage/accounts.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
 import { runTeamSync } from "./team/sync.js";
 import { runPerceptionSweep } from "./perception/worker.js";
@@ -409,13 +409,26 @@ async function pollClaudeUsage(): Promise<PollOutcome> {
   // Claude's poller stays distinct — its return value drives backoff
   // because OAuth/auth outcomes are the daemon's primary signal.
   try {
-    const snapshot = await fetchUsage();
-    appendSnapshot(USAGE_LOG, snapshot);
-    log(
-      "info",
-      `claude-code snapshot 5h=${snapshot.five_hour.utilization}% 7d=${snapshot.seven_day.utilization}%`,
-    );
-    return "success";
+    const { snapshots, errors } = await fetchAllClaudeUsage();
+    for (const snapshot of snapshots) {
+      appendSnapshot(USAGE_LOG, snapshot);
+      const tag = snapshot.agent ?? "claude-code";
+      log(
+        "info",
+        `${tag} snapshot 5h=${snapshot.five_hour.utilization}% 7d=${snapshot.seven_day.utilization}%`,
+      );
+    }
+    for (const err of errors) {
+      const tag = err.slug ? `claude-code:${err.slug}` : "claude-code";
+      log("warn", `poll failed (${err.code}) ${tag}: ${err.message}`);
+    }
+    if (snapshots.length > 0) return "success";
+    if (errors.length === 0) {
+      log("warn", "poll failed (no_token): No Claude Code OAuth token found. Run `claude` to log in first.");
+      return "auth";
+    }
+    if (errors.every((e) => e.code === "network")) return "network";
+    return "auth";
   } catch (err) {
     if (err instanceof UsageApiError) {
       log("warn", `poll failed (${err.code}): ${err.message}`);
@@ -462,21 +475,24 @@ async function runLoop(): Promise<void> {
         );
       }
 
-      // Local precheck: is the Keychain token usable right now?
-      const creds = readOAuthCredentials();
-      if (!creds) {
-        log("warn", "no Claude Code OAuth token found; waiting");
-        waitingForRefresh = true;
-        // No creds at all — don't spam, retry at normal cadence.
-        nextPollAtMs = now + BASE_INTERVAL_MS;
-      } else if (!isUsable(creds, now)) {
-        if (!waitingForRefresh) {
-          log("info", "token expired; waiting for Claude Code to refresh it");
+      // Local precheck: any discovered Claude login still has a usable token?
+      const accounts = discoverClaudeAccounts({ nowMs: now });
+      if (accounts.length === 0) {
+        const expired = discoverClaudeAccounts({ nowMs: now, usableOnly: false });
+        if (expired.length > 0) {
+          if (!waitingForRefresh) {
+            log("info", "token expired; waiting for Claude Code to refresh it");
+            waitingForRefresh = true;
+          }
+          // Don't advance nextPollAtMs — next watchdog tick rechecks in
+          // WATCHDOG_INTERVAL_MS, and the moment Claude Code writes a fresh
+          // token we fire a poll immediately.
+        } else {
+          log("warn", "no Claude Code OAuth token found; waiting");
           waitingForRefresh = true;
+          // No creds at all — don't spam, retry at normal cadence.
+          nextPollAtMs = now + BASE_INTERVAL_MS;
         }
-        // Don't advance nextPollAtMs — next watchdog tick rechecks in
-        // WATCHDOG_INTERVAL_MS, and the moment Claude Code writes a fresh
-        // token we fire a poll immediately.
       } else {
         if (waitingForRefresh) {
           log("info", "token refreshed; resuming polls");
