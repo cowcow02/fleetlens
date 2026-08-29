@@ -476,9 +476,21 @@ async function runWatch(opts: {
   intervalSec: number;
   saveOnce: boolean;
 }): Promise<void> {
+  // Always refresh Claude logins once so extra CLAUDE_CONFIG_DIR homes show
+  // up even when the running daemon is an older build that only wrote the
+  // default claude-code row. Later frames still read the log.
+  let saved = 0;
+  try {
+    const { snapshots } = await fetchAllClaudeUsage();
+    for (const snapshot of snapshots) {
+      appendSnapshot(USAGE_LOG, snapshot);
+      saved += 1;
+    }
+  } catch {
+    // Keep disk samples.
+  }
   if (opts.saveOnce) {
-    // One poll up front so the first frame isn't empty on a cold machine.
-    const { saved } = await collectSnapshots({ save: true, preferLiveClaude: false });
+    saved += await saveAuxiliarySnapshots();
     if (saved === 0 && Object.keys(latestSnapshotsByAgent(USAGE_LOG)).length === 0) {
       console.error(
         "Error: could not poll any provider and no samples are on disk.",

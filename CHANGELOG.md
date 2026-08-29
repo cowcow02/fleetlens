@@ -7,7 +7,7 @@ The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 ## [1.0.15] — 2026-08-29
 
 ### Added
-- **Multiple Claude Code logins on `fleetlens usage`.** Discovers every Claude Code config dir (`~/.claude`, `~/.claude-<slug>`, `$CLAUDE_CONFIG_DIR`), reads the matching macOS Keychain item (or `.credentials.json`), and reports a usage row per account. Compact ids: `claude` for the default home, `claude-work` for `~/.claude-work`. `--agent claude` includes every login; `--agent claude-<slug>` filters to one. Extra accounts render as `Claude (<slug>)` in the TTY view.
+- **Multiple Claude Code logins on `fleetlens usage`.** Discovers every Claude Code config dir (`~/.claude`, `~/.claude-<slug>`, `$CLAUDE_CONFIG_DIR`), reads the matching macOS Keychain item (or `.credentials.json`), and reports a usage row per account. Compact ids: `claude` for the default home, `claude-work` for `~/.claude-work`. `--agent claude` includes every login; `--agent claude-<slug>` filters to one. Extra accounts render as `Claude (<slug>)` in the TTY view. `--watch` refreshes Claude logins on start so they appear even if the daemon has not caught up.
 
 ## [1.0.14] — 2026-08-20
 
