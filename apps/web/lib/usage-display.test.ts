@@ -149,5 +149,37 @@ describe("copilotQuotaPresentation", () => {
     expect(copilotUnitLabel("ai-credits")).toBe("AI credits");
     expect(copilotUnitLabel("premium-requests")).toBe("premium requests");
     expect(copilotUnitLabel("credits")).toBe("credits");
+    expect(copilotUnitLabel("usd")).toBe("USD");
+  });
+
+  it("formats KaiHK wallet spend with dollar signs", () => {
+    expect(
+      copilotQuotaPresentation(36.64, {
+        used: 18.32,
+        limit: 50,
+        remaining: 31.68,
+        unit: "usd",
+        unlimited: false,
+      }),
+    ).toEqual({
+      headline: "36.6%",
+      detail: "$18.32 of $50.00 used · $31.68 remaining",
+      limitNotReported: false,
+    });
+  });
+});
+
+describe("kaihk sidebar", () => {
+  it("shows only the monthly meter for KaiHK keys", () => {
+    expect(
+      sidebarUsageRows("kaihk", { monthly: { utilization: 36.64, resets_at: null } }).map(
+        (r) => r.label,
+      ),
+    ).toEqual(["Monthly"]);
+    expect(
+      sidebarUsageRows("kaihk-2", { monthly: { utilization: 1, resets_at: null } }).map(
+        (r) => r.label,
+      ),
+    ).toEqual(["Monthly"]);
   });
 });

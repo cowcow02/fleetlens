@@ -7,6 +7,7 @@ import { fetchCodexUsage, CodexApiError } from "../usage/codex.js";
 import { fetchCopilotUsage, CopilotApiError } from "../usage/copilot.js";
 import { fetchZaiUsage, ZaiApiError } from "../usage/zai.js";
 import { fetchCommandCodeUsage, CommandCodeApiError } from "../usage/command-code.js";
+import { fetchAllKaihkUsage, isKaihkAgent, KaihkApiError } from "../usage/kaihk.js";
 import { formatMultiAgentUsage } from "../usage/format.js";
 import { PACE_LEGEND, paceForSnapshot, type SnapshotPace, type WindowPace } from "../usage/pace.js";
 import {
@@ -87,6 +88,17 @@ async function saveAuxiliarySnapshots(): Promise<number> {
       console.warn(`command-code usage: ${(err as Error).message}`);
     }
   }
+  try {
+    const snaps = await fetchAllKaihkUsage();
+    for (const snap of snaps) {
+      appendSnapshot(USAGE_LOG, snap);
+      saved += 1;
+    }
+  } catch (err) {
+    if (!(err instanceof KaihkApiError) || err.code !== "no_key") {
+      console.warn(`kaihk usage: ${(err as Error).message}`);
+    }
+  }
   return saved;
 }
 
@@ -106,6 +118,7 @@ function parseAgentFilter(args: string[]): string | undefined {
     "command-code": "command-code",
     commandcode: "command-code",
     cmd: "command-code",
+    kaihk: "kaihk",
   };
   if (aliases[kind]) return aliases[kind];
   // `claude-work` (from ~/.claude-work) → storage key `claude-code:work`.
@@ -117,6 +130,7 @@ function parseAgentFilter(args: string[]): string | undefined {
 
 function isKnownUsageAgent(kind: string): boolean {
   if (kind.startsWith("claude-code:")) return true;
+  if (isKaihkAgent(kind)) return true;
   return isAgentKind(kind);
 }
 
@@ -129,6 +143,13 @@ function filterAgents(
     const hits: Record<string, UsageSnapshot> = {};
     for (const [key, snap] of Object.entries(byAgent)) {
       if (key === "claude-code" || key.startsWith("claude-code:")) hits[key] = snap;
+    }
+    return hits;
+  }
+  if (agentFilter === "kaihk") {
+    const hits: Record<string, UsageSnapshot> = {};
+    for (const [key, snap] of Object.entries(byAgent)) {
+      if (isKaihkAgent(key)) hits[key] = snap;
     }
     return hits;
   }
@@ -178,13 +199,21 @@ async function collectSnapshots(opts: {
     } catch {
       // Keep log sample (or nothing) for Claude.
     }
+    try {
+      const snaps = await fetchAllKaihkUsage();
+      for (const snap of snaps) {
+        if (snap.agent) byAgent[snap.agent] = snap;
+      }
+    } catch {
+      // Keep log sample (or nothing) for KaiHK.
+    }
   }
 
   return { byAgent, saved };
 }
 
 /** Stable agent-order for machine output (matches terminal multi-agent view). */
-const JSON_AGENT_ORDER = ["claude-code", "codex", "copilot", "zai", "grok", "command-code"];
+const JSON_AGENT_ORDER = ["claude-code", "codex", "copilot", "zai", "grok", "command-code", "kaihk"];
 
 type TaggedSnapshot = UsageSnapshot & {
   agent: string;
@@ -221,6 +250,23 @@ function compareAgentKeys(a: string, b: string): number {
       return a.localeCompare(b);
     }
     return aClaude ? -1 : 1;
+  }
+  const aKai = isKaihkAgent(a);
+  const bKai = isKaihkAgent(b);
+  if (aKai || bKai) {
+    if (aKai && bKai) {
+      if (a === "kaihk") return -1;
+      if (b === "kaihk") return 1;
+      return a.localeCompare(b);
+    }
+    const iaK = JSON_AGENT_ORDER.indexOf(aKai ? "kaihk" : a);
+    const ibK = JSON_AGENT_ORDER.indexOf(bKai ? "kaihk" : b);
+    if (iaK !== -1 || ibK !== -1) {
+      if (iaK === -1) return 1;
+      if (ibK === -1) return -1;
+      if (iaK !== ibK) return iaK - ibK;
+    }
+    return aKai ? -1 : 1;
   }
   const ia = JSON_AGENT_ORDER.indexOf(a);
   const ib = JSON_AGENT_ORDER.indexOf(b);
@@ -356,8 +402,8 @@ Usage:
 
   --compact        Ultra-dense columnar text (recommended for agents / LLM context)
   --json           Machine JSON (minified, nulls stripped; exclusive with --watch/--compact)
-  --agent / -a     Filter to one provider (claude | claude-<slug> | codex | copilot | zai | grok | cmd).
-                   \`claude\` includes every discovered Claude Code login.
+  --agent / -a     Filter to one provider (claude | claude-<slug> | codex | copilot | zai | grok | cmd | kaihk).
+                   \`claude\` includes every discovered Claude Code login; \`kaihk\` includes every OpenCode KaiHK key.
 
 Watch options:
   --interval N   Redraw every N seconds (default 2; reads ~/.cclens/usage.jsonl)
@@ -384,7 +430,7 @@ stays fresh without hammering provider APIs.`);
       : "text";
   const agentFilter = parseAgentFilter(args);
   if (agentFilter && !isKnownUsageAgent(agentFilter)) {
-    const msg = `unknown agent "${agentFilter}". Use claude, claude-<slug>, codex, copilot, zai, grok, or cmd.`;
+    const msg = `unknown agent "${agentFilter}". Use claude, claude-<slug>, codex, copilot, zai, grok, cmd, or kaihk.`;
     emitMachineError(machineMode, msg);
     process.exitCode = 1;
     return;
@@ -483,6 +529,15 @@ async function runWatch(opts: {
   try {
     const { snapshots } = await fetchAllClaudeUsage();
     for (const snapshot of snapshots) {
+      appendSnapshot(USAGE_LOG, snapshot);
+      saved += 1;
+    }
+  } catch {
+    // Keep disk samples.
+  }
+  try {
+    const snaps = await fetchAllKaihkUsage();
+    for (const snapshot of snaps) {
       appendSnapshot(USAGE_LOG, snapshot);
       saved += 1;
     }

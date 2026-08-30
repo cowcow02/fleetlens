@@ -22,7 +22,12 @@ import { fetchGrokUsage, GrokApiError } from "./usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "./usage/codex.js";
 import { fetchCopilotUsage, CopilotApiError } from "./usage/copilot.js";
 import { fetchCommandCodeUsage, CommandCodeApiError } from "./usage/command-code.js";
-import { appendSnapshot, pruneAgent } from "./usage/storage.js";
+import {
+  discoverKaihkProviders,
+  fetchKaihkUsageForKey,
+  isKaihkAgent,
+} from "./usage/kaihk.js";
+import { appendSnapshot, latestSnapshotsByAgent, pruneAgent } from "./usage/storage.js";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
 import { discoverClaudeAccounts } from "./usage/accounts.js";
@@ -401,6 +406,26 @@ async function pollAuxiliaryUsage(): Promise<void> {
       // Quiet when Command Code simply isn't logged in on this machine.
     } else {
       log("warn", `command-code poll failed: ${(err as Error).message}`);
+    }
+  }
+  // KaiHK spend vs the welcome-wallet USD cap. Keys come from OpenCode
+  // providers whose baseURL is api.kaihk.com. Independent of Claude backoff.
+  const kaihkProviders = discoverKaihkProviders();
+  const kaihkIds = new Set(kaihkProviders.map((p) => p.id));
+  for (const agent of Object.keys(latestSnapshotsByAgent(USAGE_LOG))) {
+    if (isKaihkAgent(agent) && !kaihkIds.has(agent)) pruneAgent(USAGE_LOG, agent);
+  }
+  for (const provider of kaihkProviders) {
+    try {
+      const snap = await fetchKaihkUsageForKey(provider);
+      appendSnapshot(USAGE_LOG, snap);
+      const monthly = snap.monthly?.utilization;
+      log(
+        "info",
+        `${provider.id} snapshot monthly=${monthly === null || monthly === undefined ? "—" : `${monthly.toFixed(1)}%`}`,
+      );
+    } catch (err) {
+      log("warn", `${provider.id} poll failed: ${(err as Error).message}`);
     }
   }
 }

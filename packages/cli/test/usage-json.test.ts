@@ -174,6 +174,25 @@ describe("usageCompactText", () => {
     expect(lines[3]).toBe("claude-work,86,17,-,-,-,-,2026-07-28T12:00");
   });
 
+  it("lists extra KaiHK keys after the default kaihk row", () => {
+    const text = usageCompactText({
+      "kaihk-2": snap("kaihk-2", {
+        seven_day: empty,
+        monthly: { utilization: 1, resets_at: null },
+      }),
+      kaihk: snap("kaihk", {
+        seven_day: empty,
+        monthly: { utilization: 36.64, resets_at: null },
+        plan_type: "orbit-shop",
+      }),
+      grok: snap("grok"),
+    });
+    const lines = text.trimEnd().split("\n");
+    expect(lines[2]).toMatch(/^grok,/);
+    expect(lines[3]).toBe("kaihk,-,-,36.6,-,-,orbit-shop,2026-07-28T12:00");
+    expect(lines[4]).toBe("kaihk-2,-,-,1,-,-,-,2026-07-28T12:00");
+  });
+
   it("includes Command Code monthly credits and signed 7d/30d pace", () => {
     const now = Date.parse("2026-08-20T03:12:00Z");
     const text = usageCompactText(

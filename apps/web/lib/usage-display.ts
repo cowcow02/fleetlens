@@ -47,7 +47,7 @@ export function sidebarUsageRows(
 ): SidebarUsageRow[] {
   if (!snapshot) return [];
 
-  if (agent === "copilot") {
+  if (agent === "copilot" || agent === "kaihk" || agent.startsWith("kaihk-")) {
     // Calendar-month length (same rule as UsageChart.cycleStart for monthly).
     // A fixed 30d window mis-colors pace near ±15pp in Feb / 31-day months.
     const monthly = snapshot.monthly ?? null;
@@ -105,16 +105,24 @@ export type CopilotMonthlyQuota = {
   used: number | null;
   limit: number | null;
   remaining: number | null;
-  unit: "ai-credits" | "premium-requests" | "credits";
+  unit: "ai-credits" | "premium-requests" | "credits" | "usd";
   unlimited: boolean;
 };
 
 export function copilotUnitLabel(
   unit?: CopilotMonthlyQuota["unit"],
-): "AI credits" | "premium requests" | "credits" {
+): "AI credits" | "premium requests" | "credits" | "USD" {
   if (unit === "premium-requests") return "premium requests";
   if (unit === "credits") return "credits";
+  if (unit === "usd") return "USD";
   return "AI credits";
+}
+
+function formatQuotaUsd(n: number): string {
+  if (!Number.isFinite(n)) return "$0";
+  if (Math.abs(n) >= 0.01) return `$${n.toFixed(2)}`;
+  const trimmed = n.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  return `$${trimmed || "0"}`;
 }
 
 export function copilotQuotaPresentation(
@@ -131,16 +139,22 @@ export function copilotQuotaPresentation(
       headline: "Limit not reported",
       detail: quota.used === null
         ? null
-        : `${quota.used.toLocaleString("en-US")} ${unit} reported by Copilot`,
+        : unit === "USD"
+          ? `${formatQuotaUsd(quota.used)} reported`
+          : `${quota.used.toLocaleString("en-US")} ${unit} reported by Copilot`,
       limitNotReported: true,
     };
   }
 
   const detail = quota?.used !== null && quota?.used !== undefined
     && quota.limit !== null
-    ? `${quota.used.toLocaleString("en-US")} of ${quota.limit.toLocaleString("en-US")} ${unit} used${
-      quota.remaining !== null ? ` · ${quota.remaining.toLocaleString("en-US")} remaining` : ""
-    }`
+    ? unit === "USD"
+      ? `${formatQuotaUsd(quota.used)} of ${formatQuotaUsd(quota.limit)} used${
+        quota.remaining !== null ? ` · ${formatQuotaUsd(quota.remaining)} remaining` : ""
+      }`
+      : `${quota.used.toLocaleString("en-US")} of ${quota.limit.toLocaleString("en-US")} ${unit} used${
+        quota.remaining !== null ? ` · ${quota.remaining.toLocaleString("en-US")} remaining` : ""
+      }`
     : null;
 
   return {

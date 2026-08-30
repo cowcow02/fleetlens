@@ -39,7 +39,18 @@ import {
 
 export const dynamic = "force-dynamic";
 
+function isKaihkAgent(kind: string): boolean {
+  return kind === "kaihk" || kind.startsWith("kaihk-");
+}
+
+function isUsageAgentKind(s: string | undefined): s is AgentKind {
+  if (!s) return false;
+  return isAgentKind(s) || s.startsWith("claude-code:") || isKaihkAgent(s);
+}
+
 function agentLabel(kind: AgentKind): string {
+  if (kind === "kaihk") return "KaiHK";
+  if (kind.startsWith("kaihk-")) return `KaiHK (${kind.slice("kaihk-".length)})`;
   return getAgentMetadata(kind)?.displayName ?? kind;
 }
 
@@ -58,7 +69,7 @@ export default async function UsagePage({
   // canonical empty state; every other provider needs a real saved sample.
   const agentsWithData = new Set(visibleUsageAgents(allSnapshots));
 
-  const requested: AgentKind | undefined = isAgentKind(params.agent) ? params.agent : undefined;
+  const requested: AgentKind | undefined = isUsageAgentKind(params.agent) ? params.agent : undefined;
   const selected: AgentKind =
     requested && agentsWithData.has(requested)
       ? requested
@@ -76,6 +87,7 @@ export default async function UsagePage({
   const cycles7d = calibration ? previousCyclesTrend(calibration, "7d", 12) : [];
   const isGrok = selected === "grok";
   const isCopilot = selected === "copilot";
+  const isKaihk = isKaihkAgent(selected);
   const isCommandCode = selected === "command-code";
   const commandCodeAccent = agentAccent("command-code");
   const codexWeeklyOnly =
@@ -262,7 +274,7 @@ export default async function UsagePage({
               )}
             </>
           )}
-          {isCopilot && latest.monthly && (
+          {(isCopilot || isKaihk) && latest.monthly && (
             <CopilotMonthlyCard
               window={latest.monthly}
               quota={latest.monthly_quota}
@@ -285,15 +297,17 @@ export default async function UsagePage({
                       colorVar: "var(--af-accent)",
                     },
                   ]
-                : isCopilot
+                : isCopilot || isKaihk
                   ? [
                       {
                         key: "monthly",
-                        label: "Monthly AI-credit utilization",
+                        label: isKaihk
+                          ? "KaiHK wallet spend"
+                          : "Monthly AI-credit utilization",
                         // Monthly charts derive their exact start from the
                         // reset date; this value is only a nominal fallback.
                         windowMs: 30 * 24 * 60 * 60 * 1000,
-                        colorVar: agentAccent("copilot"),
+                        colorVar: agentAccent(isKaihk ? selected : "copilot"),
                       },
                     ]
                 : isCommandCode
@@ -328,7 +342,7 @@ export default async function UsagePage({
                     ]
                 : undefined
             }
-            hideSonnet={isGrok || isCopilot || isCommandCode || selected === "codex"}
+            hideSonnet={isGrok || isCopilot || isKaihk || isCommandCode || selected === "codex"}
           />
           {selected === "zai" && latest?.web_search_quota && (
             <WebSearchQuotaCard quota={latest.web_search_quota} />
@@ -345,6 +359,7 @@ export default async function UsagePage({
             {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"} on disk
             {isGrok ? " · weekly shared-pool % (no 5h window)" : ""}
             {isCopilot ? " · monthly AI-credit allowance (no 5h/7d windows)" : ""}
+            {isKaihk ? " · spend vs the KaiHK wallet USD cap (no 5h/7d windows)" : ""}
             {isCommandCode ? " · monthly credits + 5-hour and weekly windows" : ""}
             {codexWeeklyOnly ? " · weekly-only Codex limit" : ""}
           </div>
@@ -804,6 +819,43 @@ function GrokWeeklyCard({
 }
 
 function EmptyState({ agent }: { agent: AgentKind }) {
+  if (agent === "kaihk" || agent.startsWith("kaihk-")) {
+    return (
+      <div className="af-card" style={{ padding: "48px 32px", textAlign: "center" }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--af-text)" }}>
+          No KaiHK usage samples yet
+        </div>
+        <p
+          style={{
+            fontSize: 12,
+            color: "var(--af-text-tertiary)",
+            margin: "8px auto 0",
+            maxWidth: 520,
+            lineHeight: 1.5,
+          }}
+        >
+          Fleetlens reads KaiHK spend from OpenCode providers whose base URL is
+          api.kaihk.com. Add a key there, then start the daemon or run{" "}
+          <code style={{ fontSize: 11 }}>fleetlens usage --save</code>.
+        </p>
+        <pre
+          style={{
+            display: "inline-block",
+            marginTop: 14,
+            background: "var(--background)",
+            border: "1px solid var(--af-border-subtle)",
+            padding: "8px 16px",
+            borderRadius: 6,
+            fontSize: 13,
+            fontFamily: "var(--font-mono)",
+            color: "var(--af-text)",
+          }}
+        >
+          fleetlens usage --save
+        </pre>
+      </div>
+    );
+  }
   if (agent === "copilot") {
     return (
       <div className="af-card" style={{ padding: "48px 32px", textAlign: "center" }}>

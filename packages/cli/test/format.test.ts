@@ -273,6 +273,73 @@ describe("multi Claude accounts", () => {
   });
 });
 
+describe("kaihk format", () => {
+  it("renders KaiHK wallet spend as a monthly USD row", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T12:00:00Z"));
+    const out = strip(
+      formatMultiAgentUsage(
+        {
+          kaihk: baseSnapshot({
+            agent: "kaihk",
+            plan_type: "orbit-shop",
+            monthly: { utilization: 36.64, resets_at: "2026-09-29T00:00:00.000Z" },
+            monthly_quota: {
+              used: 18.32,
+              limit: 50,
+              remaining: 31.68,
+              unit: "usd",
+              unlimited: false,
+            },
+          }),
+          "kaihk-2": baseSnapshot({
+            agent: "kaihk-2",
+            monthly: { utilization: 0.0019, resets_at: null },
+            monthly_quota: {
+              used: 0.000958,
+              limit: 50,
+              remaining: 49.999042,
+              unit: "usd",
+              unlimited: false,
+            },
+          }),
+        },
+        { columns: 100 },
+      ),
+    );
+    expect(out).toContain("KaiHK");
+    expect(out).toContain("KaiHK (2)");
+    expect(out).toContain("$18.32 / $50.00");
+    expect(out).toContain("$0.000958 / $50.00");
+    vi.useRealTimers();
+  });
+
+  it("uses KaiHK (N) on the compact phone layout", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T12:00:00Z"));
+    const out = strip(
+      formatMultiAgentUsage(
+        {
+          kaihk: baseSnapshot({
+            agent: "kaihk",
+            monthly: { utilization: 10, resets_at: null },
+            monthly_quota: { used: 5, limit: 50, remaining: 45, unit: "usd", unlimited: false },
+          }),
+          "kaihk-2": baseSnapshot({
+            agent: "kaihk-2",
+            monthly: { utilization: 1, resets_at: null },
+            monthly_quota: { used: 0.5, limit: 50, remaining: 49.5, unit: "usd", unlimited: false },
+          }),
+        },
+        { columns: 50 },
+      ),
+    );
+    expect(out).toContain("KaiHK");
+    expect(out).toContain("KaiHK (2)");
+    vi.useRealTimers();
+  });
+});
+
 describe("command-code format", () => {
   it("shows monthly credits plus 5h and weekly windows", () => {
     vi.useFakeTimers();

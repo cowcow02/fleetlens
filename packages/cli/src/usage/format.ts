@@ -1,5 +1,6 @@
 import { getAgentMetadata, isAgentKind } from "@claude-lens/parser";
 import type { UsageSnapshot, UsageWindow } from "./api.js";
+import { formatKaihkUsd, isKaihkAgent, kaihkTitle } from "./kaihk.js";
 import { paceForWindow, type PaceVerdict, type WindowPace } from "./pace.js";
 
 const DIM = "\x1b[2m";
@@ -12,7 +13,7 @@ const RED = "\x1b[31m";
 const EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 
 /** Claude first, then priority peers, then alphabetical — matches menubar strip. */
-const AGENT_PRIORITY = ["claude-code", "codex", "copilot", "zai", "grok", "command-code"];
+const AGENT_PRIORITY = ["claude-code", "codex", "copilot", "zai", "grok", "command-code", "kaihk"];
 
 function isClaudeAgent(kind: string): boolean {
   return kind === "claude-code" || kind.startsWith("claude-code:") || !kind;
@@ -159,9 +160,11 @@ function formatAgentBlock(
   const title = layout.shortLabels
     ? kind.startsWith("claude-code:")
       ? `Claude (${kind.slice("claude-code:".length)})`
-      : isAgentKind(kind)
-        ? (getAgentMetadata(kind)?.shortLabel ?? agentTitle(kind))
-        : agentTitle(kind)
+      : isKaihkAgent(kind)
+        ? kaihkTitle(kind)
+        : isAgentKind(kind)
+          ? (getAgentMetadata(kind)?.shortLabel ?? agentTitle(kind))
+          : agentTitle(kind)
     : agentTitle(kind);
   const plan =
     snapshot.plan_type && layout.mode !== "narrow"
@@ -208,28 +211,31 @@ function formatAgentBlock(
     }
   }
 
-  if ((kind === "copilot" || kind === "command-code") && snapshot.monthly_quota) {
+  if ((kind === "copilot" || kind === "command-code" || isKaihkAgent(kind)) && snapshot.monthly_quota) {
     const q = snapshot.monthly_quota;
     const unit =
-      q.unit === "premium-requests"
-        ? "premium requests"
-        : q.unit === "credits"
-          ? "credits"
-          : "AI credits";
+      q.unit === "usd"
+        ? "USD"
+        : q.unit === "premium-requests"
+          ? "premium requests"
+          : q.unit === "credits"
+            ? "credits"
+            : "AI credits";
     const pad = layout.mode === "narrow" ? 2 : layout.labelWidth + 2;
     if (q.unlimited) {
       renderedMeter = true;
       const lab = layout.shortLabels ? "mo" : "Monthly";
       lines.push(`  ${lab.padEnd(layout.labelWidth)}${BOLD}Limit not reported${RESET}`);
       if (q.used !== null) {
-        lines.push(
-          `  ${" ".repeat(pad)}${DIM}${q.used.toLocaleString("en-US")} ${unit}${RESET}`,
-        );
+        const usedLabel = q.unit === "usd" ? formatKaihkUsd(q.used) : `${q.used.toLocaleString("en-US")} ${unit}`;
+        lines.push(`  ${" ".repeat(pad)}${DIM}${usedLabel}${RESET}`);
       }
     } else if (q.used !== null && q.limit !== null) {
-      lines.push(
-        `  ${" ".repeat(pad)}${DIM}${q.used} / ${q.limit} ${unit}${RESET}`,
-      );
+      const amount =
+        q.unit === "usd"
+          ? `${formatKaihkUsd(q.used)} / ${formatKaihkUsd(q.limit)}`
+          : `${q.used} / ${q.limit} ${unit}`;
+      lines.push(`  ${" ".repeat(pad)}${DIM}${amount}${RESET}`);
     }
   }
 
@@ -328,7 +334,7 @@ function agentWindows(
         cowork: "7 day (Cowork)",
       };
 
-  if (kind === "copilot") {
+  if (kind === "copilot" || isKaihkAgent(kind)) {
     return [{ label: L.monthly, window: snapshot.monthly, paceKind: "monthly" }];
   }
   if (kind === "command-code") {
@@ -375,6 +381,7 @@ function agentTitle(kind: string): string {
   if (kind.startsWith("claude-code:")) {
     return `Claude Code (${kind.slice("claude-code:".length)})`;
   }
+  if (isKaihkAgent(kind)) return kaihkTitle(kind);
   if (isAgentKind(kind)) {
     return getAgentMetadata(kind)?.displayName ?? kind;
   }
@@ -391,6 +398,23 @@ function compareAgents(a: string, b: string): number {
       return a.localeCompare(b);
     }
     return aClaude ? -1 : 1;
+  }
+  const aKai = isKaihkAgent(a);
+  const bKai = isKaihkAgent(b);
+  if (aKai || bKai) {
+    if (aKai && bKai) {
+      if (a === "kaihk") return -1;
+      if (b === "kaihk") return 1;
+      return a.localeCompare(b);
+    }
+    const iaK = AGENT_PRIORITY.indexOf(aKai ? "kaihk" : a);
+    const ibK = AGENT_PRIORITY.indexOf(bKai ? "kaihk" : b);
+    if (iaK !== -1 || ibK !== -1) {
+      if (iaK === -1) return 1;
+      if (ibK === -1) return -1;
+      if (iaK !== ibK) return iaK - ibK;
+    }
+    return aKai ? -1 : 1;
   }
   const ia = AGENT_PRIORITY.indexOf(a);
   const ib = AGENT_PRIORITY.indexOf(b);
