@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.17] — 2026-08-30
+
+### Fixed
+- **Release typecheck.** Extra KaiHK / Claude usage keys no longer trip the web typecheck (`startsWith` on `never`), so the npm publish can proceed.
+
 ## [1.0.16] — 2026-08-30
 
 ### Added
