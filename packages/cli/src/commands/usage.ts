@@ -1,3 +1,4 @@
+import { emitKeypressEvents } from "node:readline";
 import { isAgentKind } from "@claude-lens/parser";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { flag } from "../args.js";
@@ -9,6 +10,7 @@ import { fetchZaiUsage, ZaiApiError } from "../usage/zai.js";
 import { fetchCommandCodeUsage, CommandCodeApiError } from "../usage/command-code.js";
 import { fetchAllKaihkUsage, isKaihkAgent, KaihkApiError } from "../usage/kaihk.js";
 import { formatMultiAgentUsage } from "../usage/format.js";
+import { renderWatchViewport, watchOffsetForKey } from "../usage/watch-viewport.js";
 import { PACE_LEGEND, paceForSnapshot, type SnapshotPace, type WindowPace } from "../usage/pace.js";
 import {
   appendSnapshot,
@@ -407,6 +409,7 @@ Usage:
 
 Watch options:
   --interval N   Redraw every N seconds (default 2; reads ~/.cclens/usage.jsonl)
+  ↑/↓, PgUp/PgDn, Home/End scroll the live view; q or Ctrl+C quits
 
 Tip: leave the usage daemon running (\`fleetlens daemon start\`) so --watch
 stays fresh without hammering provider APIs.`);
@@ -557,9 +560,14 @@ async function runWatch(opts: {
 
   const tty = Boolean(process.stdout.isTTY);
   let stopping = false;
+  let scrollOffset = 0;
+  let maxScrollOffset = 0;
+  let pageSize = 1;
 
   const leaveScreen = () => {
     if (!tty) return;
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    process.stdin.pause();
     // Show cursor and leave the alternate screen buffer so the user's
     // scrollback is restored exactly like top/htop/less.
     process.stdout.write("\x1b[?25h\x1b[?1049l");
@@ -596,13 +604,31 @@ async function runWatch(opts: {
       );
       return;
     }
-    process.stdout.write(
-      formatMultiAgentUsage(byAgent, {
-        watch: true,
-        intervalSec: opts.intervalSec,
-        columns,
-      }),
+    const content = formatMultiAgentUsage(byAgent, {
+      watch: true,
+      intervalSec: opts.intervalSec,
+      columns,
+    });
+    if (!tty) {
+      process.stdout.write(content);
+      return;
+    }
+    const envRows = parseInt(process.env.LINES ?? "", 10);
+    const terminalRows =
+      typeof process.stdout.rows === "number" && process.stdout.rows > 0
+        ? process.stdout.rows
+        : Number.isFinite(envRows) && envRows > 0
+          ? envRows
+          : 24;
+    const viewport = renderWatchViewport(
+      content,
+      terminalRows,
+      scrollOffset,
     );
+    scrollOffset = viewport.offset;
+    maxScrollOffset = viewport.maxOffset;
+    pageSize = viewport.pageSize;
+    process.stdout.write(viewport.text);
   };
 
   // Redraw immediately on terminal resize (mobile rotate, pane drag).
@@ -622,6 +648,28 @@ async function runWatch(opts: {
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+
+  if (tty && process.stdin.isTTY) {
+    emitKeypressEvents(process.stdin);
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on("keypress", (_str, key) => {
+      if (key?.name === "q" || (key?.ctrl && key.name === "c")) {
+        stop();
+        return;
+      }
+      const next = watchOffsetForKey(
+        scrollOffset,
+        key?.name ?? "",
+        maxScrollOffset,
+        pageSize,
+      );
+      if (next !== scrollOffset) {
+        scrollOffset = next;
+        draw();
+      }
+    });
+  }
 
   // Keep the process alive until signal handlers fire.
   await new Promise<void>(() => {

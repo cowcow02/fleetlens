@@ -20,7 +20,7 @@ function isClaudeAgent(kind: string): boolean {
 }
 
 export type MultiUsageFormatOpts = {
-  /** When true, header says "live" and reminds Ctrl+C. */
+  /** When true, render the interactive live-view header and layout. */
   watch?: boolean;
   /** Seconds between redraws (watch mode). */
   intervalSec?: number;
@@ -31,6 +31,10 @@ export type MultiUsageFormatOpts = {
    */
   columns?: number;
 };
+
+const TWO_COLUMN_MIN_WIDTH = 152;
+const TWO_COLUMN_MIN_AGENTS = 6;
+const COLUMN_GAP = 3;
 
 type Layout = {
   mode: "narrow" | "medium" | "wide";
@@ -123,7 +127,12 @@ export function formatMultiAgentUsage(
   const kinds = Object.keys(byAgent).sort(compareAgents);
   if (kinds.length === 0) return "";
 
-  const layout = layoutForColumns(resolveColumns(opts.columns));
+  const columns = resolveColumns(opts.columns);
+  const layout = layoutForColumns(columns);
+  const twoColumn =
+    opts.watch === true &&
+    columns >= TWO_COLUMN_MIN_WIDTH &&
+    kinds.length >= TWO_COLUMN_MIN_AGENTS;
   const lines: string[] = [];
   lines.push("");
   if (opts.watch) {
@@ -131,7 +140,7 @@ export function formatMultiAgentUsage(
     lines.push(
       layout.mode === "narrow"
         ? `  ${BOLD}Usage${RESET} ${DIM}live ${sec}s · ^C quit${RESET}`
-        : `  ${BOLD}Fleetlens Usage${RESET}  ${DIM}live · every ${sec}s · Ctrl+C to quit${RESET}`,
+        : `  ${BOLD}Fleetlens Usage${RESET}  ${DIM}live · every ${sec}s · ↑↓ scroll · q quit${RESET}`,
     );
   } else {
     lines.push(
@@ -142,13 +151,52 @@ export function formatMultiAgentUsage(
   }
   lines.push("");
 
-  for (const kind of kinds) {
-    const snap = byAgent[kind]!;
-    lines.push(...formatAgentBlock(kind, snap, layout));
+  if (twoColumn) {
+    const paneWidth = Math.floor((columns - COLUMN_GAP) / 2);
+    const paneLayout = layoutForColumns(paneWidth);
+    const splitAt = Math.ceil(kinds.length / 2);
+    const left = kinds.slice(0, splitAt);
+    const right = kinds.slice(splitAt);
+    for (let i = 0; i < left.length; i += 1) {
+      const leftKind = left[i]!;
+      const leftBlock = formatAgentBlock(leftKind, byAgent[leftKind]!, paneLayout);
+      const rightKind = right[i];
+      const rightBlock = rightKind
+        ? formatAgentBlock(rightKind, byAgent[rightKind]!, paneLayout)
+        : [];
+      lines.push(...joinAgentBlocks(leftBlock, rightBlock, paneWidth));
+    }
+  } else {
+    for (const kind of kinds) {
+      const snap = byAgent[kind]!;
+      lines.push(...formatAgentBlock(kind, snap, layout));
+    }
   }
 
   lines.push("");
   return lines.join("\n");
+}
+
+const ANSI_SEQUENCE = /\x1b\[[0-9;]*m/g;
+
+function visibleWidth(value: string): number {
+  return [...value.replace(ANSI_SEQUENCE, "")].length;
+}
+
+function joinAgentBlocks(
+  left: string[],
+  right: string[],
+  paneWidth: number,
+): string[] {
+  const height = Math.max(left.length, right.length);
+  const lines: string[] = [];
+  for (let i = 0; i < height; i += 1) {
+    const lhs = left[i] ?? "";
+    const rhs = right[i] ?? "";
+    const padding = " ".repeat(Math.max(0, paneWidth - visibleWidth(lhs)) + COLUMN_GAP);
+    lines.push(rhs ? `${lhs}${padding}${rhs}` : lhs);
+  }
+  return lines;
 }
 
 function formatAgentBlock(

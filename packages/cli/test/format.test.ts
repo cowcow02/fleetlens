@@ -163,8 +163,48 @@ describe("formatMultiAgentUsage", () => {
         { watch: true, intervalSec: 3, columns: 100 },
       ),
     );
-    expect(out).toContain("live · every 3s · Ctrl+C to quit");
+    expect(out).toContain("live · every 3s · ↑↓ scroll · q quit");
     expect(out).toContain("Grok Build");
+  });
+
+  it("uses two columns for many agents on a wide desktop", () => {
+    const snapshots = Object.fromEntries(
+      ["claude-code", "codex", "copilot", "zai", "grok", "command-code"].map(
+        (agent, index) => [
+          agent,
+          baseSnapshot({
+            agent,
+            five_hour: { utilization: index + 1, resets_at: null },
+            seven_day: { utilization: index + 10, resets_at: null },
+            monthly: { utilization: index + 20, resets_at: null },
+          }),
+        ],
+      ),
+    );
+    const out = strip(
+      formatMultiAgentUsage(snapshots, { watch: true, columns: 180 }),
+    );
+    const sideBySide = out
+      .split("\n")
+      .find((line) => line.includes("Claude Code") && line.includes("Z.ai"));
+    expect(sideBySide).toBeDefined();
+    expect([...sideBySide!].length).toBeLessThanOrEqual(180);
+  });
+
+  it("keeps many agents in one column when each pane would be cramped", () => {
+    const snapshots = Object.fromEntries(
+      ["claude-code", "codex", "copilot", "zai", "grok", "command-code"].map(
+        (agent) => [agent, baseSnapshot({ agent })],
+      ),
+    );
+    const out = strip(
+      formatMultiAgentUsage(snapshots, { watch: true, columns: 120 }),
+    );
+    expect(
+      out
+        .split("\n")
+        .some((line) => line.includes("Claude Code") && line.includes("Z.ai")),
+    ).toBe(false);
   });
 
   it("uses a compact no-bar layout on ultra-narrow columns", () => {
