@@ -29,9 +29,10 @@ export function UsageSidebar({
   latestByAgent: Partial<Record<AgentKind, UsageSnapshot>>;
 }) {
   const agents = useMemo(() => {
-    const keys = Object.keys(latestByAgent).filter(
-      (k) => isAgentKind(k) || k === "kaihk" || k.startsWith("kaihk-") || k.startsWith("claude-code:"),
-    ) as AgentKind[];
+    const keys = Object.keys(latestByAgent).filter((k) => {
+      if (k === "kaihk" || k.startsWith("kaihk-") || k.startsWith("claude-code:")) return true;
+      return isAgentKind(k);
+    }) as AgentKind[];
     // Always offer Claude as the empty-state default, matching /usage.
     if (!keys.includes("claude-code")) keys.push("claude-code");
     return sortUsageAgents(keys);

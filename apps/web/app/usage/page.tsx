@@ -45,7 +45,10 @@ function isKaihkAgent(kind: string): boolean {
 
 function isUsageAgentKind(s: string | undefined): s is AgentKind {
   if (!s) return false;
-  return isAgentKind(s) || s.startsWith("claude-code:") || isKaihkAgent(s);
+  // Prefix checks first: isAgentKind is `s is AgentKind` and AgentKind is
+  // `string`, so its false branch narrows to `never`.
+  if (s.startsWith("claude-code:") || isKaihkAgent(s)) return true;
+  return isAgentKind(s);
 }
 
 function agentLabel(kind: AgentKind): string {
