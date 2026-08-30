@@ -177,7 +177,10 @@ export function formatMultiAgentUsage(
   return lines.join("\n");
 }
 
-const ANSI_SEQUENCE = /\x1b\[[0-9;]*m/g;
+const ANSI_SEQUENCE = new RegExp(
+  `${String.fromCharCode(27)}\\[[0-9;]*m`,
+  "g",
+);
 
 function visibleWidth(value: string): number {
   return [...value.replace(ANSI_SEQUENCE, "")].length;
