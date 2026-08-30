@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.16] — 2026-08-30
+
+### Added
+- **KaiHK on `fleetlens usage`.** Discovers OpenCode providers whose `baseURL` is `api.kaihk.com` and reports a usage row per key (`KaiHK`, `KaiHK (2)`, …). Spend comes from `/v1/dashboard/billing/usage` (`total_usage` ÷ 100 = USD) against a `$50` welcome-wallet cap (`KAIHK_PLAN_USD` to override). `--agent kaihk` includes every key. `--watch` and the daemon poll the same endpoints.
+
 ## [1.0.15] — 2026-08-29
 
 ### Added
