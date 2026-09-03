@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { buildEntries } from "@claude-lens/entries";
-import { agentSources, jsonlFileTooLarge, MAX_JSONL_FILE_BYTES } from "@claude-lens/parser/fs";
+import { agentSources, MAX_JSONL_FILE_BYTES } from "@claude-lens/parser/fs";
 import type { AgentSource } from "@claude-lens/parser/fs";
 import { writeEntryPreservingEnrichment } from "@claude-lens/entries/fs";
 import {
@@ -8,7 +8,7 @@ import {
   type FileCheckpoint,
 } from "./state.js";
 import { listAllSessionJsonls } from "./scan.js";
-import { buildEntriesForFile } from "./build-entries.js";
+import { buildEntriesForFileAsync } from "./build-entries.js";
 
 function log(msg: string): void {
   // eslint-disable-next-line no-console
@@ -73,7 +73,7 @@ export async function runPerceptionSweep(opts: SweepOptions = {}): Promise<Sweep
         // Reconstruct + build entries via the shared claude-code helper so the
         // team-sync ensure-entries path produces byte-identical (session, day)
         // keys (see build-entries.ts).
-        const built = buildEntriesForFile(f);
+        const built = await buildEntriesForFileAsync(f);
         // null = blank/unreadable → nothing parsed, don't checkpoint. []
         // = parsed with zero entries → checkpoint below so this file isn't
         // re-parsed every 5-min sweep (418 such transcripts on a real machine).
@@ -128,7 +128,7 @@ export async function runPerceptionSweep(opts: SweepOptions = {}): Promise<Sweep
             const prev = state.file_checkpoints[meta.filePath];
             if (prev && prev.byte_offset >= stat.size) continue;
 
-            if (stat.size > maxFileBytes || jsonlFileTooLarge(stat.size)) {
+            if (stat.size > maxFileBytes) {
               checkpoint(meta.filePath, stat.size);
               state.file_checkpoints[meta.filePath] = {
                 byte_offset: stat.size,
