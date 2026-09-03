@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.20] — 2026-09-03
+
+### Changed
+- **`fleetlens usage` starts the usage daemon when it is off.** Every `usage` mode (bars, `--compact`, `--json`, `--watch`, `--save`) now launches the daemon if it is not running and, on a machine with no samples yet, waits up to 15 s for its first poll before reporting. The notice goes to stderr so `--json`/`--compact` stdout stays machine-clean.
+
 ## [1.0.19] — 2026-09-03
 
 ### Fixed

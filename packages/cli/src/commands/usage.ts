@@ -2,6 +2,7 @@ import { emitKeypressEvents } from "node:readline";
 import { isAgentKind } from "@claude-lens/parser";
 import { agentSources, cclensPath } from "@claude-lens/parser/fs";
 import { flag } from "../args.js";
+import { startDaemonSilent } from "./daemon.js";
 import { fetchAllClaudeUsage, UsageApiError, type UsageSnapshot } from "../usage/api.js";
 import { fetchGrokUsage, GrokApiError } from "../usage/grok.js";
 import { fetchCodexUsage, CodexApiError } from "../usage/codex.js";
@@ -18,6 +19,39 @@ import {
 } from "../usage/storage.js";
 
 const USAGE_LOG = cclensPath("usage.jsonl");
+
+/** How long a cold `usage` waits for a just-started daemon's first poll. */
+const FIRST_SNAPSHOT_WAIT_MS = 15_000;
+
+/**
+ * `usage` reports from the daemon's log, so a stopped daemon means stale or
+ * empty numbers. Start it when it is off (stderr only — stdout stays clean
+ * for --json/--compact consumers). Returns true when a daemon was launched.
+ */
+function ensureUsageDaemon(): boolean {
+  const r = startDaemonSilent();
+  if (r.alreadyRunning) return false;
+  if (!r.started) {
+    console.error(`Warning: usage daemon is not running and could not be started: ${r.error}`);
+    return false;
+  }
+  console.error(`Usage daemon was not running — started it (PID ${r.pid}) so usage keeps updating.`);
+  return true;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** After launching the daemon on a machine with no samples, give its first
+ *  poll a moment to land instead of reporting "no usage samples yet". */
+async function waitForFirstSnapshots(agentFilter: string | undefined): Promise<void> {
+  const deadline = Date.now() + FIRST_SNAPSHOT_WAIT_MS;
+  while (Date.now() < deadline) {
+    if (Object.keys(filterAgents(latestSnapshotsByAgent(USAGE_LOG), agentFilter)).length > 0) return;
+    await sleep(1000);
+  }
+}
 
 async function saveAuxiliarySnapshots(): Promise<number> {
   let saved = 0;
@@ -411,8 +445,8 @@ Watch options:
   --interval N   Redraw every N seconds (default 2; reads ~/.cclens/usage.jsonl)
   ↑/↓, PgUp/PgDn, Home/End scroll the live view; q or Ctrl+C quits
 
-Tip: leave the usage daemon running (\`fleetlens daemon start\`) so --watch
-stays fresh without hammering provider APIs.`);
+Note: \`usage\` starts the usage daemon if it is not running, so numbers
+keep refreshing without hammering provider APIs.`);
     return;
   }
 
@@ -453,12 +487,18 @@ stays fresh without hammering provider APIs.`);
   const intervalRaw = flag(args, "--interval");
   const intervalSec = Math.max(1, parseInt(intervalRaw ?? "2", 10) || 2);
 
+  const daemonJustStarted = ensureUsageDaemon();
+
   if (watch) {
     await runWatch({ agentFilter, intervalSec, saveOnce: save });
     return;
   }
 
-  const collected = await collectSnapshots({ save, preferLiveClaude: true });
+  let collected = await collectSnapshots({ save, preferLiveClaude: true });
+  if (daemonJustStarted && Object.keys(filterAgents(collected.byAgent, agentFilter)).length === 0) {
+    await waitForFirstSnapshots(agentFilter);
+    collected = await collectSnapshots({ save: false, preferLiveClaude: true });
+  }
   const byAgent = filterAgents(collected.byAgent, agentFilter);
 
   if (save && collected.saved === 0 && Object.keys(byAgent).length === 0) {
@@ -486,8 +526,8 @@ stays fresh without hammering provider APIs.`);
 
   if (Object.keys(byAgent).length === 0) {
     const msg = agentFilter
-      ? `no usage samples for ${agentFilter}. Run \`fleetlens usage --save\` or start the daemon.`
-      : "no usage samples yet. Run `fleetlens daemon start` or `fleetlens usage --save`.";
+      ? `no usage samples for ${agentFilter} yet. Run \`fleetlens usage --save\` or wait for the daemon's next poll.`
+      : "no usage samples yet. Run `fleetlens usage --save` or wait for the daemon's first poll.";
     emitMachineError(machineMode, msg);
     process.exitCode = 1;
     return;
