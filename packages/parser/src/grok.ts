@@ -37,6 +37,7 @@ import type {
   SubagentRun,
   Usage,
 } from "./types.js";
+import { jsonlFileTooLarge, lruGet, lruSet, readJsonlFile } from "./jsonl-read.js";
 
 /** Resolve at call time so GROK_HOME overrides are not frozen at import. */
 export function resolveDefaultGrokRoot(): string {
@@ -364,10 +365,13 @@ type ParsedSession = {
 };
 
 async function parseSession(dir: SessionDir): Promise<ParsedSession> {
-  const [summary, signals, updatesRaw] = await Promise.all([
+  if (jsonlFileTooLarge(dir.sizeBytes)) {
+    throw new Error(`transcript too large to parse (${dir.sizeBytes} bytes)`);
+  }
+  const [summary, signals, updateLines] = await Promise.all([
     safeReadJson<GrokSummary>(dir.summaryPath),
     dir.signalsPath ? safeReadJson<GrokSignals>(dir.signalsPath) : Promise.resolve(null),
-    fs.readFile(dir.updatesPath, "utf8").catch(() => ""),
+    readJsonlFile(dir.updatesPath).catch(() => [] as unknown[]),
   ]);
 
   const sessionId = summary?.info?.id ?? dir.sessionId;
@@ -496,16 +500,8 @@ async function parseSession(dir: SessionDir): Promise<ParsedSession> {
     buf.raw.push(raw);
   }
 
-  const lines = updatesRaw.split("\n");
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let obj: GrokLine;
-    try {
-      obj = JSON.parse(trimmed) as GrokLine;
-    } catch {
-      continue;
-    }
+  for (const rawLine of updateLines) {
+    const obj = rawLine as GrokLine;
 
     const update = obj.params?.update;
     if (!update || typeof update !== "object") continue;
@@ -814,6 +810,7 @@ export async function listGrokSessions(opts: ListGrokOptions = {}): Promise<Sess
       out.push(cached.meta);
       continue;
     }
+    if (jsonlFileTooLarge(dir.sizeBytes)) continue;
     try {
       const { meta, sessionKind } = await parseSession(dir);
       if (sessionKind === "subagent") continue;
@@ -848,7 +845,7 @@ export async function getGrokSession(
         const { meta, events } = await parseSession(dir);
         if (meta.id === id) {
           const detail: SessionDetail = { ...meta, events };
-          detailCache.set(dir.dirPath, {
+          lruSet(detailCache, dir.dirPath, {
             detail,
             mtimeMs: dir.mtimeMs,
             sizeBytes: dir.sizeBytes,
@@ -862,7 +859,7 @@ export async function getGrokSession(
     return null;
   }
 
-  const cached = detailCache.get(chosen.dirPath);
+  const cached = lruGet(detailCache, chosen.dirPath);
   if (cached && cached.mtimeMs === chosen.mtimeMs && cached.sizeBytes === chosen.sizeBytes) {
     return cached.detail;
   }
@@ -879,7 +876,7 @@ export async function getGrokSession(
       ? { subagents, spawnedAgentCount: subagents.length }
       : {}),
   };
-  detailCache.set(chosen.dirPath, {
+  lruSet(detailCache, chosen.dirPath, {
     detail,
     mtimeMs: chosen.mtimeMs,
     sizeBytes: chosen.sizeBytes,

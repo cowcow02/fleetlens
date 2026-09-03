@@ -108,6 +108,13 @@ export {
   loadCalibrationEvents,
   loadWorkflowAgentDetail,
 } from "./claude-code.js";
+export {
+  JsonlTooLargeError,
+  jsonlFileTooLarge,
+  readJsonlFileSync,
+  MAX_JSONL_FILE_BYTES,
+  MAX_JSONL_LINE_BYTES,
+} from "./jsonl-read.js";
 export { resolveProjectIdentity, readGitFolder } from "./git-project.js";
 export type { GitFolderInfo, GitRemote } from "./git-project.js";
 export type { FileRef, ListOptions, ProjectRefLite } from "./claude-code.js";

@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, statSync, readFileSync } from "node:fs";
+import { existsSync, statSync, readFileSync, openSync, closeSync } from "node:fs";
 import { writePid, readPid, isProcessAlive, cleanStalePid, removePid } from "../pid.js";
 import { latestSnapshot } from "../usage/storage.js";
 import { cclensPath } from "@claude-lens/parser/fs";
@@ -36,11 +36,24 @@ export function startDaemonSilent(): DaemonLifecycleResult {
     };
   }
 
+  // stderr goes to daemon.log: a V8 heap-exhaustion abort is not a JS
+  // exception, so no in-process handler can record it. With stdio "ignore"
+  // the daemon died silently after every perception sweep for days
+  // (2026-09-03) and the log held no trace of why.
+  let logFd: number | "ignore" = "ignore";
+  try {
+    logFd = openSync(DAEMON_LOG, "a");
+  } catch {
+    // Unwritable log dir — still start the daemon.
+  }
   const child = spawn(process.execPath, [script], {
     detached: true,
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", logFd],
   });
   child.unref();
+  if (typeof logFd === "number") {
+    try { closeSync(logFd); } catch {}
+  }
   const pid = child.pid!;
   writePid(DAEMON_PID, pid);
   return { started: true, pid, alreadyRunning: false };

@@ -30,6 +30,16 @@ import {
   CLAUDE_CODE_METADATA,
 } from "./agent-metadata.js";
 import { type CalibrationEvent, modelFamily } from "./calibration.js";
+import {
+  jsonlFileTooLarge,
+  LIST_PARSE_CONCURRENCY,
+  lruGet,
+  lruSet,
+  mapPool,
+  readJsonlFile,
+} from "./jsonl-read.js";
+
+export { readJsonlFile } from "./jsonl-read.js";
 
 export const DEFAULT_ROOT = path.join(os.homedir(), ".claude", "projects");
 
@@ -51,21 +61,6 @@ const FLEETLENS_RUNTIME_PROJECT_DIR = encodeProjectDir(
 
 export function isFleetlensRuntimeDir(projectDir: string): boolean {
   return projectDir === FLEETLENS_RUNTIME_PROJECT_DIR;
-}
-
-export async function readJsonlFile(filePath: string): Promise<unknown[]> {
-  const raw = await fs.readFile(filePath, "utf8");
-  const out: unknown[] = [];
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      out.push(JSON.parse(trimmed));
-    } catch {
-      // Skip malformed lines rather than failing the whole session.
-    }
-  }
-  return out;
 }
 
 export type FileRef = {
@@ -204,12 +199,15 @@ export async function loadCalibrationEvents(
   root: string = DEFAULT_ROOT,
 ): Promise<CalibrationEvent[]> {
   const files = await walkJsonlFiles(root);
-  const perFile = await Promise.all(
-    files.map(async (f): Promise<CalibrationEvent[]> => {
+  const perFile = await mapPool(
+    files,
+    LIST_PARSE_CONCURRENCY,
+    async (f): Promise<CalibrationEvent[]> => {
       const cached = calibrationEventsCache.get(f.fullPath);
       if (cached && cached.mtimeMs === f.mtimeMs && cached.sizeBytes === f.sizeBytes) {
         return cached.events;
       }
+      if (jsonlFileTooLarge(f.sizeBytes)) return [];
       let lines: unknown[];
       try {
         lines = await readJsonlFile(f.fullPath);
@@ -249,7 +247,7 @@ export async function loadCalibrationEvents(
         sizeBytes: f.sizeBytes,
       });
       return events;
-    }),
+    },
   );
   const out = perFile.flat();
   out.sort((a, b) => a.ts.localeCompare(b.ts));
@@ -561,6 +559,7 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
   if (cached && cached.mtimeMs === f.mtimeMs && cached.sizeBytes === f.sizeBytes) {
     return cached.meta;
   }
+  if (jsonlFileTooLarge(f.sizeBytes)) return null;
   try {
     const rawLines = await readJsonlFile(f.fullPath);
     const { meta } = parseTranscript(rawLines);
@@ -596,10 +595,11 @@ async function getCachedMeta(f: FileRef): Promise<SessionMeta | null> {
 }
 
 async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
-  const cached = detailCache.get(f.fullPath);
+  const cached = lruGet(detailCache, f.fullPath);
   if (cached && cached.mtimeMs === f.mtimeMs && cached.sizeBytes === f.sizeBytes) {
     return cached.detail;
   }
+  if (jsonlFileTooLarge(f.sizeBytes)) return null;
   try {
     const rawLines = await readJsonlFile(f.fullPath);
     const { meta, events } = parseTranscript(rawLines);
@@ -629,7 +629,7 @@ async function getCachedDetail(f: FileRef): Promise<SessionDetail | null> {
         : {}),
       ...foldWorkflowAgentTime(meta.activeSegments, wf.spans),
     };
-    detailCache.set(f.fullPath, { detail, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
+    lruSet(detailCache, f.fullPath, { detail, mtimeMs: f.mtimeMs, sizeBytes: f.sizeBytes });
     // Populate the meta cache from the detail so a later listSessions
     // doesn't have to re-parse the file.
     const metaOnly: SessionMeta = { ...detail };
@@ -653,12 +653,10 @@ export async function listSessions(opts: ListOptions = {}): Promise<SessionMeta[
   if (projectDir) files = files.filter((f) => f.projectDir === projectDir);
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
   const sliced = files.slice(0, limit);
-  const metas = await Promise.all(
-    sliced.map(async (f) => {
-      const m = await getCachedMeta(f);
-      return m ? withLastActivity(m, f) : null;
-    }),
-  );
+  const metas = await mapPool(sliced, LIST_PARSE_CONCURRENCY, async (f) => {
+    const m = await getCachedMeta(f);
+    return m ? withLastActivity(m, f) : null;
+  });
   return metas.filter((m): m is SessionMeta => m !== null);
 }
 

@@ -22,6 +22,7 @@ import { summarizeSubagentLines } from "./claude-code.js";
 import { resolveProjectIdentity } from "./git-project.js";
 import { parseTranscript } from "./parser.js";
 import type { SessionDetail, SessionMeta, SubagentRun } from "./types.js";
+import { jsonlFileTooLarge, lruGet, lruSet, readJsonlFile } from "./jsonl-read.js";
 
 export const DEFAULT_COWORK_ROOT = defaultCoworkRoot();
 
@@ -182,20 +183,7 @@ function resolveProject(
   };
 }
 
-async function readJsonl(filePath: string): Promise<unknown[]> {
-  const raw = await fs.readFile(filePath, "utf8");
-  const out: unknown[] = [];
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      out.push(JSON.parse(trimmed));
-    } catch {
-      // Skip malformed lines.
-    }
-  }
-  return out;
-}
+
 
 /** Cowork's audit.jsonl logs each user message twice under the SAME `uuid`: the
  *  raw desktop input (no `timestamp`) and an `isReplay` copy fed into the agent
@@ -370,8 +358,11 @@ type Parsed = {
 };
 
 async function parseCoworkSession(file: SessionFile): Promise<Parsed> {
+  if (jsonlFileTooLarge(file.auditSize)) {
+    throw new Error(`transcript too large to parse (${file.auditSize} bytes)`);
+  }
   const [lines, coworkMeta, spaceIdToPath] = await Promise.all([
-    readJsonl(file.auditPath),
+    readJsonlFile(file.auditPath),
     readCoworkMeta(file.metaPath),
     loadSpacesForWorkspace(file.workspaceDir),
   ]);
@@ -476,7 +467,7 @@ export async function getCoworkSession(
   const file = files.find((f) => f.sessionId === id);
   if (!file) return null;
   const key = cacheKeyFor(file);
-  const cached = detailCache.get(file.auditPath);
+  const cached = lruGet(detailCache, file.auditPath);
   if (cached && cacheKeyMatches(cached.key, key)) return cached.detail;
   const { meta, events, subagents } = await parseCoworkSession(file);
   const detail: SessionDetail = {
@@ -484,6 +475,6 @@ export async function getCoworkSession(
     events,
     ...(subagents.length ? { subagents } : {}),
   };
-  detailCache.set(file.auditPath, { detail, key });
+  lruSet(detailCache, file.auditPath, { detail, key });
   return detail;
 }

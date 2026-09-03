@@ -1,7 +1,8 @@
-import { statSync, readFileSync } from "node:fs";
+import { statSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { parseTranscript } from "@claude-lens/parser";
 import type { SessionDetail } from "@claude-lens/parser";
+import { jsonlFileTooLarge, readJsonlFileSync } from "@claude-lens/parser/fs";
 import { buildEntries } from "@claude-lens/entries";
 import type { Entry } from "@claude-lens/entries";
 
@@ -31,15 +32,10 @@ export function decodeProjectDirName(projectDir: string): string {
  */
 export function buildEntriesForFile(filePath: string): Entry[] | null {
   const stat = statSync(filePath);
-  const raw = readFileSync(filePath, "utf8");
-  const rawLines: unknown[] = raw
-    .split("\n")
-    .filter(Boolean)
-    .map(l => {
-      try { return JSON.parse(l); } catch { return null; }
-    })
-    .filter((x): x is object => x !== null);
-
+  // Oversized → [] so the sweep checkpoints and does not retry every 5 min.
+  // (null would skip the checkpoint and re-parse next tick.)
+  if (jsonlFileTooLarge(stat.size)) return [];
+  const rawLines = readJsonlFileSync(filePath);
   if (rawLines.length === 0) return null;
 
   const { meta, events } = parseTranscript(rawLines);
