@@ -23,11 +23,8 @@ const USAGE_LOG = cclensPath("usage.jsonl");
 /** How long a cold `usage` waits for a just-started daemon's first poll. */
 const FIRST_SNAPSHOT_WAIT_MS = 15_000;
 
-/**
- * `usage` reports from the daemon's log, so a stopped daemon means stale or
- * empty numbers. Start it when it is off (stderr only — stdout stays clean
- * for --json/--compact consumers). Returns true when a daemon was launched.
- */
+// usage reports from the daemon's log, so a stopped daemon means stale or
+// empty numbers. Notices go to stderr to keep --json/--compact stdout clean.
 function ensureUsageDaemon(): boolean {
   const r = startDaemonSilent();
   if (r.alreadyRunning) return false;
@@ -43,8 +40,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** After launching the daemon on a machine with no samples, give its first
- *  poll a moment to land instead of reporting "no usage samples yet". */
 async function waitForFirstSnapshots(agentFilter: string | undefined): Promise<void> {
   const deadline = Date.now() + FIRST_SNAPSHOT_WAIT_MS;
   while (Date.now() < deadline) {
@@ -490,6 +485,8 @@ keep refreshing without hammering provider APIs.`);
   const daemonJustStarted = ensureUsageDaemon();
 
   if (watch) {
+    // No warm-up wait here: the watch loop redraws from the log every
+    // intervalSec and picks up the first poll on its own.
     await runWatch({ agentFilter, intervalSec, saveOnce: save });
     return;
   }
@@ -639,7 +636,7 @@ async function runWatch(opts: {
     if (Object.keys(byAgent).length === 0) {
       process.stdout.write(
         `\n  ${opts.agentFilter ? `No samples for ${opts.agentFilter}` : "Waiting for usage samples…"}` +
-          `\n  Start the daemon: fleetlens daemon start\n` +
+          `\n  (daemon running — waiting for its first poll)\n` +
           `\n  live · every ${opts.intervalSec}s · Ctrl+C to quit\n`,
       );
       return;
