@@ -5,6 +5,7 @@ import { toLocalDay } from "./analytics.js";
 import { resolveProjectIdentity } from "./git-project.js";
 import { isFrameworkInjectedUserInput } from "./user-input.js";
 import type { SessionDetail, SessionEvent, SessionMeta, Usage } from "./types.js";
+import { jsonlFileTooLarge, lruGet, lruSet, readJsonlFile } from "./jsonl-read.js";
 
 export const DEFAULT_COPILOT_ROOT = path.join(os.homedir(), ".copilot", "session-state");
 
@@ -66,20 +67,7 @@ async function listSessionFiles(root: string): Promise<CopilotFile[]> {
   return out;
 }
 
-async function readJsonl(filePath: string): Promise<unknown[]> {
-  const raw = await fs.readFile(filePath, "utf8");
-  const out: unknown[] = [];
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      out.push(JSON.parse(trimmed));
-    } catch {
-      // A concurrently-written final line may be incomplete until the next append.
-    }
-  }
-  return out;
-}
+
 
 function computeActiveSegments(timestamps: number[]): { startMs: number; endMs: number }[] {
   const sorted = [...new Set(timestamps)].sort((a, b) => a - b);
@@ -404,8 +392,9 @@ async function scanCopilot(root: string): Promise<{ file: CopilotFile; meta: Ses
       out.push({ file, meta: cached.meta });
       continue;
     }
+    if (jsonlFileTooLarge(file.sizeBytes)) continue;
     try {
-      const lines = await readJsonl(file.filePath);
+      const lines = await readJsonlFile(file.filePath);
       const { meta } = parseSession(file, lines);
       metaCache.set(file.filePath, { meta, mtimeMs: file.mtimeMs, sizeBytes: file.sizeBytes });
       out.push({ file, meta });
@@ -434,14 +423,15 @@ export async function getCopilotSession(
   const root = opts.root ?? DEFAULT_COPILOT_ROOT;
   const entry = (await scanCopilot(root)).find((candidate) => candidate.meta.id === id);
   if (!entry) return null;
-  const cached = detailCache.get(entry.file.filePath);
+  const cached = lruGet(detailCache, entry.file.filePath);
   if (cached && cached.mtimeMs === entry.file.mtimeMs && cached.sizeBytes === entry.file.sizeBytes) {
     return cached.detail;
   }
-  const lines = await readJsonl(entry.file.filePath);
+  if (jsonlFileTooLarge(entry.file.sizeBytes)) return null;
+  const lines = await readJsonlFile(entry.file.filePath);
   const { meta, events } = parseSession(entry.file, lines);
   const detail: SessionDetail = { ...meta, events };
-  detailCache.set(entry.file.filePath, {
+  lruSet(detailCache, entry.file.filePath, {
     detail,
     mtimeMs: entry.file.mtimeMs,
     sizeBytes: entry.file.sizeBytes,

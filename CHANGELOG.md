@@ -4,6 +4,12 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.19] — 2026-09-03
+
+### Fixed
+- **Usage daemon OOM on huge transcripts.** The background perception sweep no longer loads 100–900 MB JSONL files (or multi-megabyte tool-result lines) into memory as one `JSON.parse`. Files over 64 MiB are skipped and checkpointed, session-detail caches are capped, list scans parse at most 4 files at a time, and the sweep runs on the main daemon loop instead of overlapping a team sync. The daemon was aborting with `V8 FatalProcessOutOfMemory` a few minutes after every perception sweep.
+- **Daemon crashes are now recorded.** The daemon's stderr is appended to `~/.cclens/daemon.log` (it was discarded before, so the OOM abort left no trace), uncaught exceptions are logged before exit, and each sweep line reports heap/RSS.
+
 ## [1.0.18] — 2026-08-30
 
 ### Added

@@ -19,6 +19,7 @@ import type {
   SessionMeta,
   Usage,
 } from "./types.js";
+import { jsonlFileTooLarge, lruGet, lruSet, readJsonlFile } from "./jsonl-read.js";
 
 export const DEFAULT_ANTIGRAVITY_ROOT = path.join(os.homedir(), ".gemini", "antigravity-cli");
 
@@ -110,7 +111,9 @@ type ParsedSession = {
 };
 
 async function parseSession(file: SessionFile): Promise<ParsedSession> {
-  const raw = await fs.readFile(file.filePath, "utf8");
+  if (jsonlFileTooLarge(file.sizeBytes)) {
+    throw new Error(`transcript too large to parse (${file.sizeBytes} bytes)`);
+  }
   const events: SessionEvent[] = [];
   const totalUsage = emptyUsage();
 
@@ -157,24 +160,19 @@ async function parseSession(file: SessionFile): Promise<ParsedSession> {
 
   const parsedObjects: unknown[] = [];
   const indexMap = new Map<number, number>();
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      const obj = JSON.parse(trimmed) as RawEvent;
-      const stepIdx = obj.step_index;
-      if (typeof stepIdx === "number") {
-        if (indexMap.has(stepIdx)) {
-          parsedObjects[indexMap.get(stepIdx)!] = obj;
-        } else {
-          indexMap.set(stepIdx, parsedObjects.length);
-          parsedObjects.push(obj);
-        }
+  const lines = await readJsonlFile(file.filePath);
+  for (const rawLine of lines) {
+    const obj = rawLine as RawEvent;
+    const stepIdx = obj.step_index;
+    if (typeof stepIdx === "number") {
+      if (indexMap.has(stepIdx)) {
+        parsedObjects[indexMap.get(stepIdx)!] = obj;
       } else {
+        indexMap.set(stepIdx, parsedObjects.length);
         parsedObjects.push(obj);
       }
-    } catch {
-      // Skip malformed lines
+    } else {
+      parsedObjects.push(obj);
     }
   }
 
@@ -435,6 +433,7 @@ export async function listAntigravitySessions(opts: ListAntigravityOptions = {})
       out.push(cached.meta);
       continue;
     }
+    if (jsonlFileTooLarge(file.sizeBytes)) continue;
     try {
       const { meta } = await parseSession(file);
       metaCache.set(file.filePath, {
@@ -469,7 +468,7 @@ export async function getAntigravitySession(
     }
   }
   if (!chosen) return null;
-  const cached = detailCache.get(chosen.filePath);
+  const cached = lruGet(detailCache, chosen.filePath);
   if (
     cached &&
     cached.mtimeMs === chosen.mtimeMs &&
@@ -480,7 +479,7 @@ export async function getAntigravitySession(
   }
   const { meta, events } = await parseSession(chosen);
   const detail: SessionDetail = { ...meta, events };
-  detailCache.set(chosen.filePath, {
+  lruSet(detailCache, chosen.filePath, {
     detail,
     mtimeMs: chosen.mtimeMs,
     sizeBytes: chosen.sizeBytes,

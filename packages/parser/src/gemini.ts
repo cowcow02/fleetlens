@@ -34,6 +34,7 @@ import type {
   SessionMeta,
   Usage,
 } from "./types.js";
+import { jsonlFileTooLarge, lruGet, lruSet, readJsonlFile } from "./jsonl-read.js";
 
 export const DEFAULT_GEMINI_ROOT = path.join(os.homedir(), ".gemini", "tmp");
 const GEMINI_PROJECTS_FILE = path.join(os.homedir(), ".gemini", "projects.json");
@@ -196,9 +197,12 @@ type ReplayResult = {
 };
 
 async function readAndReplay(file: SessionFile): Promise<ReplayResult> {
-  const raw = await fs.readFile(file.filePath, "utf8");
+  if (jsonlFileTooLarge(file.sizeBytes)) {
+    return { meta: {}, messages: [] };
+  }
 
   if (file.format === "legacy-json") {
+    const raw = await fs.readFile(file.filePath, "utf8");
     let blob: Record<string, unknown>;
     try {
       blob = JSON.parse(raw) as Record<string, unknown>;
@@ -221,17 +225,8 @@ async function readAndReplay(file: SessionFile): Promise<ReplayResult> {
   const byId = new Map<string, MessageRecord>();
   const order: string[] = [];
 
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    let obj: unknown;
-    try {
-      obj = JSON.parse(trimmed);
-    } catch {
-      // Same posture as Gemini CLI's own reader: skip malformed lines.
-      continue;
-    }
-
+  const parsedLines = await readJsonlFile(file.filePath);
+  for (const obj of parsedLines) {
     if (isRewindMarker(obj)) {
       const target = obj.$rewindTo;
       const idx = order.indexOf(target);
@@ -617,6 +612,7 @@ export async function listGeminiSessions(opts: ListGeminiOptions = {}): Promise<
       out.push(cached.meta);
       continue;
     }
+    if (jsonlFileTooLarge(file.sizeBytes)) continue;
     try {
       const { meta } = await parseSession(file);
       metaCache.set(file.filePath, {
@@ -663,13 +659,13 @@ export async function getGeminiSession(
     }
   }
   if (!chosen) return null;
-  const cached = detailCache.get(chosen.filePath);
+  const cached = lruGet(detailCache, chosen.filePath);
   if (cached && cached.mtimeMs === chosen.mtimeMs && cached.sizeBytes === chosen.sizeBytes) {
     return cached.detail;
   }
   const { meta, events } = await parseSession(chosen);
   const detail: SessionDetail = { ...meta, events };
-  detailCache.set(chosen.filePath, {
+  lruSet(detailCache, chosen.filePath, {
     detail,
     mtimeMs: chosen.mtimeMs,
     sizeBytes: chosen.sizeBytes,

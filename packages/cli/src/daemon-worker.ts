@@ -39,6 +39,8 @@ import { getUpdateAvailability } from "./updater.js";
 import { getServerStatus, probeServerHealth, restartWedgedServer } from "./server.js";
 import { ServerWatchdog, type WatchdogVerdict } from "./watchdog.js";
 
+declare const CLI_VERSION: string;
+
 const USAGE_LOG = cclensPath("usage.jsonl");
 const DAEMON_LOG = cclensPath("daemon.log");
 const UPDATE_STATE = cclensPath("daemon-update.json");
@@ -67,19 +69,25 @@ let waitingForRefresh = false;
 let updateCheckInFlight = false;
 
 const PERCEPTION_INTERVAL_MS = 5 * 60 * 1000;
+let nextPerceptionAtMs = Date.now() + PERCEPTION_INTERVAL_MS;
 let perceptionInFlight = false;
 // One-shot per-process: backfill last week's narrative after the FIRST
 // successful sweep on this boot. Re-running on every poll would either
 // re-spend (if the lock file is mistakenly cleared) or just be wasted I/O.
 let backfillAttempted = false;
 
-const perceptionHandle: NodeJS.Timeout = setInterval(async () => {
+async function runPerceptionTick(): Promise<void> {
   if (perceptionInFlight) return;
   perceptionInFlight = true;
   try {
-    const { sessionsProcessed, entriesWritten, errors } = await runPerceptionSweep();
-    if (sessionsProcessed > 0 || errors > 0) {
-      log("info", `perception sweep: ${sessionsProcessed} sessions, ${entriesWritten} entries, ${errors} errors`);
+    const { sessionsProcessed, entriesWritten, errors, skippedOversized } = await runPerceptionSweep();
+    if (sessionsProcessed > 0 || errors > 0 || skippedOversized > 0) {
+      const mem = process.memoryUsage();
+      const mb = (n: number) => Math.round(n / 1048576);
+      log(
+        "info",
+        `perception sweep: ${sessionsProcessed} sessions, ${entriesWritten} entries, ${errors} errors, ${skippedOversized} oversized skipped · heap ${mb(mem.heapUsed)}MB rss ${mb(mem.rss)}MB`,
+      );
     }
     if (!backfillAttempted) {
       backfillAttempted = true;
@@ -97,8 +105,9 @@ const perceptionHandle: NodeJS.Timeout = setInterval(async () => {
     log("error", `perception sweep failed: ${(err as Error).message}`);
   } finally {
     perceptionInFlight = false;
+    nextPerceptionAtMs = Date.now() + PERCEPTION_INTERVAL_MS;
   }
-}, PERCEPTION_INTERVAL_MS);
+}
 
 type DaemonUpdateState = {
   lastCheckedAt?: string;
@@ -483,84 +492,103 @@ function sleep(ms: number): Promise<void> {
 
 async function runLoop(): Promise<void> {
   while (true) {
-    const now = Date.now();
-    if (now >= nextAuxPollAtMs) {
-      // Every non-Claude provider has independent auth and must keep polling
-      // even when Claude Code is absent or waiting for a token refresh.
-      await pollAuxiliaryUsage();
-      nextAuxPollAtMs = Date.now() + BASE_INTERVAL_MS;
-    }
-    if (now >= nextPollAtMs) {
-      // Log a wake-from-sleep catch-up when we come back from a long gap.
-      // Only meaningful once we've done at least one poll (nextPollAtMs > 0).
-      if (nextPollAtMs > 0 && now - nextPollAtMs > currentIntervalMs) {
-        log(
-          "info",
-          `wake-from-sleep catch-up: ${Math.round((now - nextPollAtMs + currentIntervalMs) / 1000)}s since last poll`,
-        );
+    try {
+      const now = Date.now();
+      if (now >= nextAuxPollAtMs) {
+        // Every non-Claude provider has independent auth and must keep polling
+        // even when Claude Code is absent or waiting for a token refresh.
+        await pollAuxiliaryUsage();
+        nextAuxPollAtMs = Date.now() + BASE_INTERVAL_MS;
       }
+      if (now >= nextPollAtMs) {
+        // Log a wake-from-sleep catch-up when we come back from a long gap.
+        // Only meaningful once we've done at least one poll (nextPollAtMs > 0).
+        if (nextPollAtMs > 0 && now - nextPollAtMs > currentIntervalMs) {
+          log(
+            "info",
+            `wake-from-sleep catch-up: ${Math.round((now - nextPollAtMs + currentIntervalMs) / 1000)}s since last poll`,
+          );
+        }
 
-      // Local precheck: any discovered Claude login still has a usable token?
-      const accounts = discoverClaudeAccounts({ nowMs: now });
-      if (accounts.length === 0) {
-        const expired = discoverClaudeAccounts({ nowMs: now, usableOnly: false });
-        if (expired.length > 0) {
-          if (!waitingForRefresh) {
-            log("info", "token expired; waiting for Claude Code to refresh it");
+        // Local precheck: any discovered Claude login still has a usable token?
+        const accounts = discoverClaudeAccounts({ nowMs: now });
+        if (accounts.length === 0) {
+          const expired = discoverClaudeAccounts({ nowMs: now, usableOnly: false });
+          if (expired.length > 0) {
+            if (!waitingForRefresh) {
+              log("info", "token expired; waiting for Claude Code to refresh it");
+              waitingForRefresh = true;
+            }
+            // Don't advance nextPollAtMs — next watchdog tick rechecks in
+            // WATCHDOG_INTERVAL_MS, and the moment Claude Code writes a fresh
+            // token we fire a poll immediately.
+          } else {
+            log("warn", "no Claude Code OAuth token found; waiting");
             waitingForRefresh = true;
+            // No creds at all — don't spam, retry at normal cadence.
+            nextPollAtMs = now + BASE_INTERVAL_MS;
           }
-          // Don't advance nextPollAtMs — next watchdog tick rechecks in
-          // WATCHDOG_INTERVAL_MS, and the moment Claude Code writes a fresh
-          // token we fire a poll immediately.
         } else {
-          log("warn", "no Claude Code OAuth token found; waiting");
-          waitingForRefresh = true;
-          // No creds at all — don't spam, retry at normal cadence.
-          nextPollAtMs = now + BASE_INTERVAL_MS;
+          if (waitingForRefresh) {
+            log("info", "token refreshed; resuming polls");
+            waitingForRefresh = false;
+          }
+          const outcome = await pollClaudeUsage();
+          scheduleAfter(Date.now(), outcome);
         }
-      } else {
-        if (waitingForRefresh) {
-          log("info", "token refreshed; resuming polls");
-          waitingForRefresh = false;
-        }
-        const outcome = await pollClaudeUsage();
-        scheduleAfter(Date.now(), outcome);
       }
-
-    }
-    const teamNow = Date.now();
-    if (teamNow >= nextTeamSyncAtMs) {
-      // Team push is independent of Claude OAuth state — it uses its own bearer
-      // and a different server. Keep it on its own cadence so an expired Claude
-      // token cannot turn the team sync loop into a 5-second retry storm.
-      await runTeamSync(log, undefined, {
-        trigger: firstTeamSync ? "boot" : "auto",
-        nextSyncMs: BASE_INTERVAL_MS,
-      });
-      firstTeamSync = false;
-      nextTeamSyncAtMs = Date.now() + BASE_INTERVAL_MS;
-    }
-    if (Date.now() >= nextUpdateCheckAtMs) {
-      await runDaemonUpdateCheck();
-    }
-    if (Date.now() >= nextServerHealthAtMs) {
-      await runServerHealthCheck();
-      nextServerHealthAtMs = Date.now() + SERVER_HEALTH_INTERVAL_MS;
+      const teamNow = Date.now();
+      if (teamNow >= nextTeamSyncAtMs) {
+        // Team push is independent of Claude OAuth state — it uses its own bearer
+        // and a different server. Keep it on its own cadence so an expired Claude
+        // token cannot turn the team sync loop into a 5-second retry storm.
+        await runTeamSync(log, undefined, {
+          trigger: firstTeamSync ? "boot" : "auto",
+          nextSyncMs: BASE_INTERVAL_MS,
+        });
+        firstTeamSync = false;
+        nextTeamSyncAtMs = Date.now() + BASE_INTERVAL_MS;
+      }
+      if (Date.now() >= nextUpdateCheckAtMs) {
+        await runDaemonUpdateCheck();
+      }
+      if (Date.now() >= nextServerHealthAtMs) {
+        await runServerHealthCheck();
+        nextServerHealthAtMs = Date.now() + SERVER_HEALTH_INTERVAL_MS;
+      }
+      if (Date.now() >= nextPerceptionAtMs) {
+        // Run on the same loop as polls/sync so a sweep cannot overlap a
+        // team push and double the heap (the previous setInterval did).
+        await runPerceptionTick();
+      }
+    } catch (err) {
+      log("error", `daemon tick failed: ${(err as Error).stack ?? err}`);
     }
     await sleep(WATCHDOG_INTERVAL_MS);
   }
 }
 
+// Version + script path: several installs can coexist (npm global, nvm
+// global, repo dist via the menubar's cli-launch.json) and the log must say
+// which one this daemon is.
 log(
   "info",
-  `daemon started (pid=${process.pid}, interval=${BASE_INTERVAL_MS / 1000}s, watchdog=${WATCHDOG_INTERVAL_MS / 1000}s)`,
+  `daemon started (pid=${process.pid}, version=${CLI_VERSION}, interval=${BASE_INTERVAL_MS / 1000}s, watchdog=${WATCHDOG_INTERVAL_MS / 1000}s, script=${process.argv[1] ?? "?"})`,
 );
 
 // Kick the loop. runLoop() never resolves — it runs until SIGTERM.
 void runLoop();
 
+process.on("unhandledRejection", (reason) => {
+  log("error", `unhandledRejection: ${reason instanceof Error ? reason.stack : String(reason)}`);
+});
+
+process.on("uncaughtException", (err) => {
+  log("error", `uncaughtException: ${err.stack ?? String(err)}`);
+  process.exit(1);
+});
+
 process.on("SIGTERM", () => {
-  clearInterval(perceptionHandle);
   log("info", `daemon stopping (pid=${process.pid})`);
   process.exit(0);
 });

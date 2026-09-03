@@ -31,6 +31,7 @@ import type {
   SubagentRun,
   Usage,
 } from "./types.js";
+import { jsonlFileTooLarge, lruGet, lruSet, readJsonlFile } from "./jsonl-read.js";
 
 export const DEFAULT_CODEX_ROOT = path.join(os.homedir(), ".codex", "sessions");
 
@@ -83,20 +84,7 @@ async function listRolloutFiles(root: string): Promise<RolloutFile[]> {
   return out;
 }
 
-async function readJsonl(filePath: string): Promise<unknown[]> {
-  const raw = await fs.readFile(filePath, "utf8");
-  const out: unknown[] = [];
-  for (const line of raw.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    try {
-      out.push(JSON.parse(trimmed));
-    } catch {
-      // Skip malformed lines, same as the Claude reader.
-    }
-  }
-  return out;
-}
+
 
 type Parsed = {
   meta: SessionMeta;
@@ -554,8 +542,9 @@ async function scanAllCodex(root: string): Promise<ScannedFile[]> {
       });
       continue;
     }
+    if (jsonlFileTooLarge(file.sizeBytes)) continue;
     try {
-      const lines = await readJsonl(file.filePath);
+      const lines = await readJsonlFile(file.filePath);
       const parsed = parseRollout(file, lines);
       metaCache.set(file.filePath, {
         meta: parsed.meta,
@@ -681,14 +670,15 @@ export async function getCodexSession(
   if (!rootEntry) {
     const direct = all.find((a) => a.meta.id === id);
     if (!direct) return null;
-    const cached = detailCache.get(direct.file.filePath);
+    const cached = lruGet(detailCache, direct.file.filePath);
     if (cached && cached.mtimeMs === direct.file.mtimeMs && cached.sizeBytes === direct.file.sizeBytes) {
       return cached.detail;
     }
-    const lines = await readJsonl(direct.file.filePath);
+    if (jsonlFileTooLarge(direct.file.sizeBytes)) return null;
+    const lines = await readJsonlFile(direct.file.filePath);
     const { meta, events } = parseRollout(direct.file, lines);
     const detail: SessionDetail = { ...meta, events };
-    detailCache.set(direct.file.filePath, {
+    lruSet(detailCache, direct.file.filePath, {
       detail,
       mtimeMs: direct.file.mtimeMs,
       sizeBytes: direct.file.sizeBytes,
@@ -697,12 +687,13 @@ export async function getCodexSession(
   }
 
   const file = rootEntry.file;
-  const cached = detailCache.get(file.filePath);
+  const cached = lruGet(detailCache, file.filePath);
   if (cached && cached.mtimeMs === file.mtimeMs && cached.sizeBytes === file.sizeBytes) {
     return cached.detail;
   }
+  if (jsonlFileTooLarge(file.sizeBytes)) return null;
 
-  const lines = await readJsonl(file.filePath);
+  const lines = await readJsonlFile(file.filePath);
   const { meta, events } = parseRollout(file, lines);
 
   const children = all.filter(
@@ -719,7 +710,7 @@ export async function getCodexSession(
     ...(subagents.length > 0 ? { subagents, spawnedAgentCount: subagents.length } : {}),
   };
 
-  detailCache.set(file.filePath, {
+  lruSet(detailCache, file.filePath, {
     detail,
     mtimeMs: file.mtimeMs,
     sizeBytes: file.sizeBytes,
@@ -804,7 +795,8 @@ export async function getLatestCodexUsage(
   if (files.length === 0) return null;
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
   for (const file of files) {
-    const lines = await readJsonl(file.filePath);
+    if (jsonlFileTooLarge(file.sizeBytes)) continue;
+    const lines = await readJsonlFile(file.filePath);
     // Walk backwards for the newest *usable* token_count event.
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i];

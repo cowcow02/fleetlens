@@ -85,7 +85,7 @@ describe("runPerceptionSweep", () => {
 
   it("returns zero counts when projects dir is empty", async () => {
     const r = await runPerceptionSweep({ projectsRoot });
-    expect(r).toEqual({ sessionsProcessed: 0, entriesWritten: 0, errors: 0 });
+    expect(r).toEqual({ sessionsProcessed: 0, entriesWritten: 0, errors: 0, skippedOversized: 0 });
   });
 
   it("sets sweep_in_progress=false after completion", async () => {
@@ -99,7 +99,72 @@ describe("runPerceptionSweep", () => {
     const { markSweepStart, readState } = await import("../../src/perception/state.js");
     markSweepStart();
     const r = await runPerceptionSweep({ projectsRoot });
-    expect(r).toEqual({ sessionsProcessed: 0, entriesWritten: 0, errors: 0 });
+    expect(r).toEqual({ sessionsProcessed: 0, entriesWritten: 0, errors: 0, skippedOversized: 0 });
     expect(readState().sweep_in_progress).toBe(true);
+  });
+
+  it("checkpoints oversized transcripts without parsing them", async () => {
+    const { readState } = await import("../../src/perception/state.js");
+    const projectDir = join(projectsRoot, "-Users-test-repo-huge");
+    mkdirSync(projectDir, { recursive: true });
+    const sessionId = "huge-session-1";
+    const payload = `${"x".repeat(200)}\n`;
+    const file = join(projectDir, `${sessionId}.jsonl`);
+    writeFileSync(file, payload);
+
+    const r = await runPerceptionSweep({ projectsRoot, maxFileBytes: 50 });
+    expect(r.sessionsProcessed).toBe(0);
+    expect(r.skippedOversized).toBe(1);
+    expect(r.errors).toBe(0);
+    const cp = readState().file_checkpoints[file];
+    expect(cp).toBeDefined();
+    expect(cp!.byte_offset).toBe(Buffer.byteLength(payload));
+
+    const r2 = await runPerceptionSweep({ projectsRoot, maxFileBytes: 50 });
+    expect(r2.skippedOversized).toBe(0);
+    expect(r2.sessionsProcessed).toBe(0);
+  });
+
+  it("checkpoints extra-source sessions so they are not re-parsed next sweep", async () => {
+    const { readState } = await import("../../src/perception/state.js");
+    const file = join(tmp, "codex-session.jsonl");
+    writeFileSync(file, "{}\n");
+    const fake = {
+      kind: "codex",
+      displayName: "Codex",
+      shortLabel: "Codex",
+      accentColor: "#000",
+      iconChar: "o",
+      defaultRoot: tmp,
+      async listSessions() {
+        return [{
+          id: "codex-1",
+          filePath: file,
+          projectName: "/tmp/orbit-shop",
+          projectDir: "tmp",
+          sessionId: "codex-1",
+          eventCount: 0,
+          totalUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          status: "idle" as const,
+        }];
+      },
+      async getSession() {
+        return null;
+      },
+    };
+    const r1 = await runPerceptionSweep({
+      projectsRoot,
+      extraSources: [fake],
+    });
+    expect(r1.errors).toBe(0);
+    const cp = readState().file_checkpoints[file];
+    expect(cp).toBeDefined();
+    expect(cp!.byte_offset).toBeGreaterThan(0);
+
+    const r2 = await runPerceptionSweep({
+      projectsRoot,
+      extraSources: [fake],
+    });
+    expect(r2.sessionsProcessed).toBe(0);
   });
 });
