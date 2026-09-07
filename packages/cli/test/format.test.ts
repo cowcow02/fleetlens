@@ -478,3 +478,112 @@ describe("layoutForColumns", () => {
     expect(layoutForColumns(100).barWidth).toBe(100 - 16 - 12);
   });
 });
+
+describe("even-pace marker", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-24T12:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Frozen now + 84h to reset = halfway through a 168h window → marker mid-bar.
+  const halfway7d = "2026-06-28T00:00:00Z";
+  const wide = { columns: 100 };
+  const layout = layoutForColumns(wide.columns);
+  const barStart = 2 + layout.labelWidth;
+  const midCell = barStart + Math.floor(0.5 * layout.barWidth);
+
+  function meterLine(out: string, label: string): string {
+    const line = out.split("\n").find((l) => l.trimStart().startsWith(label));
+    expect(line, `no ${label} row in:\n${out}`).toBeDefined();
+    return line!;
+  }
+
+  it("puts the tick at the elapsed position, beyond a slow bar's fill", () => {
+    const out = strip(
+      formatUsage(
+        baseSnapshot({ seven_day: { utilization: 25, resets_at: halfway7d } }),
+        wide,
+      ),
+    );
+    const line = meterLine(out, "7 day");
+    expect(line.indexOf("│")).toBe(midCell);
+    expect([...line.matchAll(/│/g)]).toHaveLength(1);
+    // Slow: fill stops before the tick, so the cell left of it is still empty.
+    expect(line[midCell - 1]).toBe("·");
+  });
+
+  it("keeps the tick when the bar has burned past it (fast)", () => {
+    const out = strip(
+      formatUsage(
+        baseSnapshot({ seven_day: { utilization: 80, resets_at: halfway7d } }),
+        wide,
+      ),
+    );
+    const line = meterLine(out, "7 day");
+    expect(line.indexOf("│")).toBe(midCell);
+    expect(line[midCell - 1]).toBe("█");
+    expect(line[midCell + 1]).toBe("█");
+  });
+
+  it("overwrites one cell instead of widening the row", () => {
+    const withMark = strip(
+      formatUsage(
+        baseSnapshot({ seven_day: { utilization: 25, resets_at: halfway7d } }),
+        wide,
+      ),
+    );
+    const without = strip(
+      formatUsage(baseSnapshot({ seven_day: { utilization: 25, resets_at: null } }), wide),
+    );
+    expect([...meterLine(withMark, "7 day")].length).toBe(
+      [...meterLine(without, "7 day")].length,
+    );
+  });
+
+  it("ticks the 5h bar without ever scoring it slow or fast", () => {
+    const out = strip(
+      formatUsage(
+        baseSnapshot({
+          five_hour: { utilization: 10, resets_at: "2026-06-24T14:30:00Z" },
+        }),
+        wide,
+      ),
+    );
+    // 2.5h left of 5h → 50% elapsed.
+    expect(meterLine(out, "5 hour").indexOf("│")).toBe(midCell);
+    expect(out).not.toMatch(/slow|fast|on track/);
+  });
+
+  it("does not overflow the two-column watch panes when every bar is ticked", () => {
+    const snapshots = Object.fromEntries(
+      ["claude-code", "codex", "copilot", "zai", "grok", "command-code"].map((agent) => [
+        agent,
+        baseSnapshot({
+          agent,
+          five_hour: { utilization: 40, resets_at: "2026-06-24T14:30:00Z" },
+          seven_day: { utilization: 25, resets_at: halfway7d },
+          monthly: { utilization: 60, resets_at: "2026-07-01T00:00:00Z" },
+        }),
+      ]),
+    );
+    const out = strip(formatMultiAgentUsage(snapshots, { watch: true, columns: 180 }));
+    const sideBySide = out
+      .split("\n")
+      .find((line) => line.includes("Claude Code") && line.includes("Z.ai"));
+    expect(sideBySide).toBeDefined();
+    expect(out).toContain("│");
+    for (const line of out.split("\n")) {
+      expect([...line].length, `overflowed: ${JSON.stringify(line)}`).toBeLessThanOrEqual(180);
+    }
+  });
+
+  it("draws no tick when the window has no reset time", () => {
+    const out = strip(
+      formatUsage(baseSnapshot({ seven_day: { utilization: 25, resets_at: null } }), wide),
+    );
+    expect(out).not.toContain("│");
+  });
+});

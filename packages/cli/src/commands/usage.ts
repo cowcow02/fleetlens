@@ -440,6 +440,10 @@ Watch options:
   --interval N   Redraw every N seconds (default 2; reads ~/.cclens/usage.jsonl)
   ↑/↓, PgUp/PgDn, Home/End scroll the live view; q or Ctrl+C quits
 
+Reading the bars: the │ tick marks even pace — how far through the window
+you are. Fill short of the tick means you are under-spending, past it means
+you may exhaust the quota before it resets.
+
 Note: \`usage\` starts the usage daemon if it is not running, so numbers
 keep refreshing without hammering provider APIs.`);
     return;

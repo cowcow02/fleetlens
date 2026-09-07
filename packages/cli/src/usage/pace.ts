@@ -8,14 +8,20 @@
  * |delta_pp| ≤ 15 is on track — same ±15pp band as the /usage burndown
  * labels, so a night off does not flip the verdict.
  *
- * 5-hour windows are burst limiters and are never scored.
+ * 5-hour windows are burst limiters and are never scored — but their elapsed
+ * position is still exposed (`elapsedPctForWindow`) so the bar can draw an
+ * even-pace tick without asserting slow/fast.
  */
 
 export const PACE_BAND_PP = 15;
 export const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+export const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 export type PaceVerdict = "on_track" | "slow" | "fast";
+
+/** Scored kinds are 7d/monthly; five_hour is position-only. */
+export type WindowKind = "five_hour" | "seven_day" | "monthly";
 
 export type WindowPace = {
   used_pct: number;
@@ -98,6 +104,11 @@ export function windowPace(opts: {
   };
 }
 
+function windowMsFor(kind: WindowKind, resetsAtMs: number): number {
+  if (kind === "monthly") return monthlyWindowMs(new Date(resetsAtMs));
+  return kind === "five_hour" ? FIVE_HOURS_MS : SEVEN_DAYS_MS;
+}
+
 export function paceForWindow(
   window: { utilization: number | null; resets_at: string | null } | null | undefined,
   kind: "seven_day" | "monthly",
@@ -106,13 +117,26 @@ export function paceForWindow(
   if (!window || window.utilization === null || !window.resets_at) return null;
   const resetsAtMs = Date.parse(window.resets_at);
   if (!Number.isFinite(resetsAtMs)) return null;
-  const windowMs = kind === "monthly" ? monthlyWindowMs(new Date(resetsAtMs)) : SEVEN_DAYS_MS;
   return windowPace({
     usedPct: window.utilization,
     resetsAtMs,
-    windowMs,
+    windowMs: windowMsFor(kind, resetsAtMs),
     nowMs,
   });
+}
+
+/** How far through the window we are, independent of spend. Null when unknowable. */
+export function elapsedPctForWindow(
+  window: { resets_at: string | null } | null | undefined,
+  kind: WindowKind,
+  nowMs?: number,
+): number | null {
+  if (!window || !window.resets_at) return null;
+  const resetsAtMs = Date.parse(window.resets_at);
+  if (!Number.isFinite(resetsAtMs)) return null;
+  const windowMs = windowMsFor(kind, resetsAtMs);
+  const now = nowMs ?? Date.now();
+  return Math.max(0, Math.min(100, ((now - (resetsAtMs - windowMs)) / windowMs) * 100));
 }
 
 export function paceForSnapshot(
