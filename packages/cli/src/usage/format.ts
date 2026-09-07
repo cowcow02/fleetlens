@@ -1,7 +1,13 @@
 import { getAgentMetadata, isAgentKind } from "@claude-lens/parser";
 import type { UsageSnapshot, UsageWindow } from "./api.js";
 import { formatKaihkUsd, isKaihkAgent, kaihkTitle } from "./kaihk.js";
-import { paceForWindow, type PaceVerdict, type WindowPace } from "./pace.js";
+import {
+  elapsedPctForWindow,
+  paceForWindow,
+  type PaceVerdict,
+  type WindowKind,
+  type WindowPace,
+} from "./pace.js";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -11,6 +17,8 @@ const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
 
 const EIGHTHS = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
+/** Even-pace tick drawn inside the bar. Replaces one cell so row width is unchanged. */
+const PACE_MARK = "│";
 
 /** Claude first, then priority peers, then alphabetical — matches menubar strip. */
 const AGENT_PRIORITY = ["claude-code", "codex", "copilot", "zai", "grok", "command-code", "kaihk"];
@@ -227,12 +235,17 @@ function formatAgentBlock(
   for (const meter of agentWindows(kind, snapshot, layout.shortLabels)) {
     if (!meter.window || meter.window.utilization === null) continue;
     renderedMeter = true;
-    const pace = meter.paceKind
-      ? paceForWindow(meter.window, meter.paceKind)
+    const pace =
+      meter.windowKind && meter.windowKind !== "five_hour"
+        ? paceForWindow(meter.window, meter.windowKind)
+        : null;
+    const markerPct = meter.windowKind
+      ? elapsedPctForWindow(meter.window, meter.windowKind)
       : null;
     lines.push(
       ...formatMeterRow(meter.label, meter.window.utilization, meter.window.resets_at, layout, {
         pace,
+        markerPct,
       }),
     );
   }
@@ -307,7 +320,7 @@ function formatMeterRow(
   utilization: number,
   resetsAt: string | null | undefined,
   layout: Layout,
-  opts: { wholePct?: boolean; pace?: WindowPace | null } = {},
+  opts: { wholePct?: boolean; pace?: WindowPace | null; markerPct?: number | null } = {},
 ): string[] {
   const pctStr = opts.wholePct
     ? `${utilization.toFixed(0)}%`.padStart(5)
@@ -327,7 +340,7 @@ function formatMeterRow(
   }
 
   // Full-width bar: "  " label bar "  " pct "  " — matching left/right gutters.
-  const bar = renderBar(utilization, layout.barWidth);
+  const bar = renderBar(utilization, layout.barWidth, opts.markerPct ?? null);
   const lines = [`  ${labelStr}${bar}  ${BOLD}${pctStr}${RESET}  `];
   if (resetsAt) {
     const paceBit = pace
@@ -364,8 +377,8 @@ function formatPace(pace: WindowPace, layout: Layout): string {
 type MeterKind = {
   label: string;
   window: UsageWindow | null | undefined;
-  /** 7d / monthly only — 5h is a burst limiter and is not scored. */
-  paceKind?: "seven_day" | "monthly";
+  /** Sets the bar's even-pace tick. 5h also gets a tick but never a slow/fast verdict. */
+  windowKind?: WindowKind;
 };
 
 function agentWindows(
@@ -386,43 +399,43 @@ function agentWindows(
       };
 
   if (kind === "copilot" || isKaihkAgent(kind)) {
-    return [{ label: L.monthly, window: snapshot.monthly, paceKind: "monthly" }];
+    return [{ label: L.monthly, window: snapshot.monthly, windowKind: "monthly" }];
   }
   if (kind === "command-code") {
     return [
-      { label: L.five, window: snapshot.five_hour },
+      { label: L.five, window: snapshot.five_hour, windowKind: "five_hour" },
       {
         label: shortLabels ? "wk" : "weekly",
         window: snapshot.seven_day,
-        paceKind: "seven_day",
+        windowKind: "seven_day",
       },
-      { label: L.monthly, window: snapshot.monthly, paceKind: "monthly" },
+      { label: L.monthly, window: snapshot.monthly, windowKind: "monthly" },
     ];
   }
   if (kind === "grok") {
-    return [{ label: L.seven, window: snapshot.seven_day, paceKind: "seven_day" }];
+    return [{ label: L.seven, window: snapshot.seven_day, windowKind: "seven_day" }];
   }
   // Codex accounts that dropped the 5h limit only report 7d.
   if (kind === "codex" && snapshot.five_hour?.utilization == null) {
-    return [{ label: L.seven, window: snapshot.seven_day, paceKind: "seven_day" }];
+    return [{ label: L.seven, window: snapshot.seven_day, windowKind: "seven_day" }];
   }
 
   const rows: MeterKind[] = [
-    { label: L.five, window: snapshot.five_hour },
-    { label: L.seven, window: snapshot.seven_day, paceKind: "seven_day" },
+    { label: L.five, window: snapshot.five_hour, windowKind: "five_hour" },
+    { label: L.seven, window: snapshot.seven_day, windowKind: "seven_day" },
   ];
   if (isClaudeAgent(kind) || !snapshot.agent) {
     if (snapshot.seven_day_opus?.utilization != null) {
-      rows.push({ label: L.opus, window: snapshot.seven_day_opus, paceKind: "seven_day" });
+      rows.push({ label: L.opus, window: snapshot.seven_day_opus, windowKind: "seven_day" });
     }
     if (snapshot.seven_day_sonnet?.utilization != null) {
-      rows.push({ label: L.sonnet, window: snapshot.seven_day_sonnet, paceKind: "seven_day" });
+      rows.push({ label: L.sonnet, window: snapshot.seven_day_sonnet, windowKind: "seven_day" });
     }
     if (snapshot.seven_day_oauth_apps?.utilization != null) {
-      rows.push({ label: L.oauth, window: snapshot.seven_day_oauth_apps, paceKind: "seven_day" });
+      rows.push({ label: L.oauth, window: snapshot.seven_day_oauth_apps, windowKind: "seven_day" });
     }
     if (snapshot.seven_day_cowork?.utilization != null) {
-      rows.push({ label: L.cowork, window: snapshot.seven_day_cowork, paceKind: "seven_day" });
+      rows.push({ label: L.cowork, window: snapshot.seven_day_cowork, windowKind: "seven_day" });
     }
   }
   return rows;
@@ -481,8 +494,13 @@ function compareAgents(a: string, b: string): number {
  * Render a progress bar with sub-cell precision using Unicode eighths.
  * Each full block is `█`, partial fill uses `▏▎▍▌▋▊▉` for 1/8 granularity.
  * Empty cells use a dim `·` so the filled portion visually pops.
+ *
+ * `markerPct` draws the even-pace tick at that position, so a glance at the
+ * bar says slow/fast without reading the pp number: fill short of the tick is
+ * slow, past it is fast. It overwrites one cell instead of inserting, because
+ * row width is load-bearing for the two-column layout maths.
  */
-function renderBar(utilization: number, barWidth: number): string {
+function renderBar(utilization: number, barWidth: number, markerPct: number | null = null): string {
   if (barWidth <= 0) return "";
   const clamped = Math.max(0, Math.min(100, utilization));
   const color = clamped >= 90 ? RED : clamped >= 70 ? YELLOW : GREEN;
@@ -493,12 +511,28 @@ function renderBar(utilization: number, barWidth: number): string {
   const remainder = totalEighths % 8;
   const partial = EIGHTHS[remainder];
   const filledCells = fullBlocks + (partial ? 1 : 0);
-  const emptyCells = Math.max(0, barWidth - filledCells);
 
-  const filled = "█".repeat(fullBlocks) + partial;
-  const empty = "·".repeat(emptyCells);
+  const cells = [
+    ...Array.from({ length: fullBlocks }, () => "█"),
+    ...(partial ? [partial] : []),
+    ...Array.from({ length: Math.max(0, barWidth - filledCells) }, () => "·"),
+  ];
 
-  return `${color}${filled}${RESET}${DIM}${empty}${RESET}`;
+  // Colour wrappers are emitted even for empty runs so a 0% bar still carries
+  // its band colour (asserted by the band tests).
+  const paint = (start: number, end: number): string => {
+    const lit = cells.slice(start, Math.min(end, filledCells)).join("");
+    const dark = cells.slice(Math.max(start, filledCells), end).join("");
+    return `${color}${lit}${RESET}${DIM}${dark}${RESET}`;
+  };
+
+  if (markerPct === null || !Number.isFinite(markerPct)) return paint(0, barWidth);
+
+  const at = Math.min(
+    barWidth - 1,
+    Math.floor((Math.max(0, Math.min(100, markerPct)) / 100) * barWidth),
+  );
+  return `${paint(0, at)}${BOLD}${PACE_MARK}${RESET}${paint(at + 1, barWidth)}`;
 }
 
 function formatRelative(iso: string): string {
