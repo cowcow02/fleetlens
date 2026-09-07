@@ -495,10 +495,8 @@ function compareAgents(a: string, b: string): number {
  * Each full block is `█`, partial fill uses `▏▎▍▌▋▊▉` for 1/8 granularity.
  * Empty cells use a dim `·` so the filled portion visually pops.
  *
- * `markerPct` draws the even-pace tick at that position, so a glance at the
- * bar says slow/fast without reading the pp number: fill short of the tick is
- * slow, past it is fast. It overwrites one cell instead of inserting, because
- * row width is load-bearing for the two-column layout maths.
+ * The `markerPct` tick overwrites one cell instead of inserting, because row
+ * width is load-bearing for the two-column layout maths.
  */
 function renderBar(utilization: number, barWidth: number, markerPct: number | null = null): string {
   if (barWidth <= 0) return "";

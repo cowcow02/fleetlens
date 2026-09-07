@@ -501,7 +501,7 @@ describe("even-pace marker", () => {
     return line!;
   }
 
-  it("puts the tick at the elapsed position, left of a slow bar's fill", () => {
+  it("puts the tick at the elapsed position, beyond a slow bar's fill", () => {
     const out = strip(
       formatUsage(
         baseSnapshot({ seven_day: { utilization: 25, resets_at: halfway7d } }),
