@@ -4,6 +4,11 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.21] — 2026-09-07
+
+### Added
+- **Even-pace tick inside the usage bars.** Every bar in `fleetlens usage` (and `--watch`) now draws a `│` at the elapsed position of its window, so pace is visible at a glance instead of only as the numeric `+Npp vs even`. Fill short of the tick means under-spending; fill past it means the quota may run out before it resets. 5-hour bars get the tick too, but are still never labelled slow or fast — they are burst limiters, and position is not a verdict.
+
 ## [1.0.20] — 2026-09-03
 
 ### Changed
