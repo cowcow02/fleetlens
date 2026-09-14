@@ -4,6 +4,12 @@ All notable user-facing changes to the Fleetlens CLI (`fleetlens` on npm) are
 recorded here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 The team-server has its own log at `packages/team-server/CHANGELOG.md`.
 
+## [1.0.22] — 2026-09-14
+
+### Fixed
+- **Usage daemon no longer dies after a Node upgrade.** When the Node binary Fleetlens was started with is removed while it runs (for example by an nvm upgrade), relaunching a wedged dashboard server, starting the daemon, and the daemon's auto-update now use a Node that still exists — `node` on PATH, the newest same-major nvm install, or Homebrew. A launch that still fails is logged instead of crashing: previously the watchdog's relaunch hit `spawn … ENOENT`, took the daemon down with it, and left an `undefined` pid file with nothing running until a manual `fleetlens start`.
+- **Login item and menu bar widget follow a Node upgrade.** The daemon repoints the macOS login item and `~/.cclens/cli-launch.json` when the Node path baked into them no longer exists, so Fleetlens still starts at the next login and the widget's refresh keeps working.
+
 ## [1.0.21] — 2026-09-07
 
 ### Added
