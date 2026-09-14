@@ -116,6 +116,7 @@ export {
   MAX_JSONL_LINE_BYTES,
 } from "./jsonl-read.js";
 export { resolveProjectIdentity, readGitFolder } from "./git-project.js";
+export { resolveNodeBin } from "./node-bin.js";
 export type { GitFolderInfo, GitRemote } from "./git-project.js";
 export type { FileRef, ListOptions, ProjectRefLite } from "./claude-code.js";
 export type { WorkflowAgentDetail, WorkflowAgentStep } from "./claude-code.js";

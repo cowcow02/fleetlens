@@ -4,7 +4,7 @@ import { join, dirname } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
-import { cclensPath } from "@claude-lens/parser/fs";
+import { cclensPath, resolveNodeBin } from "@claude-lens/parser/fs";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,6 +39,28 @@ function installedPlistIsStale(): boolean {
     return isStalePlistContent(readFileSync(plistPath(), "utf8"));
   } catch {
     return false;
+  }
+}
+
+/** The Node binary a plist launches (its first ProgramArguments entry). */
+export function plistNodePath(content: string): string | null {
+  return content.match(/<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]+)<\/string>/)?.[1] ?? null;
+}
+
+/** Repoint the installed plist when its baked Node no longer exists — after
+ *  an nvm upgrade launchd silently starts nothing at login (2026-09-14).
+ *  File only, no launchctl reload: launchd reads it at the next login, and a
+ *  reload would RunAtLoad a second `start` right now. */
+export function healAutostartNodePath(nodeBin = resolveNodeBin()): { from: string; to: string } | null {
+  if (!isAutostartInstalled()) return null;
+  try {
+    const content = readFileSync(plistPath(), "utf8");
+    const from = plistNodePath(content);
+    if (!from || existsSync(from) || !existsSync(nodeBin)) return null;
+    writeFileSync(plistPath(), content.replace(`<string>${from}</string>`, `<string>${nodeBin}</string>`), "utf8");
+    return { from, to: nodeBin };
+  } catch {
+    return null;
   }
 }
 
@@ -100,7 +122,7 @@ export async function installAutostart(): Promise<boolean> {
     console.log(NON_MAC_MSG);
     return false;
   }
-  const nodePath = process.execPath;
+  const nodePath = resolveNodeBin();
   const scriptPath = resolveScriptPath();
   const logPath = cclensPath("daemon-autostart.log");
   const p = plistPath();
@@ -115,7 +137,7 @@ export async function installAutostart(): Promise<boolean> {
   console.log(`  LaunchAgent: ${p}`);
   console.log(`  Runs:        ${nodePath} ${scriptPath} start`);
   console.log(
-    "  Note: the Node path above is baked in. If you upgrade or switch Node (e.g. via nvm), re-run `fleetlens autostart install`.",
+    "  Note: the Node path above is baked in. If an upgrade (e.g. via nvm) removes that Node, the running daemon repoints it.",
   );
   return true;
 }

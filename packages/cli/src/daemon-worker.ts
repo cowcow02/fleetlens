@@ -28,7 +28,7 @@ import {
   isKaihkAgent,
 } from "./usage/kaihk.js";
 import { appendSnapshot, latestSnapshotsByAgent, pruneAgent } from "./usage/storage.js";
-import { agentSources, cclensPath } from "@claude-lens/parser/fs";
+import { agentSources, cclensPath, resolveNodeBin } from "@claude-lens/parser/fs";
 import { appendDaemonLogLine } from "./daemon-log.js";
 import { discoverClaudeAccounts } from "./usage/accounts.js";
 import { BASE_INTERVAL_MS, nextIntervalMs, type PollOutcome } from "./usage/backoff.js";
@@ -38,6 +38,9 @@ import { backfillLastWeekDigest, backfillYesterdayDigest } from "./perception/ba
 import { getUpdateAvailability } from "./updater.js";
 import { getServerStatus, probeServerHealth, restartWedgedServer } from "./server.js";
 import { ServerWatchdog, type WatchdogVerdict } from "./watchdog.js";
+import { spawnedPid } from "./pid.js";
+import { healAutostartNodePath } from "./commands/autostart.js";
+import { healCliLaunchFile } from "./commands/menubar.js";
 
 declare const CLI_VERSION: string;
 
@@ -61,6 +64,7 @@ let nextPollAtMs = 0;
 let nextAuxPollAtMs = 0;
 let nextTeamSyncAtMs = 0;
 let nextServerHealthAtMs = 0;
+let nextLaunchPathHealAtMs = 0;
 // First team sync after this daemon booted is tagged trigger="boot" in the
 // [sync] summary line; every tick after is "auto".
 let firstTeamSync = true;
@@ -199,7 +203,8 @@ async function runDaemonUpdateCheck(): Promise<void> {
       // If we cannot append logs, still let the updater run detached.
     }
 
-    const child = spawn(process.execPath, [entry, "update"], {
+    const node = resolveNodeBin();
+    const child = spawn(node, [entry, "update"], {
       detached: true,
       stdio: ["ignore", logFd, logFd],
       env: { ...process.env, FLEETLENS_UPDATE_SOURCE: "daemon" },
@@ -210,21 +215,32 @@ async function runDaemonUpdateCheck(): Promise<void> {
       });
     }
     child.unref();
+    const pid = spawnedPid(child, node);
 
     writeUpdateState({
       ...state,
       updateSpawnedAt: new Date().toISOString(),
     });
-    log(
-      "info",
-      `update check found ${availability.latest}; spawned updater pid=${child.pid ?? "unknown"}`,
-    );
+    log("info", `update check found ${availability.latest}; spawned updater pid=${pid}`);
   } catch (err) {
     writeUpdateState({ lastCheckedAt: checkedAt, error: (err as Error).message });
     log("warn", `update check failed: ${(err as Error).message}`);
   } finally {
     updateCheckInFlight = false;
     nextUpdateCheckAtMs = Date.now() + AUTO_UPDATE_INTERVAL_MS;
+  }
+}
+
+/** The login item and the menu bar's cli-launch.json bake in the Node that
+ *  wrote them. Once an nvm upgrade deletes it, the next login starts nothing
+ *  and the widget can't refresh — repoint both at a Node that exists. */
+function healLaunchPaths(): void {
+  for (const [name, heal] of [
+    ["login item", healAutostartNodePath],
+    ["cli-launch.json", healCliLaunchFile],
+  ] as const) {
+    const moved = heal();
+    if (moved) log("info", `[node] ${name} launched missing ${moved.from}; repointed to ${moved.to}`);
   }
 }
 
@@ -555,6 +571,10 @@ async function runLoop(): Promise<void> {
       if (Date.now() >= nextServerHealthAtMs) {
         await runServerHealthCheck();
         nextServerHealthAtMs = Date.now() + SERVER_HEALTH_INTERVAL_MS;
+      }
+      if (Date.now() >= nextLaunchPathHealAtMs) {
+        healLaunchPaths();
+        nextLaunchPathHealAtMs = Date.now() + BASE_INTERVAL_MS;
       }
       if (Date.now() >= nextPerceptionAtMs) {
         // Run on the same loop as polls/sync so a sweep cannot overlap a

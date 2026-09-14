@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { resolveNodeBin } from "@claude-lens/parser/fs";
 
 const execFileAsync = promisify(execFile);
 
@@ -13,7 +14,9 @@ let startInFlight: Promise<boolean> | null = null;
 
 export function daemonLaunchSpec(
   env: DaemonEnv = process.env,
-  execPath = process.execPath,
+  // Not process.execPath: an nvm upgrade can delete a long-running server's
+  // Node, and every recovery attempt would then fail.
+  execPath = resolveNodeBin(),
 ): { file: string; args: string[] } | null {
   if (env.FLEETLENS_WEB_START_DAEMON === "0") return null;
   const cli = env.FLEETLENS_CLI_BIN;
