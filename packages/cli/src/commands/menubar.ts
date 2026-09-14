@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, cpSync, rmSync, readdirSync, writeFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, cpSync, rmSync, readdirSync, writeFileSync, realpathSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { cclensPath } from "@claude-lens/parser/fs";
+import { cclensPath, resolveNodeBin } from "@claude-lens/parser/fs";
 
 const execFileAsync = promisify(execFile);
 
@@ -49,11 +49,25 @@ function writeCliLaunchFile(): void {
   try {
     writeFileSync(
       cclensPath("cli-launch.json"),
-      JSON.stringify({ node: process.execPath, script: resolveScriptPath() }),
+      JSON.stringify({ node: resolveNodeBin(), script: resolveScriptPath() }),
       "utf8",
     );
   } catch {
     // best-effort — the widget's refresh just re-reads the file without it.
+  }
+}
+
+/** Repoint cli-launch.json when the Node it names was removed (nvm upgrade);
+ *  otherwise every widget refresh fails until a manual reinstall. */
+export function healCliLaunchFile(nodeBin = resolveNodeBin()): { from: string; to: string } | null {
+  try {
+    const file = cclensPath("cli-launch.json");
+    const launch = JSON.parse(readFileSync(file, "utf8")) as { node?: string };
+    if (!launch.node || existsSync(launch.node) || !existsSync(nodeBin)) return null;
+    writeFileSync(file, JSON.stringify({ ...launch, node: nodeBin }), "utf8");
+    return { from: launch.node, to: nodeBin };
+  } catch {
+    return null;
   }
 }
 

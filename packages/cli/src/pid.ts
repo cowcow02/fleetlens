@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, type ChildProcess } from "node:child_process";
 import { dirname } from "node:path";
 
 export function writePid(filePath: string, pid: number, port?: number, version?: string): void {
@@ -74,4 +74,14 @@ export function removePid(filePath: string): void {
   } catch {
     // Already gone
   }
+}
+
+/** spawn() doesn't throw for a missing binary: pid stays undefined and ENOENT
+ *  arrives later as an 'error' event, which with no listener is an
+ *  uncaughtException — an nvm upgrade deleted the daemon's Node and its next
+ *  server restart killed the daemon that way (2026-09-14). */
+export function spawnedPid(child: ChildProcess, bin: string): number {
+  child.once("error", () => {});
+  if (child.pid === undefined) throw new Error(`could not launch ${bin}`);
+  return child.pid;
 }

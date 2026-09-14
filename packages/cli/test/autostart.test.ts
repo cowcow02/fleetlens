@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { buildPlist, isStalePlistContent, isPromptDismissed, dismissPrompt, hasOptedOut, recordOptOut } from "../src/commands/autostart.js";
+import { buildPlist, isStalePlistContent, isPromptDismissed, dismissPrompt, hasOptedOut, recordOptOut, plistNodePath } from "../src/commands/autostart.js";
 
 describe("buildPlist", () => {
   const plist = buildPlist({
@@ -26,6 +26,11 @@ describe("buildPlist", () => {
     expect(isStalePlistContent(plist)).toBe(false);
     const old = plist.replace("<string>start</string>", "<string>daemon</string>\n    <string>start</string>");
     expect(isStalePlistContent(old)).toBe(true);
+  });
+
+  it("reads back the baked Node path so the daemon can repoint a removed one", () => {
+    expect(plistNodePath(plist)).toBe("/usr/local/bin/node");
+    expect(plistNodePath("<plist></plist>")).toBeNull();
   });
 
   it("runs at load", () => {

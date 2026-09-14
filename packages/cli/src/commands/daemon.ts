@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, statSync, readFileSync, openSync, closeSync } from "node:fs";
-import { writePid, readPid, isProcessAlive, cleanStalePid, removePid } from "../pid.js";
+import { writePid, readPid, isProcessAlive, cleanStalePid, removePid, spawnedPid } from "../pid.js";
 import { latestSnapshot } from "../usage/storage.js";
-import { cclensPath } from "@claude-lens/parser/fs";
+import { cclensPath, resolveNodeBin } from "@claude-lens/parser/fs";
 
 const DAEMON_PID = cclensPath("daemon.pid");
 const USAGE_LOG = cclensPath("usage.jsonl");
@@ -46,7 +46,8 @@ export function startDaemonSilent(): DaemonLifecycleResult {
   } catch {
     // Unwritable log dir — still start the daemon.
   }
-  const child = spawn(process.execPath, [script], {
+  const node = resolveNodeBin();
+  const child = spawn(node, [script], {
     detached: true,
     stdio: ["ignore", "ignore", logFd],
   });
@@ -54,7 +55,12 @@ export function startDaemonSilent(): DaemonLifecycleResult {
   if (typeof logFd === "number") {
     try { closeSync(logFd); } catch {}
   }
-  const pid = child.pid!;
+  let pid: number;
+  try {
+    pid = spawnedPid(child, node);
+  } catch (err) {
+    return { started: false, pid: null, alreadyRunning: false, error: (err as Error).message };
+  }
   writePid(DAEMON_PID, pid);
   return { started: true, pid, alreadyRunning: false };
 }

@@ -2,9 +2,9 @@ import { spawn } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existsSync, realpathSync, readFileSync } from "node:fs";
-import { writePid, readPid, isProcessAlive, cleanStalePid, removePid } from "./pid.js";
+import { writePid, readPid, isProcessAlive, cleanStalePid, removePid, spawnedPid } from "./pid.js";
 import { homedir } from "node:os";
-import { cclensHome, cclensPath } from "@claude-lens/parser/fs";
+import { cclensHome, cclensPath, resolveNodeBin } from "@claude-lens/parser/fs";
 
 declare const CLI_VERSION: string;
 
@@ -142,7 +142,8 @@ export async function startServer(
 
   const dataDir = join(homedir(), ".claude", "projects");
 
-  const child = spawn(process.execPath, [serverJs], {
+  const node = resolveNodeBin();
+  const child = spawn(node, [serverJs], {
     detached: true,
     stdio: "ignore",
     env: {
@@ -157,7 +158,7 @@ export async function startServer(
   });
 
   child.unref();
-  const pid = child.pid!;
+  const pid = spawnedPid(child, node);
   writePid(PID_FILE, pid, port, onDiskVersion());
 
   // Wait for server to be healthy. 30s, not 10: `team join` cold-starts this
